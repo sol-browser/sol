@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "checksum": "",
+  "roots": {
+    "bookmark_bar": {
+      "type": "folder",
+      "id": "1",
+      "name": "Bookmarks bar",
+      "children": [
+        {
+          "type": "url",
+          "id": "5",
+          "name": "Docs",
+          "url": "https://docs.example.test/"
+        },
+        {
+          "type": "folder",
+          "id": "6",
+          "name": "Work 💼",
+          "children": [
+            {
+              "type": "url",
+              "id": "7",
+              "name": "Tracker",
+              "url": "https://tracker.example.test/?q=a&b=1"
+            },
+            {
+              "type": "url",
+              "id": "8",
+              "name": "Script",
+              "url": "javascript:alert(1)"
+            }
+          ]
+        }
+      ]
+    },
+    "other": {
+      "type": "folder",
+      "id": "2",
+      "name": "Other bookmarks",
+      "children": []
+    },
+    "synced": {
+      "type": "folder",
+      "id": "3",
+      "name": "Mobile bookmarks",
+      "children": [
+        {
+          "type": "url",
+          "id": "9",
+          "name": "Phone",
+          "url": "http://phone.example.test/"
+        }
+      ]
+    }
+  }
+}

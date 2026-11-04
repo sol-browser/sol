@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Sol owned Chrome toolbar probe",
+  "version": "0.0.1",
+  "permissions": ["tabs", "scripting"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": { "service_worker": "worker.js" },
+  "content_scripts": [{ "matches": ["http://127.0.0.1/*"], "js": ["content.js"], "run_at": "document_idle" }],
+  "action": { "default_title": "Sol toolbar probe", "default_popup": "popup.html" }
+}

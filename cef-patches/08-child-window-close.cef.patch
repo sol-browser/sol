@@ -1,0 +1,18 @@
+diff --git a/libcef/browser/native/browser_platform_delegate_native_win.cc b/libcef/browser/native/browser_platform_delegate_native_win.cc
+index 70f998820..dbf390d21 100644
+--- a/libcef/browser/native/browser_platform_delegate_native_win.cc
++++ b/libcef/browser/native/browser_platform_delegate_native_win.cc
+@@ -251,6 +251,13 @@ bool CefBrowserPlatformDelegateNativeWin::CreateHostWindow() {
+ void CefBrowserPlatformDelegateNativeWin::CloseHostWindow() {
+   if (window_info_.window != nullptr) {
+     HWND frameWnd = GetAncestor(window_info_.window, GA_ROOT);
++    // Red: a browser created as a child window (SetAsChild) lives inside the
++    // client's own top-level window. Its closing (e.g. a docked DevTools
++    // frontend whose renderer crashed) must not close that window; the client
++    // closes its windows itself.
++    if (frameWnd != window_info_.window) {
++      return;
++    }
+     PostMessage(frameWnd, WM_CLOSE, 0, 0);
+   }
+ }

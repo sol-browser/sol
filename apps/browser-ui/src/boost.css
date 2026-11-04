@@ -1,0 +1,73 @@
+/* Boost editor window (sol://ui/boost.html). Dark like the other popovers, whatever the theme. */
+:root[data-ui="boost"], :root[data-ui="boost"] body { margin: 0; background: #1c1a20; color: #efedf2; color-scheme: dark; font: 13px/1.35 "Segoe UI", system-ui, sans-serif; }
+:root[data-ui="boost"] { --boost-accent: oklch(0.7037 0.1598 251.8); --boost-tile: #ffffff0d; --boost-tile-hover: #ffffff17; --boost-line: #ffffff14; }
+.boost-app { display: grid; gap: 8px; padding: 10px 10px 12px; user-select: none; }
+.boost-app[data-off="true"] :is(.boost-pad, .boost-row, .boost-fonts-box) { opacity: .55; }
+.boost-app button { font: inherit; color: inherit; }
+.boost-app button:focus-visible, .boost-pad:focus-visible, .boost-css:focus-visible { outline: 2px solid var(--boost-accent); outline-offset: 2px; }
+
+.boost-head { display: flex; align-items: center; gap: 10px; min-height: 28px; }
+.boost-host { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 14px; }
+.boost-power input { appearance: none; position: relative; display: block; width: 36px; height: 20px; margin: 0; border-radius: 10px; background: #ffffff1f; box-shadow: inset 0 0 0 1px #ffffff2a; transition: background .15s; }
+.boost-power input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #d8d4de; transition: transform .15s; }
+.boost-power input:checked { background: var(--boost-accent); box-shadow: none; }
+.boost-power input:checked::after { transform: translateX(16px); background: #fff; }
+.boost-power input:disabled { opacity: .4; }
+
+/* Colour pad: dotted grid, a guide ring, the neutral centre and the tint dot linked to it. */
+.boost-pad { position: relative; aspect-ratio: 1; border-radius: 16px; touch-action: none; cursor: default; overflow: hidden;
+  background: radial-gradient(#ffffff26 1px, transparent 1.3px) 0 0 / 11px 11px, #222027;
+  box-shadow: inset 0 0 0 1px var(--boost-line), 0 0 0 3px #2b2830; }
+.boost-pad[data-dragging="true"] { cursor: grabbing; }
+.boost-ring { position: absolute; inset: 8%; border-radius: 50%; border: 1px solid #ffffff1a; pointer-events: none; }
+.boost-ring::before { content: ""; position: absolute; inset: -1px; border-radius: 50%; opacity: .32;
+  background: conic-gradient(hsl(0 85% 60%), hsl(60 85% 60%), hsl(120 75% 55%), hsl(180 75% 55%), hsl(240 85% 65%), hsl(300 85% 62%), hsl(360 85% 60%));
+  mask: radial-gradient(circle, transparent 68%, #000 70%); }
+.boost-dot { position: absolute; border-radius: 50%; pointer-events: none; transform: translate(-50%, -50%); box-shadow: 0 2px 10px #0009; }
+.boost-dot-center { left: 50%; top: 50%; width: 18px; height: 18px; border: 3px solid #fff; background: #3a3740; }
+.boost-dot-main { width: 28px; height: 28px; border: 3px solid #fff; transition: background .1s; }
+.boost-dot-accent { width: 18px; height: 18px; border: 3px solid #fff; transition: background .1s; }
+.boost-magic { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 8px; background: #ffffff1c; cursor: pointer; }
+.boost-magic:hover { background: #ffffff2e; }
+
+.boost-row { display: grid; gap: 8px; }
+.boost-row.three { grid-template-columns: repeat(3, 1fr); }
+.boost-row.two { grid-template-columns: repeat(2, 1fr); }
+.boost-tile, .boost-wide { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 10px; border: 0; border-radius: 9px; background: var(--boost-tile); cursor: pointer; }
+.boost-tile:hover:not(:disabled), .boost-wide:hover:not(:disabled) { background: var(--boost-tile-hover); }
+.boost-tile[aria-pressed="true"], .boost-wide[aria-pressed="true"] { background: oklch(0.7037 0.1598 251.8 / .22); box-shadow: inset 0 0 0 1px oklch(0.7037 0.1598 251.8 / .7); }
+.boost-tile:disabled, .boost-wide:disabled { opacity: .4; cursor: default; }
+.boost-tile.text { font-weight: 600; }
+.boost-tile small, .boost-wide small { margin-left: 6px; font-size: 11px; font-weight: 500; opacity: .7; }
+.boost-case { font-size: 11.5px; }
+.boost-wide { justify-content: space-between; font-weight: 600; }
+.boost-wide > span { display: flex; align-items: center; }
+
+.boost-drawer { display: grid; gap: 6px; padding: 10px 4px; border-radius: 10px; background: #ffffff08; }
+.boost-slider { display: grid; grid-template-columns: 64px 1fr 34px; align-items: center; gap: 8px; padding: 0 6px; font-size: 12px; }
+.boost-slider output { text-align: right; opacity: .65; font-variant-numeric: tabular-nums; }
+.boost-slider input { min-width: 0; accent-color: var(--boost-accent); }
+
+.boost-fonts-box { display: grid; gap: 6px; padding: 8px; border-radius: 12px; background: #ffffff08; }
+ul.boost-fonts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin: 0; padding: 0; list-style: none; }
+.boost-fonts button { width: 100%; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; font-size: 14px; cursor: pointer; }
+.boost-fonts button:hover { background: var(--boost-tile-hover); }
+.boost-fonts button[aria-pressed="true"] { background: oklch(0.7037 0.1598 251.8 / .28); box-shadow: inset 0 0 0 1px var(--boost-accent); }
+.boost-font-name { padding: 4px 4px 0; border-top: 1px solid var(--boost-line); font-size: 12px; font-weight: 600; opacity: .6; }
+
+.boost-hint { margin: -4px 4px 0; font-size: 12px; opacity: .7; }
+.boost-hint code, .boost-zaps code { font: 11.5px Consolas, "Cascadia Mono", monospace; }
+ul.boost-zaps { display: grid; gap: 2px; max-height: 132px; overflow: auto; margin: -4px 0 0; padding: 0; list-style: none; }
+.boost-zaps li { display: flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 7px; background: #ffffff08; }
+.boost-zaps code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .8; }
+.boost-zaps button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+.boost-zaps button:hover { background: var(--boost-tile-hover); }
+
+.boost-code-box { display: grid; gap: 6px; }
+.boost-css { box-sizing: border-box; width: 100%; min-height: 140px; max-height: 50vh; margin: 0; padding: 8px; resize: vertical; border: 0; border-radius: 10px; background: #ffffff0d; box-shadow: inset 0 0 0 1px #ffffff1c; color: inherit; font: 12px/1.45 Consolas, "Cascadia Mono", monospace; tab-size: 2; user-select: text; }
+.boost-error { margin: 0; padding: 8px 10px; border-radius: 8px; background: #f43f5e22; color: #fda4af; font-size: 12px; }
+.boost-foot { display: flex; justify-content: flex-end; }
+.boost-foot button { padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: #c9c4d1; cursor: pointer; }
+.boost-foot button:hover:not(:disabled) { background: var(--boost-tile-hover); }
+.boost-foot button:disabled { opacity: .4; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .boost-app * { transition: none !important; } }

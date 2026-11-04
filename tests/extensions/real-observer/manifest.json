@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Sol owned real-extension observer",
+  "version": "0.0.1",
+  "permissions": ["tabs", "management"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "worker.js" },
+  "content_scripts": [{ "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle" }],
+  "web_accessible_resources": []
+}

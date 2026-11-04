@@ -1,0 +1,16 @@
+{
+  "cef_version": "154.0.34+g14c5a08+chromium-154.0.8037.98",
+  "chromium_version": "154.0.8037.98",
+  "cef_revision": "14c5a089e8452874cb1a556dc3fde26ed2d87723",
+  "chromium_revision": "b859317bf11f6be47f9b7799ec690a0a42a1fb33",
+  "platform": "windows64",
+  "distribution": "standard",
+  "archive": "cef_binary_154.0.34+g14c5a08+chromium-154.0.8037.98_windows64.tar.bz2",
+  "url": "https://cef-builds.spotifycdn.com/cef_binary_154.0.34%2Bg14c5a08%2Bchromium-154.0.8037.98_windows64.tar.bz2",
+  "size": 365396143,
+  "sha1": "8c705a2ef1ce5f7b9655729a2d3de5d033a24d8b",
+  "sha256": "51ebf99f026c5901bb1c647053a00dc4abebed70fe24f5d9bcfaa0016b3f774b",
+  "metadata_source": "https://cef-builds.spotifycdn.com/index.json",
+  "published": "2026-10-05T05:04:27.617000Z",
+  "locked_on": "2026-10-21"
+}

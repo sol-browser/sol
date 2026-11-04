@@ -1,0 +1,36 @@
+diff --git a/chrome/browser/extensions/browser_extension_window_controller.cc b/chrome/browser/extensions/browser_extension_window_controller.cc
+index b48c0452f3..7c8307f60a 100644
+--- a/chrome/browser/extensions/browser_extension_window_controller.cc
++++ b/chrome/browser/extensions/browser_extension_window_controller.cc
+@@ -11,6 +11,7 @@
+ #include "base/feature_list.h"
+ #include "base/notimplemented.h"
+ #include "base/strings/stringprintf.h"
++#include "cef/libcef/features/features.h"
+ #include "chrome/browser/extensions/extension_tab_util.h"
+ #include "chrome/browser/extensions/window_controller_list.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -45,6 +46,10 @@
+ #include "chrome/browser/ui/exclusive_access/fullscreen_controller.h"  // nogncheck
+ #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
+ #include "chrome/browser/ui/singleton_tabs.h"
++
++#if BUILDFLAG(ENABLE_CEF)
++#include "cef/libcef/browser/chrome/browser_delegate.h"
++#endif
+ #endif
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+@@ -76,6 +81,12 @@ constexpr char kShowStateValueLockedFullscreen[] = "locked-fullscreen";
+ #endif
+ 
+ api::tabs::WindowType GetTabsWindowType(const BrowserWindowInterface* browser) {
++#if BUILDFLAG(ENABLE_CEF)
++  // Red: pages the CEF client created are popups only internally.
++  if (browser->cef_delegate() && browser->cef_delegate()->IsClientCreatedTab()) {
++    return api::tabs::WindowType::kNormal;
++  }
++#endif
+   switch (browser->GetType()) {
+     case BrowserWindowInterface::TYPE_APP:
+       return api::tabs::WindowType::kApp;

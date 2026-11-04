@@ -1,0 +1,20 @@
+.link-peek-layer { position:absolute; z-index:8; }
+.link-peek-card { position:absolute; border-radius:8px; overflow:hidden; background:oklch(calc(.92 + var(--theme-dark,0) * -.71) calc(.023 * var(--theme-chroma,1)) var(--theme-hue,307)); }
+.link-peek-layer[data-composed="true"] .link-peek-card { opacity:0; }
+.link-peek-rail { position:absolute; display:flex; flex-direction:column; gap:8px; }
+/* Same 32-DIP circles, 40 DIP apart, as the native rail painted above Chrome. */
+.link-peek-rail .icon-button { width:32px; height:32px; border-radius:50%; background:rgb(33 33 38 / 92%); color:rgb(255 255 255 / 90%); }
+.link-peek-rail .icon-button:hover:enabled,.link-peek-rail .icon-button:focus-visible { background:rgb(74 74 82 / 98%); color:white; }
+/* Native composition paints the same passive rail above Chrome. DOM controls
+   retain actual pointer/keyboard actions, labels and tooltips at these bounds. */
+.link-peek-layer[data-composed="true"] .link-peek-rail { opacity:0; }
+.link-peek-placeholder { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; height:100%; color:var(--muted); }
+.link-peek-placeholder button { padding:6px 12px; background:color-mix(in oklch,currentColor 10%,transparent); }
+.workspace .split-view { transform-origin:var(--peek-center-x) var(--peek-center-y); }
+.workspace .split-view,.workspace .web-slot { transition:transform 300ms cubic-bezier(.333333,1,.666667,1); }
+.workspace[data-peek="true"] .split-view,.workspace[data-peek="true"] .web-slot { transform:scale(.985); }
+/* The lower native source layer owns this frame while it displays the retained
+   page. A second DOM frame underneath would leave an unrelated outer edge. */
+.workspace[data-peek="true"] .web-slot { visibility:hidden; }
+.workspace[data-peek-returning="true"] .split-view,.workspace[data-peek-returning="true"] .web-slot { transform:scale(1); transition-duration:300ms; }
+@media (prefers-reduced-motion:reduce) { .workspace .split-view,.workspace .web-slot { transition:none; } }

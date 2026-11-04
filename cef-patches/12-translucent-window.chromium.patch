@@ -1,0 +1,46 @@
+diff --git a/ui/views/widget/widget_hwnd_utils.cc b/ui/views/widget/widget_hwnd_utils.cc
+index e5f6888..4fd2ec1 100644
+--- a/ui/views/widget/widget_hwnd_utils.cc
++++ b/ui/views/widget/widget_hwnd_utils.cc
+@@ -100,9 +100,10 @@ WindowStyles CalculateWindowStylesFromInitParams(
+       styles.ex_style |=
+           native_widget_delegate->IsDialogBox() ? WS_EX_DLGMODALFRAME : 0;
+ 
+-      // See layered window comment below.
++      // See layered window comment below. Red: a translucent top-level window
++      // keeps WS_THICKFRAME (resizing, Snap); its frame is the client's own.
+       if (is_translucent) {
+-        styles.style &= static_cast<DWORD>(~(WS_THICKFRAME | WS_CAPTION));
++        styles.style &= static_cast<DWORD>(~WS_CAPTION);
+       }
+       break;
+     }
+diff --git a/ui/views/win/hwnd_message_handler.cc b/ui/views/win/hwnd_message_handler.cc
+index fed80bd..d5ab6fb 100644
+--- a/ui/views/win/hwnd_message_handler.cc
++++ b/ui/views/win/hwnd_message_handler.cc
+@@ -1151,7 +1151,10 @@ void HWNDMessageHandler::SizeConstraintsChanged() {
+   //   allowing ui::GetResizableFrameThickness() to be used consistently when
+   //   removing the visible system frame.
+   const bool had_caption_on_init = window_style() & WS_CAPTION;
+-  const bool can_resize = !is_translucent_ && delegate_->CanResize();
++  // Red: translucent windows with a resize border stay resizable.
++  const bool can_resize =
++      (!is_translucent_ || (window_style() & WS_THICKFRAME)) &&
++      delegate_->CanResize();
+   const bool can_maximize = can_resize && delegate_->CanMaximize();
+ 
+   auto set_style_func = [&style](LONG bit, bool should_set) {
+@@ -2517,6 +2520,12 @@ LRESULT HWNDMessageHandler::OnNCActivate(UINT message,
+   // corruption.
+   if (!delegate_->HasFrame() ||
+       delegate_->GetFrameMode() == FrameMode::CUSTOM_DRAWN) {
++    // Red: DWM draws a translucent window's system backdrop (Acrylic, Mica)
++    // in its active look only once DefWindowProc has seen the activation;
++    // l_param -1 updates the state without painting a title bar.
++    if (is_translucent_) {
++      DefWindowProc(hwnd(), WM_NCACTIVATE, paint_as_active || active, -1);
++    }
+     SetMsgHandled(TRUE);
+     return TRUE;
+   }

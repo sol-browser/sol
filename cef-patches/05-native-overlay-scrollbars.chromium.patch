@@ -1,0 +1,59 @@
+diff --git a/third_party/blink/renderer/core/scroll/scrollbar_theme_fluent.cc b/third_party/blink/renderer/core/scroll/scrollbar_theme_fluent.cc
+index 09df9eab1f..0beb9a3bed 100644
+--- a/third_party/blink/renderer/core/scroll/scrollbar_theme_fluent.cc
++++ b/third_party/blink/renderer/core/scroll/scrollbar_theme_fluent.cc
+@@ -90,6 +90,10 @@ gfx::Rect ScrollbarThemeFluent::ThumbRect(const Scrollbar& scrollbar) const {
+ }
+ 
+ gfx::Size ScrollbarThemeFluent::ButtonSize(const Scrollbar& scrollbar) const {
++  // Red: overlay scrolling keeps only the expanding thumb, no arrow hit zones.
++  if (UsesOverlayScrollbars()) {
++    return gfx::Size();
++  }
+   // In cases when scrollbar's frame rect is too small to contain buttons and
+   // track, buttons should take all the available space.
+   if (scrollbar.Orientation() == kVerticalScrollbar) {
+@@ -157,6 +161,10 @@ int ScrollbarThemeFluent::ThumbThickness(
+ void ScrollbarThemeFluent::PaintTrackBackground(const PaintInfo& paint_info,
+                                                 const Scrollbar& scrollbar,
+                                                 const gfx::Rect& rect) {
++  // Red: keep the overlay track transparent, including while hovered.
++  if (UsesOverlayScrollbars()) {
++    return;
++  }
+   if (rect.IsEmpty()) {
+     return;
+   }
+@@ -169,6 +177,9 @@ void ScrollbarThemeFluent::PaintButton(const PaintInfo& paint_info,
+                                        const Scrollbar& scrollbar,
+                                        const gfx::Rect& rect,
+                                        ScrollbarPart part) {
++  if (UsesOverlayScrollbars()) {
++    return;
++  }
+   ScrollbarThemeAura::PaintButton(
+       paint_info, scrollbar,
+       UsesOverlayScrollbars() ? InsetButtonRect(scrollbar, rect, part) : rect,
+@@ -235,7 +246,8 @@ gfx::Rect ScrollbarThemeFluent::ShrinkMainThreadedMinimalModeThumbRect(
+ }
+ 
+ bool ScrollbarThemeFluent::UsesNinePatchTrackAndButtonsResource() const {
+-  return true;
++  // Red: no track/buttons texture is needed for the thumb-only overlay.
++  return !UsesOverlayScrollbars();
+ }
+ 
+ }  // namespace blink
+diff --git a/ui/native_theme/overlay_scrollbar_constants.cc b/ui/native_theme/overlay_scrollbar_constants.cc
+index 7fd0e09ca6..f37ee0a817 100644
+--- a/ui/native_theme/overlay_scrollbar_constants.cc
++++ b/ui/native_theme/overlay_scrollbar_constants.cc
+@@ -10,7 +10,7 @@
+ namespace ui {
+ 
+ base::TimeDelta GetOverlayScrollbarFadeDelay() {
+-  return IsFluentOverlayScrollbarEnabled() ? base::Milliseconds(750)
++  return IsFluentOverlayScrollbarEnabled() ? base::Milliseconds(2500)
+                                            : base::Milliseconds(500);
+ }
+ 

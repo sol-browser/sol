@@ -1,0 +1,234 @@
+diff --git a/include/cef_browser.h b/include/cef_browser.h
+index 1831ac202..5894051a5 100644
+--- a/include/cef_browser.h
++++ b/include/cef_browser.h
+@@ -1009,6 +1009,49 @@ class CefBrowserHost : public virtual CefBaseRefCounted {
+   /*--cef()--*/
+   virtual bool IsAudioMuted() = 0;
+ 
++#if CEF_API_ADDED(CEF_EXPERIMENTAL)
++  ///
++  /// Runs the toolbar action of the extension with |extension_id| for this
++  /// browser's page, as a click on its toolbar button would: grants the
++  /// per-tab permissions ("activeTab", including tab capture when requested)
++  /// and, for an action without a popup, dispatches action.onClicked to the
++  /// extension. For hosts that show extension actions themselves. Returns 1 if
++  /// the action has a popup that the host should show (its current URL, which
++  /// the extension may change at runtime, is set in |popup_url|), 2 if the
++  /// action ran without one, or 0 if nothing ran (unknown or disabled
++  /// extension, no action, or not a Chrome style browser). This method can only
++  /// be called on the UI thread.
++  ///
++  /*--cef(added=experimental)--*/
++  virtual int RunExtensionAction(const CefString& extension_id,
++                                 CefString& popup_url) = 0;
++
++  ///
++  /// Marks this browser as the one the user is looking at, for hosts that
++  /// show several Chrome style browsers as tabs of one top-level window (their
++  /// child windows never become active, so Chrome would otherwise treat the
++  /// most recently created browser as the last active one). Extension APIs
++  /// such as tabs.query({currentWindow}), windows.getLastFocused and tab
++  /// capture then resolve to this browser's page. Returns false if this is not
++  /// a Chrome style browser. This method can only be called on the UI thread.
++  ///
++  /*--cef(added=experimental)--*/
++  virtual bool NotifyTabActivated() = 0;
++
++  ///
++  /// Loads |url| in the main frame as a link opened from the page at
++  /// |initiator_url|, the way Chrome opens a link in a new tab: the
++  /// navigation carries that page's origin as its initiator and a referrer
++  /// sanitized by the default referrer policy, so websites see a cross-site
++  /// link (Sec-Fetch-Site, SameSite cookies, Referer) instead of a typed
++  /// address. Both URLs must be HTTP(S); otherwise nothing is loaded. For hosts
++  /// that open a page's links in browsers they create themselves.
++  ///
++  /*--cef(added=experimental)--*/
++  virtual void LoadURLFromInitiator(const CefString& url,
++                                    const CefString& initiator_url) = 0;
++#endif
++
+   ///
+   /// Returns true if the renderer is currently in browser fullscreen. This
+   /// differs from window fullscreen in that browser fullscreen is entered using
+diff --git a/libcef/browser/browser_host_base.cc b/libcef/browser/browser_host_base.cc
+index c9f84e503..0f699afbf 100644
+--- a/libcef/browser/browser_host_base.cc
++++ b/libcef/browser/browser_host_base.cc
+@@ -36,6 +36,15 @@
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/render_view_host.h"
+ #include "content/public/browser/render_widget_host.h"
++#include "chrome/browser/extensions/extension_action_runner.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/common/referrer.h"
++#include "services/network/public/mojom/referrer_policy.mojom-shared.h"
++#include "url/origin.h"
++#include "components/sessions/content/session_tab_helper.h"
++#include "extensions/browser/extension_action.h"
++#include "extensions/browser/extension_action_manager.h"
++#include "extensions/browser/extension_registry.h"
+ #include "ui/base/resource/resource_scale_factor.h"
+ #include "ui/gfx/image/image_skia.h"
+ #include "ui/shell_dialogs/select_file_policy.h"
+@@ -873,6 +882,43 @@ void CefBrowserHostBase::ConfigureAutoResize() {
+   }
+ }
+ 
++int CefBrowserHostBase::RunExtensionAction(const CefString& extension_id,
++                                           CefString& popup_url) {
++  if (!CEF_CURRENTLY_ON_UIT()) {
++    DCHECK(false) << "called on invalid thread";
++    return 0;
++  }
++  auto web_contents = GetWebContents();
++  if (!web_contents) {
++    return 0;
++  }
++  // Attached to Chrome style tabs by the extensions tab helpers.
++  auto* runner =
++      extensions::ExtensionActionRunner::GetForWebContents(web_contents);
++  if (!runner) {
++    return 0;
++  }
++  auto* context = web_contents->GetBrowserContext();
++  const auto* extension = extensions::ExtensionRegistry::Get(context)
++                              ->enabled_extensions()
++                              .GetByID(extension_id.ToString());
++  auto* action =
++      extension
++          ? extensions::ExtensionActionManager::Get(context)->GetExtensionAction(
++                *extension)
++          : nullptr;
++  if (!action) {
++    return 0;
++  }
++  if (runner->RunAction(extension, /*grant_tab_permissions=*/true) !=
++      extensions::ExtensionAction::ShowAction::kShowPopup) {
++    return 2;
++  }
++  popup_url = action->GetPopupUrl(
++      sessions::SessionTabHelper::IdForTab(web_contents).id()).spec();
++  return 1;
++}
++
+ void CefBrowserHostBase::SetAudioMuted(bool mute) {
+   if (!CEF_CURRENTLY_ON_UIT()) {
+     CEF_POST_TASK(CEF_UIT, base::BindOnce(&CefBrowserHostBase::SetAudioMuted,
+@@ -1386,6 +1432,37 @@ void CefBrowserHostBase::LoadMainFrameURL(
+   }
+ }
+ 
++void CefBrowserHostBase::LoadURLFromInitiator(const CefString& url,
++                                              const CefString& initiator_url) {
++  if (!CEF_CURRENTLY_ON_UIT()) {
++    CEF_POST_TASK(CEF_UIT,
++                  base::BindOnce(&CefBrowserHostBase::LoadURLFromInitiator,
++                                 this, url, initiator_url));
++    return;
++  }
++  auto web_contents = GetWebContents();
++  if (!web_contents) {
++    return;
++  }
++  const GURL target(url.ToString());
++  const GURL initiator(initiator_url.ToString());
++  if (!target.is_valid() || !target.SchemeIsHTTPOrHTTPS() ||
++      !initiator.is_valid() || !initiator.SchemeIsHTTPOrHTTPS()) {
++    return;
++  }
++  // As RenderViewContextMenu's "Open link in new tab": browser-initiated, with
++  // the source page as initiator and its default-policy referrer.
++  content::NavigationController::LoadURLParams params(target);
++  params.initiator_origin = url::Origin::Create(initiator);
++  params.referrer = content::Referrer::SanitizeForRequest(
++      target, content::Referrer(initiator.GetAsReferrer(),
++                                network::mojom::ReferrerPolicy::kDefault));
++  params.transition_type = ui::PAGE_TRANSITION_LINK;
++  params.has_user_gesture = true;
++  web_contents->GetController().LoadURLWithParams(params);
++  OnSetFocus(FOCUS_SOURCE_NAVIGATION);
++}
++
+ bool CefBrowserHostBase::Navigate(const content::OpenURLParams& params) {
+   CEF_REQUIRE_UIT();
+   auto web_contents = GetWebContents();
+diff --git a/libcef/browser/browser_host_base.h b/libcef/browser/browser_host_base.h
+index f984a1542..a4cc8140b 100644
+--- a/libcef/browser/browser_host_base.h
++++ b/libcef/browser/browser_host_base.h
+@@ -273,6 +273,11 @@ class CefBrowserHostBase : public CefBrowserHost,
+                             const CefSize& max_size) override;
+   void SetAudioMuted(bool mute) override;
+   bool IsAudioMuted() override;
++  bool NotifyTabActivated() override { return false; }
++  void LoadURLFromInitiator(const CefString& url,
++                            const CefString& initiator_url) override;
++  int RunExtensionAction(const CefString& extension_id,
++                         CefString& popup_url) override;
+   void NotifyMoveOrResizeStarted() override;
+   void NotifyScreenInfoChanged() override;
+   bool IsFullscreen() override;
+diff --git a/libcef/browser/chrome/chrome_browser_host_impl.cc b/libcef/browser/chrome/chrome_browser_host_impl.cc
+index b363de851..ce1b8cc7e 100644
+--- a/libcef/browser/chrome/chrome_browser_host_impl.cc
++++ b/libcef/browser/chrome/chrome_browser_host_impl.cc
+@@ -15,7 +15,9 @@
+ #include "cef/libcef/browser/views/browser_view_impl.h"
+ #include "cef/libcef/common/net/url_util.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_active_state_manager/browser_active_state_manager.h"
+ #include "chrome/browser/ui/browser_commands.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+ #include "chrome/browser/ui/browser_tabstrip.h"
+ #include "chrome/browser/ui/browser_window.h"
+ #include "chrome/browser/ui/navigator/browser_navigator.h"
+@@ -327,6 +329,35 @@ bool ChromeBrowserHostImpl::CanExecuteChromeCommand(int command_id) {
+   return false;
+ }
+ 
++bool ChromeBrowserHostImpl::NotifyTabActivated() {
++  if (!CEF_CURRENTLY_ON_UIT()) {
++    DCHECK(false) << "called on invalid thread";
++    return false;
++  }
++  if (!browser_ || is_destroying_browser_) {
++    return false;
++  }
++  // Deactivate the others first so that the target's activation notifies
++  // (and moves it to the front of the activation order) every time.
++  std::vector<BrowserWindowInterface*> others;
++  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
++      [&](BrowserWindowInterface* other) {
++        if (other != browser_.get()) {
++          others.push_back(other);
++        }
++        return true;
++      });
++  for (auto* other : others) {
++    if (auto* manager = BrowserActiveStateManager::From(other)) {
++      manager->DidBecomeInactive();
++    }
++  }
++  if (auto* manager = BrowserActiveStateManager::From(browser_.get())) {
++    manager->DidBecomeActive();
++  }
++  return true;
++}
++
+ void ChromeBrowserHostImpl::ExecuteChromeCommand(
+     int command_id,
+     cef_window_open_disposition_t disposition) {
+diff --git a/libcef/browser/chrome/chrome_browser_host_impl.h b/libcef/browser/chrome/chrome_browser_host_impl.h
+index d65742e17..332319a22 100644
+--- a/libcef/browser/chrome/chrome_browser_host_impl.h
++++ b/libcef/browser/chrome/chrome_browser_host_impl.h
+@@ -108,6 +108,7 @@ class ChromeBrowserHostImpl : public CefBrowserHostBase {
+   bool CanExecuteChromeCommand(int command_id) override;
+   void ExecuteChromeCommand(int command_id,
+                             cef_window_open_disposition_t disposition) override;
++  bool NotifyTabActivated() override;
+ 
+   Browser* browser() const { return browser_; }
+ 

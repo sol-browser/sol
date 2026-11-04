@@ -1,0 +1,116 @@
+diff --git a/libcef/browser/browser_host_base.cc b/libcef/browser/browser_host_base.cc
+index 4879894..496e98b 100644
+--- a/libcef/browser/browser_host_base.cc
++++ b/libcef/browser/browser_host_base.cc
+@@ -50,6 +50,9 @@
+ #include "ui/base/class_property.h"
+ #include "ui/compositor/layer.h"
+ #include "ui/compositor/layer_solid_color.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/frame/contents_web_view.h"
++#include "ui/views/widget/widget.h"
+ #include "ui/compositor/layer_animator.h"
+ #include "ui/compositor/scoped_layer_animation_settings.h"
+ #include "ui/gfx/animation/tween.h"
+@@ -1498,6 +1501,17 @@ void CefBrowserHostBase::SetContentTransform(double scale,
+         ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
+   }
+   layer->SetTransform(transform);
++  // Red EXPERIMENT: while scaled, the page's container is see-through (a
++  // translucent page window then shows its parent around the page).
++  if (auto* widget = views::Widget::GetTopLevelWidgetForNativeView(window)) {
++    if (auto* browser_view = BrowserView::GetBrowserViewForNativeWindow(widget->GetNativeWindow())) {
++      for (auto* contents : browser_view->GetAllVisibleContentsWebViews()) {
++        if (contents->web_contents() == web_contents && contents->layer() && contents->layer()->AsSolidColor()) {
++          contents->SetContainerBackgroundVisible(scale >= 1);
++        }
++      }
++    }
++  }
+   if (veil) {
+     std::optional<ui::ScopedLayerAnimationSettings> fade;
+     if (duration_ms > 0) {
+diff --git a/libcef/browser/chrome/chrome_browser_host_impl.cc b/libcef/browser/chrome/chrome_browser_host_impl.cc
+index d5c7581..b582e50 100644
+--- a/libcef/browser/chrome/chrome_browser_host_impl.cc
++++ b/libcef/browser/chrome/chrome_browser_host_impl.cc
+@@ -490,10 +490,11 @@ Browser* ChromeBrowserHostImpl::CreateBrowser(
+     // require access to the Browser.
+     chrome_browser_view->InitBrowser(browser);
+ 
+-    // Don't set theme colors in ContentsWebView::UpdateBackgroundColor.
++    // The embedder supplies the page base/RWHV color. Hide only the Views
++    // container; SetBackgroundVisible(false) also clears the renderer color.
+     chrome_browser_view->multi_contents_view()
+         ->GetActiveContentsView()
+-        ->SetBackgroundVisible(false);
++        ->SetContainerBackgroundVisible(false);
+ 
+     // Don't show the browser by default.
+     show_browser = false;
+diff --git a/libcef/browser/chrome/views/chrome_child_window.cc b/libcef/browser/chrome/views/chrome_child_window.cc
+index b13ab41..5c64adb 100644
+--- a/libcef/browser/chrome/views/chrome_child_window.cc
++++ b/libcef/browser/chrome/views/chrome_child_window.cc
+@@ -9,6 +9,8 @@
+ #include "cef/libcef/browser/views/window_impl.h"
+ #include "ui/gfx/native_ui_types.h"
+ 
++#include <cstdlib>
++
+ #if BUILDFLAG(IS_WIN)
+ #include "base/functional/callback.h"
+ #include "cef/libcef/browser/native/browser_platform_delegate_native_win.h"
+@@ -39,8 +41,23 @@ CefWindowHandle GetParentHandle(const CefWindowInfo& window_info) {
+ #endif
+ }
+ 
++// Red EXPERIMENT: translucent page windows (RED_TRANSLUCENT_PAGES).
++bool RedTranslucentPages() {
++  static const bool on = std::getenv("RED_TRANSLUCENT_PAGES") != nullptr;
++  return on;
++}
++
+ class ChildWindowDelegate : public CefWindowDelegate {
+  public:
++  bool IsTranslucent(CefRefPtr<CefWindow> window) override {
++    return RedTranslucentPages();
++  }
++  void OnThemeChanged(CefRefPtr<CefView> view) override {
++    if (RedTranslucentPages()) {
++      view->SetBackgroundColor(0);
++    }
++  }
++
+   ChildWindowDelegate(const ChildWindowDelegate&) = delete;
+   ChildWindowDelegate& operator=(const ChildWindowDelegate&) = delete;
+ 
+@@ -170,6 +187,12 @@ class ChildWindowDelegate : public CefWindowDelegate {
+ 
+ class ChildBrowserViewDelegate : public CefBrowserViewDelegate {
+  public:
++  void OnThemeChanged(CefRefPtr<CefView> view) override {
++    if (RedTranslucentPages()) {
++      view->SetBackgroundColor(0);
++    }
++  }
++
+   ChildBrowserViewDelegate() = default;
+ 
+   ChildBrowserViewDelegate(const ChildBrowserViewDelegate&) = delete;
+diff --git a/libcef/browser/views/window_view.cc b/libcef/browser/views/window_view.cc
+index 4e323ce..69d1343 100644
+--- a/libcef/browser/views/window_view.cc
++++ b/libcef/browser/views/window_view.cc
+@@ -536,7 +536,10 @@ void CefWindowView::CreateWidget(gfx::AcceleratedWidget parent_widget) {
+     // - Set the WS_VISIBLE flag.
+     params.type = views::Widget::InitParams::TYPE_CONTROL;
+     // - Don't set the WS_EX_COMPOSITED flag.
+-    params.opacity = views::Widget::InitParams::WindowOpacity::kOpaque;
++    // Red: a translucent child window (its parent shows through).
++    params.opacity = cef_delegate() && cef_delegate()->IsTranslucent(GetCefWindow())
++                         ? views::Widget::InitParams::WindowOpacity::kTranslucent
++                         : views::Widget::InitParams::WindowOpacity::kOpaque;
+   } else {
+     params.type = views::Widget::InitParams::TYPE_WINDOW;
+   }

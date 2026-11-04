@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Sol owned web-accessible resources probe",
+  "version": "0.0.1",
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": { "service_worker": "worker.js" },
+  "content_scripts": [{ "matches": ["http://127.0.0.1/*"], "js": ["content.js"], "run_at": "document_idle" }],
+  "web_accessible_resources": [
+    { "resources": ["static.svg"], "matches": ["<all_urls>"] },
+    { "resources": ["dynamic.svg"], "matches": ["<all_urls>"], "use_dynamic_url": true }
+  ]
+}

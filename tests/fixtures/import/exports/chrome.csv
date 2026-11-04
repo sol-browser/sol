@@ -1,0 +1,7 @@
+﻿name,url,username,password,note
+example.test,https://a.example.test/login,ann,"p,w""1",
+multi,https://b.example.test/,ben,"line1
+line2","a note"
+android,android://x@com.app/,cat,pw,
+empty,https://c.example.test/,dan,,
+short,https://d.example.test/

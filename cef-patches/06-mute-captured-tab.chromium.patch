@@ -1,0 +1,139 @@
+diff --git a/content/browser/media/audio_loopback_stream_broker.cc b/content/browser/media/audio_loopback_stream_broker.cc
+index 5cc47f6f7f..e4c41bfcc0 100644
+--- a/content/browser/media/audio_loopback_stream_broker.cc
++++ b/content/browser/media/audio_loopback_stream_broker.cc
+@@ -103,6 +103,30 @@ void AudioLoopbackStreamBroker::DidStartRecording() {
+   CHECK_CURRENTLY_ON(BrowserThread::IO, base::NotFatalUntil::M160);
+ }
+ 
++void AudioLoopbackStreamBroker::OnSourceMuted(bool muted) {
++  CHECK_CURRENTLY_ON(BrowserThread::IO, base::NotFatalUntil::M160);
++  source_muted_ = muted;
++  if (stream_) {
++    stream_->SetVolume(source_muted_ ? 0.0 : volume_);
++  }
++}
++
++void AudioLoopbackStreamBroker::Record() {
++  CHECK_CURRENTLY_ON(BrowserThread::IO, base::NotFatalUntil::M160);
++  if (stream_) {
++    stream_->Record();
++  }
++}
++
++void AudioLoopbackStreamBroker::SetVolume(double volume) {
++  CHECK_CURRENTLY_ON(BrowserThread::IO, base::NotFatalUntil::M160);
++  // The audio service validates the range and reports bad values.
++  volume_ = volume;
++  if (stream_) {
++    stream_->SetVolume(source_muted_ ? 0.0 : volume_);
++  }
++}
++
+ void AudioLoopbackStreamBroker::StreamCreated(
+     mojo::PendingRemote<media::mojom::AudioInputStream> stream,
+     media::mojom::ReadWriteAudioDataPipePtr data_pipe) {
+@@ -114,8 +138,22 @@ void AudioLoopbackStreamBroker::StreamCreated(
+   }
+ 
+   CHECK(renderer_factory_client_, base::NotFatalUntil::M160);
++  // Red: keep the stream and give the client a proxied end (see SetVolume).
++  // Closing either end closes the other, as with the direct connection.
++  // Unretained is safe because |this| owns both.
++  stream_.Bind(std::move(stream));
++  stream_.set_disconnect_handler(base::BindOnce(
++      [](AudioLoopbackStreamBroker* self) { self->proxy_receiver_.reset(); },
++      base::Unretained(this)));
++  if (source_muted_) {
++    stream_->SetVolume(0.0);
++  }
++  auto proxy = proxy_receiver_.BindNewPipeAndPassRemote();
++  proxy_receiver_.set_disconnect_handler(base::BindOnce(
++      [](AudioLoopbackStreamBroker* self) { self->stream_.reset(); },
++      base::Unretained(this)));
+   renderer_factory_client_->StreamCreated(
+-      std::move(stream), std::move(client_receiver_), std::move(data_pipe),
++      std::move(proxy), std::move(client_receiver_), std::move(data_pipe),
+       false /* |initially_muted|: Loopback streams are never muted. */,
+       std::nullopt /* |stream_id|: Loopback streams don't have ids */);
+ }
+diff --git a/content/browser/media/audio_loopback_stream_broker.h b/content/browser/media/audio_loopback_stream_broker.h
+index 575f84d641..13b22948e7 100644
+--- a/content/browser/media/audio_loopback_stream_broker.h
++++ b/content/browser/media/audio_loopback_stream_broker.h
+@@ -34,6 +34,7 @@ namespace content {
+ class CONTENT_EXPORT AudioLoopbackStreamBroker final
+     : public AudioStreamBroker,
+       public media::mojom::AudioInputStreamObserver,
++      public media::mojom::AudioInputStream,
+       public AudioStreamBroker::LoopbackSink {
+  public:
+   AudioLoopbackStreamBroker(
+@@ -61,6 +62,12 @@ class CONTENT_EXPORT AudioLoopbackStreamBroker final
+ 
+   // AudioStreamBroker::LoopbackSink
+   void OnSourceGone() final;
++  void OnSourceMuted(bool muted) final;
++
++  // media::mojom::AudioInputStream implementation (Red: the client's end is
++  // proxied so that a muted source can be silenced without the client).
++  void Record() final;
++  void SetVolume(double volume) final;
+ 
+  private:
+   void StreamCreated(mojo::PendingRemote<media::mojom::AudioInputStream> stream,
+@@ -84,6 +91,13 @@ class CONTENT_EXPORT AudioLoopbackStreamBroker final
+   mojo::Receiver<AudioInputStreamObserver> observer_receiver_{this};
+   mojo::PendingReceiver<media::mojom::AudioInputStreamClient> client_receiver_;
+ 
++  // Red: the audio service stream, the client's proxied end, the client's
++  // volume and whether the source WebContents is muted.
++  mojo::Remote<media::mojom::AudioInputStream> stream_;
++  mojo::Receiver<media::mojom::AudioInputStream> proxy_receiver_{this};
++  double volume_ = 1.0;
++  bool source_muted_ = false;
++
+   base::WeakPtrFactory<AudioLoopbackStreamBroker> weak_ptr_factory_{this};
+ };
+ 
+diff --git a/content/browser/media/forwarding_audio_stream_factory.cc b/content/browser/media/forwarding_audio_stream_factory.cc
+index 557d0312de..660487ffee 100644
+--- a/content/browser/media/forwarding_audio_stream_factory.cc
++++ b/content/browser/media/forwarding_audio_stream_factory.cc
+@@ -164,6 +164,12 @@ void ForwardingAudioStreamFactory::Core::SetMuted(bool muted) {
+   TRACE_EVENT_INSTANT("audio", "SetMuted", "group",
+                       group_id_.GetLowForSerialization(), "muted", muted);
+ 
++  // Red: a muted tab is also silent to its captures (e.g. an extension that
++  // captures the tab and plays it back itself).
++  for (AudioStreamBroker::LoopbackSink* sink : loopback_sinks_) {
++    sink->OnSourceMuted(muted);
++  }
++
+   if (!muted) {
+     muter_.reset();
+     return;
+@@ -178,6 +184,9 @@ void ForwardingAudioStreamFactory::Core::AddLoopbackSink(
+     AudioStreamBroker::LoopbackSink* sink) {
+   CHECK_CURRENTLY_ON(BrowserThread::IO, base::NotFatalUntil::M160);
+   loopback_sinks_.insert(sink);
++  if (muter_) {
++    sink->OnSourceMuted(true);  // Red: see SetMuted().
++  }
+   GetUIThreadTaskRunner({})->PostTask(
+       FROM_HERE,
+       base::BindOnce(&ForwardingAudioStreamFactory::LoopbackStreamStarted,
+diff --git a/content/public/browser/audio_stream_broker.h b/content/public/browser/audio_stream_broker.h
+index 1087fe4832..e119f95761 100644
+--- a/content/public/browser/audio_stream_broker.h
++++ b/content/public/browser/audio_stream_broker.h
+@@ -44,6 +44,9 @@ class CONTENT_EXPORT AudioStreamBroker {
+ 
+     virtual ~LoopbackSink();
+     virtual void OnSourceGone() = 0;
++    // Red: the source WebContents was muted or unmuted by its owner (not by a
++    // capture's own local-playback muting).
++    virtual void OnSourceMuted(bool muted) {}
+   };
+ 
+   class CONTENT_EXPORT LoopbackSource {

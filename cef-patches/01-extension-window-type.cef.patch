@@ -1,0 +1,47 @@
+diff --git a/libcef/browser/chrome/browser_delegate.h b/libcef/browser/chrome/browser_delegate.h
+index e65325e0f..cab61c2aa 100644
+--- a/libcef/browser/chrome/browser_delegate.h
++++ b/libcef/browser/chrome/browser_delegate.h
+@@ -194,6 +194,12 @@ class BrowserDelegate {
+   // Returns true if this browser is Views-hosted.
+   virtual bool IsViewsHosted() const { return false; }
+ 
++  // Red: true for a page the client created itself (CefBrowserHost /
++  // CefBrowserView, including SetAsChild windows), which CEF turns into a
++  // TYPE_POPUP Browser to hide Chrome's controls. Extensions should see it as
++  // a normal window; popups opened by web content stay "popup".
++  virtual bool IsClientCreatedTab() const { return false; }
++
+   // Returns true if this browser has a Views-hosted opener. Only
+   // applicable for Browsers of type picture_in_picture and devtools.
+   virtual bool HasViewsHostedOpener() const { return false; }
+diff --git a/libcef/browser/chrome/chrome_browser_delegate.cc b/libcef/browser/chrome/chrome_browser_delegate.cc
+index 3c4eead6f..c2066f4a6 100644
+--- a/libcef/browser/chrome/chrome_browser_delegate.cc
++++ b/libcef/browser/chrome/chrome_browser_delegate.cc
+@@ -605,6 +605,13 @@ bool ChromeBrowserDelegate::IsViewsHosted() const {
+          create_params_.popup_with_views_hosted_opener;
+ }
+ 
++bool ChromeBrowserDelegate::IsClientCreatedTab() const {
++  return create_params_.browser_view != nullptr &&
++         !create_params_.popup_with_views_hosted_opener &&
++         !create_params_.popup_with_alloy_style_opener &&
++         browser_->GetType() == BrowserWindowInterface::TYPE_POPUP;
++}
++
+ CefWindowImpl* ChromeBrowserDelegate::GetCefWindowImpl() const {
+   if (IsViewsHosted()) {
+     if (auto* chrome_browser_view = static_cast<ChromeBrowserView*>(
+diff --git a/libcef/browser/chrome/chrome_browser_delegate.h b/libcef/browser/chrome/chrome_browser_delegate.h
+index 639ecc820..73d6fa297 100644
+--- a/libcef/browser/chrome/chrome_browser_delegate.h
++++ b/libcef/browser/chrome/chrome_browser_delegate.h
+@@ -86,6 +86,7 @@ class ChromeBrowserDelegate : public cef::BrowserDelegate {
+   const std::optional<SkRegion> GetDraggableRegion() const override;
+   void WindowFullscreenStateChanged() override;
+   bool IsViewsHosted() const override;
++  bool IsClientCreatedTab() const override;
+   bool HasViewsHostedOpener() const override;
+ 
+   Browser* browser() const { return browser_; }

@@ -1,0 +1,59 @@
+/* Sidebar players (Arc/Zen style) floating over the bottom of the tab list,
+   just above the space switcher. Several stack: the newest in front, older
+   ones peeking 6 px above it, slightly smaller and dimmer. Hovering or focusing
+   the stack fans them out into a column and grows every player upward with
+   title, artist, progress and dismiss. */
+.media-stack { --ease: cubic-bezier(.22,1,.36,1); position: absolute; z-index: 6; left: 10px; right: 10px; bottom: 50px;
+  display: flex; flex-direction: column-reverse; }
+.media-player { position: relative; z-index: calc(3 - var(--depth, 0)); border-radius: 10px; color: rgb(255 255 255 / 92%);
+  background: rgb(20 20 24 / 86%); backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 22%), 0 1px 2px rgb(0 0 0 / 20%), inset 0 0 0 1px rgb(255 255 255 / 6%); overflow: hidden;
+  transform-origin: 50% 0; transition: margin 320ms var(--ease), transform 320ms var(--ease), opacity 240ms ease, filter 240ms ease; }
+/* Collapsed stack: each older card tucks under the newer one below it. */
+.media-player[data-depth="1"], .media-player[data-depth="2"] { margin-bottom: -26px; transform: scale(calc(1 - var(--depth) * .05)); filter: brightness(.82); }
+.media-player[data-depth="2"] { opacity: .85; }
+.media-player[data-depth="1"] .media-bar, .media-player[data-depth="2"] .media-bar { opacity: 0; transition: opacity 160ms ease; }
+.media-stack:hover .media-player, .media-stack:focus-within .media-player { margin-bottom: 6px; transform: none; filter: none; opacity: 1; }
+.media-stack:hover .media-player:first-child, .media-stack:focus-within .media-player:first-child { margin-bottom: 0; }
+.media-stack:hover .media-bar, .media-stack:focus-within .media-bar { opacity: 1; transition-delay: 60ms; }
+/* Details grow smoothly; their content fades and settles slightly later. */
+.media-details { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 300ms var(--ease); }
+/* Hovering the stack opens every player's details at once. */
+.media-stack:hover .media-details, .media-stack:focus-within .media-details { grid-template-rows: 1fr; }
+.media-details-inner { min-height: 0; overflow: hidden; opacity: 0; transform: translateY(4px); transition: opacity 180ms ease, transform 300ms var(--ease); }
+.media-stack:hover .media-details-inner, .media-stack:focus-within .media-details-inner { opacity: 1; transform: none; transition-delay: 70ms, 40ms; }
+.media-heading { display: flex; align-items: flex-start; gap: 4px; padding: 9px 6px 0 10px; }
+.media-title { display: flex; flex-direction: column; flex: 1; min-width: 0; padding: 0; text-align: left; color: inherit; background: none; }
+.media-title strong, .media-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-title strong { font-size: 12.5px; font-weight: 600; line-height: 17px; }
+.media-title span { font-size: 11.5px; line-height: 15px; color: rgb(255 255 255 / 58%); }
+.media-close { width: 22px; height: 22px; color: rgb(255 255 255 / 70%); }
+.media-progress { display: flex; align-items: center; gap: 7px; padding: 6px 10px 0; font-size: 10.5px; font-variant-numeric: tabular-nums; color: rgb(255 255 255 / 62%); }
+.media-track { position: relative; flex: 1; height: 12px; padding: 0; background: none; cursor: pointer; }
+.media-track::before, .media-track-fill { content: ''; position: absolute; left: 0; top: 5px; height: 2px; border-radius: 1px; transition: top 160ms ease, height 160ms ease; }
+.media-track::before { right: 0; background: rgb(255 255 255 / 20%); }
+.media-track-fill { background: rgb(255 255 255 / 88%); transition: width 250ms linear, top 160ms ease, height 160ms ease; }
+.media-track:hover::before, .media-track:hover .media-track-fill { top: 4.5px; height: 3px; }
+.media-side { display: flex; justify-content: flex-end; gap: 2px; }
+.media-bar { display: grid; grid-template-columns: 50px 1fr 50px; align-items: center; height: 32px; padding: 0 5px; }
+.media-transport { display: flex; justify-content: center; gap: 2px; }
+.media-site { position: relative; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border-radius: 6px; background: none; }
+.media-site .site-mark { width: 14px; height: 14px; }
+.media-note { position: absolute; top: 0; left: -2px; color: rgb(255 255 255 / 80%); }
+.media-icon-button { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border-radius: 6px; color: inherit; background: none;
+  transition: background 140ms ease, transform 140ms ease; }
+.media-icon-button:active:enabled { transform: scale(.92); }
+.media-icon-button:hover:enabled, .media-icon-button:focus-visible, .media-title:focus-visible, .media-site:hover, .media-site:focus-visible { background: rgb(255 255 255 / 11%); }
+.media-play { width: 28px; }
+@media (prefers-reduced-motion: no-preference) {
+  .media-player[data-playing="true"] .media-note { animation: media-note 1.6s ease-in-out infinite; }
+  .media-player { animation: media-player-in 320ms var(--ease); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .media-player, .media-details, .media-details-inner, .media-bar { transition: none; }
+}
+@keyframes media-note { 0%, 100% { transform: translateY(0); opacity: .8; } 50% { transform: translateY(-2px); opacity: 1; } }
+@keyframes media-player-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+
+/* Session artwork in place of the site icon (Media Session, engine patch 09). */
+.media-artwork { width: 20px; height: 20px; border-radius: 5px; object-fit: cover; display: block; }

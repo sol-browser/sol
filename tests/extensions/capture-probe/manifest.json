@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Capture Probe",
+  "version": "1.0",
+  "description": "Owned fixture: captures the tab's audio like volume extensions and reports its level.",
+  "permissions": ["tabCapture"],
+  "action": { "default_popup": "popup.html", "default_title": "Capture Probe" }
+}

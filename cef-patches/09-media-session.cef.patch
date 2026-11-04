@@ -1,0 +1,295 @@
+diff --git a/include/cef_display_handler.h b/include/cef_display_handler.h
+index 070d889..dbe46e4 100644
+--- a/include/cef_display_handler.h
++++ b/include/cef_display_handler.h
+@@ -213,6 +213,18 @@ class CefDisplayHandler : public virtual CefBaseRefCounted {
+   /*--cef(added=experimental)--*/
+   virtual void OnAudibleStateChange(CefRefPtr<CefBrowser> browser,
+                                     bool audible) {}
++
++  ///
++  /// Called when the page's Media Session changes (as Chrome's media controls
++  /// see it). |info| has "title", "artist", "album" (strings), "artwork" (the
++  /// largest artwork image URL, or empty), "playing" (bool) and "actions" (a
++  /// list of the action names the page handles; see
++  /// CefBrowserHost::MediaSessionAction). Called with an empty |info| when the
++  /// session ends.
++  ///
++  /*--cef(added=experimental)--*/
++  virtual void OnMediaSessionChanged(CefRefPtr<CefBrowser> browser,
++                                     CefRefPtr<CefDictionaryValue> info) {}
+ #endif
+ };
+ 
+diff --git a/include/cef_browser.h b/include/cef_browser.h
+index 5894051..66498c2 100644
+--- a/include/cef_browser.h
++++ b/include/cef_browser.h
+@@ -1050,6 +1050,15 @@ class CefBrowserHost : public virtual CefBaseRefCounted {
+   /*--cef(added=experimental)--*/
+   virtual void LoadURLFromInitiator(const CefString& url,
+                                     const CefString& initiator_url) = 0;
++
++  ///
++  /// Performs a Media Session action on the page as Chrome's media controls
++  /// do: "play", "pause", "previoustrack", "nexttrack", "seekbackward",
++  /// "seekforward", "skipad" or "stop". Returns false for an unknown action.
++  /// The page's own action handlers run when it registered them.
++  ///
++  /*--cef(added=experimental)--*/
++  virtual bool MediaSessionAction(const CefString& action) = 0;
+ #endif
+ 
+   ///
+diff --git a/libcef/browser/browser_host_base.h b/libcef/browser/browser_host_base.h
+index a4cc814..3b61599 100644
+--- a/libcef/browser/browser_host_base.h
++++ b/libcef/browser/browser_host_base.h
+@@ -276,6 +276,7 @@ class CefBrowserHostBase : public CefBrowserHost,
+   bool NotifyTabActivated() override { return false; }
+   void LoadURLFromInitiator(const CefString& url,
+                             const CefString& initiator_url) override;
++  bool MediaSessionAction(const CefString& action) override;
+   int RunExtensionAction(const CefString& extension_id,
+                          CefString& popup_url) override;
+   void NotifyMoveOrResizeStarted() override;
+diff --git a/libcef/browser/browser_host_base.cc b/libcef/browser/browser_host_base.cc
+index 0f699af..fa1e43e 100644
+--- a/libcef/browser/browser_host_base.cc
++++ b/libcef/browser/browser_host_base.cc
+@@ -46,6 +46,8 @@
+ #include "extensions/browser/extension_action_manager.h"
+ #include "extensions/browser/extension_registry.h"
+ #include "ui/base/resource/resource_scale_factor.h"
++#include "content/public/browser/media_session.h"
++#include "services/media_session/public/mojom/media_session.mojom.h"
+ #include "ui/gfx/image/image_skia.h"
+ #include "ui/shell_dialogs/select_file_policy.h"
+ 
+@@ -1432,6 +1434,37 @@ void CefBrowserHostBase::LoadMainFrameURL(
+   }
+ }
+ 
++bool CefBrowserHostBase::MediaSessionAction(const CefString& action) {
++  using media_session::mojom::MediaSessionAction;
++  static constexpr std::pair<const char*, MediaSessionAction> kActions[] = {
++      {"play", MediaSessionAction::kPlay},
++      {"pause", MediaSessionAction::kPause},
++      {"previoustrack", MediaSessionAction::kPreviousTrack},
++      {"nexttrack", MediaSessionAction::kNextTrack},
++      {"seekbackward", MediaSessionAction::kSeekBackward},
++      {"seekforward", MediaSessionAction::kSeekForward},
++      {"skipad", MediaSessionAction::kSkipAd},
++      {"stop", MediaSessionAction::kStop}};
++  const std::string name = action.ToString();
++  for (const auto& [label, value] : kActions) {
++    if (name != label) {
++      continue;
++    }
++    CEF_POST_TASK(CEF_UIT, base::BindOnce(
++                               [](CefRefPtr<CefBrowserHostBase> self,
++                                  MediaSessionAction value) {
++                                 if (auto web_contents =
++                                         self->GetWebContents()) {
++                                   content::MediaSession::Get(web_contents)
++                                       ->DidReceiveAction(value);
++                                 }
++                               },
++                               CefRefPtr<CefBrowserHostBase>(this), value));
++    return true;
++  }
++  return false;
++}
++
+ void CefBrowserHostBase::LoadURLFromInitiator(const CefString& url,
+                                               const CefString& initiator_url) {
+   if (!CEF_CURRENTLY_ON_UIT()) {
+diff --git a/libcef/browser/browser_contents_delegate.h b/libcef/browser/browser_contents_delegate.h
+index d6e8015..437fde9 100644
+--- a/libcef/browser/browser_contents_delegate.h
++++ b/libcef/browser/browser_contents_delegate.h
+@@ -13,6 +13,8 @@
+ #include "cef/libcef/browser/frame_host_impl.h"
+ #include "content/public/browser/web_contents_delegate.h"
+ #include "content/public/browser/web_contents_observer.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++#include "services/media_session/public/mojom/media_session.mojom.h"
+ 
+ class CefBrowser;
+ class CefBrowserInfo;
+@@ -67,6 +69,8 @@ class CefBrowserContentsDelegate : public content::WebContentsDelegate,
+ 
+   explicit CefBrowserContentsDelegate(
+       scoped_refptr<CefBrowserInfo> browser_info);
++  // Out of line: owns MediaSessionWatch (defined in the .cc).
++  ~CefBrowserContentsDelegate() override;
+ 
+   CefBrowserContentsDelegate(const CefBrowserContentsDelegate&) = delete;
+   CefBrowserContentsDelegate& operator=(const CefBrowserContentsDelegate&) =
+@@ -143,6 +147,7 @@ class CefBrowserContentsDelegate : public content::WebContentsDelegate,
+                      const GURL& validated_url) override;
+   void TitleWasSet(content::NavigationEntry* entry) override;
+   void OnAudioStateChanged(bool audible) override;
++  void MediaSessionCreated(content::MediaSession* media_session) override;
+   void DidUpdateFaviconURL(
+       content::RenderFrameHost* render_frame_host,
+       const std::vector<blink::mojom::FaviconURLPtr>& candidates,
+@@ -214,6 +219,13 @@ class CefBrowserContentsDelegate : public content::WebContentsDelegate,
+ 
+   // True if the focus is currently on an editable field on the page.
+   bool focus_on_editable_field_ = false;
++
++  // Red: the page's Media Session, reported through
++  // CefDisplayHandler::OnMediaSessionChanged.
++  class MediaSessionWatch;
++  std::unique_ptr<MediaSessionWatch> media_session_watch_;
++  void WatchMediaSession(content::MediaSession* media_session);
++  void ReportMediaSession(CefRefPtr<CefDictionaryValue> info);
+ };
+ 
+ #endif  // CEF_LIBCEF_BROWSER_BROWSER_CONTENTS_DELEGATE_H_
+diff --git a/libcef/browser/browser_contents_delegate.cc b/libcef/browser/browser_contents_delegate.cc
+index f86dc93..2d419ce 100644
+--- a/libcef/browser/browser_contents_delegate.cc
++++ b/libcef/browser/browser_contents_delegate.cc
+@@ -16,6 +16,9 @@
+ #include "components/input/native_web_keyboard_event.h"
+ #include "content/browser/renderer_host/render_widget_host_impl.h"
+ #include "content/public/browser/focused_node_details.h"
++#include "content/public/browser/media_session.h"
++#include "services/media_session/public/cpp/media_image.h"
++#include "services/media_session/public/cpp/media_metadata.h"
+ #include "content/public/browser/keyboard_event_processing_result.h"
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/navigation_handle.h"
+@@ -84,6 +87,120 @@ class CefWidgetHostInterceptor
+ 
+ }  // namespace
+ 
++// Red: collects what Chrome's media controls see of the page's Media Session
++// and reports it as one dictionary whenever any part changes.
++class CefBrowserContentsDelegate::MediaSessionWatch
++    : public media_session::mojom::MediaSessionObserver {
++ public:
++  MediaSessionWatch(CefBrowserContentsDelegate* owner,
++                    content::MediaSession* media_session)
++      : owner_(owner) {
++    media_session->AddObserver(receiver_.BindNewPipeAndPassRemote());
++  }
++
++  void MediaSessionInfoChanged(
++      media_session::mojom::MediaSessionInfoPtr info) override {
++    playing_ = info && info->playback_state ==
++                           media_session::mojom::MediaPlaybackState::kPlaying;
++    Report();
++  }
++  void MediaSessionMetadataChanged(
++      const std::optional<media_session::MediaMetadata>& metadata) override {
++    metadata_ = metadata.value_or(media_session::MediaMetadata());
++    Report();
++  }
++  void MediaSessionActionsChanged(
++      const std::vector<media_session::mojom::MediaSessionAction>& actions)
++      override {
++    actions_ = actions;
++    Report();
++  }
++  void MediaSessionImagesChanged(
++      const base::flat_map<media_session::mojom::MediaSessionImageType,
++                           std::vector<media_session::MediaImage>>& images)
++      override {
++    artwork_.clear();
++    const auto found =
++        images.find(media_session::mojom::MediaSessionImageType::kArtwork);
++    int best = -1;
++    if (found != images.end()) {
++      for (const auto& image : found->second) {
++        int area = 0;
++        for (const auto& size : image.sizes) {
++          area = std::max(area, size.width() * size.height());
++        }
++        if (image.src.is_valid() && area > best) {
++          best = area;
++          artwork_ = image.src.spec();
++        }
++      }
++    }
++    Report();
++  }
++  void MediaSessionPositionChanged(
++      const std::optional<media_session::MediaPosition>& position) override {}
++
++ private:
++  void Report() {
++    auto info = CefDictionaryValue::Create();
++    info->SetString("title", metadata_.title);
++    info->SetString("artist", metadata_.artist);
++    info->SetString("album", metadata_.album);
++    info->SetString("artwork", artwork_);
++    info->SetBool("playing", playing_);
++    auto list = CefListValue::Create();
++    for (const auto action : actions_) {
++      const char* name = nullptr;
++      switch (action) {
++        case media_session::mojom::MediaSessionAction::kPlay: name = "play"; break;
++        case media_session::mojom::MediaSessionAction::kPause: name = "pause"; break;
++        case media_session::mojom::MediaSessionAction::kPreviousTrack: name = "previoustrack"; break;
++        case media_session::mojom::MediaSessionAction::kNextTrack: name = "nexttrack"; break;
++        case media_session::mojom::MediaSessionAction::kSeekBackward: name = "seekbackward"; break;
++        case media_session::mojom::MediaSessionAction::kSeekForward: name = "seekforward"; break;
++        case media_session::mojom::MediaSessionAction::kSkipAd: name = "skipad"; break;
++        case media_session::mojom::MediaSessionAction::kStop: name = "stop"; break;
++        default: break;
++      }
++      if (name) {
++        list->SetString(list->GetSize(), name);
++      }
++    }
++    info->SetList("actions", list);
++    owner_->ReportMediaSession(info);
++  }
++
++  raw_ptr<CefBrowserContentsDelegate> owner_;
++  mojo::Receiver<media_session::mojom::MediaSessionObserver> receiver_{this};
++  media_session::MediaMetadata metadata_;
++  std::vector<media_session::mojom::MediaSessionAction> actions_;
++  std::string artwork_;
++  bool playing_ = false;
++};
++
++CefBrowserContentsDelegate::~CefBrowserContentsDelegate() = default;
++
++void CefBrowserContentsDelegate::WatchMediaSession(
++    content::MediaSession* media_session) {
++  media_session_watch_ =
++      media_session ? std::make_unique<MediaSessionWatch>(this, media_session)
++                    : nullptr;
++}
++
++void CefBrowserContentsDelegate::ReportMediaSession(
++    CefRefPtr<CefDictionaryValue> info) {
++  if (auto c = client()) {
++    if (auto handler = c->GetDisplayHandler()) {
++      handler->OnMediaSessionChanged(browser(), info);
++    }
++  }
++}
++
++void CefBrowserContentsDelegate::MediaSessionCreated(
++    content::MediaSession* media_session) {
++  WatchMediaSession(media_session);
++}
++
+ CefBrowserContentsDelegate::CefBrowserContentsDelegate(
+     scoped_refptr<CefBrowserInfo> browser_info)
+     : browser_info_(browser_info) {}
+@@ -91,6 +208,9 @@ CefBrowserContentsDelegate::CefBrowserContentsDelegate(
+ void CefBrowserContentsDelegate::ObserveWebContents(
+     content::WebContents* new_contents) {
+   WebContentsObserver::Observe(new_contents);
++  // Red: a session that already exists is not announced again.
++  WatchMediaSession(new_contents ? content::MediaSession::GetIfExists(new_contents)
++                                 : nullptr);
+ 
+   if (new_contents) {
+     // Make sure MaybeCreateFrame is called at least one time.

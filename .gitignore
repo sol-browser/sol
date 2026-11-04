@@ -1,0 +1,28 @@
+/.cache/
+/third_party/
+/build/
+/artifacts/
+/node_modules/
+**/node_modules/
+**/dist/
+/.vs/
+*.user
+**/__pycache__/
+*.pyc
+# Ad-hoc local build logs; curated logs live under docs/evidence/.
+/*.log
+
+
+# Local evidence (probe reports, logs, screenshots): kept on disk, never published.
+/docs/evidence/
+**/*.log
+**/*.jsonl
+# Editor, OS and agent tooling state.
+/.vscode/
+/.idea/
+/.claude/
+*.tmp
+*.bak
+Thumbs.db
+desktop.ini
+.DS_Store

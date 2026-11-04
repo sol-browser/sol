@@ -1,0 +1,41 @@
+diff --git a/chrome/browser/ui/exclusive_access/exclusive_access_manager.cc b/chrome/browser/ui/exclusive_access/exclusive_access_manager.cc
+index b925b516a9..21ce6c755f 100644
+--- a/chrome/browser/ui/exclusive_access/exclusive_access_manager.cc
++++ b/chrome/browser/ui/exclusive_access/exclusive_access_manager.cc
+@@ -145,9 +145,21 @@ ExclusiveAccessManager::GetExclusiveAccessExitBubbleType() const {
+ void ExclusiveAccessManager::UpdateBubble(
+     ExclusiveAccessBubbleHideCallback first_hide_callback,
+     bool force_update) {
++  // Red: the host shows its own full-screen notice (site + Esc), so Chrome's
++  // full-screen instruction is not shown. Pointer and keyboard lock keep
++  // Chrome's bubble: the host does not announce those.
++  ExclusiveAccessBubbleType type = GetExclusiveAccessExitBubbleType();
++  if (type == EXCLUSIVE_ACCESS_BUBBLE_TYPE_FULLSCREEN_EXIT_INSTRUCTION ||
++      type == EXCLUSIVE_ACCESS_BUBBLE_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION ||
++      type == EXCLUSIVE_ACCESS_BUBBLE_TYPE_EXTENSION_FULLSCREEN_EXIT_INSTRUCTION) {
++    type = EXCLUSIVE_ACCESS_BUBBLE_TYPE_NONE;
++  } else if (type ==
++             EXCLUSIVE_ACCESS_BUBBLE_TYPE_FULLSCREEN_POINTERLOCK_EXIT_INSTRUCTION) {
++    type = EXCLUSIVE_ACCESS_BUBBLE_TYPE_POINTERLOCK_EXIT_INSTRUCTION;
++  }
+   exclusive_access_context_->UpdateExclusiveAccessBubble(
+       {.origin = GetExclusiveAccessBubbleOrigin(),
+-       .type = GetExclusiveAccessExitBubbleType(),
++       .type = type,
+        .force_update = force_update},
+       std::move(first_hide_callback));
+ }
+diff --git a/components/zoom/zoom_controller.h b/components/zoom/zoom_controller.h
+index 6ae0b8a2a0..18db3f2eca 100644
+--- a/components/zoom/zoom_controller.h
++++ b/components/zoom/zoom_controller.h
+@@ -279,7 +279,8 @@ class ZoomController : public content::WebContentsObserver {
+   const content::FrameTreeNodeId frame_tree_node_id_;
+ 
+   // True if changes to zoom level can trigger the zoom notification bubble.
+-  bool can_show_bubble_ = true;
++  // Red: the host shows its own zoom notice; Chrome's bubble would duplicate it.
++  bool can_show_bubble_ = false;
+ 
+   // The current zoom mode.
+   ZoomMode zoom_mode_ = ZOOM_MODE_DEFAULT;

@@ -1,0 +1,5 @@
+#include "../src/windows/branding_ids.h"
+
+IDR_RED_ICON_32 RCDATA "red-32.png"
+IDR_RED_ICON_48 RCDATA "red-48.png"
+IDR_RED_ICON_64 RCDATA "red-64.png"

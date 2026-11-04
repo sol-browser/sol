@@ -1,0 +1,182 @@
+diff --git a/chrome/browser/ui/views/overlay/video_overlay_window_views.cc b/chrome/browser/ui/views/overlay/video_overlay_window_views.cc
+index 0afdeb691c..b93951e82a 100644
+--- a/chrome/browser/ui/views/overlay/video_overlay_window_views.cc
++++ b/chrome/browser/ui/views/overlay/video_overlay_window_views.cc
+@@ -43,6 +43,7 @@
+ #include "chrome/browser/ui/views/overlay/toggle_camera_button.h"
+ #include "chrome/browser/ui/views/overlay/toggle_microphone_button.h"
+ #include "chrome/browser/ui/views/overlay/toggle_mute_button.h"
++#include "ui/views/accessibility/view_accessibility.h"
+ #include "chrome/browser/ui/views/picture_in_picture/picture_in_picture_tucker.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "components/global_media_controls/public/format_duration.h"
+@@ -115,6 +116,8 @@ constexpr gfx::Size kOverlayViewPadding(64, 46);
+ 
+ // Size for action buttons.
+ constexpr gfx::Size kActionButtonSize(28, 28);
++// Red: width of the volume slider beside the mute button.
++constexpr int kVolumeSliderWidth = 72;
+ 
+ // The amount of time the seek buttons next to the play button seek.
+ constexpr base::TimeDelta kSeekTime = base::Seconds(10);
+@@ -1026,6 +1029,8 @@ bool VideoOverlayWindowViews::ControlsHitTestContainsPoint(
+       GetToggleCameraButtonBounds().Contains(point) ||
+       GetHangUpButtonBounds().Contains(point) ||
+       GetToggleMuteButtonBounds().Contains(point) ||
++      (volume_slider_ &&
++       volume_slider_->GetMirroredBounds().Contains(point)) ||
+       GetProgressViewBounds().Contains(point) ||
+       GetLiveCaptionButtonBounds().Contains(point) ||
+       GetLiveCaptionDialogBounds().Contains(point)) {
+@@ -1279,6 +1284,16 @@ void VideoOverlayWindowViews::SetUpViews() {
+         base::Unretained(this)));
+     toggle_mute_button->SetSize(kActionButtonSize);
+   }
++  // Red: a volume slider beside the mute button.
++  std::unique_ptr<views::Slider> volume_slider;
++  if (toggle_mute_button) {
++    volume_slider = std::make_unique<views::Slider>(this);
++    volume_slider->SetRenderingStyle(
++        views::Slider::RenderingStyle::kMinimalStyle);
++    volume_slider->SetValue(1.0f);
++    volume_slider->SetSize({kVolumeSliderWidth, kActionButtonSize.height()});
++    volume_slider->GetViewAccessibility().SetName(u"Volume");
++  }
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+   auto resize_handle_view =
+@@ -1397,6 +1412,10 @@ void VideoOverlayWindowViews::SetUpViews() {
+     toggle_mute_button_ = playback_controls_container_view_->AddChildView(
+         std::move(toggle_mute_button));
+   }
++  if (volume_slider) {
++    volume_slider_ = playback_controls_container_view_->AddChildView(
++        std::move(volume_slider));
++  }
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+   resize_handle_view_ =
+@@ -1687,6 +1706,11 @@ void VideoOverlayWindowViews::OnUpdateControlsBounds() {
+     toggle_mute_button_->SetPosition(
+         {live_caption_button_bounds.x() - kActionButtonSize.width() - 4,
+          live_caption_button_bounds.y()});
++    if (volume_slider_) {
++      volume_slider_->SetPosition(
++          {toggle_mute_button_->x() - kVolumeSliderWidth - 2,
++           toggle_mute_button_->y()});
++    }
+   }
+ 
+   live_caption_dialog_->SetPosition(
+@@ -1908,6 +1932,21 @@ void VideoOverlayWindowViews::SetCameraState(bool turned_on) {
+   toggle_camera_button_->SetCameraState(turned_on);
+ }
+ 
++void VideoOverlayWindowViews::SliderValueChanged(
++    views::Slider* sender,
++    float value,
++    float old_value,
++    views::SliderChangeReason reason) {
++  if (sender != volume_slider_ || reason != views::SliderChangeReason::kByUser) {
++    return;
++  }
++  controller_->SetVolume(value);
++  // Raising the volume of muted media unmutes it, as in Chrome's media controls.
++  if (value > 0 && controller_->GetMuteStatus()) {
++    controller_->RequestMute(false);
++  }
++}
++
+ void VideoOverlayWindowViews::SetMediaMuted(bool muted) {
+   if (toggle_mute_button_) {
+     toggle_mute_button_->SetMutedState(muted);
+diff --git a/chrome/browser/ui/views/overlay/video_overlay_window_views.h b/chrome/browser/ui/views/overlay/video_overlay_window_views.h
+index 222a5167b5..239ff305ca 100644
+--- a/chrome/browser/ui/views/overlay/video_overlay_window_views.h
++++ b/chrome/browser/ui/views/overlay/video_overlay_window_views.h
+@@ -20,6 +20,7 @@
+ #include "ui/display/display.h"
+ #include "ui/display/display_observer.h"
+ #include "ui/gfx/geometry/size.h"
++#include "ui/views/controls/slider.h"
+ #include "ui/views/view_observer.h"
+ #include "ui/views/widget/widget.h"
+ 
+@@ -60,8 +61,15 @@ class VideoOverlayWindowViews : public content::VideoOverlayWindow,
+                                 public display::DisplayObserver,
+                                 public views::ViewObserver,
+                                 public PictureInPictureWindow,
+-                                public AutoPipSettingOverlayView::Delegate {
++                                public AutoPipSettingOverlayView::Delegate,
++                                public views::SliderListener {
+  public:
++  // views::SliderListener (Red: the volume slider beside the mute button).
++  void SliderValueChanged(views::Slider* sender,
++                          float value,
++                          float old_value,
++                          views::SliderChangeReason reason) override;
++
+   using GetOverlayViewCb =
+       base::RepeatingCallback<std::unique_ptr<AutoPipSettingOverlayView>()>;
+ 
+@@ -495,6 +503,7 @@ class VideoOverlayWindowViews : public content::VideoOverlayWindow,
+   raw_ptr<ToggleCameraButton> toggle_camera_button_ = nullptr;
+   raw_ptr<HangUpButton> hang_up_button_ = nullptr;
+   raw_ptr<ToggleMuteButton> toggle_mute_button_ = nullptr;
++  raw_ptr<views::Slider> volume_slider_ = nullptr;
+   raw_ptr<global_media_controls::MediaProgressView> progress_view_ = nullptr;
+   raw_ptr<views::Label> timestamp_ = nullptr;
+   raw_ptr<views::Label> live_status_ = nullptr;
+diff --git a/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.cc b/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.cc
+index 60cf783dc7..7d32bb1d6b 100644
+--- a/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.cc
++++ b/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h"
+ 
++#include <algorithm>
+ #include <set>
+ #include <utility>
+ 
+@@ -472,6 +473,13 @@ void VideoPictureInPictureWindowControllerImpl::RequestMute(bool mute) {
+   active_session_->GetMediaPlayerRemote()->RequestMute(mute);
+ }
+ 
++void VideoPictureInPictureWindowControllerImpl::SetVolume(double volume) {
++  if (active_session_) {
++    active_session_->GetMediaPlayerRemote()->SetVolumeMultiplier(
++        std::clamp(volume, 0.0, 1.0));
++  }
++}
++
+ bool VideoPictureInPictureWindowControllerImpl::GetMuteStatus() {
+   return MediaSessionImpl::Get(web_contents())->GetMuteStatus();
+ }
+diff --git a/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h b/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h
+index d6fcb466e6..399061bbc5 100644
+--- a/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h
++++ b/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h
+@@ -77,6 +77,7 @@ class CONTENT_EXPORT VideoPictureInPictureWindowControllerImpl
+   void ToggleCamera() override;
+   void HangUp() override;
+   void RequestMute(bool mute) override;
++  void SetVolume(double volume) override;
+   bool GetMuteStatus() override;
+   void PreviousSlide() override;
+   void NextSlide() override;
+diff --git a/content/public/browser/video_picture_in_picture_window_controller.h b/content/public/browser/video_picture_in_picture_window_controller.h
+index c1568a83da..96e91f35a6 100644
+--- a/content/public/browser/video_picture_in_picture_window_controller.h
++++ b/content/public/browser/video_picture_in_picture_window_controller.h
+@@ -59,6 +59,10 @@ class VideoPictureInPictureWindowController
+   // Returns the current mute status of the media.
+   virtual bool GetMuteStatus() = 0;
+ 
++  // Red: sets the playing media's volume (0..1) from the window's slider,
++  // through the player's own volume multiplier.
++  virtual void SetVolume(double volume) {}
++
+   // Called when the user interacts with the "Previous Slide" control.
+   virtual void PreviousSlide() = 0;
+ 

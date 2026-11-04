@@ -1,0 +1,283 @@
+diff --git a/include/cef_browser.h b/include/cef_browser.h
+index fdf6dbd..3017407 100644
+--- a/include/cef_browser.h
++++ b/include/cef_browser.h
+@@ -1072,6 +1072,21 @@ class CefBrowserHost : public virtual CefBaseRefCounted {
+   virtual void SetContentTransform(double scale,
+                                    double dim,
+                                    int duration_ms) = 0;
++
++  ///
++  /// Animates the persistent Chrome page container as one compositor subtree:
++  /// live document, rounded 6-DIP clip and theme-colored veil. The native child
++  /// window and the document viewport retain their size. Requires the embedder
++  /// to opt in to red-translucent-child-windows before creating child windows.
++  /// Scale is clamped to [0.5, 1], dim to [0, 1]; duration is milliseconds.
++  /// The alpha of veil_color is ignored (dim controls opacity). Scale 1/dim 0
++  /// restores the container. Reapply after resize. UI-thread dispatch is safe.
++  ///
++  /*--cef(added=experimental)--*/
++  virtual void SetContentContainerTransform(double scale,
++                                            double dim,
++                                            int duration_ms,
++                                            cef_color_t veil_color) = 0;
+ #endif
+ 
+   ///
+diff --git a/libcef/browser/browser_host_base.h b/libcef/browser/browser_host_base.h
+index f103495..004e745 100644
+--- a/libcef/browser/browser_host_base.h
++++ b/libcef/browser/browser_host_base.h
+@@ -280,6 +280,15 @@ class CefBrowserHostBase : public CefBrowserHost,
+   void SetContentTransform(double scale,
+                            double dim,
+                            int duration_ms) override;
++  void SetContentContainerTransform(double scale,
++                                    double dim,
++                                    int duration_ms,
++                                    cef_color_t veil_color) override;
++  void ApplyContentTransform(double scale,
++                             double dim,
++                             int duration_ms,
++                             cef_color_t veil_color,
++                             bool container);
+   int RunExtensionAction(const CefString& extension_id,
+                          CefString& popup_url) override;
+   void NotifyMoveOrResizeStarted() override;
+diff --git a/libcef/browser/browser_host_base.cc b/libcef/browser/browser_host_base.cc
+index 496e98b..559a08e 100644
+--- a/libcef/browser/browser_host_base.cc
++++ b/libcef/browser/browser_host_base.cc
+@@ -46,6 +46,8 @@
+ #include "extensions/browser/extension_action_manager.h"
+ #include "extensions/browser/extension_registry.h"
+ #include "ui/base/resource/resource_scale_factor.h"
++#include "base/command_line.h"
++#include <cmath>
+ #include "ui/aura/window.h"
+ #include "ui/base/class_property.h"
+ #include "ui/compositor/layer.h"
+@@ -53,6 +55,8 @@
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/frame/contents_web_view.h"
+ #include "ui/views/widget/widget.h"
++#include "ui/views/controls/native/native_view_host.h"
++#include "ui/views/view_tracker.h"
+ #include "ui/compositor/layer_animator.h"
+ #include "ui/compositor/scoped_layer_animation_settings.h"
+ #include "ui/gfx/animation/tween.h"
+@@ -1449,14 +1453,51 @@ void CefBrowserHostBase::LoadMainFrameURL(
+ // page's window (it goes with it).
+ DEFINE_UI_CLASS_PROPERTY_TYPE(ui::LayerSolidColor*)
+ DEFINE_OWNED_UI_CLASS_PROPERTY_KEY(ui::LayerSolidColor, kContentVeilKey)
++DEFINE_UI_CLASS_PROPERTY_TYPE(ui::Layer*)
++DEFINE_OWNED_UI_CLASS_PROPERTY_KEY(ui::Layer, kContentContainerKey)
++
++namespace {
++// Keep the rounded clip throughout the threaded return animation. Clearing it
++// at request time exposes square corners while the container is still moving.
++void ClearRestingContainerCorners(std::unique_ptr<views::ViewTracker> tracker) {
++  auto* host = static_cast<views::NativeViewHost*>(tracker->view());
++  auto* window = host ? host->native_view() : nullptr;
++  auto* layer = window ? window->GetProperty(kContentContainerKey) : nullptr;
++  if (!layer || !layer->GetTargetTransform().IsIdentity()) {
++    return;
++  }
++  if (layer->GetAnimator()->is_animating()) {
++    CEF_POST_DELAYED_TASK(CEF_UIT,
++        base::BindOnce(&ClearRestingContainerCorners, std::move(tracker)), 32);
++    return;
++  }
++  layer->SetRoundedCornerRadius(gfx::RoundedCornersF());
++}
++}  // namespace
+ 
+ void CefBrowserHostBase::SetContentTransform(double scale,
+                                              double dim,
+                                              int duration_ms) {
++  ApplyContentTransform(scale, dim, duration_ms, SK_ColorBLACK, false);
++}
++
++void CefBrowserHostBase::SetContentContainerTransform(double scale,
++                                                     double dim,
++                                                     int duration_ms,
++                                                     cef_color_t veil_color) {
++  ApplyContentTransform(scale, dim, duration_ms, veil_color, true);
++}
++
++void CefBrowserHostBase::ApplyContentTransform(double scale,
++                                              double dim,
++                                              int duration_ms,
++                                              cef_color_t veil_color,
++                                              bool container) {
+   if (!CEF_CURRENTLY_ON_UIT()) {
+     CEF_POST_TASK(CEF_UIT,
+-                  base::BindOnce(&CefBrowserHostBase::SetContentTransform,
+-                                 this, scale, dim, duration_ms));
++                  base::BindOnce(&CefBrowserHostBase::ApplyContentTransform,
++                                 this, scale, dim, duration_ms, veil_color,
++                                 container));
+     return;
+   }
+   auto web_contents = GetWebContents();
+@@ -1467,10 +1508,65 @@ void CefBrowserHostBase::SetContentTransform(double scale,
+   if (!window || !window->layer()) {
+     return;
+   }
++  if (!std::isfinite(scale) || !std::isfinite(dim)) {
++    return;
++  }
+   scale = std::clamp(scale, 0.5, 1.0);
+   dim = std::clamp(dim, 0.0, 1.0);
+   ui::Layer* layer = window->layer();
+-  const gfx::Size size = window->bounds().size();
++  gfx::Size size = window->bounds().size();
++  views::NativeViewHost* container_host = nullptr;
++  if (container) {
++    if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
++            "red-translucent-child-windows")) {
++      return;
++    }
++    // Transform the parent containing the document, rather than the renderer
++    // surface inside a stationary view. The clip and veil live in this same
++    // subtree, including when a renderer view is replaced on navigation.
++    ContentsWebView* page_container = nullptr;
++    if (auto* widget = views::Widget::GetTopLevelWidgetForNativeView(window)) {
++      if (auto* browser_view = BrowserView::GetBrowserViewForNativeWindow(
++              widget->GetNativeWindow())) {
++        for (auto* contents : browser_view->GetAllVisibleContentsWebViews()) {
++          if (contents->web_contents() == web_contents) {
++            page_container = contents;
++            break;
++          }
++        }
++      }
++    }
++    if (!page_container || !page_container->layer()) {
++      return;
++    }
++    container_host = page_container->holder();
++    if (!container_host || !container_host->layer()) {
++      return;
++    }
++    page_container->SetContainerBackgroundVisible(false);
++    size = container_host->size();
++    // NativeViewHost::Layout converts its View bounds to widget coordinates,
++    // including the View layer's transform. Scaling that layer would resize
++    // and offset the document again on the next layout. Keep the View layer
++    // untransformed and animate a compositor-only child containing the native
++    // document, its rounded clip and veil.
++    auto* wrapper = window->GetProperty(kContentContainerKey);
++    if (!wrapper) {
++      auto owned = ui::Layer::Create(ui::LAYER_NOT_DRAWN);
++      owned->SetName("RedContentContainer");
++      wrapper = owned.get();
++      window->SetProperty(kContentContainerKey, std::move(owned));
++    }
++    if (wrapper->parent() != container_host->layer()) {
++      container_host->layer()->Add(wrapper);
++    }
++    // NativeViewHost can attach a native view again after navigation/reparent.
++    if (window->layer()->parent() != wrapper) {
++      wrapper->Add(window->layer());
++    }
++    wrapper->SetBounds(gfx::Rect(size));
++    layer = wrapper;
++  }
+   // The veil is a child of the content layer, so it scales with the page; it
+   // is restacked on top (a new renderer view is added above it).
+   ui::LayerSolidColor* veil = window->GetProperty(kContentVeilKey);
+@@ -1480,10 +1576,14 @@ void CefBrowserHostBase::SetContentTransform(double scale,
+     owned->SetOpacity(0);
+     owned->SetName("RedContentVeil");
+     veil = owned.get();
+-    layer->Add(veil);
+     window->SetProperty(kContentVeilKey, std::move(owned));
+   }
+   if (veil) {
++    if (veil->parent() != layer) {
++      layer->Add(veil);
++    }
++    veil->SetColor(SkColor4f::FromColor(
++        SkColorSetA(veil_color, SK_AlphaOPAQUE)));
+     veil->SetBounds(gfx::Rect(size));
+     layer->StackAtTop(veil);
+   }
+@@ -1491,6 +1591,13 @@ void CefBrowserHostBase::SetContentTransform(double scale,
+   transform.Translate(size.width() * (1 - scale) / 2,
+                       size.height() * (1 - scale) / 2);
+   transform.Scale(scale, scale);
++  if (container) {
++    layer->SetMasksToBounds(true);
++    layer->SetIsFastRoundedCorner(true);
++    // Establish the shape before the first moving frame. Rounded-corner
++    // interpolation runs on the UI thread, unlike the threaded transform.
++    layer->SetRoundedCornerRadius(gfx::RoundedCornersF(6.f));
++  }
+   std::optional<ui::ScopedLayerAnimationSettings> animation;
+   if (duration_ms > 0) {
+     animation.emplace(layer->GetAnimator());
+@@ -1500,10 +1607,21 @@ void CefBrowserHostBase::SetContentTransform(double scale,
+     animation->SetPreemptionStrategy(
+         ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
+   }
+-  layer->SetTransform(transform);
+-  // Red EXPERIMENT: while scaled, the page's container is see-through (a
++  // Layout re-applies the settled target after resize/theme changes. An
++  // identical zero-duration request must not terminate a compositor animation
++  // that has not presented its last frame yet.
++  if (layer->GetTargetTransform() != transform) {
++    layer->SetTransform(transform);
++  }
++  if (container_host && scale == 1) {
++    CEF_POST_DELAYED_TASK(CEF_UIT,
++        base::BindOnce(&ClearRestingContainerCorners,
++            std::make_unique<views::ViewTracker>(container_host)),
++        std::max(duration_ms, 0));
++  }
++  // Legacy live-transform fallback: while scaled, the page's container is see-through (a
+   // translucent page window then shows its parent around the page).
+-  if (auto* widget = views::Widget::GetTopLevelWidgetForNativeView(window)) {
++  if (!container) if (auto* widget = views::Widget::GetTopLevelWidgetForNativeView(window)) {
+     if (auto* browser_view = BrowserView::GetBrowserViewForNativeWindow(widget->GetNativeWindow())) {
+       for (auto* contents : browser_view->GetAllVisibleContentsWebViews()) {
+         if (contents->web_contents() == web_contents && contents->layer() && contents->layer()->AsSolidColor()) {
+@@ -1522,7 +1640,9 @@ void CefBrowserHostBase::SetContentTransform(double scale,
+       fade->SetPreemptionStrategy(
+           ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
+     }
+-    veil->SetOpacity(static_cast<float>(dim));
++    if (veil->GetTargetOpacity() != static_cast<float>(dim)) {
++      veil->SetOpacity(static_cast<float>(dim));
++    }
+   }
+ }
+ 
+diff --git a/libcef/browser/chrome/views/chrome_child_window.cc b/libcef/browser/chrome/views/chrome_child_window.cc
+index 5c64adb..cfe102d 100644
+--- a/libcef/browser/chrome/views/chrome_child_window.cc
++++ b/libcef/browser/chrome/views/chrome_child_window.cc
+@@ -9,7 +9,7 @@
+ #include "cef/libcef/browser/views/window_impl.h"
+ #include "ui/gfx/native_ui_types.h"
+ 
+-#include <cstdlib>
++#include "base/command_line.h"
+ 
+ #if BUILDFLAG(IS_WIN)
+ #include "base/functional/callback.h"
+@@ -41,10 +41,11 @@ CefWindowHandle GetParentHandle(const CefWindowInfo& window_info) {
+ #endif
+ }
+ 
+-// Red EXPERIMENT: translucent page windows (RED_TRANSLUCENT_PAGES).
++// The embedder opts in before window creation; transparency cannot be
++// retrofitted after a native Chrome child has acquired its compositor.
+ bool RedTranslucentPages() {
+-  static const bool on = std::getenv("RED_TRANSLUCENT_PAGES") != nullptr;
+-  return on;
++  return base::CommandLine::ForCurrentProcess()->HasSwitch(
++      "red-translucent-child-windows");
+ }
+ 
+ class ChildWindowDelegate : public CefWindowDelegate {

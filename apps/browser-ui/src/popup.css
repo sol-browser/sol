@@ -1,0 +1,97 @@
+/* Popovers (panel.html: Archive, Downloads, History, Site) and Red's menus
+   (menu.html) in the Orbit theme editor's visual language (theme-editor.css):
+   a neutral graphite surface whatever the space theme, recessed wells, hairline
+   dividers, raised pressed states and a lavender accent. Loaded after
+   style.css/menu.css; :where() keeps the Orbit editor's own rules on top. */
+:root:is([data-ui="panel"], [data-ui="menu"]) {
+  --pop-top: #2e3037; --pop-surface: #24252b; --pop-well: #17191f; --pop-sticky: #27282e;
+  --pop-ink: #eeedf2; --pop-muted: #a9a7b1; --pop-faint: #7f7d88; --pop-line: #ffffff0c;
+  --pop-hover: #ffffff0b; --pop-hover-strong: #ffffff14;
+  --pop-raised: linear-gradient(145deg, #ffffff19, #ffffff08); --pop-raised-shadow: inset 0 1px #ffffff14, 0 2px 4px #0004;
+  --pop-well-shadow: inset 0 1px 4px #0004, 0 1px #ffffff07;
+  --pop-accent: #b8a5ee; --pop-primary: linear-gradient(135deg, #d7c5e8, #c1bedc); --pop-primary-ink: #36313f;
+  --pop-danger: #ff8fa3; --pop-danger-fill: #d9435f26;
+}
+body:has(.panel-root), :root[data-ui="menu"] body { background: linear-gradient(145deg, var(--pop-top), var(--pop-surface) 55%) fixed; color-scheme: dark; }
+:where(:root[data-ui="panel"], :root[data-ui="menu"]) :focus-visible { outline-color: var(--pop-accent); }
+
+/* Shared popover chrome. */
+.panel-root { padding: 8px; color: var(--pop-ink); }
+.popover header { padding: 4px 6px 10px; }
+.popover h2 { font-size: 13px; font-weight: 600; letter-spacing: -.1px; color: var(--pop-ink); }
+.popover-subtitle, .popover-empty, .history-shortcut { color: var(--pop-faint); }
+.popover-count { background: var(--pop-well); box-shadow: var(--pop-well-shadow); color: var(--pop-muted); }
+:where(.panel-root) .popover-text-button { height: 26px; padding: 0 10px; border-radius: 8px; color: var(--pop-muted); }
+.panel-root[data-pointer="true"] .popover-text-button:hover, .popover-text-button:focus-visible { background: var(--pop-hover-strong); color: var(--pop-ink); }
+.popover ul, .history-scroll { scrollbar-color: #ffffff24 transparent; }
+.popover-error { color: var(--pop-danger); }
+.history-footer, .site-footer, .site-group, .site-main-footer, .space-footer:not(.orbit-editor .space-footer), .theme-row { border-color: var(--pop-line); }
+.history-footer { margin-top: 6px; padding-top: 8px; }
+
+/* Rows (archive, downloads, history). */
+.panel-root[data-pointer="true"] .archive-row:hover, .archive-row:focus-visible,
+.panel-root[data-pointer="true"] .download:hover, .download:focus-within,
+.panel-root[data-pointer="true"] .history-row:hover, .history-row:focus-within { background: var(--pop-hover); }
+.archive-row, .download, .history-row, .history-open { border-radius: 10px; }
+.archive-text span:first-child, .download-name, .history-text span:first-child { color: var(--pop-ink); }
+.archive-text span:last-child, .download-status, .history-text span:last-child, .history-time { color: var(--pop-faint); }
+.archive-go { color: var(--pop-muted); }
+.download-actions button, .history-delete { border-radius: 8px; color: var(--pop-muted); }
+.panel-root[data-pointer="true"] .download-actions button:hover, .download-actions button:focus-visible,
+.panel-root[data-pointer="true"] .history-delete:hover { background: var(--pop-hover-strong); color: var(--pop-ink); }
+.download-progress { background: var(--pop-well); box-shadow: inset 0 1px 2px #0005; }
+.download-progress > span { background: linear-gradient(90deg, #d7c5e8, var(--pop-accent)); }
+.download-progress[data-paused="true"] > span { background: var(--pop-faint); }
+.history-mark { border-radius: 7px; background: var(--pop-well); box-shadow: var(--pop-well-shadow); color: var(--pop-muted); }
+.history-favicon { background: var(--pop-well); box-shadow: var(--pop-well-shadow); }
+
+/* History: recessed search well, sticky day labels on the surface. */
+.history-search { height: 34px; margin: 0 2px 8px; border-radius: 10px; background: var(--pop-well); box-shadow: var(--pop-well-shadow); color: var(--pop-muted); }
+.history-search:focus-within { background: var(--pop-well); box-shadow: var(--pop-well-shadow), inset 0 -1px var(--pop-muted); }
+.history-search input { color: var(--pop-ink); }
+.history-search input::placeholder { color: var(--pop-faint); }
+.history-day h3 { padding: 10px 10px 4px; color: var(--pop-muted); background: var(--pop-sticky); }
+.history-clear { margin: 0 2px 10px; padding: 10px 12px; border-radius: 12px; background: var(--pop-well); box-shadow: var(--pop-well-shadow); color: var(--pop-muted); }
+.history-clear-options button { height: 26px; padding: 0 10px; border-radius: 8px; background: var(--pop-raised); box-shadow: var(--pop-raised-shadow); color: var(--pop-ink); }
+.panel-root[data-pointer="true"] .history-clear-options button:hover, .history-clear-options button:focus-visible { background: var(--pop-danger-fill); color: var(--pop-danger); box-shadow: inset 0 0 0 1px #ff8fa333; }
+
+/* Site popover. */
+.site-identity, .site-extension { background: var(--pop-well); box-shadow: var(--pop-well-shadow); color: var(--pop-muted); }
+.site-identity[data-secure="true"] { color: #9fd7b0; }
+.site-heading span, .site-section { color: var(--pop-faint); }
+.site-row, .site-switch, .site-label { color: var(--pop-ink); }
+.site-row > .icon, .site-back, .site-more, .site-extension-add .icon, .site-extension-letter { color: var(--pop-muted); }
+.site-share { height: 38px; border-radius: 11px; background: var(--pop-raised); box-shadow: var(--pop-raised-shadow); color: var(--pop-ink); }
+.panel-root[data-pointer="true"] .site-share:hover:enabled, .site-share:focus-visible { background: linear-gradient(145deg, #ffffff22, #ffffff0d); }
+.panel-root[data-pointer="true"] .site-extension:hover:enabled, .site-extension:focus-visible,
+.panel-root[data-pointer="true"] :is(.site-security, .site-more):hover:enabled, :is(.site-security, .site-more):focus-visible,
+.panel-root[data-pointer="true"] .site-back:hover, .site-back:focus-visible { background: var(--pop-hover-strong); }
+.site-security { border-radius: 9px; background: var(--pop-well); box-shadow: var(--pop-well-shadow); }
+.site-security[data-secure="true"] { color: var(--pop-ink); }
+.site-security:disabled { box-shadow: none; color: var(--pop-faint); }
+.site-reload { color: var(--pop-ink); }
+.site-live { border-radius: 10px; background: var(--pop-danger-fill); }
+/* Segmented controls: a recessed track with a raised selected segment (Orbit's count/mode pickers). */
+.segmented { padding: 3px; gap: 2px; border-radius: 11px; background: var(--pop-well); box-shadow: var(--pop-well-shadow); }
+.segmented button { height: 22px; border-radius: 8px; color: var(--pop-muted); }
+.panel-root[data-pointer="true"] .segmented button:hover, .segmented button:focus-visible { background: var(--pop-hover); color: var(--pop-ink); }
+.segmented button[aria-pressed="true"] { background: var(--pop-raised); box-shadow: var(--pop-raised-shadow); color: var(--pop-ink); }
+.segmented button[aria-pressed="true"][data-value="block"] { background: linear-gradient(145deg, #d9435f55, #d9435f30); color: #ffd0d9; }
+.segmented button[aria-pressed="true"][data-value="allow"] { background: linear-gradient(145deg, #4caf7a50, #4caf7a2a); color: #c9f2d8; }
+/* Switches: recessed track, lavender when on. */
+.site-switch input { background: var(--pop-well); box-shadow: var(--pop-well-shadow); }
+.site-switch input::after { background: var(--pop-muted); box-shadow: 0 1px 2px #0006; }
+.site-switch input:checked { background: var(--pop-primary); box-shadow: inset 0 1px #ffffff77; }
+.site-switch input:checked::after { background: var(--pop-primary-ink); }
+.site-switch input:focus-visible { outline-color: var(--pop-accent); }
+
+/* Menus (menu.html). */
+.menu { padding: 6px; color: var(--pop-ink); }
+.menu-row { border-radius: 8px; }
+.menu-row[data-active="true"], .menu-row[data-open="true"] { background: var(--pop-hover-strong); }
+.menu[data-pointer="false"] .menu-row[data-active="true"] { box-shadow: inset 0 0 0 1px var(--pop-accent); }
+.menu-row[aria-checked="true"] .menu-icon { color: var(--pop-accent); }
+.menu-shortcut { color: var(--pop-faint); }
+.menu-icon { color: var(--pop-muted); }
+.menu-row[data-active="true"] .menu-icon { color: var(--pop-ink); }
+.menu-separator { margin: 5px 8px; background: var(--pop-line); }

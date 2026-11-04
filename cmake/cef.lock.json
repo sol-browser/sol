@@ -1,0 +1,19 @@
+{
+  "cef_version": "156.0.31-sol-156.3676+g06f3c4d+chromium-156.0.8078.48",
+  "chromium_version": "156.0.8078.48",
+  "cef_revision": "06f3c4dc643d120dda296b2e0a719518f6491a5d",
+  "chromium_revision": "d0c02bfad08ec92a6ffcf989e53cd995e6381a4c",
+  "platform": "windows64",
+  "distribution": "standard (local sol-156 official Release; Windows platform codecs)",
+  "archive": "cef_binary_156.0.31-sol-156.3676+g06f3c4d+chromium-156.0.8078.48_windows64-red.tar.bz2",
+  "root": "cef_binary_156.0.31-sol-156.3676+g06f3c4d+chromium-156.0.8078.48_windows64",
+  "size": 176517120,
+  "sha256": "44febce4aaacdf84b6e84d80e339a2edcda8e61a29a1ec1c4267f373b8f0229e",
+  "build_recipe": "scripts/build_cef.ps1",
+  "gn_defines": "is_official_build=true proprietary_codecs=true ffmpeg_branding=Chromium red_platform_codecs=true",
+  "official_lock": "cmake/cef-official.lock.json",
+  "locked_on": "2026-10-29",
+  "source_repository": "https://github.com/sol-browser/cef.git",
+  "source_branch": "sol-156",
+  "upstream_revision": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f"
+}

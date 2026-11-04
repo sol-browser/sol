@@ -1,0 +1,134 @@
+diff --git a/include/cef_browser.h b/include/cef_browser.h
+index 66498c2..fdf6dbd 100644
+--- a/include/cef_browser.h
++++ b/include/cef_browser.h
+@@ -1059,6 +1059,19 @@ class CefBrowserHost : public virtual CefBaseRefCounted {
+   ///
+   /*--cef(added=experimental)--*/
+   virtual bool MediaSessionAction(const CefString& action) = 0;
++
++  ///
++  /// Scales the page's content about its center (|scale| 0.5 to 1) and dims
++  /// it with a black veil (|dim| 0 to 1, the veil's opacity) inside the
++  /// browser's own window, animated by the compositor over |duration_ms| (0
++  /// applies at once). The page stays live (video, scripts and input keep
++  /// running). Scale 1 and dim 0 restore it. Call again after the browser
++  /// window is resized. Windowless browsers are not supported.
++  ///
++  /*--cef(added=experimental)--*/
++  virtual void SetContentTransform(double scale,
++                                   double dim,
++                                   int duration_ms) = 0;
+ #endif
+ 
+   ///
+diff --git a/libcef/browser/browser_host_base.h b/libcef/browser/browser_host_base.h
+index 3b61599..f103495 100644
+--- a/libcef/browser/browser_host_base.h
++++ b/libcef/browser/browser_host_base.h
+@@ -277,6 +277,9 @@ class CefBrowserHostBase : public CefBrowserHost,
+   void LoadURLFromInitiator(const CefString& url,
+                             const CefString& initiator_url) override;
+   bool MediaSessionAction(const CefString& action) override;
++  void SetContentTransform(double scale,
++                           double dim,
++                           int duration_ms) override;
+   int RunExtensionAction(const CefString& extension_id,
+                          CefString& popup_url) override;
+   void NotifyMoveOrResizeStarted() override;
+diff --git a/libcef/browser/browser_host_base.cc b/libcef/browser/browser_host_base.cc
+index fa1e43e..bd389f8 100644
+--- a/libcef/browser/browser_host_base.cc
++++ b/libcef/browser/browser_host_base.cc
+@@ -46,6 +46,14 @@
+ #include "extensions/browser/extension_action_manager.h"
+ #include "extensions/browser/extension_registry.h"
+ #include "ui/base/resource/resource_scale_factor.h"
++#include "ui/aura/window.h"
++#include "ui/base/class_property.h"
++#include "ui/compositor/layer.h"
++#include "ui/compositor/layer_solid_color.h"
++#include "ui/compositor/layer_animator.h"
++#include "ui/compositor/scoped_layer_animation_settings.h"
++#include "ui/gfx/animation/tween.h"
++#include "ui/gfx/geometry/transform.h"
+ #include "content/public/browser/media_session.h"
+ #include "services/media_session/public/mojom/media_session.mojom.h"
+ #include "ui/gfx/image/image_skia.h"
+@@ -1434,6 +1442,76 @@ void CefBrowserHostBase::LoadMainFrameURL(
+   }
+ }
+ 
++// The black veil over a page dimmed by SetContentTransform, owned by the
++// page's window (it goes with it).
++DEFINE_UI_CLASS_PROPERTY_TYPE(ui::LayerSolidColor*)
++DEFINE_OWNED_UI_CLASS_PROPERTY_KEY(ui::LayerSolidColor, kContentVeilKey)
++
++void CefBrowserHostBase::SetContentTransform(double scale,
++                                             double dim,
++                                             int duration_ms) {
++  if (!CEF_CURRENTLY_ON_UIT()) {
++    CEF_POST_TASK(CEF_UIT,
++                  base::BindOnce(&CefBrowserHostBase::SetContentTransform,
++                                 this, scale, dim, duration_ms));
++    return;
++  }
++  auto web_contents = GetWebContents();
++  if (!web_contents || IsWindowless()) {
++    return;
++  }
++  aura::Window* window = web_contents->GetNativeView();
++  if (!window || !window->layer()) {
++    return;
++  }
++  scale = std::clamp(scale, 0.5, 1.0);
++  dim = std::clamp(dim, 0.0, 1.0);
++  ui::Layer* layer = window->layer();
++  const gfx::Size size = window->bounds().size();
++  // The veil is a child of the content layer, so it scales with the page; it
++  // is restacked on top (a new renderer view is added above it).
++  ui::LayerSolidColor* veil = window->GetProperty(kContentVeilKey);
++  if (!veil && dim > 0) {
++    auto owned = std::make_unique<ui::LayerSolidColor>();
++    owned->SetColor(SkColors::kBlack);
++    owned->SetOpacity(0);
++    owned->SetName("RedContentVeil");
++    veil = owned.get();
++    layer->Add(veil);
++    window->SetProperty(kContentVeilKey, std::move(owned));
++  }
++  if (veil) {
++    veil->SetBounds(gfx::Rect(size));
++    layer->StackAtTop(veil);
++  }
++  gfx::Transform transform;
++  transform.Translate(size.width() * (1 - scale) / 2,
++                      size.height() * (1 - scale) / 2);
++  transform.Scale(scale, scale);
++  std::optional<ui::ScopedLayerAnimationSettings> animation;
++  if (duration_ms > 0) {
++    animation.emplace(layer->GetAnimator());
++    animation->SetTransitionDuration(
++        base::Milliseconds(std::min(duration_ms, 2000)));
++    animation->SetTweenType(gfx::Tween::FAST_OUT_SLOW_IN);
++    animation->SetPreemptionStrategy(
++        ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
++  }
++  layer->SetTransform(transform);
++  if (veil) {
++    std::optional<ui::ScopedLayerAnimationSettings> fade;
++    if (duration_ms > 0) {
++      fade.emplace(veil->GetAnimator());
++      fade->SetTransitionDuration(
++          base::Milliseconds(std::min(duration_ms, 2000)));
++      fade->SetTweenType(gfx::Tween::FAST_OUT_SLOW_IN);
++      fade->SetPreemptionStrategy(
++          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
++    }
++    veil->SetOpacity(static_cast<float>(dim));
++  }
++}
++
+ bool CefBrowserHostBase::MediaSessionAction(const CefString& action) {
+   using media_session::mojom::MediaSessionAction;
+   static constexpr std::pair<const char*, MediaSessionAction> kActions[] = {

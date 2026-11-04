@@ -1,0 +1,98 @@
+diff --git a/include/views/cef_window_delegate.h b/include/views/cef_window_delegate.h
+index 2773985..1815d6e 100644
+--- a/include/views/cef_window_delegate.h
++++ b/include/views/cef_window_delegate.h
+@@ -154,6 +154,18 @@ class CefWindowDelegate : public CefPanelDelegate {
+   /*--cef()--*/
+   virtual bool IsFrameless(CefRefPtr<CefWindow> window) { return false; }
+ 
++#if CEF_API_ADDED(CEF_EXPERIMENTAL)
++  ///
++  /// Return true if the top-level |window| should be translucent: its
++  /// transparent pixels (a Views-hosted browser with a transparent background,
++  /// a transparent window background color) show what is behind the window,
++  /// e.g. a DWM system backdrop the client sets on Windows. The window keeps
++  /// its resize border. Only called for windows without a native parent.
++  ///
++  /*--cef(added=experimental)--*/
++  virtual bool IsTranslucent(CefRefPtr<CefWindow> window) { return false; }
++#endif
++
+   ///
+   /// Return true if |window| should be created with standard window buttons
+   /// like close, minimize and zoom. This method is only supported on macOS.
+diff --git a/libcef/browser/views/window_view.cc b/libcef/browser/views/window_view.cc
+index 9c030f0..4e323ce 100644
+--- a/libcef/browser/views/window_view.cc
++++ b/libcef/browser/views/window_view.cc
+@@ -561,6 +561,10 @@ void CefWindowView::CreateWidget(gfx::AcceleratedWidget parent_widget) {
+       DCHECK(!params.bounds.IsEmpty());
+     } else {
+       is_frameless_ = cef_delegate()->IsFrameless(cef_window);
++      // Red: translucent top-level window (composited with alpha).
++      if (cef_delegate()->IsTranslucent(cef_window)) {
++        params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
++      }
+ 
+       params.native_widget =
+           view_util::CreateNativeWidget(widget, cef_window, cef_delegate());
+diff --git a/libcef/browser/browser_platform_delegate_create.cc b/libcef/browser/browser_platform_delegate_create.cc
+index b2f30ae..8642aa8 100644
+--- a/libcef/browser/browser_platform_delegate_create.cc
++++ b/libcef/browser/browser_platform_delegate_create.cc
+@@ -67,8 +67,18 @@ std::unique_ptr<CefBrowserPlatformDelegateOsr> CreateOSRDelegate(
+ std::unique_ptr<CefBrowserPlatformDelegate> CefBrowserPlatformDelegate::Create(
+     const CefBrowserCreateParams& create_params) {
+   const bool is_windowless = create_params.IsWindowless();
+-  const SkColor background_color = CefContext::Get()->GetBackgroundColor(
+-      &create_params.settings, is_windowless ? STATE_ENABLED : STATE_DISABLED);
++  // Red: a Views-hosted browser asked for a transparent background (alpha 0,
++  // non-zero RGB) gets one, as a windowless browser does.
++  const cef_color_t requested = create_params.settings.background_color;
++  const bool views_transparent = create_params.browser_view &&
++                                 CefColorGetA(requested) == 0 &&
++                                 (requested & 0xFFFFFF) != 0;
++  const SkColor background_color =
++      views_transparent
++          ? SK_ColorTRANSPARENT
++          : CefContext::Get()->GetBackgroundColor(
++                &create_params.settings,
++                is_windowless ? STATE_ENABLED : STATE_DISABLED);
+ 
+   if (create_params.IsChromeStyle()) {
+     CefWindowInfo window_info;
+diff --git a/libcef/browser/views/browser_view_impl.cc b/libcef/browser/views/browser_view_impl.cc
+index d2713e1..f2e11dd 100644
+--- a/libcef/browser/views/browser_view_impl.cc
++++ b/libcef/browser/views/browser_view_impl.cc
+@@ -409,6 +409,12 @@ void CefBrowserViewImpl::SetPendingBrowserCreateParams(
+ }
+ 
+ void CefBrowserViewImpl::SetDefaults(const CefBrowserSettings& settings) {
++  // Red: see CefBrowserPlatformDelegate::Create (alpha 0, non-zero RGB).
++  if (CefColorGetA(settings.background_color) == 0 &&
++      (settings.background_color & 0xFFFFFF) != 0) {
++    SetBackgroundColor(SK_ColorTRANSPARENT);
++    return;
++  }
+   SetBackgroundColor(
+       CefContext::Get()->GetBackgroundColor(&settings, STATE_DISABLED));
+ }
+diff --git a/libcef/browser/browser_host_base.cc b/libcef/browser/browser_host_base.cc
+index bd389f8..4879894 100644
+--- a/libcef/browser/browser_host_base.cc
++++ b/libcef/browser/browser_host_base.cc
+@@ -1721,6 +1721,13 @@ int CefBrowserHostBase::browser_id() const {
+ }
+ 
+ SkColor CefBrowserHostBase::GetBackgroundColor() const {
++  // Red: a Views-hosted browser asked for a transparent background (alpha 0,
++  // non-zero RGB, see CefBrowserPlatformDelegate::Create) keeps it as the
++  // page base background too.
++  if (is_views_hosted_ && CefColorGetA(settings_.background_color) == 0 &&
++      (settings_.background_color & 0xFFFFFF) != 0) {
++    return SK_ColorTRANSPARENT;
++  }
+   // Don't use |platform_delegate_| because it's not thread-safe.
+   return CefContext::Get()->GetBackgroundColor(
+       &settings_, IsWindowless() ? STATE_ENABLED : STATE_DISABLED);

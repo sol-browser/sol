@@ -1,0 +1,53 @@
+diff --git a/include/cef_display_handler.h b/include/cef_display_handler.h
+index 5ba804967..070d88973 100644
+--- a/include/cef_display_handler.h
++++ b/include/cef_display_handler.h
+@@ -203,6 +203,17 @@ class CefDisplayHandler : public virtual CefBaseRefCounted {
+     return false;
+   }
+ #endif
++
++#if CEF_API_ADDED(CEF_EXPERIMENTAL)
++  ///
++  /// Called when the browser starts or stops producing audible sound (the
++  /// state behind Chrome's tab speaker icon; covers media elements, Web Audio
++  /// and calls, with Chrome's short hold-off after sound stops).
++  ///
++  /*--cef(added=experimental)--*/
++  virtual void OnAudibleStateChange(CefRefPtr<CefBrowser> browser,
++                                    bool audible) {}
++#endif
+ };
+ 
+ #endif  // CEF_INCLUDE_CEF_DISPLAY_HANDLER_H_
+diff --git a/libcef/browser/browser_contents_delegate.cc b/libcef/browser/browser_contents_delegate.cc
+index b1591e91d..41d158967 100644
+--- a/libcef/browser/browser_contents_delegate.cc
++++ b/libcef/browser/browser_contents_delegate.cc
+@@ -618,6 +618,14 @@ void CefBrowserContentsDelegate::TitleWasSet(content::NavigationEntry* entry) {
+   }
+ }
+ 
++void CefBrowserContentsDelegate::OnAudioStateChanged(bool audible) {
++  if (auto c = client()) {
++    if (auto handler = c->GetDisplayHandler()) {
++      handler->OnAudibleStateChange(browser(), audible);
++    }
++  }
++}
++
+ void CefBrowserContentsDelegate::DidUpdateFaviconURL(
+     content::RenderFrameHost* render_frame_host,
+     const std::vector<blink::mojom::FaviconURLPtr>& candidates,
+diff --git a/libcef/browser/browser_contents_delegate.h b/libcef/browser/browser_contents_delegate.h
+index ae50fee31..d6e801502 100644
+--- a/libcef/browser/browser_contents_delegate.h
++++ b/libcef/browser/browser_contents_delegate.h
+@@ -142,6 +142,7 @@ class CefBrowserContentsDelegate : public content::WebContentsDelegate,
+   void DidFinishLoad(content::RenderFrameHost* render_frame_host,
+                      const GURL& validated_url) override;
+   void TitleWasSet(content::NavigationEntry* entry) override;
++  void OnAudioStateChanged(bool audible) override;
+   void DidUpdateFaviconURL(
+       content::RenderFrameHost* render_frame_host,
+       const std::vector<blink::mojom::FaviconURLPtr>& candidates,

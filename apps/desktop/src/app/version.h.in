@@ -1,0 +1,2 @@
+#pragma once
+#define RED_APP_VERSION "@PROJECT_VERSION@"
