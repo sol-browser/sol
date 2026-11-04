@@ -18,6 +18,8 @@ try {
     if ($LASTEXITCODE) { throw 'CEF setup failed' }
     python scripts/fetch_sqlite.py
     if ($LASTEXITCODE) { throw 'SQLite setup failed' }
+    python scripts/fetch_velopack.py
+    if ($LASTEXITCODE) { throw 'Velopack setup failed' }
     Push-Location apps/browser-ui
     try {
         & npm.cmd ci --no-audit --no-fund

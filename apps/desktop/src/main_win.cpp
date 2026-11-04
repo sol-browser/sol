@@ -32,6 +32,7 @@
 #include "app/state.h"
 #include "app/session.h"
 #include "app/profile_location.h"
+#include "app/updates.h"
 #include "windows/tab_drag_preview.h"
 #include "experiments/tab_probe.h"
 #include "experiments/window_transfer.h"
@@ -814,6 +815,16 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       if (state_->embedded) state_->embedded->Notify("copy", L"Copied current URL");
       auto value = CefValue::Create(); value->SetDictionary(snapshot);
       state_->Record("page_link_copied"); callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
+    }
+    if (method == "browser.restartToUpdate") {
+      if (!state_->workspace || persistent || dict->GetSize() != 1 || !state_->session) {
+        callback->Failure(400, "Invalid update command"); return true;
+      }
+      // Velopack's updater waits for this process to exit; closing every window ends it.
+      if (!red::PrepareRestartToUpdate()) { callback->Failure(409, "No update is ready"); return true; }
+      callback->Success("{}");
+      for (const auto& window : state_->session->Windows()) if (window->window) window->window->Close();
+      return true;
     }
     if (method == "browser.shortcut") {
       const auto action = dict->GetType("action") == VTYPE_STRING ? red::ShortcutNamed(dict->GetString("action").ToString()) : std::nullopt;
@@ -2250,6 +2261,8 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   for (const auto& [name, value] : switches)
     if (red::IsForbiddenSwitch(name.ToString())) return 11;
   if (!command->HasSwitch("type")) {
+    // Velopack's install/update/uninstall launches run their hook and exit here.
+    if (!probe) red::RunUpdateHooks();
     for (const auto& [name, value] : switches)
       if (!red::IsAllowedBrowserSwitch(name.ToString(), probe)) return 11;
     if (command->HasSwitch("auto-archive-test-clock")) {
@@ -2266,8 +2279,12 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
     std::string error;
     return red::OpenDefaultBrowserSettings(nullptr, error) ? 0 : 20;
   }
-  if (!command->HasSwitch("type") && _wcsicmp(module, red::InstalledBrowserPath().c_str()) == 0)
-    SetCurrentProcessExplicitAppUserModelID(probe?L"SolBrowser.Probe":red::kBrowserAppId);
+  // The installed Sol (Velopack or Inno), not a development build.
+  const bool installed = !command->HasSwitch("type") && _wcsicmp(module, red::InstalledBrowserPath().c_str()) == 0;
+  if (installed) SetCurrentProcessExplicitAppUserModelID(probe?L"SolBrowser.Probe":red::kBrowserAppId);
+  // Start menu shortcut and Default Apps offer for this install (Velopack's
+  // own shortcuts are off: they cannot pass --workspace).
+  if (installed && !probe) red::EnsureRegistered();
   auto state = std::make_shared<State>();
   state->probe = probe;
   state->probe_navigation = command->HasSwitch("probe-navigation");
@@ -2340,7 +2357,8 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   if (state->lifecycle_probe && state->lifecycle_mode.empty()) state->lifecycle_mode = "full";
   if (state->lifecycle_probe && state->lifecycle_mode != "full" && state->lifecycle_mode != "restore" && state->lifecycle_mode != "hold" && state->lifecycle_mode != "manual") return 11;
   state->workspace_probe = command->HasSwitch("probe-workspace") || state->organization_probe || state->browsing_probe;
-  state->workspace_mode = command->HasSwitch("workspace") || state->workspace_probe || state->lifecycle_probe || state->downloads_probe || state->fullscreen_probe || !state->permissions_probe.empty() || state->site_probe || !state->history_probe.empty() || state->tab_actions_probe || state->audible_probe || state->downloads_page_probe || state->extension_popup_probe || !state->protocols_probe.empty() || state->close_motion_probe || state->sidebar_peek_probe || state->sidebar_perf_probe || state->pip_probe || state->capture_mute_probe || state->theme_probe || state->spaces_probe || !state->ua_brand_probe.empty() || state->boost_probe || state->menu_probe || state->private_probe || state->pin_probe || state->link_headers_probe || !state->import_probe.empty();
+  // The installed Sol is always the workspace browser; Velopack starts it with no arguments.
+  state->workspace_mode = installed || command->HasSwitch("workspace") || state->workspace_probe || state->lifecycle_probe || state->downloads_probe || state->fullscreen_probe || !state->permissions_probe.empty() || state->site_probe || !state->history_probe.empty() || state->tab_actions_probe || state->audible_probe || state->downloads_page_probe || state->extension_popup_probe || !state->protocols_probe.empty() || state->close_motion_probe || state->sidebar_peek_probe || state->sidebar_perf_probe || state->pip_probe || state->capture_mute_probe || state->theme_probe || state->spaces_probe || !state->ua_brand_probe.empty() || state->boost_probe || state->menu_probe || state->private_probe || state->pin_probe || state->link_headers_probe || !state->import_probe.empty();
   state->probe_tabs = state->probe_tabs || state->native_tabs_reference || state->embedded_tabs_probe;
   auto url = command->HasSwitch("probe-url") ? command->GetSwitchValue("probe-url").ToString() : "https://example.com";
   state->initial_url = url;
@@ -2415,6 +2433,15 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   settings.log_severity = LOGSEVERITY_WARNING;
   if (!CefInitialize(args, settings, app, sandbox_info)) return CefGetExitCode();
   red::InstallWindowIcons();
+  // A newer version downloads in the background; the sidebar then offers
+  // "Restart to update", and otherwise it applies on the next start.
+  if (!state->probe) red::StartUpdateCheck([weak = std::weak_ptr<State>(state)](const std::string& version) {
+    LOG(WARNING) << "Update ready: " << version;
+    CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+      if (const auto state = weak.lock(); state && state->session)
+        for (const auto& window : state->session->Windows()) if (window->workspace) window->workspace->Refresh();
+    }, weak));
+  });
   CefRunMessageLoop();
   state->window = nullptr;
   state->shell_extension_watch = nullptr;

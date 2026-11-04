@@ -1,4 +1,5 @@
 #include "workspace/controller.h"
+#include "app/updates.h"
 #include "windows/pointer.h"
 #include "app/session.h"
 #include "app/auto_archive.h"
@@ -210,6 +211,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     result->SetDictionary("shortcutLabels", ShortcutLabels(state->session->preferences->Get()));
   }
   result->SetString("windowKind", state && state->standalone_window ? "standalone" : "workspace");
+  if (const auto update = ReadyUpdate(); !update.empty() && update.size() <= 40) result->SetString("updateReady", update);
   if (state && state->private_window) result->SetBool("privateWindow", true);
   if (state && state->translucent && state->backdrop != "none") result->SetString("backdrop", state->backdrop);
   // Pinned extensions for the top bar (none in a private window: no extensions run there).

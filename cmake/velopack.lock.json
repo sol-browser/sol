@@ -1,0 +1,9 @@
+{
+  "version": "1.2.161",
+  "url": "https://github.com/velopack/velopack/releases/download/1.2.161/velopack_libc_1.2.161.zip",
+  "archive": "velopack_libc_1.2.161.zip",
+  "size": 30774789,
+  "sha256": "31de8f2cf05a47bd5328a9f98b0c41aec1582156f6075f1058b26941f7f17c20",
+  "metadata_source": "https://github.com/velopack/velopack/releases/tag/1.2.161",
+  "locked_on": "2026-11-04"
+}

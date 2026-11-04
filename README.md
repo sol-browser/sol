@@ -20,8 +20,10 @@ may work but is untested. Linux may come one day, much later.
 ## Download
 
 Releases will appear on the [Releases page](https://github.com/sol-browser/sol/releases).
-The setup is per-user (no administrator rights). It is not code-signed yet, so
-Windows SmartScreen asks once: **More info → Run anyway**.
+Download `Sol-Setup-<version>.exe` from the latest release. The setup is
+per-user (no administrator rights) and Sol keeps itself up to date afterwards.
+It is not code-signed yet, so Windows SmartScreen asks once: **More info → Run
+anyway**.
 
 ## Build from source
 
@@ -71,7 +73,7 @@ python scripts/spaces_smoke.py
 | `apps/browser-ui` | browser interface (React, TypeScript, Vite) |
 | `packages/browser-contracts` | typed messages between the interface and the host |
 | `cef-patches`, `cmake` | engine patches and pinned dependencies |
-| `installer` | Windows setup (Inno Setup) |
+| `installer` | release staging checks (Inno Setup); releases are packed with [Velopack](https://velopack.io) |
 | `scripts`, `tests` | build, packaging, smoke checks and tests |
 
 ## License

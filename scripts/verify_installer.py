@@ -204,7 +204,10 @@ def cef_lists(sdk):
 
 def source_map(root, build, sdk):
     """Expected stage includes only the configured x64 CEF runtime and app assets."""
+    # velopack_libc (Sol's updater library) is copied under its import name;
+    # the build checks its bytes against cmake/velopack.lock.json.
     sources = {'sol.dll': build / 'sol.dll',
+               'velopack_libc.dll': root / 'third_party/velopack/velopack_libc_win_x64_msvc.dll',
                'licenses/cef-license.txt': sdk / 'LICENSE.txt',
                'licenses/chromium-credits.html': sdk / 'CREDITS.html'}
     lists = cef_lists(sdk)
@@ -298,7 +301,7 @@ def verify(root, build_directory, version, test_variant=False):
         if path.stat().st_size != source.stat().st_size or sha256(path) != sha256(source):
             raise ValueError('Stage differs from source: ' + str(path) + ' / ' + str(source))
         # Independently require every CEF runtime file in the build to match SDK.
-        if not key.startswith(('ui/', 'licenses/')) and key != 'sol.dll':
+        if not key.startswith(('ui/', 'licenses/')) and key not in ('sol.dll', 'velopack_libc.dll'):
             built = build / actual[key][0]
             if not built.is_file() or sha256(built) != sha256(source):
                 raise ValueError('Build contains stale/missing CEF runtime: ' + str(built))

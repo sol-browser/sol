@@ -31,7 +31,7 @@ target_sources(${CEF_TARGET} PRIVATE src/experiments/window_transfer.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/session.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/auto_archive.cpp src/workspace/auto_archive_controller.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/link_peek_layout.cpp src/windows/link_peek_scene.cpp src/windows/auto_pip.cpp src/windows/video_pip_button.cpp src/windows/link_peek_close.cpp src/windows/link_peek_readiness.cpp src/workspace/link_peek_controller.cpp src/workspace/media_controller.cpp src/workspace/tab_menu_actions.cpp)
-target_sources(${CEF_TARGET} PRIVATE src/app/preferences.cpp)
+target_sources(${CEF_TARGET} PRIVATE src/app/preferences.cpp src/app/updates.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/tab_drag_preview.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/sidebar_shadow.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/extension_observation.cpp)
@@ -102,7 +102,7 @@ target_sources(${CEF_TARGET} PRIVATE src/experiments/lifecycle_probe.cpp src/exp
 target_sources(${CEF_TARGET} PRIVATE src/extensions/profile_guard.cpp src/extensions/install_notice.cpp src/extensions/pinned_extensions.cpp src/extensions/extension_catalog.cpp src/windows/extension_popup.cpp src/windows/sidebar_peek.cpp
   src/windows/extensions_window.cpp src/site/site_data.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/downloads/download_manager.cpp src/windows/panel_popup.cpp src/windows/share_sheet.cpp src/windows/window_icons.cpp)
-target_link_libraries(${CEF_TARGET} PRIVATE runtimeobject)
+target_link_libraries(${CEF_TARGET} PRIVATE runtimeobject velopack)
 target_include_directories(${CEF_TARGET} PRIVATE src)
 SET_LIBRARY_TARGET_PROPERTIES(${CEF_TARGET})
 target_compile_options(${CEF_TARGET} PRIVATE /W4 /utf-8)
@@ -113,6 +113,13 @@ target_sources(${CEF_TARGET} PRIVATE src/experiments/platform_codecs_probe.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/devtools_probe.cpp)
 target_link_libraries(${CEF_TARGET} PRIVATE workspace_store import_formats libcef_dll_wrapper libcef_lib ${CEF_STANDARD_LIBS} advapi32 dwmapi dcomp d3d11 d2d1 dwrite dxgi dxguid windowscodecs)
 COPY_SINGLE_FILE(${CEF_TARGET} "${CEF_BINARY_DIR}/bootstrap.exe" "${CEF_TARGET_OUT_DIR}/${CEF_TARGET}.exe")
+# Velopack (app/updates.cpp) runs only in the browser process: delay-load it so
+# sandboxed child processes, which load sol.dll too, never map it.
+COPY_SINGLE_FILE(${CEF_TARGET} "${CMAKE_SOURCE_DIR}/third_party/velopack/velopack_libc_win_x64_msvc.dll"
+                 "${CEF_TARGET_OUT_DIR}/velopack_libc.dll")  # its import library names velopack_libc.dll
+target_link_options(${CEF_TARGET} PRIVATE /DELAYLOAD:velopack_libc.dll)
+# Velopack's C++ wrapper reports errors as exceptions; CEF builds without them.
+set_source_files_properties(src/app/updates.cpp PROPERTIES COMPILE_OPTIONS "/EHsc;/U_HAS_EXCEPTIONS;/D_HAS_EXCEPTIONS=1")
 # Every Red process (renderers included) starts from this executable, and its
 # main thread gets the stack the image asks for. CEF's bootstrap asks for 1 MB;
 # chrome.exe and msedge.exe ask for 8 MB because Blink recurses deeply on deep

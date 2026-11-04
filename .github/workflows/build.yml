@@ -1,6 +1,7 @@
 # Builds Sol and runs its unit tests on every push to main and every pull
-# request. A version tag (v1.2.3) also builds the setup and attaches it to a
-# draft release, which a maintainer reviews and publishes.
+# request. A version tag (v1.2.3) also packs Sol with Velopack and attaches the
+# setup and the update feed to a draft release. Installed copies see the update
+# once a maintainer publishes the release.
 name: Build
 
 on:
@@ -38,7 +39,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: .cache
-          key: engine-${{ hashFiles('cmake/cef.lock.json', 'cmake/sqlite.lock.json') }}
+          key: deps-${{ hashFiles('cmake/cef.lock.json', 'cmake/sqlite.lock.json', 'cmake/velopack.lock.json') }}
 
       - name: Build and test
         shell: powershell
@@ -51,21 +52,30 @@ jobs:
           $version = (Get-Content VERSION -Raw).Trim()
           if ("v$version" -ne '${{ github.ref_name }}') { throw "Tag ${{ github.ref_name }} does not match VERSION $version" }
 
-      - name: Build the setup
+      - uses: actions/setup-dotnet@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          dotnet-version: 8.0.x
+
+      # Stages and verifies the release files (build_installer.ps1), then packs
+      # them with Velopack: setup, full and delta packages, releases.win.json.
+      - name: Pack the release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python -m pip install --disable-pip-version-check Pillow
           ./scripts/build_installer.ps1 -BuildDirectory Release
           python scripts/verify_installer.py --build-directory Release
+          ./scripts/pack_release.ps1
 
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v')
         with:
-          name: setup
-          path: |
-            artifacts/installer/Sol-Setup-*.exe
-            artifacts/installer/Sol-Setup-*.sha256
+          name: release
+          path: artifacts/velopack/publish/*
+          if-no-files-found: error
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -76,7 +86,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: setup
+          name: release
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -84,4 +94,4 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
             --title "Sol $version" --notes "Built by CI from $GITHUB_REF_NAME. Edit these notes before publishing." \
-            Sol-Setup-*.exe Sol-Setup-*.sha256
+            Sol-Setup-*.exe Sol-*.sha256 SolBrowser-*.nupkg releases.win.json

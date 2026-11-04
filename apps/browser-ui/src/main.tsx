@@ -270,7 +270,8 @@ function Shell() {
         hidden={snapshot.sidebarVisible === false} openNewTab={() => void send({ method: 'browser.shortcut', action: 'newTab' })} action={action}
         openArchive={button => openPanel('archive', button)} tabCommand={command => void send(command)} openDroppedFiles={() => void send({ method: 'workspace.openDroppedFiles' })}
         spaces={snapshot.spaces ?? []} activeSpace={snapshot.activeSpace ?? ''} editSpace={anchor => openPanel('space', anchor)}
-        request={snapshot.sidebarRequest} />
+        request={snapshot.sidebarRequest} updateReady={snapshot.updateReady}
+        restartToUpdate={() => void send({ method: 'browser.restartToUpdate' })} />
       <SidebarResizer width={snapshot.sidebarWidth ?? 256} hidden={snapshot.sidebarVisible === false} disabled={!ready} apply={apply} onError={setError} />
       {snapshot.splitView && <SplitView view={snapshot.splitView} nodes={snapshot.nodes ?? []} disabled={!ready || busy} command={send} action={action} />}
       {snapshot.devTools && <DevToolsDock key={`${snapshot.devTools.id}-${snapshot.devTools.side}`} dock={snapshot.devTools} deviceEnabled={!!snapshot.devicePreview?.enabled} apply={apply} onError={setError} />}

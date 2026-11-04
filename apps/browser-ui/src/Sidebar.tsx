@@ -29,12 +29,15 @@ type Props = { nodes: TreeNode[]; treeRevision: number; activeId: string; busy: 
   /** Opens the native Archive popover anchored at the given button. */
   openArchive: (button: HTMLElement) => void;
   /** Tab commands outside the tree revision model (duplicate, mute). */
-  tabCommand: (command: TabCommand) => void };
+  tabCommand: (command: TabCommand) => void;
+  /** A downloaded Sol version; the pill restarts Sol into it. */
+  updateReady?: string;
+  restartToUpdate?: () => void };
 export type TabCommand = { method: 'split.focus'; id: string }
   | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragStarted' | 'tab.dragCancel' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
   | { method: 'tab.setHome'; id: string; url: string; title: string } | { method: 'tab.mute'; id: string; muted: boolean }
   | Extract<Command, { method: 'media.control' }>;
-export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, request, media, standalone = false, newTabShortcut = 'Ctrl + T' }: Props) {
+export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, request, media, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate }: Props) {
   // Favorite tiles are tinted with their icon's color, read once per icon.
   const [, retint] = useReducer((n: number) => n + 1, 0);
   // A closing Today tab leaves the list as soon as native close starts, so the
@@ -536,6 +539,8 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     {zone('today', 'Today')}
     </SpaceTransition>
     {!standalone && !!media?.length && <MediaStack media={media} nodes={tree} command={tabCommand} />}
+    {!standalone && updateReady && restartToUpdate && <button type="button" className="update-pill" data-action="restart-to-update"
+      title={`Sol ${updateReady} is ready`} onClick={restartToUpdate}><Icon name="logo" /><span>Restart to update</span></button>}
     {!standalone && <div className="sidebar-bottom">
       <button ref={archiveButton} data-action="archive" title="Archived tabs" aria-label="Archive" onClick={e => openArchive(e.currentTarget)}><Icon name="archive" /></button>
       {/* Arc: the space switcher along the bottom; Ctrl+1…9 or a horizontal swipe also switch. */}

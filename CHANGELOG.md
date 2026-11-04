@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1 — 2026-11-04
+
+- Sol now updates itself: it downloads a new version in the background, and
+  "Restart to update" at the bottom of the sidebar installs it. Otherwise the
+  update applies the next time Sol starts.
+- New setup (Sol-Setup-0.1.1.exe). If Sol 0.1.0 is installed, the setup
+  replaces it and keeps your profile: tabs, spaces, passwords and settings.
+  Install it once by hand; later versions arrive on their own.
+
 ## 0.1.0 — 2026-11-04 (first release)
 
 - Sol's first release: a Windows browser with Spaces, Favorites, Pinned and

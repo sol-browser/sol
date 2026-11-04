@@ -29,6 +29,8 @@ export type DevicePreview = DeviceSettings & { id: number; pending: boolean; err
 export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boolean; probeMode: boolean;
   workspaceEnabled?: boolean; schemaVersion?: number; treeRevision?: number; ready?: boolean; error?: string; browserFullscreen?: boolean;
   windowKind?: 'workspace' | 'standalone';
+  /** A downloaded Sol version waiting for "Restart to update". */
+  updateReady?: string;
   searchEngine?: SearchEngine; searchSuggestions?: boolean; shortcutLabels?: Record<string, string>;
   splitView?: SplitViewInfo;
   linkPeek?: LinkPeekInfo;
@@ -172,6 +174,7 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'split.site'; id: string; x: number; y: number; width: number; height: number }
   | { method: 'split.preview'; id: string; ratio: number }
   | { method: 'browser.shortcut'; action: ShortcutAction }
+  | { method: 'browser.restartToUpdate' }
   | { method: 'workspace.setSidebarVisible'; visible: boolean }
   | { method: 'workspace.setSidebarWidth'; width: number; save: boolean }
   | { method: 'workspace.beginSidebarResize' }
@@ -248,6 +251,7 @@ export function parseSnapshot(raw: string): Snapshot {
   if (s.workspaceEnabled === true) {
     if (s.searchEngine !== undefined && !['google','duckduckgo','bing','brave'].includes(String(s.searchEngine))) throw new Error('Invalid search engine');
     if (s.searchSuggestions !== undefined && typeof s.searchSuggestions !== 'boolean') throw new Error('Invalid suggestion preference');
+    if (s.updateReady !== undefined && (typeof s.updateReady !== 'string' || s.updateReady.length > 40 || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(s.updateReady))) throw new Error('Invalid update version');
     if (s.browserFullscreen !== undefined && typeof s.browserFullscreen!=='boolean') throw new Error('Invalid fullscreen state');
     if (s.linkPeek !== undefined) {
       const p = s.linkPeek;

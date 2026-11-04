@@ -50,6 +50,12 @@ test('detached inspector retains placement controls and validates device geometr
   for (const bad of [{ width: 49 }, { height: 10000 }, { width: 50.5 }, { scale: 2.1 }, { effectiveScale: 0 }, { touch: 1 }])
     assert.throws(() => parseSnapshot(JSON.stringify({ ...fixture(), devicePreview: { ...devicePreview, ...bad } })));
 });
+test('a ready update is a bounded version string', () => {
+  assert.equal(parseSnapshot(JSON.stringify({ ...fixture(), updateReady: '0.1.1' })).updateReady, '0.1.1');
+  assert.equal(parseSnapshot(JSON.stringify({ ...fixture(), updateReady: '1.0.0-beta.2' })).updateReady, '1.0.0-beta.2');
+  for (const bad of [1, '', 'v0.1.1', '0.1', '0.1.1 <b>', '1.0.0-' + 'x'.repeat(40)])
+    assert.throws(() => parseSnapshot(JSON.stringify({ ...fixture(), updateReady: bad })));
+});
 test('accepts native tree with collapsed parent and live active descendant', () => assert.equal(parseSnapshot(JSON.stringify(fixture())).activeId, tab));
 test('Peek has a transient identity, bounded geometry and explicit lifecycle flags', () => {
   const peek = { id:tab, url:'https://example.com/preview', title:'Preview',

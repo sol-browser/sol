@@ -239,6 +239,11 @@ kbd { margin-left: auto; font-family: inherit; font-size: 10px; color: oklch(cal
 .tab-composer input { width: 100%; font-size: 12px; min-height: 33px; border: 1px solid oklch(calc(0.8024 + var(--theme-dark, 0) * -0.3735) calc(0.0430 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 5.2)); background: oklch(calc(1.0000 + var(--theme-dark, 0) * -0.7140) 0.0000 89.9); border-radius: 6px; padding: 0 8px; }
 .tab-composer button { min-height: 30px; color: oklch(calc(1.0000 + var(--theme-dark, 0) * -0.7140) 0.0000 89.9); background: oklch(calc(0.6032 + var(--theme-dark, 0) * 0.0072) min(calc(0.0828 * var(--theme-chroma, 1)), 0.24) calc(var(--theme-hue, 307) + 3.8)); font-size: 11px; }
 .tab-composer button:hover { background: oklch(calc(0.5303 + var(--theme-dark, 0) * 0.1411) min(calc(0.0820 * var(--theme-chroma, 1)), 0.24) calc(var(--theme-hue, 307) + 3.8)); }
+/* A downloaded update: one quiet row above the bottom bar; the sun mark carries Sol's yellow. */
+.update-pill { flex-shrink: 0; display: flex; align-items: center; gap: 8px; height: 32px; margin: 8px 4px 0; padding: 0 10px; border-radius: 9px;
+  color: inherit; font-size: 12px; font-weight: 500; background: color-mix(in oklch, currentColor 6%, transparent); }
+.update-pill:hover { background: color-mix(in oklch, currentColor 11%, transparent); }
+.update-pill .icon { width: 15px; height: 15px; color: #F9CA30; }
 .sidebar-bottom { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 10px 4px 0; gap: 8px; }
 .sidebar-bottom button { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 7px; color: oklch(calc(0.5276 + var(--theme-dark, 0) * 0.1990) calc(0.0533 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 2.4)); font-size: 12px; }
 .sidebar-bottom button:hover { background: oklch(calc(1.0000 + var(--theme-dark, 0) * 0.0000) 0.0000 89.9 / calc(0.333 + var(--theme-dark, 0) * -0.273)); }

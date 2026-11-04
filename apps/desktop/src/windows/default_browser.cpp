@@ -94,10 +94,32 @@ bool Register(const std::filesystem::path& path) {
 std::filesystem::path InstalledBrowserPath() {
   PWSTR local = nullptr;
   if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &local))) return {};
-  const auto path = std::filesystem::path(local) / L"Sol" / L"Application" / L"sol.exe";
+  const std::filesystem::path root(local);
   CoTaskMemFree(local);
-  std::error_code error;
-  return std::filesystem::is_regular_file(path, error) && !error ? path : std::filesystem::path{};
+  // Velopack keeps each version in <root>\current (a stable path); the Inno setup
+  // used Sol\Application before it.
+  for (const auto& path : {root / L"SolBrowser" / L"current" / L"sol.exe", root / L"Sol" / L"Application" / L"sol.exe"}) {
+    std::error_code error;
+    if (std::filesystem::is_regular_file(path, error) && !error) return path;
+  }
+  return {};
+}
+bool EnsureRegistered() {
+  const auto path = InstalledBrowserPath();
+  return !path.empty() && (Registered(path) || Register(path));
+}
+void Unregister() {
+  // Offers only: Windows keeps the person's own choices (UserChoice) and drops
+  // ours with the ProgIDs. The profile is never touched.
+  for (const auto* tree : {L"Software\\Classes\\SolBrowserURL", L"Software\\Classes\\SolBrowserHTML", L"Software\\Clients\\StartMenuInternet\\Sol",
+                           L"Software\\Classes\\Applications\\sol.exe", L"Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\sol.exe"})
+    RegDeleteTreeW(HKEY_CURRENT_USER, tree);
+  HKEY key = nullptr;
+  if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\RegisteredApplications", 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) { RegDeleteValueW(key, L"Sol"); RegCloseKey(key); }
+  for (const auto* list : {L"Software\\Classes\\.htm\\OpenWithProgids", L"Software\\Classes\\.html\\OpenWithProgids"})
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, list, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) { RegDeleteValueW(key, kHtmlId); RegCloseKey(key); }
+  RemoveBrowserShortcut();
+  SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }
 CefRefPtr<CefDictionaryValue> DefaultBrowserStatus() {
   auto result = CefDictionaryValue::Create();
