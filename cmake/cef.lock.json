@@ -6,6 +6,7 @@
   "platform": "windows64",
   "distribution": "standard (local sol-156 official Release; Windows platform codecs)",
   "archive": "cef_binary_156.0.31-sol-156.3676+g06f3c4d+chromium-156.0.8078.48_windows64-red.tar.bz2",
+  "url": "https://github.com/sol-browser/cef/releases/download/engine-156.0.31/sol-engine-156.0.31-windows64.tar.bz2",
   "root": "cef_binary_156.0.31-sol-156.3676+g06f3c4d+chromium-156.0.8078.48_windows64",
   "size": 176517120,
   "sha256": "44febce4aaacdf84b6e84d80e339a2edcda8e61a29a1ec1c4267f373b8f0229e",

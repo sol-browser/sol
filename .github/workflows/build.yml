@@ -1,0 +1,87 @@
+# Builds Sol and runs its unit tests on every push to main and every pull
+# request. A version tag (v1.2.3) also builds the setup and attaches it to a
+# draft release, which a maintainer reviews and publishes.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/browser-ui/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # The pinned engine archive (~176 MB), keyed by its lock.
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: engine-${{ hashFiles('cmake/cef.lock.json', 'cmake/sqlite.lock.json') }}
+
+      - name: Build and test
+        shell: powershell
+        run: ./scripts/build.ps1 -Configuration Release
+
+      - name: Check the tag matches VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: powershell
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ("v$version" -ne '${{ github.ref_name }}') { throw "Tag ${{ github.ref_name }} does not match VERSION $version" }
+
+      - name: Build the setup
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: powershell
+        run: |
+          python -m pip install --disable-pip-version-check Pillow
+          ./scripts/build_installer.ps1 -BuildDirectory Release
+          python scripts/verify_installer.py --build-directory Release
+
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: setup
+          path: |
+            artifacts/installer/Sol-Setup-*.exe
+            artifacts/installer/Sol-Setup-*.sha256
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: setup
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "Sol $version" --notes "Built by CI from $GITHUB_REF_NAME. Edit these notes before publishing." \
+            Sol-Setup-*.exe Sol-Setup-*.sha256
