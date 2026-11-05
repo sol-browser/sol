@@ -1,6 +1,8 @@
 #include "app/updates.h"
 #include <windows.h>
 #include <shellapi.h>
+#include <chrono>
+#include <cwchar>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -13,9 +15,11 @@
 
 namespace red {
 namespace {
-std::mutex ready_mutex;
-std::string ready_version;  // Guarded by ready_mutex.
-void SetReady(const std::string& version) { std::lock_guard lock(ready_mutex); ready_version = version; }
+// The version waiting for a restart. Never destroyed: the check thread may
+// still run while the process exits.
+struct Ready { std::mutex mutex; std::string version; };
+Ready& ReadyState() { static auto* state = new Ready; return *state; }
+void SetReady(const std::string& version) { auto& r = ReadyState(); std::lock_guard lock(r.mutex); r.version = version; }
 // icacls <folder> /grant *S-1-15-2-2:(OI)(CI)(RX): "ALL RESTRICTED APPLICATION
 // PACKAGES" may read and execute Sol's own files, as the build and setup grant.
 bool GrantSandboxAccess(const std::filesystem::path& folder) {
@@ -98,25 +102,57 @@ std::unique_ptr<Velopack::UpdateManager> Manager() {
 }
 }  // namespace
 
+namespace {
+enum class Check { Ready, Nothing, NotInstalled };
+
+Check CheckOnce(const std::function<void(const std::string&)>& ready) {
+  std::unique_ptr<Velopack::UpdateManager> manager;
+  try {
+    manager = Manager();
+  } catch (const std::exception& error) {
+    // Development builds and copies outside a Velopack install never update.
+    LOG(WARNING) << "Updates off: " << error.what();
+    return Check::NotInstalled;
+  }
+  try {
+    if (const auto pending = manager->UpdatePendingRestart()) { SetReady(pending->Version); ready(pending->Version); return Check::Ready; }
+    const auto update = manager->CheckForUpdates();
+    if (!update) return Check::Nothing;
+    manager->DownloadUpdates(*update);
+    LOG(WARNING) << "Update " << update->TargetFullRelease.Version << " downloaded; applies on next start";
+    SetReady(update->TargetFullRelease.Version);
+    ready(update->TargetFullRelease.Version);
+    return Check::Ready;
+  } catch (const std::exception& error) {
+    // No network, GitHub unavailable or rate-limited: try again next time.
+    LOG(WARNING) << "Update check failed: " << error.what();
+    return Check::Nothing;
+  }
+}
+
+// Four hours, like browsers that update in the background. SOL_UPDATE_INTERVAL
+// (seconds, at least 30) shortens it for testing.
+std::chrono::seconds CheckInterval() {
+  wchar_t value[32]{};
+  const DWORD length = GetEnvironmentVariableW(L"SOL_UPDATE_INTERVAL", value, 32);
+  if (length > 0 && length < 32) {
+    const long seconds = std::wcstol(value, nullptr, 10);
+    if (seconds >= 30) return std::chrono::seconds(seconds);
+  }
+  return std::chrono::hours(4);
+}
+}  // namespace
+
 void StartUpdateCheck(std::function<void(const std::string&)> ready) {
   std::thread([ready = std::move(ready)] {
-    try {
-      const auto manager = Manager();
-      if (const auto pending = manager->UpdatePendingRestart()) { SetReady(pending->Version); ready(pending->Version); return; }
-      const auto update = manager->CheckForUpdates();
-      if (!update) return;
-      manager->DownloadUpdates(*update);
-      LOG(WARNING) << "Update " << update->TargetFullRelease.Version << " downloaded; applies on next start";
-      SetReady(update->TargetFullRelease.Version);
-      ready(update->TargetFullRelease.Version);
-    } catch (const std::exception& error) {
-      // Not a Velopack install (development builds, the Inno setup) or no network: nothing to do.
-      LOG(WARNING) << "Update check skipped: " << error.what();
-    }
+    const auto interval = CheckInterval();
+    // Until an update waits for a restart; the process ending stops the thread.
+    for (Check result = CheckOnce(ready); result == Check::Nothing; result = CheckOnce(ready))
+      std::this_thread::sleep_for(interval);
   }).detach();
 }
 
-std::string ReadyUpdate() { std::lock_guard lock(ready_mutex); return ready_version; }
+std::string ReadyUpdate() { auto& r = ReadyState(); std::lock_guard lock(r.mutex); return r.version; }
 
 bool PrepareRestartToUpdate() {
   try {

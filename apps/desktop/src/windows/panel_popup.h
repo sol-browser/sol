@@ -53,6 +53,9 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   std::weak_ptr<State> state_;
   CefRefPtr<CefWindow> window_;
   CefRefPtr<CefBrowser> browser_;
+ public:
+  CefRefPtr<CefBrowser> browser() const { return browser_; }  // Probes only.
+ private:
   CefRefPtr<CefMessageRouterBrowserSide::Callback> observer_;
   int64_t observer_id_ = -1;
   std::string kind_ = "downloads";
@@ -62,6 +65,10 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   int height_ = 120, request_ = 0, site_details_ = 0;
   unsigned long long opened_ms_ = 0;
   bool open_ = false, ready_ = false, shutdown_ = false, menu_open_ = false;
+  // The new-space editor previews its theme on the window without saving; it
+  // is dropped when the editor closes without creating the space.
+  bool draft_theme_ = false;
+  void DropDraftTheme();
   bool prepared_ = false, presented_ = false;
 };
 }  // namespace red

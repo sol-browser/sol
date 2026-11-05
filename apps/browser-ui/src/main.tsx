@@ -23,6 +23,7 @@ import './style.css';
 import { CommandBar } from './CommandBar';
 import { applyTheme } from './theme-apply';
 import { EmptyStart } from './EmptyStart';
+import { Welcome } from './Welcome';
 import { Panel } from './Panel';
 import { Settings } from './Settings';
 import { installNativeInputFocus } from './native-input-focus';
@@ -32,6 +33,7 @@ import { LinkPeek } from './LinkPeek';
 import { VenetianMask } from 'lucide-react';
 import { BoostEditor } from './BoostEditor';
 import { Menu } from './Menu';
+import { internalPage } from './internal-pages';
 // After every component stylesheet: popovers and menus share the Orbit look.
 import './popup.css';
 
@@ -39,7 +41,8 @@ const EMPTY_NODES: TreeNode[] = [];
 function Shell() {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const theme = snapshot?.theme;
-  useEffect(() => applyTheme(theme), [theme]);
+  const space = snapshot?.activeSpace ?? '';
+  useEffect(() => applyTheme(theme, true, space), [theme, space]);
   // System backdrop (engine patch 12): transparent page background, translucent workspace tint.
   useEffect(() => { document.documentElement.dataset.backdrop = snapshot?.backdrop ?? 'none'; }, [snapshot?.backdrop]);
   // Auto mode follows Windows: ask native to re-resolve (and repaint its own
@@ -148,7 +151,7 @@ function Shell() {
     finally { clearTimeout(slow); inFlight.current = false; setBusy(false); }
   }
   // Native code positions the popover from the button's rectangle (DIP, client area).
-  function openPanel(kind: 'archive' | 'downloads' | 'site' | 'space', button: HTMLElement) {
+  function openPanel(kind: 'archive' | 'downloads' | 'site' | 'space' | 'newSpace', button: HTMLElement) {
     const r = button.getBoundingClientRect();
     void send({ method: 'panel.open', kind, x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)),
       width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
@@ -269,7 +272,7 @@ function Shell() {
         newTabShortcut={snapshot.shortcutLabels?.newTab} media={snapshot.media}
         hidden={snapshot.sidebarVisible === false} openNewTab={() => void send({ method: 'browser.shortcut', action: 'newTab' })} action={action}
         openArchive={button => openPanel('archive', button)} tabCommand={command => void send(command)} openDroppedFiles={() => void send({ method: 'workspace.openDroppedFiles' })}
-        spaces={snapshot.spaces ?? []} activeSpace={snapshot.activeSpace ?? ''} editSpace={anchor => openPanel('space', anchor)}
+        spaces={snapshot.spaces ?? []} activeSpace={snapshot.activeSpace ?? ''} editSpace={anchor => openPanel('space', anchor)} newSpace={anchor => openPanel('newSpace', anchor)}
         request={snapshot.sidebarRequest} updateReady={snapshot.updateReady}
         restartToUpdate={() => void send({ method: 'browser.restartToUpdate' })} />
       <SidebarResizer width={snapshot.sidebarWidth ?? 256} hidden={snapshot.sidebarVisible === false} disabled={!ready} apply={apply} onError={setError} />
@@ -289,6 +292,7 @@ function siteLabel(node?: TreeNode) {
 }
 // The non-editable address button shows the site; editing uses the command bar.
 function compactAddress(url: string) {
+  const page = internalPage(url); if (page) return page.title;
   try {
     const parsed = new URL(url);
     if (parsed.protocol === 'chrome-extension:') return 'Extension page';
@@ -302,6 +306,7 @@ installNativeInputFocus();
 if (!['/history.html', '/downloads.html'].includes(location.pathname))
   window.addEventListener('wheel', event => { if (event.ctrlKey) event.preventDefault(); }, { passive: false, capture: true });
 createRoot(document.getElementById('root')!).render(location.pathname === '/peek.html' ? <Peek /> :
+  location.pathname === '/welcome.html' ? <Welcome /> :
   location.pathname === '/settings.html' ? <Settings /> :
   location.pathname === '/boost.html' ? <BoostEditor /> :
   location.pathname === '/menu.html' ? <Menu /> :

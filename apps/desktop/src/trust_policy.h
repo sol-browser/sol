@@ -8,6 +8,8 @@ inline constexpr std::string_view kUiUrl = "sol://ui/index.html";
 inline constexpr std::string_view kCommandUrl = "sol://ui/command.html";
 inline constexpr std::string_view kPanelUrl = "sol://ui/panel.html";
 inline constexpr std::string_view kSettingsUrl = "sol://ui/settings.html";
+// The first-run welcome (windows/welcome_window.cpp).
+inline constexpr std::string_view kWelcomeUrl = "sol://ui/welcome.html";
 inline bool IsSettingsUi(int browser, int trusted, bool main_frame, std::string_view url) {
   return trusted > 0 && browser == trusted && main_frame && url == kSettingsUrl;
 }
@@ -31,6 +33,14 @@ inline bool IsPeekUi(int browser, int trusted, bool main_frame, std::string_view
 inline constexpr std::string_view kHistoryUrl = "sol://ui/history.html";
 inline constexpr std::string_view kDownloadsUrl = "sol://ui/downloads.html";
 inline bool IsInternalPageUrl(std::string_view url) { return url == kHistoryUrl || url == kDownloadsUrl; }
+// The short addresses the address bar shows and accepts for them.
+inline std::string_view InternalPageForAddress(std::string_view address) {
+  return address == "sol://history" ? kHistoryUrl : address == "sol://downloads" ? kDownloadsUrl : std::string_view{};
+}
+// What Copy link puts on the clipboard: the short address for those pages.
+inline std::string_view ShownAddress(std::string_view url) {
+  return url == kHistoryUrl ? "sol://history" : url == kDownloadsUrl ? "sol://downloads" : url;
+}
 inline bool IsInternalPageUi(bool registered_page, bool main_frame, std::string_view url) {
   return registered_page && main_frame && IsInternalPageUrl(url);
 }

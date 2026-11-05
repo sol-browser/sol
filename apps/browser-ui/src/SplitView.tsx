@@ -1,3 +1,4 @@
+import { internalPage } from './internal-pages';
 import { ArrowLeftRight, Columns2, Rows2, Maximize2, Minimize2, Unlink2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Command, SplitViewInfo, TreeMutation, TreeNode } from '../../../packages/browser-contracts/src';
@@ -97,6 +98,7 @@ export function SplitView({ view, nodes, disabled, command, action }: Props) {
   </div>;
 }
 function paneAddress(address: string) {
+  const page = internalPage(address); if (page) return page.title;
   try { const url = new URL(address); return url.hostname.replace(/^www\./u,'') || address; }
   catch { return address || 'Search or enter address'; }
 }

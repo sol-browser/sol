@@ -62,14 +62,17 @@ export type ThemePalette = { version: 1 | 2; count: number; radius: number; ligh
 export type Theme = { hue: number; intensity: number; mode: ThemeMode; noise: number; dark: boolean; palette?: ThemePalette };
 export type SearchEngine = 'google' | 'duckduckgo' | 'bing' | 'brave';
 export type Backdrop = 'none' | 'mica' | 'acrylic';
+/** Times on History and Downloads: the Windows short time format, or a fixed clock. */
+export type Clock = 'system' | '12' | '24';
 export type KeyBinding = { key: number; ctrl: boolean; shift: boolean; alt: boolean };
-export type BrowserPreferences = { schema: 1; searchEngine: SearchEngine; searchSuggestions?: boolean; autoArchiveHours?: number; autoPictureInPicture?: boolean; autoPipSites?: Record<string, boolean>; pipButton?: boolean; unloadMinutes?: number; backdrop?: Backdrop; downloadDirectory: string; askDownload: boolean;
+export type BrowserPreferences = { schema: 1; searchEngine: SearchEngine; searchSuggestions?: boolean; autoArchiveHours?: number; autoPictureInPicture?: boolean; autoPipSites?: Record<string, boolean>; pipButton?: boolean; unloadMinutes?: number; clock?: Clock; backdrop?: Backdrop; downloadDirectory: string; askDownload: boolean;
   startup: 'restore' | 'newTab' | 'homepage'; homepage: string; shortcuts: Record<string, KeyBinding> };
 export type KeyboardSetting = { action: string; title: string; label: string; defaultLabel: string; custom: boolean; editable: boolean };
 export type SettingsCommand = { method: 'settings.get' | 'settings.ready' | 'settings.makeDefault' | 'settings.extensions'
     | 'settings.chooseDownloadFolder' | 'settings.resetDownloadFolder' | 'settings.resetShortcuts' }
   | { method: 'settings.set'; key: 'searchEngine' | 'startup' | 'homepage'; value: string }
   | { method: 'settings.set'; key: 'backdrop'; value: Backdrop }
+  | { method: 'settings.set'; key: 'clock'; value: Clock }
   | { method: 'settings.set'; key: 'askDownload' | 'searchSuggestions' | 'autoPictureInPicture' | 'pipButton'; value: boolean }
   | { method: 'settings.set'; key: 'autoArchiveHours' | 'unloadMinutes'; value: number }
   | { method: 'settings.shortcut'; action: string; binding: KeyBinding | null }
@@ -79,6 +82,8 @@ export type SettingsSnapshot = {
   theme: Theme; ready: boolean; spaceName: string; spaceId: string; version: string; chromiumVersion: string;
   defaultBrowser: { installed: boolean; registered: boolean; isDefault: boolean | null };
   preferences: BrowserPreferences; preferencesError: string; keyboard: KeyboardSetting[];
+  /** Whether Windows' short time format uses AM/PM ("Same as Windows"). */
+  systemHour12?: boolean;
   /** available: Windows 11 22H2+ and an engine with patch 12; active: this window is translucent. */
   backdrop?: { available: boolean; active: boolean };
 };
@@ -101,6 +106,8 @@ export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
   const prefs = value.preferences;
   if (object(prefs) && prefs.searchSuggestions !== undefined && typeof prefs.searchSuggestions !== 'boolean') throw new Error('Invalid suggestion preference');
   if (object(prefs) && prefs.unloadMinutes !== undefined && (typeof prefs.unloadMinutes !== 'number' || ![0,15,30,60,120,360].includes(prefs.unloadMinutes))) throw new Error('Invalid unload preference');
+  if (object(prefs) && prefs.clock !== undefined && !['system', '12', '24'].includes(String(prefs.clock))) throw new Error('Invalid clock preference');
+  if (value.systemHour12 !== undefined && typeof value.systemHour12 !== 'boolean') throw new Error('Invalid system clock');
   if (object(prefs) && prefs.backdrop !== undefined && !['none', 'mica', 'acrylic'].includes(String(prefs.backdrop))) throw new Error('Invalid backdrop preference');
   if (value.backdrop !== undefined && (!object(value.backdrop) || typeof value.backdrop.available !== 'boolean' ||
       typeof value.backdrop.active !== 'boolean')) throw new Error('Invalid backdrop status');
@@ -190,7 +197,7 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragStarted' | 'tab.dragCancel' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
   | { method: 'tab.setHome'; id: string; url: string; title: string }
   | { method: 'tab.mute'; id: string; muted: boolean }
-  | { method: 'panel.open'; kind: 'archive' | 'downloads' | 'site' | 'history' | 'space'; x: number; y: number; width: number; height: number }
+  | { method: 'panel.open'; kind: 'archive' | 'downloads' | 'site' | 'history' | 'space' | 'newSpace'; x: number; y: number; width: number; height: number }
   | { method: 'navigation.load'; url: string }
   | { method: 'probe.commandInput'; url: string }
   | { method: 'probe.commandCancel' }

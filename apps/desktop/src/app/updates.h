@@ -15,9 +15,11 @@ void RunUpdateHooks();
 
 // When Sol runs from a Velopack install: on a background thread, checks the
 // release feed (GitHub Releases of sol-browser/sol, or SOL_UPDATE_FEED: a local
-// folder or http(s) URL for testing) and downloads a newer version. It is
-// applied on the next start. |ready| runs on that background thread with the
-// version that waits for a restart. Outside a Velopack install it does nothing.
+// folder or http(s) URL for testing) at start and every 4 hours after
+// (SOL_UPDATE_INTERVAL seconds for testing), and downloads a newer version.
+// It applies on "Restart to update" or the next start. |ready| runs once, on
+// that background thread, with the version that waits for a restart; checks
+// stop then. Outside a Velopack install it does nothing.
 void StartUpdateCheck(std::function<void(const std::string& version)> ready);
 
 // The version downloaded and waiting for a restart; empty when none (any thread).

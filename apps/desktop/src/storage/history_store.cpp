@@ -102,6 +102,15 @@ std::vector<Visit> HistoryStore::Visits(int64_t before, int limit, const std::st
   while (s.Row()) out.push_back(ReadVisit(s));
   return out;
 }
+std::vector<VisitDay> HistoryStore::Days(int limit, const std::string& query) {
+  std::vector<VisitDay> out;
+  if (!db_) return out;
+  Statement s(db_, "SELECT date(visited_at/1000,'unixepoch','localtime') AS day, count(*), max(visited_at) FROM visits"
+      " WHERE (?1='' OR title LIKE ?2 ESCAPE '\\' OR url LIKE ?2 ESCAPE '\\') GROUP BY day ORDER BY day DESC LIMIT ?3");
+  s.Text(1, query); s.Text(2, Pattern(query)); s.Int(3, limit);
+  while (s.Row()) out.push_back({s.Column(0), s.Number(1), s.Number(2)});
+  return out;
+}
 std::vector<Visit> HistoryStore::Suggest(const std::string& query, int limit) {
   std::vector<Visit> out;
   if (!db_ || query.empty()) return out;

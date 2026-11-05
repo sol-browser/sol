@@ -24,7 +24,7 @@ int WorkspaceController::CopyTabLink(const std::string& id, std::string& error) 
   const auto url = browser ? browser->GetMainFrame()->GetURL().ToString() : node->url;
   if (url.empty()) { error = "No page address to copy"; return 409; }
   const auto state = state_.lock();
-  if (const int code = CopyLinkText(state && state->window ? state->window->GetWindowHandle() : nullptr, CefString(url).ToWString())) {
+  if (const int code = CopyLinkText(state && state->window ? state->window->GetWindowHandle() : nullptr, CefString(std::string(ShownAddress(url))).ToWString())) {
     error = code == 409 ? "The clipboard is busy. Try again." : "Could not copy the page address"; return code;
   }
   if (state && state->embedded) state->embedded->Notify("copy", L"Copied current URL");

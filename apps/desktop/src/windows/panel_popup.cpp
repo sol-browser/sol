@@ -244,6 +244,7 @@ void PanelPopup::Reposition() {
 void PanelPopup::Toggle(const std::string& kind, const CefRect& anchor) {
   auto s = state_.lock(); if (!s || !s->window || !s->workspace || s->workspace->WindowClosing() || shutdown_) return;
   if (open_ && kind == kind_) { Hide(true, true); return; }
+  DropDraftTheme();
   kind_ = kind; anchor_ = anchor; ++request_; open_ = true;
   opened_ms_ = GetTickCount64();
   prepared_ = presented_ = false; presentation_.Conceal();
@@ -315,6 +316,7 @@ void PanelPopup::DismissInactive(int request) {
 void PanelPopup::Hide(bool restore_focus, bool animate) {
   if ((!open_ && !presentation_.closing()) || menu_open_) return;
   const bool animated = animate && presented_;
+  DropDraftTheme();
   open_ = false;
   prepared_ = presented_ = false;
   const bool closing = animated && presentation_.Dismiss(kind_ == "archive", origin_x_);
@@ -327,6 +329,11 @@ void PanelPopup::Hide(bool restore_focus, bool animate) {
     s->Record("popup_dismissed", details);
     if (restore_focus && s->window) { s->window->Activate(); if (s->content) FocusBrowser(s->content); else FocusShell(s); }
   }
+}
+void PanelPopup::DropDraftTheme() {
+  if (!draft_theme_) return;
+  draft_theme_ = false;
+  if (auto s = state_.lock(); s && s->workspace) s->workspace->RevertThemePreview();
 }
 void PanelPopup::Shutdown() { menu_open_ = false; Hide(false); shutdown_ = true; observer_ = nullptr; if (window_) window_->Close(); }
 std::string PanelPopup::Response(CefRefPtr<CefDictionaryValue> theme) const {
@@ -452,9 +459,34 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     });
     return true;
   }
-  if ((kind_ == "theme" || kind_ == "space") && method == "workspace.setTheme") {
+  if (kind_ == "newSpace" && method == "space.create") {
+    // The new-space editor: the space is made only now, with its name, icon
+    // and the theme previewed on the window, saved as that space's own theme.
+    Theme theme; bool save = false;
+    if (d->GetSize() != 4 || d->GetType("theme") != VTYPE_DICTIONARY ||
+        !WorkspaceController::ParseThemeCommand(d->GetDictionary("theme"), theme, save) || !save) { cb->Failure(400, "Invalid space command"); return true; }
+    auto command = d->Copy(false); command->Remove("theme");
+    command->SetDouble("expectedRevision", s->workspace->Snapshot()->GetDouble("treeRevision"));
+    const auto before = s->workspace->Snapshot()->GetString("activeSpace").ToString();
+    s->workspace->Handle(command, [weak = weak_from_this(), cb, theme, before](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
+      auto self = weak.lock(); auto s = self ? self->state_.lock() : nullptr; if (!self || !s || !s->workspace) return;
+      if (code) { cb->Failure(code, error); return; }
+      const auto created = s->workspace->Snapshot()->GetString("activeSpace").ToString();
+      if (created.empty() || created == before) { cb->Failure(500, "The new space did not open"); return; }
+      self->draft_theme_ = false;
+      s->workspace->SetTheme(theme, true, [weak, cb](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
+        auto self = weak.lock(); if (!self) return;
+        if (code) { cb->Failure(code, error); return; }
+        cb->Success(self->Response()); self->Hide(true);
+      }, created);
+    });
+    return true;
+  }
+  if ((kind_ == "theme" || kind_ == "space" || kind_ == "newSpace") && method == "workspace.setTheme") {
     Theme theme; bool save = false;
     if (!WorkspaceController::ParseThemeCommand(d, theme, save)) { cb->Failure(400, "Invalid theme command"); return true; }
+    // The new-space editor only previews; its theme is saved with the space.
+    if (kind_ == "newSpace") { if (save) { cb->Failure(400, "Create the space to keep its theme"); return true; } draft_theme_ = true; }
     s->workspace->SetTheme(theme, save, [weak = weak_from_this(), cb, save](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
       auto self = weak.lock(); if (!self) return;
       if (code) { cb->Failure(code, error); return; }

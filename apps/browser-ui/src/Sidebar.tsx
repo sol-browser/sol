@@ -21,6 +21,7 @@ type Props = { nodes: TreeNode[]; treeRevision: number; activeId: string; busy: 
   media?: MediaInfo[];
   /** Opens the native space editor (name, icon, theme) anchored at the element. */
   editSpace: (anchor: HTMLElement) => void;
+  newSpace: (anchor: HTMLElement) => void;
   /** A flow asked for by the browser menu (docked sidebar only). */
   request?: { id: number; action: 'newSpace' | 'editSpace' | 'newFolder' };
   action: (command: TreeMutation) => Promise<boolean>;
@@ -37,7 +38,7 @@ export type TabCommand = { method: 'split.focus'; id: string }
   | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragStarted' | 'tab.dragCancel' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
   | { method: 'tab.setHome'; id: string; url: string; title: string } | { method: 'tab.mute'; id: string; muted: boolean }
   | Extract<Command, { method: 'media.control' }>;
-export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, request, media, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate }: Props) {
+export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, newSpace, request, media, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate }: Props) {
   // Favorite tiles are tinted with their icon's color, read once per icon.
   const [, retint] = useReducer((n: number) => n + 1, 0);
   // A closing Today tab leaves the list as soon as native close starts, so the
@@ -73,10 +74,10 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   const header = useRef<HTMLDivElement>(null);
   const space = spaces.find(s => s.id === activeSpace);
   const switchSpace = (id: string | undefined) => { if (id && id !== activeSpace && !current.current.busy) void action({ method: 'space.switch', id }); };
-  async function createSpace() {
-    if (busy || spaces.length >= 24) return;
-    // A new space opens empty; then name it, pick an icon and its color.
-    if (await action({ method: 'space.create', title: 'New space', icon: '' }) && header.current) editSpace(header.current);
+  // A new space is set up first (name, icon, theme) and made only when confirmed.
+  function createSpace() {
+    if (busy || spaces.length >= 24 || !header.current) return;
+    newSpace(header.current);
   }
   // Each browser-menu request runs once; the first snapshot only records where the count stands.
   const handled = useRef(request?.id);
@@ -84,7 +85,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     if (!request || request.id === handled.current) return;
     handled.current = request.id;
     if (hidden) return;
-    if (request.action === 'newSpace') void createSpace();
+    if (request.action === 'newSpace') createSpace();
     else if (request.action === 'newFolder') void createFolder();
     else if (header.current) editSpace(header.current);
   });
@@ -291,7 +292,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
         if (choice.action === 'newTab') openNewTab();
         else if (choice.action === 'newFolder') await createFolder();
         else if (choice.action === 'showArchive' && archiveButton.current) openArchive(archiveButton.current);
-        else if (choice.action === 'newSpace') await createSpace();
+        else if (choice.action === 'newSpace') createSpace();
         else if (choice.action === 'editTheme' && header.current) editSpace(header.current);
         return;
       }
@@ -552,7 +553,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
             onClick={() => switchSpace(s.id)}>{s.icon ? <span className="space-dot-icon">{s.icon}</span> : <span className="space-dot-mark" />}</button>)}
       </nav>
       <button type="button" className="space-add" aria-label="New space" title="New space" disabled={busy || spaces.length >= 24}
-        onClick={() => void createSpace()}><Icon name="plus" /></button>
+        onClick={createSpace}><Icon name="plus" /></button>
     </div>}
   </aside>;
 }

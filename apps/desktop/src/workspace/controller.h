@@ -113,6 +113,8 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   // Live preview while dragging (save=false), persisted on release. Also
   // re-resolves the System mode against Windows' current app mode.
   void SetTheme(const Theme& theme, bool save, Reply done, const std::string& space = "");
+  // Drops an unsaved theme preview: the active space's saved theme shows again.
+  void RevertThemePreview();
   static void ApplyTheme(const std::shared_ptr<State>& state);
   // The window view's own background: transparent behind a system backdrop.
   static cef_color_t WindowBackground(const std::shared_ptr<State>& state);

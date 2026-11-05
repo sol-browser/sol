@@ -472,9 +472,15 @@ bool CommandBar::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     if (auto o = weak.lock()) { o->submitting_ = false; if (code) cb->Failure(code, error); else { cb->Success(o->Response()); o->Hide(true); } }
   };
   if (method == "command.submit" && d->GetType("url") == VTYPE_STRING) {
-    const auto url = d->GetString("url").ToString(); auto current = s->workspace->Snapshot();
+    auto url = d->GetString("url").ToString(); auto current = s->workspace->Snapshot();
+    if (const auto page = InternalPageForAddress(url); !page.empty()) url = std::string(page);
     if (!new_tab_ && current->GetString("activeId").ToString() != source_id_) { cb->Failure(409, "The active tab changed. Reopen the address bar."); return true; }
     if (!new_tab_ && url == source_url_ && !current->GetBool("activeCrashed")) { cb->Success(Response()); Hide(true); return true; }
+    // History and Downloads keep one tab each: switch to it (or open it).
+    if (IsInternalPageUrl(url)) {
+      if (url == kHistoryUrl) s->workspace->OpenHistoryPage(); else s->workspace->OpenDownloadsPage();
+      cb->Success(Response()); Hide(true); return true;
+    }
     submitting_ = true;
     if (new_tab_ || source_id_.empty()) s->workspace->OpenTyped(url, done); else s->workspace->Navigate(url, done);
     return true;

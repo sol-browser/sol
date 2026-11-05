@@ -848,7 +848,7 @@ bool SidebarPeek::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t 
     const int x = std::clamp(d->GetInt("x") + dx, 0, std::max(0, SidebarWidth(s->sidebar_width, client.width) - 1));
     s->sidebar_menu->Open(d->GetString("id"), x, d->GetInt("y") + dy, query, cb, b); return true;
   }
-  if (method == "panel.open" && s->panel_popup && d->GetSize() == 6 && d->GetType("kind") == VTYPE_STRING && (d->GetString("kind") == "archive" || d->GetString("kind") == "space") &&
+  if (method == "panel.open" && s->panel_popup && d->GetSize() == 6 && d->GetType("kind") == VTYPE_STRING && (d->GetString("kind") == "archive" || d->GetString("kind") == "space" || d->GetString("kind") == "newSpace") &&
       d->GetType("x") == VTYPE_INT && d->GetType("y") == VTYPE_INT && d->GetType("width") == VTYPE_INT && d->GetType("height") == VTYPE_INT) {
     const CefRect anchor(std::max(0, d->GetInt("x") + dx), std::max(0, d->GetInt("y") + dy),
                          std::clamp(d->GetInt("width"), 1, 400), std::clamp(d->GetInt("height"), 1, 400));

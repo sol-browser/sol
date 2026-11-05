@@ -5,6 +5,8 @@
 #include "include/base/cef_callback.h"
 #include "include/base/cef_logging.h"
 #include "include/wrapper/cef_closure_task.h"
+#include "app/session.h"
+#include "extensions/shell_reset.h"
 #include "trust_policy.h"
 
 namespace red {
@@ -58,10 +60,25 @@ void Fail(const std::shared_ptr<State>& state) {
   state->Record("shell_profile_violation");
   LOG(ERROR) << "Shell profile violation confirmed; closing";
   const HWND owner = state->window ? state->window->GetWindowHandle() : nullptr;
-  MessageBoxW(owner, L"Extensions were found in Sol's protected interface profile. Sol will close to keep the browser interface safe.",
-              L"Sol", MB_OK | MB_ICONERROR);
+  // Recover: after shutdown Sol deletes the Shell profile (no user data) and
+  // opens again (shell_reset.h). Straight back after a reset, Sol closes instead of looping.
+  const bool reset = !state->probe && !state->profile.empty() && ShellResetAllowed(state->profile, std::filesystem::file_time_type::clock::now());
+  state->Record(reset ? "shell_profile_reset_requested" : "shell_profile_reset_refused");
+  if (reset) {
+    MessageBoxW(owner, L"An extension was installed into Sol's interface profile, where extensions are not allowed.\n\n"
+                L"Sol will restart and remove it from there. Your tabs, history and extensions are kept.",
+                L"Sol", MB_OK | MB_ICONWARNING);
+    ScheduleShellReset();
+  } else {
+    MessageBoxW(owner, L"An extension keeps getting into Sol's interface profile, where extensions are not allowed. "
+                L"Sol will close to keep the browser interface safe.", L"Sol", MB_OK | MB_ICONERROR);
+  }
   state->exit_code = 18;
-  if (state->window) state->window->Close(); else CefQuitMessageLoop();
+  // Every window: the trusted profile is shared by all of them.
+  if (state->session) {
+    for (const auto& window : state->session->Windows()) if (window->window) window->window->Close();
+  } else if (state->window) state->window->Close();
+  else CefQuitMessageLoop();
 }
 
 class Observer final : public CefPreferenceObserver {

@@ -33,6 +33,11 @@ int wmain() {
     Check(store.Visits(0, 10, "100%").size() == 1 && store.Visits(0, 10, "news_").size() == 1, "wildcards match literally");
     Check(store.Visits(0, 10, "%").size() == 1 && store.Visits(0, 10, "_").size() == 1, "bare wildcard is plain text");
     Check(store.Visits(0, 10, "NEWS.TEST").size() == 1, "case-insensitive ASCII match");
+    store.AddVisit("https://old.test/", "Old", t - 2 * 24 * 60 * kMinute);  // Pruned below.
+    const auto days = store.Days(10, "");
+    Check(days.size() == 2 && days[0].count == 4 && days[0].latest == t + 40 * kMinute && days[1].count == 1 &&
+          days[1].latest == t - 2 * 24 * 60 * kMinute && days[0].date > days[1].date && days[0].date.size() == 10, "days: newest first, counts, latest visit");
+    Check(store.Days(10, "news").size() == 1 && store.Days(10, "news")[0].count == 1 && store.Days(1, "").size() == 1, "days follow the search and the limit");
     const auto suggestions = store.Suggest("example", 10);
     Check(suggestions.size() == 1 && suggestions[0].title == "Later", "one suggestion per URL, latest title");
     store.UpdateTitle("https://news.test/a", "Updated");

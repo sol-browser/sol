@@ -28,6 +28,7 @@ export function DownloadsPage() {
   const [search, setSearch] = useState('');
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState('');
+  const [hour12, setHour12] = useState(true);
   const generation = useRef(0);
   useEffect(() => { document.title = 'Downloads'; }, []);
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
@@ -37,6 +38,7 @@ export function DownloadsPage() {
       const page = parseDownloadsPage(await query({ method: 'downloads.page', before }));
       if (mine !== generation.current) return;
       if (!before) setActive(page.active);
+      if (page.hour12 !== undefined) setHour12(page.hour12);
       setItems(previous => before ? [...previous, ...page.items] : page.items); setMore(page.more); setError('');
     } catch (e) { if (mine === generation.current) fail(e); }
     finally { if (mine === generation.current) setLoading(false); }
@@ -64,7 +66,7 @@ export function DownloadsPage() {
   const shownItems = items.filter(i => matches(i, search));
   const groups = groupDownloads(shownItems);
   const subtitle = search ? `${shownItems.length + shownActive.length} matching “${search.trim()}”`
-    : active.length ? `${active.length} in progress · files are saved to your Downloads folder` : 'Files you downloaded in Sol, newest first';
+    : active.length ? `${active.length} in progress · files are saved to your Downloads folder` : 'Files you downloaded in Sol';
   return <main className="history-page downloads-page">
     <header className="hp-header">
       <div className="hp-title"><span className="hp-title-icon"><Icon name="download" /></span>
@@ -108,7 +110,7 @@ export function DownloadsPage() {
             <span className="dp-text"><span className="hp-page">{item.name}</span>
               <span className="hp-host">{[item.origin || 'This device', item.total > 0 ? formatBytes(item.total) : ''].filter(Boolean).join(' · ')}
                 {status && <span className="dp-status"> · {status}</span>}</span></span>
-            <span className="hp-time">{timeLabel(item.finishedAt)}</span>
+            <span className="hp-time">{timeLabel(item.finishedAt, hour12)}</span>
           </button>
           <span className="dp-actions">
             {openable && <button type="button" aria-label={`Show ${item.name} in File Explorer`} title="Show in File Explorer" onClick={() => void file(item, 'show')}><Icon name="reveal" /></button>}

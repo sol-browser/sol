@@ -1,0 +1,135 @@
+/* Sol's first-run welcome (Welcome.tsx). Motion comes from the timeline in
+   JavaScript, so it is not affected by the reduced-motion rule in style.css. */
+.welcome {
+  position: fixed; inset: 0; z-index: 10000; overflow: hidden;
+  background: #030204; color: #fff6e6;
+  font-family: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", sans-serif;
+  user-select: none; cursor: default;
+}
+.welcome-sky { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* Without WebGL: a warm glow in place of the orb, no stars. */
+.welcome[data-fallback="true"] .welcome-sky { display: none; }
+.welcome[data-fallback="true"] { background: radial-gradient(circle at 50% 42%, rgba(249, 202, 48, .22), rgba(255, 140, 50, .06) 22%, #030204 48%); }
+
+.welcome-drag { position: absolute; inset: 0 0 auto 0; height: 44px; -webkit-app-region: drag; }
+.welcome-caption { position: absolute; top: 0; right: 0; display: flex; -webkit-app-region: no-drag; z-index: 2; }
+.welcome-caption .caption-button { width: 46px; height: 36px; color: rgba(255, 246, 230, .7); background: transparent; }
+.welcome-caption .caption-button:hover { background: rgba(255, 246, 230, .08); color: #fff6e6; }
+.welcome-caption .window-close:hover { background: #c42b1c; color: #fff; }
+
+.welcome-logo { position: absolute; transform-origin: 50% 50%; will-change: transform, opacity; }
+.welcome-logo svg { width: 100%; height: 100%; display: block; overflow: visible;
+  color: #ffe9b8; fill: currentColor; filter: drop-shadow(0 0 var(--welcome-glow, 6px) rgba(249, 202, 48, .55)) drop-shadow(0 0 18px rgba(255, 150, 60, .25)); }
+
+.welcome-title {
+  position: absolute; left: 0; right: 0; top: var(--welcome-text-top, 64%); margin: 0;
+  display: flex; justify-content: center; flex-wrap: wrap; gap: 0 .28em; padding: 0 24px;
+  font-size: clamp(30px, 3.6vw, 54px); font-weight: 600; letter-spacing: -.025em; line-height: 1.15;
+  text-shadow: 0 0 28px rgba(255, 190, 90, .25);
+}
+.welcome-word { display: inline-block; opacity: 0; will-change: transform, opacity, filter; }
+
+.welcome-go {
+  position: absolute; left: 50%; top: calc(var(--welcome-text-top, 64%) + clamp(30px, 3.6vw, 54px) * 1.15 + 34px);
+  margin-left: -28px; width: 56px; height: 56px; border-radius: 50%; opacity: 0;
+  display: grid; place-items: center; color: #fff6e6;
+  background: rgba(255, 240, 210, .07); border: 1px solid rgba(255, 236, 200, .22);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  transition: background .25s ease, color .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+.welcome-go svg { transition: transform .25s ease; }
+.welcome-go:hover:enabled, .welcome-go:focus-visible {
+  background: #f9ca30; color: #1a1408; border-color: #f9ca30; box-shadow: 0 0 32px rgba(249, 202, 48, .45);
+}
+.welcome-go:hover:enabled svg { transform: translateX(3px); }
+.welcome-go:focus-visible { outline: 2px solid rgba(255, 246, 230, .9); outline-offset: 4px; }
+.welcome-go:disabled { cursor: default; }
+
+.welcome-sound {
+  position: absolute; left: 18px; bottom: 18px; width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center; color: rgba(255, 246, 230, .55); background: transparent; border: 0;
+}
+.welcome-sound:hover { color: #fff6e6; background: rgba(255, 246, 230, .08); }
+.welcome-sound .icon { width: 16px; height: 16px; }
+.welcome-sound:focus-visible { outline: 2px solid rgba(255, 246, 230, .8); outline-offset: 2px; }
+
+/* The welcome is its own window (welcome.html). */
+:root[data-ui="welcome"], :root[data-ui="welcome"] body { background: #030204; color-scheme: dark; overflow: hidden; }
+
+/* The steps after the intro: a column under the small ring at the top. */
+.welcome-panel {
+  position: absolute; left: 50%; top: 160px; bottom: 28px; width: min(720px, calc(100% - 64px)); transform-origin: top center;
+  margin-left: calc(min(720px, calc(100% - 64px)) / -2); display: flex; flex-direction: column; z-index: 2;
+  font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif; color: #f3e9d8;
+}
+.welcome-panel section { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.welcome-eyebrow { margin: 0 0 6px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: rgba(249, 202, 48, .75); text-align: center; }
+.welcome-panel h2 { margin: 0; font: 600 30px/1.15 "Segoe UI Variable Display", "Segoe UI", sans-serif; letter-spacing: -.02em; text-align: center; text-wrap: balance; }
+.welcome-lead { margin: 10px auto 0; max-width: 52ch; font-size: 14px; line-height: 1.5; color: rgba(243, 233, 216, .62); text-align: center; }
+.welcome-actions { display: flex; justify-content: center; gap: 10px; margin-top: 18px; }
+.welcome-primary, .welcome-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 18px;
+  border-radius: 19px; font: 600 13px "Segoe UI Variable Text", "Segoe UI", sans-serif; cursor: pointer; }
+.welcome-primary { color: #1a1408; background: #f9ca30; border: 1px solid #f9ca30; }
+.welcome-primary:hover { background: #ffd95a; box-shadow: 0 0 26px rgba(249, 202, 48, .35); }
+.welcome-secondary { color: #f3e9d8; background: rgba(255, 240, 210, .06); border: 1px solid rgba(255, 236, 200, .2); }
+.welcome-secondary:hover { background: rgba(255, 240, 210, .12); }
+.welcome-primary:focus-visible, .welcome-secondary:focus-visible { outline: 2px solid #fff6e6; outline-offset: 3px; }
+.welcome-choice { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 18px; padding: 18px 20px;
+  border-radius: 14px; background: rgba(16, 13, 12, .62); border: 1px solid rgba(255, 236, 200, .08); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+.welcome-choice:first-of-type { margin-top: 26px; }
+.welcome-choice h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.welcome-choice p { margin: 4px 0 0; font-size: 12.5px; color: rgba(243, 233, 216, .58); }
+.welcome-done { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #f9ca30; white-space: nowrap; }
+.welcome-engines { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.welcome-engines button { height: 32px; padding: 0 12px; border-radius: 16px; border: 1px solid rgba(255, 236, 200, .16); background: transparent;
+  color: rgba(243, 233, 216, .78); font: 12.5px "Segoe UI Variable Text", "Segoe UI", sans-serif; cursor: pointer; }
+.welcome-engines button:hover { background: rgba(255, 240, 210, .08); }
+.welcome-engines button[aria-checked="true"] { color: #1a1408; background: #f9ca30; border-color: #f9ca30; }
+.welcome-engines button:focus-visible { outline: 2px solid #fff6e6; outline-offset: 2px; }
+.welcome-error { margin: 10px 0 0; text-align: center; font-size: 12.5px; color: #ffb4a0; }
+
+/* Step 1: the browsers on this PC, then what to bring from one. */
+.welcome-import-flow { display: flex; flex-direction: column; margin-top: 24px; min-height: 0; }
+.welcome-browsers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.welcome-browser { display: grid; justify-items: center; gap: 8px; padding: 22px 12px 18px; border-radius: 16px; cursor: pointer;
+  background: rgba(16, 13, 12, .62); border: 1px solid rgba(255, 236, 200, .08); color: #f3e9d8;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); transition: background .2s ease, border-color .2s ease, transform .2s ease; }
+.welcome-browser:hover:enabled { background: rgba(40, 32, 24, .7); border-color: rgba(249, 202, 48, .45); transform: translateY(-2px); }
+.welcome-browser:focus-visible { outline: 2px solid #f9ca30; outline-offset: 3px; }
+.welcome-browser:disabled { cursor: default; opacity: .4; }
+.welcome-browser strong { font-size: 15px; font-weight: 600; }
+.welcome-browser small { font-size: 12px; color: rgba(243, 233, 216, .55); }
+.welcome-browser-icon { width: 48px; height: 48px; object-fit: contain; }
+.welcome-browser-letter { display: grid; place-items: center; border-radius: 12px; background: rgba(255, 240, 210, .08);
+  font: 600 22px "Segoe UI Variable Display", "Segoe UI", sans-serif; color: rgba(243, 233, 216, .8); }
+.welcome-from { display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 15px; font-weight: 600; }
+.welcome-from .welcome-browser-icon { width: 32px; height: 32px; }
+.welcome-from .welcome-browser-letter { font-size: 15px; border-radius: 8px; }
+.welcome-profiles { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 14px; }
+.welcome-profiles button { height: 30px; padding: 0 12px; border-radius: 15px; border: 1px solid rgba(255, 236, 200, .16); background: transparent;
+  color: rgba(243, 233, 216, .78); font: 12.5px "Segoe UI Variable Text", "Segoe UI", sans-serif; cursor: pointer; }
+.welcome-profiles button[aria-checked="true"] { color: #1a1408; background: #f9ca30; border-color: #f9ca30; }
+.welcome-types { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.welcome-type { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 16px; border-radius: 14px; cursor: pointer;
+  background: rgba(16, 13, 12, .62); border: 1px solid rgba(255, 236, 200, .08); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  transition: background .2s ease, border-color .2s ease; }
+.welcome-type[data-on="true"] { border-color: rgba(249, 202, 48, .45); background: rgba(40, 32, 20, .68); }
+.welcome-type input { position: absolute; opacity: 0; pointer-events: none; }
+.welcome-type:has(input:focus-visible) { outline: 2px solid #f9ca30; outline-offset: 2px; }
+.welcome-check { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; margin-top: 1px;
+  border: 1.5px solid rgba(255, 236, 200, .35); color: #1a1408; }
+.welcome-type[data-on="true"] .welcome-check { background: #f9ca30; border-color: #f9ca30; }
+.welcome-type-text { display: grid; gap: 4px; }
+.welcome-type-text strong { font-size: 14px; font-weight: 600; }
+.welcome-type-text small { font-size: 12px; line-height: 1.45; color: rgba(243, 233, 216, .55); }
+.welcome-password { display: grid; gap: 10px; max-width: 420px; margin: 18px auto 0; font-size: 13px; line-height: 1.5; color: rgba(243, 233, 216, .7); text-align: center; }
+.welcome-password input { height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid rgba(255, 236, 200, .2); background: rgba(16, 13, 12, .7); color: #f3e9d8; font: 14px "Segoe UI Variable Text", "Segoe UI", sans-serif; }
+.welcome-password input:focus-visible { outline: 2px solid #f9ca30; outline-offset: 2px; }
+.welcome-working { align-items: center; gap: 16px; margin-top: 48px; text-align: center; font-size: 14px; color: rgba(243, 233, 216, .75); }
+.welcome-working .welcome-browser-icon { width: 56px; height: 56px; }
+.welcome-spinner { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(249, 202, 48, .2); border-top-color: #f9ca30; animation: welcome-spin .9s linear infinite; }
+@keyframes welcome-spin { to { transform: rotate(360deg); } }
+.welcome-report { display: grid; gap: 10px; width: fit-content; margin: 22px auto 0; padding: 0; list-style: none; font-size: 14px; }
+.welcome-report li { display: flex; align-items: center; gap: 10px; }
+.welcome-report svg { color: #f9ca30; }
+.welcome-primary:disabled { opacity: .45; cursor: default; box-shadow: none; }

@@ -99,10 +99,10 @@ target_sources(${CEF_TARGET} PRIVATE src/windows/device_emulation.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/import/zen_reader.cpp src/import/zen_import.cpp src/import/browser_import.cpp src/import/cookie_writer.cpp src/import/password_sink.cpp)
 target_link_libraries(${CEF_TARGET} PRIVATE comctl32 ole32 uuid)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/lifecycle_probe.cpp src/experiments/toolbar_probe.cpp)
-target_sources(${CEF_TARGET} PRIVATE src/extensions/profile_guard.cpp src/extensions/install_notice.cpp src/extensions/pinned_extensions.cpp src/extensions/extension_catalog.cpp src/windows/extension_popup.cpp src/windows/sidebar_peek.cpp
+target_sources(${CEF_TARGET} PRIVATE src/extensions/profile_guard.cpp src/extensions/shell_reset.cpp src/app/web_profile_repair.cpp src/extensions/install_notice.cpp src/extensions/pinned_extensions.cpp src/extensions/extension_catalog.cpp src/windows/extension_popup.cpp src/windows/sidebar_peek.cpp
   src/windows/extensions_window.cpp src/site/site_data.cpp)
-target_sources(${CEF_TARGET} PRIVATE src/downloads/download_manager.cpp src/windows/panel_popup.cpp src/windows/share_sheet.cpp src/windows/window_icons.cpp)
-target_link_libraries(${CEF_TARGET} PRIVATE runtimeobject velopack)
+target_sources(${CEF_TARGET} PRIVATE src/downloads/download_manager.cpp src/windows/panel_popup.cpp src/windows/share_sheet.cpp src/windows/welcome_music.cpp src/windows/welcome_window.cpp src/windows/browser_icons.cpp src/windows/window_icons.cpp)
+target_link_libraries(${CEF_TARGET} PRIVATE runtimeobject velopack mfplay mfuuid)
 target_include_directories(${CEF_TARGET} PRIVATE src)
 SET_LIBRARY_TARGET_PROPERTIES(${CEF_TARGET})
 target_compile_options(${CEF_TARGET} PRIVATE /W4 /utf-8)
@@ -117,7 +117,7 @@ COPY_SINGLE_FILE(${CEF_TARGET} "${CEF_BINARY_DIR}/bootstrap.exe" "${CEF_TARGET_O
 # sandboxed child processes, which load sol.dll too, never map it.
 COPY_SINGLE_FILE(${CEF_TARGET} "${CMAKE_SOURCE_DIR}/third_party/velopack/velopack_libc_win_x64_msvc.dll"
                  "${CEF_TARGET_OUT_DIR}/velopack_libc.dll")  # its import library names velopack_libc.dll
-target_link_options(${CEF_TARGET} PRIVATE /DELAYLOAD:velopack_libc.dll)
+target_link_options(${CEF_TARGET} PRIVATE /DELAYLOAD:velopack_libc.dll /DELAYLOAD:MFPlay.dll)
 # Velopack's C++ wrapper reports errors as exceptions; CEF builds without them.
 set_source_files_properties(src/app/updates.cpp PROPERTIES COMPILE_OPTIONS "/EHsc;/U_HAS_EXCEPTIONS;/D_HAS_EXCEPTIONS=1")
 # Every Red process (renderers included) starts from this executable, and its
@@ -145,6 +145,12 @@ add_executable(trust_policy_test "${CMAKE_SOURCE_DIR}/tests/native/trust_policy_
 target_include_directories(trust_policy_test PRIVATE src)
 target_compile_options(trust_policy_test PRIVATE /W4 /WX)
 add_test(NAME trust_policy COMMAND trust_policy_test)
+
+add_executable(shell_reset_test "${CMAKE_SOURCE_DIR}/tests/native/shell_reset_test.cpp" src/extensions/shell_reset.cpp src/app/web_profile_repair.cpp)
+target_include_directories(shell_reset_test PRIVATE src)
+target_link_libraries(shell_reset_test PRIVATE sqlite)
+target_compile_options(shell_reset_test PRIVATE /W4 /WX /EHsc /utf-8)
+add_test(NAME shell_reset COMMAND shell_reset_test)
 
 add_executable(profile_location_test "${CMAKE_SOURCE_DIR}/tests/native/profile_location_test.cpp")
 target_include_directories(profile_location_test PRIVATE src)

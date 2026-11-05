@@ -25,17 +25,44 @@ function grainTile(strength: number): string {
   return url;
 }
 
+// The window's themed backgrounds. A palette is a gradient, which CSS cannot
+// transition, so on a space switch the old background is laid over the new one
+// (their ::before, style.css) and faded out.
+const SURFACES = '.workspace, .peek-root';
+const BLEND_MS = 450;
+function holdBackgrounds(): () => void {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return () => undefined;
+  const held = [...document.querySelectorAll<HTMLElement>(SURFACES)].map(element => {
+    const style = getComputedStyle(element);
+    // Every layer property: a palette's field image is stretched (100% 100%, no-repeat).
+    return { element, layers: { image: style.backgroundImage, color: style.backgroundColor, size: style.backgroundSize,
+      position: style.backgroundPosition, repeat: style.backgroundRepeat } };
+  });
+  return () => {
+    for (const { element, layers } of held) {
+      if (!element.isConnected) continue;
+      for (const [name, value] of Object.entries(layers)) element.style.setProperty(`--theme-previous-${name}`, value);
+      element.animate([{ opacity: 1 }, { opacity: 0 }], { duration: BLEND_MS, easing: 'ease', pseudoElement: '::before' });
+    }
+  };
+}
+
 let applied = '';
+let appliedSpace = '';
 /** Applies the shell theme to this document (every UI window calls it). Colours blend to
- *  the new theme (style.css); |animate| false jumps (a popup about to show). */
-export function applyTheme(theme: Theme | undefined, animate = true) {
+ *  the new theme (style.css); |animate| false jumps (a popup about to show). |space|, from
+ *  windows that show a space, makes a switch to another space cross-fade the background. */
+export function applyTheme(theme: Theme | undefined, animate = true, space = '') {
   // Before the first native snapshot the document already has the theme from
   // sol://ui/theme.css; applying a default here would flash it.
   if (!theme) return;
   const value = theme;
   const key = JSON.stringify(value);
+  const switched = !!space && !!appliedSpace && space !== appliedSpace;
+  if (space) appliedSpace = space;
   if (key === applied) return;
   applied = key;
+  const blend = animate && switched ? holdBackgrounds() : undefined;
   const root = document.documentElement;
   const variables = themeVariables(value);
   for (const name of ['--theme-palette-fill','--theme-palette-gradient','--theme-palette-base','--theme-palette-material-alpha'])
@@ -52,4 +79,5 @@ export function applyTheme(theme: Theme | undefined, animate = true) {
   if (!animate) { getComputedStyle(root).getPropertyValue('--theme-hue'); root.style.transition = ''; }
   root.style.setProperty('--theme-grain', value.noise > 0 ? grainTile(value.noise / 100) : 'none');
   root.dataset.theme = value.dark ? 'dark' : 'light';
+  blend?.();
 }

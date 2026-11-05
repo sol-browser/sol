@@ -10,7 +10,7 @@ import { applyTheme } from './theme-apply';
 export function Peek() {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   useLayoutEffect(() => {
-    applyTheme(snapshot?.theme);
+    applyTheme(snapshot?.theme, true, snapshot?.activeSpace ?? '');
     if (!snapshot?.ready || snapshot.windowClosing) return;
     // Acknowledge the committed rows/theme at the real viewport size. Native
     // waits for a compositor frame before sliding the parked window into view.
@@ -44,6 +44,11 @@ export function Peek() {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); return false; }
     finally { inFlight.current = false; }
   }
+  const openPanel = (kind: 'space' | 'newSpace', anchor: HTMLElement) => {
+    const r = anchor.getBoundingClientRect();
+    void send({ method: 'panel.open', kind, x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)),
+      width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
+  };
   if (!snapshot) return null;
   const ready = snapshot.ready && !snapshot.windowClosing;
   return <main className="peek-root" style={{ '--sidebar-size': `${snapshot.sidebarWidth ?? 256}px` } as CSSProperties}>
@@ -58,11 +63,7 @@ export function Peek() {
       }}
       tabCommand={command => void send(command)} openDroppedFiles={() => void send({ method: 'workspace.openDroppedFiles' })}
       spaces={snapshot.spaces ?? []} activeSpace={snapshot.activeSpace ?? ''}
-      editSpace={anchor => {
-        const r = anchor.getBoundingClientRect();
-        void send({ method: 'panel.open', kind: 'space', x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)),
-          width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
-      }} />
+      editSpace={anchor => openPanel('space', anchor)} newSpace={anchor => openPanel('newSpace', anchor)} />
     <SidebarResizer width={snapshot.sidebarWidth ?? 256} hidden={false} disabled={!ready}
       nativeDragging={snapshot.sidebarResizing}
       viewportWidth={(snapshot.contentBounds?.width ?? 784) + (snapshot.contentBounds?.x ?? 8) + 8}

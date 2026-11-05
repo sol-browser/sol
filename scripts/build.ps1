@@ -31,7 +31,7 @@ try {
         $uiCode = $LASTEXITCODE
         $ErrorActionPreference = 'Stop'
         if ($uiCode) { throw 'UI build failed' }
-        & node --experimental-strip-types --test ../../tests/contracts.test.mjs ../../tests/sidebar.test.mjs ../../tests/navigation.test.mjs ../../tests/command-model.test.mjs ../../tests/downloads.test.mjs ../../tests/site.test.mjs ../../tests/history.test.mjs ../../tests/downloads-page.test.mjs ../../tests/theme.test.mjs ../../tests/favicon-color.test.mjs
+        & node --experimental-strip-types --test ../../tests/contracts.test.mjs ../../tests/welcome.test.mjs ../../tests/welcome-sound.test.mjs ../../tests/sidebar.test.mjs ../../tests/navigation.test.mjs ../../tests/command-model.test.mjs ../../tests/downloads.test.mjs ../../tests/site.test.mjs ../../tests/history.test.mjs ../../tests/downloads-page.test.mjs ../../tests/theme.test.mjs ../../tests/favicon-color.test.mjs
         if ($LASTEXITCODE) { throw 'Protocol tests failed' }
     } finally { Pop-Location }
     & $cmake -S . -B $buildPath -G Ninja "-DCMAKE_BUILD_TYPE=$Configuration"

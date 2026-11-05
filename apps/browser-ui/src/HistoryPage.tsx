@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Icon } from './Icon';
 import { extensionHue } from './downloads-model';
-import { CLEAR_LABELS, groupByDay, host, parseHistoryPage, timeLabel, type ClearRange, type VisitRow } from './history-model';
+import { CLEAR_LABELS, dayLabel, dayTime, groupByDay, host, parseHistoryDays, parseHistoryPage, timeLabel,
+  type ClearRange, type HistoryDay, type VisitRow } from './history-model';
 import './history-page.css';
 
 // sol://ui/history.html in a workspace tab (trusted UI profile). Native code
@@ -23,20 +24,31 @@ export function HistoryPage() {
   const [anchor, setAnchor] = useState<number>();
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState('');
-  const generation = useRef(0);
+  const [hour12, setHour12] = useState(true);
+  // Every day with history (native), so the rail can jump past what is loaded.
+  const [days, setDays] = useState<HistoryDay[]>([]);
+  const generation = useRef(0), dayGeneration = useRef(0);
   const sentinel = useRef<HTMLDivElement>(null);
+  const jumpTo = useRef<string>(undefined);
   useEffect(() => { document.title = 'History'; }, []);
-  async function load(text: string, before = 0) {
+  // |append| adds an older page; otherwise the list restarts at |before| (0 = newest).
+  async function load(text: string, before = 0, append = before > 0) {
     const mine = ++generation.current; setLoading(true);
     try {
       const page = parseHistoryPage(await query({ method: 'history.list', before, query: text.trim() }));
       if (mine !== generation.current) return;  // A newer search replaced this one.
-      setVisits(previous => before ? [...previous, ...page.visits] : page.visits); setMore(page.more); setError('');
-      if (!before) setSelected(new Set());
+      setVisits(previous => append ? [...previous, ...page.visits] : page.visits); setMore(page.more); setError('');
+      if (page.hour12 !== undefined) setHour12(page.hour12);
+      if (!append) setSelected(new Set());
     } catch (e) { if (mine === generation.current) setError(e instanceof Error ? e.message : String(e)); }
     finally { if (mine === generation.current) setLoading(false); }
   }
-  useEffect(() => { const timer = setTimeout(() => void load(search), search ? 140 : 0); return () => clearTimeout(timer); }, [search]);
+  async function loadDays(text: string) {
+    const mine = ++dayGeneration.current;
+    try { const list = parseHistoryDays(await query({ method: 'history.days', query: text.trim() })); if (mine === dayGeneration.current) setDays(list); }
+    catch { if (mine === dayGeneration.current) setDays([]); }  // The rail falls back to the loaded days.
+  }
+  useEffect(() => { const timer = setTimeout(() => { void load(search); void loadDays(search); }, search ? 140 : 0); return () => clearTimeout(timer); }, [search]);
   // Infinite scroll: the next page loads when the end of the list is visible.
   useEffect(() => {
     const target = sentinel.current; if (!target || !more) return;
@@ -60,33 +72,52 @@ export function HistoryPage() {
   }
   async function removeSelected() {
     const ids = [...selected];
-    try { await query({ method: 'history.deleteMany', ids }); setVisits(list => list.filter(v => !selected.has(v.id))); setSelected(new Set()); }
+    try { await query({ method: 'history.deleteMany', ids }); setVisits(list => list.filter(v => !selected.has(v.id))); setSelected(new Set()); void loadDays(search); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
   async function removeOne(id: number) {
-    try { await query({ method: 'history.delete', id }); setVisits(list => list.filter(v => v.id !== id)); setSelected(s => { const n = new Set(s); n.delete(id); return n; }); }
+    try { await query({ method: 'history.delete', id }); setVisits(list => list.filter(v => v.id !== id)); setSelected(s => { const n = new Set(s); n.delete(id); return n; }); void loadDays(search); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
   async function clear(range: ClearRange) {
-    try { await query({ method: 'history.clear', range }); setClearing(false); await load(search); }
+    try { await query({ method: 'history.clear', range }); setClearing(false); void loadDays(search); await load(search); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
   const open = (url: string) => void query({ method: 'history.open', url }).catch(e => setError(e instanceof Error ? e.message : String(e)));
   const groups = groupByDay(visits);
   const selecting = selected.size > 0;
+  // Full day counts from native; the loaded pages until those arrive.
+  const counts = new Map(days.map(day => [day.date, day.count]));
+  const rail = days.length ? days.map(day => ({ key: day.date, label: dayLabel(dayTime(day.date)), count: day.count, latest: day.latest }))
+    : groups.map(group => ({ key: group.key, label: group.label, count: group.visits.length, latest: 0 }));
   // The day rail follows scrolling: the topmost visible day is highlighted.
-  const [activeDay, setActiveDay] = useState(0);
+  const [activeDay, setActiveDay] = useState('');
+  const groupKeys = groups.map(group => group.key).join();
   useEffect(() => {
-    const days = [...document.querySelectorAll<HTMLElement>('.hp-day')];
-    if (!days.length) return;
+    const elements = [...document.querySelectorAll<HTMLElement>('.hp-day')];
+    if (!elements.length) return;
     const observer = new IntersectionObserver(entries => {
-      const visible = entries.filter(e => e.isIntersecting).map(e => days.indexOf(e.target as HTMLElement));
-      if (visible.length) setActiveDay(Math.min(...visible));
+      const visible = entries.filter(e => e.isIntersecting).map(e => elements.indexOf(e.target as HTMLElement));
+      if (visible.length) setActiveDay(elements[Math.min(...visible)].dataset.day ?? '');
     }, { rootMargin: '-80px 0px -60% 0px' });
-    days.forEach(day => observer.observe(day)); return () => observer.disconnect();
-  }, [groups.length]);
+    elements.forEach(day => observer.observe(day)); return () => observer.disconnect();
+  }, [groupKeys]);
+  // A jump lands once its day is in the list.
+  useEffect(() => {
+    const key = jumpTo.current; if (!key) return;
+    const target = document.getElementById(`day-${key}`); if (!target) return;
+    jumpTo.current = undefined; setActiveDay(key); target.scrollIntoView({ block: 'start' });
+  }, [groupKeys]);
+  // Loaded days scroll into view; any other restarts the list at that day.
+  function showDay(day: { key: string; latest: number }) {
+    const target = document.getElementById(`day-${day.key}`);
+    if (target) { setActiveDay(day.key); target.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    if (!day.latest) return;
+    jumpTo.current = day.key; setActiveDay(day.key);
+    void load(search, day.latest + 1, false);
+  }
   const subtitle = search ? (loading && !visits.length ? 'Searching…' : `${visits.length}${more ? '+' : ''} ${visits.length === 1 ? 'page' : 'pages'} matching “${search.trim()}”`)
-    : 'Pages you visited in Sol, newest first';
+    : 'Pages you visited in Sol';
   return <main className="history-page" data-selecting={selecting}>
     <header className="hp-header">
       <div className="hp-title"><span className="hp-title-icon"><Icon name="history" /></span>
@@ -112,13 +143,14 @@ export function HistoryPage() {
     </section>}
     {error && <p className="hp-error" role="alert">{error}</p>}
     <div className="hp-body">
-      {groups.length > 0 && <nav className="hp-days" aria-label="Days">{groups.map((group, i) =>
-        <a key={group.label + i} href={`#day-${i}`} aria-current={i === activeDay ? 'true' : undefined}
-          onClick={e => { e.preventDefault(); document.getElementById(`day-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
-          {group.label}<span>{group.visits.length}</span></a>)}</nav>}
+      {rail.length > 0 && <nav className="hp-days" aria-label="Days">{rail.map(day =>
+        <a key={day.key} href={`#day-${day.key}`} aria-current={day.key === (activeDay || groups[0]?.key) ? 'true' : undefined}
+          onClick={e => { e.preventDefault(); showDay(day); }}>
+          {day.label}<span>{day.count}</span></a>)}</nav>}
       <section className="hp-list" aria-label="Visited pages" aria-busy={loading}>
-        {groups.map((group, i) => <div key={group.label + i} className="hp-day" id={`day-${i}`}>
-          <h2>{group.label}<span>{group.visits.length} {group.visits.length === 1 ? 'page' : 'pages'}</span></h2>
+        {groups.map(group => { const count = counts.get(group.key) ?? group.visits.length;
+          return <div key={group.key} className="hp-day" id={`day-${group.key}`} data-day={group.key}>
+          <h2>{group.label}<span>{count} {count === 1 ? 'page' : 'pages'}</span></h2>
           <ul>{group.visits.map(visit => {
             const title = visit.title || host(visit.url);
             return <li key={visit.id} className="hp-row" data-selected={selected.has(visit.id)}>
@@ -127,13 +159,13 @@ export function HistoryPage() {
               <button type="button" className="hp-open" title={visit.url} onClick={e => selecting ? toggle(visit.id, e.shiftKey) : open(visit.url)}>
                 <SiteIcon visit={visit} title={title} />
                 <span className="hp-text"><span className="hp-page">{title}</span><span className="hp-host">{shortUrl(visit.url)}</span></span>
-                <span className="hp-time">{timeLabel(visit.visitedAt)}</span>
+                <span className="hp-time">{timeLabel(visit.visitedAt, hour12)}</span>
               </button>
               <button type="button" className="hp-remove" aria-label={`Remove ${title} from history`} title="Remove from history"
                 onClick={() => void removeOne(visit.id)}><Icon name="close" /></button>
             </li>;
           })}</ul>
-        </div>)}
+        </div>; })}
         {loading && !visits.length && <div className="hp-skeleton" aria-hidden="true">{Array.from({ length: 6 }, (_, i) => <span key={i} />)}</div>}
         {!groups.length && !loading && <div className="hp-empty"><span className="hp-empty-icon"><Icon name={search ? 'search' : 'history'} /></span>
           <h2>{search ? 'No matching pages' : 'No history yet'}</h2><p>{search ? 'Try a different word or part of the address.' : 'Pages you visit in Sol appear here.'}</p></div>}

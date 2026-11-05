@@ -2,6 +2,8 @@
 #include <chrono>
 #include "history/favicon_cache.h"
 #include "history/history_service.h"
+#include "app/preferences.h"
+#include "app/session.h"
 #include "include/cef_parser.h"
 #include "workspace/controller.h"
 
@@ -17,7 +19,7 @@ bool WholeNumber(CefRefPtr<CefValue> v, int64_t& out) {
   if (value < 0 || value > 9007199254740991.0 || value != static_cast<double>(static_cast<int64_t>(value))) return false;
   out = static_cast<int64_t>(value); return true;
 }
-std::string VisitsJson(const std::vector<Visit>& visits, bool more, const std::shared_ptr<FaviconCache>& favicons) {
+std::string VisitsJson(const std::vector<Visit>& visits, bool more, bool hour12, const std::shared_ptr<FaviconCache>& favicons) {
   auto list = CefListValue::Create();
   for (const auto& visit : visits) {
     auto row = CefDictionaryValue::Create();
@@ -29,10 +31,14 @@ std::string VisitsJson(const std::vector<Visit>& visits, bool more, const std::s
       if (const auto icon = favicons->Url(FaviconHost(CefString(&parts.host).ToString()))) row->SetString("favicon", *icon);
     list->SetDictionary(list->GetSize(), row);
   }
-  auto result = CefDictionaryValue::Create(); result->SetList("visits", list); result->SetBool("more", more);
+  auto result = CefDictionaryValue::Create(); result->SetList("visits", list); result->SetBool("more", more); result->SetBool("hour12", hour12);
   auto value = CefValue::Create(); value->SetDictionary(result); return CefWriteJSON(value, JSON_WRITER_DEFAULT);
 }
 }  // namespace
+bool HourClock(const std::shared_ptr<State>& state) {
+  const auto prefs = state->session ? state->session->preferences : nullptr;
+  return TwelveHourClock(prefs ? prefs->Get().clock : "system");
+}
 
 bool HandleHistoryCommand(const std::shared_ptr<State>& state, const std::string& method,
                           CefRefPtr<CefDictionaryValue> d, CefRefPtr<CefMessageRouterBrowserSide::Callback> cb,
@@ -43,9 +49,24 @@ bool HandleHistoryCommand(const std::shared_ptr<State>& state, const std::string
   if (method == "history.list" && d->GetSize() == 3 && WholeNumber(d->GetValue("before"), number) &&
       d->GetType("query") == VTYPE_STRING && d->GetString("query").length() <= 200) {
     constexpr size_t kPage = 60;
-    state->history->Visits(number, kPage + 1, d->GetString("query"), [cb, favicons = state->favicons](std::vector<Visit> visits) {
+    const bool hour12 = HourClock(state);
+    state->history->Visits(number, kPage + 1, d->GetString("query"), [cb, hour12, favicons = state->favicons](std::vector<Visit> visits) {
       const bool more = visits.size() > kPage; if (more) visits.pop_back();
-      cb->Success(VisitsJson(visits, more, favicons));
+      cb->Success(VisitsJson(visits, more, hour12, favicons));
+    });
+    return true;
+  }
+  // The page's day rail: every day with history, not only the loaded pages.
+  if (method == "history.days" && d->GetSize() == 2 && d->GetType("query") == VTYPE_STRING && d->GetString("query").length() <= 200) {
+    state->history->Days(400, d->GetString("query"), [cb](std::vector<VisitDay> days) {
+      auto list = CefListValue::Create();
+      for (const auto& day : days) {
+        auto row = CefDictionaryValue::Create(); row->SetString("date", day.date);
+        row->SetDouble("count", static_cast<double>(day.count)); row->SetDouble("latest", static_cast<double>(day.latest));
+        list->SetDictionary(list->GetSize(), row);
+      }
+      auto result = CefDictionaryValue::Create(); result->SetList("days", list);
+      auto value = CefValue::Create(); value->SetDictionary(result); cb->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT));
     });
     return true;
   }

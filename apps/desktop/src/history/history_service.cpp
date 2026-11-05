@@ -75,6 +75,9 @@ void HistoryService::UpdateTitle(const std::string& url, const std::string& titl
   if (!Recordable(url) || title.empty()) return;
   Post([url, title = title.substr(0, 400)](HistoryStore& s) { s.UpdateTitle(url, title); });
 }
+void HistoryService::Days(int limit, const std::string& query, std::function<void(std::vector<VisitDay>)> done) {
+  Run<std::vector<VisitDay>>([limit, query](HistoryStore& s) { return s.Days(limit, query); }, std::move(done));
+}
 void HistoryService::Visits(int64_t before, int limit, const std::string& query, std::function<void(std::vector<Visit>)> done) {
   Run<std::vector<Visit>>([before, limit, query](HistoryStore& s) { return s.Visits(before, limit, query); }, std::move(done));
 }

@@ -142,3 +142,17 @@ test('history replies are validated', () => {
     '{"text":"a","visits":[{"url":"https://a.test/","title":' + JSON.stringify('x'.repeat(401)) + '}]}'])
     assert.throws(() => parseHistoryReply(raw));
 });
+
+test("Sol's own pages: short addresses typed and shown", async () => {
+  const { internalPage, shownAddress } = await import('../apps/browser-ui/src/internal-pages.ts');
+  assert.equal(shownAddress('sol://ui/history.html'), 'sol://history');
+  assert.equal(shownAddress('https://a.test/'), 'https://a.test/');
+  assert.equal(internalPage(' SOL://Downloads/ ')?.url, 'sol://ui/downloads.html');
+  assert.equal(internalPage('sol://ui'), undefined);
+  const rows = commandRows(snapshot, 'sol://history', 'new', '');
+  assert.equal(rows[0].title, 'History');
+  assert.deepEqual(rows[0].action, { method: 'command.submit', url: 'sol://history' });
+  const page = { ...snapshot, activeId: 'h', nodes: [...snapshot.nodes, tab('h', { url: 'sol://ui/history.html', currentUrl: 'sol://ui/history.html', title: 'History' })] };
+  const current = commandRows(page, 'sol://history', 'navigate', 'sol://history');
+  assert.equal(current[0].kind, 'current'); assert.equal(current[0].detail, 'History');
+});

@@ -36,6 +36,7 @@ class ExtensionPopup;
 class ExtensionCatalog;
 class ExtensionsWindow;
 class SettingsWindow;
+class WelcomeWindow;
 class BoostWindow;
 class SidebarPeek;
 class DevToolsDock;
@@ -46,6 +47,9 @@ struct State {
   // Private (incognito) window (docs/private-windows.md): its own off-the-record web context, an
   // in-memory sidebar, and no history, favicon, download record or session written to disk.
   bool private_window = false;
+  // This launch created the profile (no Chromium data yet): Sol shows its welcome
+  // window first and this window once it finishes.
+  bool fresh_profile = false;
   // Windows 11 system backdrop (engine patch 12, docs/acrylic.md). |translucent| is fixed when
   // the window is created; |backdrop| ("none", "mica", "acrylic") follows Settings live.
   bool translucent = false;
@@ -95,6 +99,8 @@ struct State {
   std::shared_ptr<ExtensionsWindow> extensions_window;  // chrome://extensions, on demand.
   std::atomic<int> settings_id{-1};
   std::shared_ptr<SettingsWindow> settings_window;
+  std::atomic<int> welcome_id{-1};
+  std::shared_ptr<WelcomeWindow> welcome_window;
   std::atomic<int> boost_id{-1};
   std::atomic<int> menu_id[3] = {-1, -1, -1};  // Menu levels (windows/menu_popup.cpp); read on the IO thread too.
   std::shared_ptr<MenuPopup> menu_popup;

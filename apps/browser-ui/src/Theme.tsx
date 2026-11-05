@@ -9,13 +9,21 @@ import { createThemePreviewQueue } from './theme-preview';
 import './theme-editor.css';
 
 type Props={theme:Theme|undefined;spaceId?:string;probe?:boolean;command:(request:object)=>Promise<void>;
-  heading?:ReactNode;intro?:ReactNode;footer?:ReactNode;label?:string;creating?:boolean;closeOnDone?:boolean};
+  heading?:ReactNode;intro?:ReactNode;footer?:ReactNode;label?:string;creating?:boolean;closeOnDone?:boolean;
+  /** A space that does not exist yet: the theme is only previewed, and Create hands it over. */
+  draft?:{ready:boolean;create:(theme:ThemeChoice)=>Promise<void>}};
 const modes=[{mode:'light',label:'Light',Icon:Sun},{mode:'dark',label:'Dark',Icon:Moon},{mode:'system',label:'Follow system',Icon:Monitor}] as const;
 type Drag={id:number;index:number;mode:'move'|'size';startX:number;startY:number;circle:OrbitPalette['circles'][number];x:number;y:number;radius:number;distance:number};
 
-export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,label='Theme',creating=false,closeOnDone=false}:Props) {
+export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,label='Theme',creating=false,closeOnDone=false,draft}:Props) {
+  const drafting=useRef(!!draft).current;
   const [choice,setChoice]=useState<ThemeChoice>(()=>{
     const value=theme??DEFAULT_THEME;
+    if(drafting){
+      // A new space starts from the current colors turned round the wheel, so it looks like its own place.
+      const palette=orbitPalette(value),circles=palette.circles.map(c=>({...c,hue:(c.hue+137)%360}));
+      return {...value,hue:circles[0].hue,palette:{...palette,count:3,circles}};
+    }
     return creating?{...value,palette:{...orbitPalette(value),count:3}}:value;
   });
   const [error,setError]=useState(''),[announcement,setAnnouncement]=useState('');
@@ -29,7 +37,7 @@ export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,lab
   const turnDrag=useRef<{id:number;angle:number;rotation:number}|null>(null);
   const p=useMemo(()=>orbitPalette(choice),[choice.palette,choice.hue,choice.intensity]),dark=choice.mode==='dark'||choice.mode==='system'&&systemDark;
   const send=useMemo(()=>createThemePreviewQueue<ThemeChoice>(
-    (next,save)=>sender.current(themeCommand(next,spaceId,save)),
+    (next,save)=>sender.current(themeCommand(next,spaceId,save&&!drafting)),
     reason=>{if(alive.current)setError(reason===undefined?'':reason instanceof Error?reason.message:String(reason));},
   ),[spaceId]);
   const paint=(next:ThemeChoice)=>{
@@ -47,7 +55,9 @@ export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,lab
     const palette=orbitPalette(latest.current);palette.kind=0;palette.circles[index]=circle;paletteUpdate(palette,save);
   };
   const finish=()=>{if(dirty.current)update(latest.current,true,'Theme saved');};
-  useEffect(()=>{alive.current=true;return()=>{alive.current=false;cancelAnimationFrame(frame.current);if(dirty.current)send(latest.current,true);};},[spaceId,send]);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;cancelAnimationFrame(frame.current);if(dirty.current&&!drafting)send(latest.current,true);};},[spaceId,send]);
+  // The window shows the new space's colors while it is being set up.
+  useEffect(()=>{if(drafting)update(latest.current,false);},[]);
   useEffect(()=>{
     const media=matchMedia('(prefers-color-scheme:dark)'),changed=()=>{setSystemDark(media.matches);if(latest.current.mode==='system')applyTheme({...latest.current,dark:media.matches});};
     media.addEventListener('change',changed);return()=>media.removeEventListener('change',changed);
@@ -123,7 +133,10 @@ export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,lab
   const grainEnd=(event:PointerEvent<HTMLDivElement>)=>{if(grainDrag.current!==event.pointerId)return;grainDrag.current=null;event.currentTarget.dataset.dragging='false';finish();};
   const ring=Math.min(fieldSize.width,fieldSize.height)*.43;
   const reset=()=>update(DEFAULT_THEME,true,'Theme reset');
-  const done=()=>{finish();void send.drain().then(()=>closeOnDone?command({method:'panel.close'}):setAnnouncement('Theme saved')).catch(e=>setError(String(e)));};
+  const done=()=>{
+    if(draft){if(!draft.ready)return;finish();void send.drain().then(()=>draft.create(latest.current)).catch(e=>setError(e instanceof Error?e.message:String(e)));return;}
+    finish();void send.drain().then(()=>closeOnDone?command({method:'panel.close'}):setAnnouncement('Theme saved')).catch(e=>setError(String(e)));
+  };
   return <section ref={root} className="popover theme-popover palette-editor orbit-editor" data-appearance={dark?'dark':'light'} aria-label={label}
     onPointerDownCapture={()=>{if(root.current)root.current.dataset.focusMode='pointer';}} style={{'--orbit-brightness':p.fill/100} as CSSProperties}>
     <header className="orbit-header">{heading??<h2>Theme</h2>}<button type="button" className="orbit-reset" aria-label="Reset theme" title="Reset theme" onClick={reset}><RotateCcw size={16}/></button></header>
@@ -157,7 +170,7 @@ export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,lab
       <input className="palette-noise" type="range" min={0} max={100} value={choice.noise} aria-label="Grain" aria-valuetext={`${choice.noise}%`} onChange={e=>update({...latest.current,noise:Number(e.currentTarget.value)},false)} onKeyUp={finish} onBlur={finish}/>
     </div></div>
     <div className="orbit-bottom"><div className="orbit-modes" role="group" aria-label="Appearance">{modes.map(({mode,label,Icon})=><button key={mode} type="button" aria-label={label} title={label} aria-pressed={choice.mode===mode} onClick={()=>update({...latest.current,mode},true,label)}><Icon size={16}/></button>)}</div>
-      <button type="button" className="orbit-done" onClick={done}>{creating?'Create space':closeOnDone?'Done':'Save'}<Check size={15}/></button></div>
+      <button type="button" className="orbit-done" disabled={!!draft&&!draft.ready} onClick={done}>{creating||draft?'Create space':closeOnDone?'Done':'Save'}<Check size={15}/></button></div>
     {footer}<span className="sr-only" aria-live="polite">{announcement}</span>{error&&<p className="popover-error" role="alert">{error}</p>}
   </section>;
 }

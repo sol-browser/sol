@@ -1366,6 +1366,12 @@ void WorkspaceController::SetTheme(const Theme& theme, bool save, Reply done, co
         }, std::weak_ptr<WorkspaceController>(self), std::move(result), std::move(done),space,generation));
       }, shared_from_this(), theme, std::move(done),target,theme_generation_)));
 }
+void WorkspaceController::RevertThemePreview() {
+  auto state = state_.lock(); const auto* space = tree_.ActiveSpace();
+  if (!ready_ || shutting_down_ || !state || !space) return;
+  const Theme saved{space->theme_hue, space->theme_intensity, static_cast<ThemeMode>(space->theme_mode), space->theme_noise, space->theme_palette};
+  ++theme_generation_; state->theme = saved; ApplyTheme(state); PublishTheme();
+}
 void WorkspaceController::TogglePin() {
   if (auto state = state_.lock(); state && state->standalone_window) return;
   if (!ready_ || shutting_down_ || !closing_.empty() || closing_commits_) return;

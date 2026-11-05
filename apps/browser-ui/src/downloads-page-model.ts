@@ -3,7 +3,7 @@ import { dayLabel } from './history-model.ts';
 
 export type ActiveDownload = { id: number; name: string; origin: string; state: 'in_progress' | 'paused'; received: number; total: number; speed: number };
 export type SavedDownload = { id: number; name: string; origin: string; state: 'complete' | 'canceled' | 'interrupted'; total: number; finishedAt: number; exists: boolean };
-export type DownloadsPageData = { active: ActiveDownload[]; items: SavedDownload[]; more: boolean };
+export type DownloadsPageData = { active: ActiveDownload[]; items: SavedDownload[]; more: boolean; hour12?: boolean };
 
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const text = (v: unknown, max: number) => typeof v === 'string' && v.length <= max;
@@ -11,7 +11,8 @@ const whole = (v: unknown, min = 0) => typeof v === 'number' && Number.isSafeInt
 
 export function parseDownloadsPage(raw: string): DownloadsPageData {
   const value: unknown = JSON.parse(raw);
-  if (!record(value) || !Array.isArray(value.active) || !Array.isArray(value.items) || value.active.length > 200 || value.items.length > 100 || typeof value.more !== 'boolean')
+  if (!record(value) || !Array.isArray(value.active) || !Array.isArray(value.items) || value.active.length > 200 || value.items.length > 100 || typeof value.more !== 'boolean'
+    || (value.hour12 !== undefined && typeof value.hour12 !== 'boolean'))
     throw new Error('Invalid downloads page');
   const active = value.active.map(item => {
     if (!record(item) || !whole(item.id) || !text(item.name, 260) || !text(item.origin, 120) || (item.state !== 'in_progress' && item.state !== 'paused')
@@ -24,7 +25,7 @@ export function parseDownloadsPage(raw: string): DownloadsPageData {
       || !(whole(item.total) || item.total === -1) || !whole(item.finishedAt) || typeof item.exists !== 'boolean') throw new Error('Invalid saved download');
     return item as SavedDownload;
   });
-  return { active, items, more: value.more };
+  return { active, items, more: value.more, ...(typeof value.hour12 === 'boolean' ? { hour12: value.hour12 } : {}) };
 }
 
 // Saved downloads (newest first) grouped by local day.

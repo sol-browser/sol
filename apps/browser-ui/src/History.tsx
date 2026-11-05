@@ -13,12 +13,14 @@ export function HistoryPanel({ query, onReady }: { query: Query; onReady?: () =>
   const [error, setError] = useState('');
   const generation = useRef(0);
   const input = useRef<HTMLInputElement>(null);
+  const [hour12, setHour12] = useState(true);
   async function load(text: string, before = 0) {
     const mine = ++generation.current;
     try {
       const page = parseHistoryPage(await query({ method: 'history.list', before, query: text.trim() }));
       if (mine !== generation.current) return;  // A newer search replaced this one.
       setVisits(previous => before ? [...previous, ...page.visits] : page.visits); setMore(page.more); setError('');
+      if (page.hour12 !== undefined) setHour12(page.hour12);
     } catch (e) { if (mine === generation.current) setError(e instanceof Error ? e.message : String(e)); }
     finally { if (mine === generation.current) onReady?.(); }
   }
@@ -53,7 +55,7 @@ export function HistoryPanel({ query, onReady }: { query: Query; onReady?: () =>
         <button type="button" className="history-open" title={visit.url} onClick={() => void query({ method: 'history.open', url: visit.url }).catch(e => setError(String(e)))}>
           <HistoryMark visit={visit} />
           <span className="history-text"><span>{visit.title || host(visit.url)}</span><span>{host(visit.url)}</span></span>
-          <span className="history-time">{timeLabel(visit.visitedAt)}</span>
+          <span className="history-time">{timeLabel(visit.visitedAt, hour12)}</span>
         </button>
         <button type="button" className="history-delete" aria-label={`Remove ${visit.title || host(visit.url)} from history`} title="Remove from history"
           onClick={() => void remove(visit.id)}><Icon name="close" /></button>

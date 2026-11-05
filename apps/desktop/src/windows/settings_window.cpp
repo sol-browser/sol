@@ -209,6 +209,7 @@ std::string SettingsWindow::Response(bool refresh_default) const {
   response->SetDictionary("preferences",BrowserPreferences::ToDictionary(current));
   response->SetString("preferencesError",preferences ? preferences->error() : "Settings are not ready");
   response->SetList("keyboard",DescribeShortcuts(current));
+  response->SetBool("systemHour12", SystemTwelveHourClock());
   auto backdrop = CefDictionaryValue::Create();
 #if defined(RED_CEF_TRANSLUCENT)
   backdrop->SetBool("available", SystemBackdropSupported());
@@ -252,6 +253,8 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
       next.auto_pip = data->GetBool("value"); valid = true;
     } else if (key == "autoArchiveHours" && data->GetType("value")==VTYPE_INT && ValidAutoArchiveHours(data->GetInt("value"))) {
       next.auto_archive_hours=data->GetInt("value"); valid=true;
+    } else if (key == "clock" && data->GetType("value") == VTYPE_STRING && ValidClock(data->GetString("value"))) {
+      next.clock = data->GetString("value"); valid = true;
     } else if (key == "backdrop" && data->GetType("value") == VTYPE_STRING && ValidBackdrop(data->GetString("value"))) {
       next.backdrop = data->GetString("value"); valid = true;
     } else if (key == "startup" && data->GetType("value") == VTYPE_STRING) {

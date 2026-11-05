@@ -12,6 +12,12 @@ struct Visit {
   std::string url, title;
   int64_t visited_at = 0;  // Epoch milliseconds.
 };
+// One local calendar day of history: "YYYY-MM-DD", its visit count and the
+// newest visit's time (a page request with before = latest + 1 starts there).
+struct VisitDay {
+  std::string date;
+  int64_t count = 0, latest = 0;
+};
 struct DownloadRecord {
   int64_t id = 0;
   std::string name, origin, state;  // state: complete | canceled | interrupted.
@@ -36,6 +42,8 @@ class HistoryStore {
   // Newest first, older than |before| (0 = now), optionally matching |query| in
   // the title or URL (plain text, not a pattern).
   std::vector<Visit> Visits(int64_t before, int limit, const std::string& query);
+  // Days that have visits (matching |query|), newest first, in local time.
+  std::vector<VisitDay> Days(int limit, const std::string& query);
   // Most recent visit per URL that matches |query|, for address suggestions.
   std::vector<Visit> Suggest(const std::string& query, int limit);
   bool DeleteVisit(int64_t id);

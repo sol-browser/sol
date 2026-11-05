@@ -27,3 +27,24 @@ test('validates native history pages', () => {
     assert.throws(() => parseHistoryPage(JSON.stringify({ visits: [{ id: 1, url: 'https://a.test/', title: '', visitedAt: 1, favicon }], more: false })));
   assert.equal(host('https://www.example.com/a'), 'example.com');
 });
+
+test('day keys, every day from native, and the clock', async () => {
+  const { dayKey, dayTime, parseHistoryDays, timeLabel } = await import('../apps/browser-ui/src/history-model.ts');
+  assert.equal(dayKey(at(2026, 3, 7, 23)), '2026-03-07');
+  assert.equal(dayKey(dayTime('2026-03-07')), '2026-03-07');
+  assert.deepEqual(parseHistoryDays('{"days":[{"date":"2026-10-22","count":73,"latest":5}]}'), [{ date: '2026-10-22', count: 73, latest: 5 }]);
+  for (const raw of ['{"days":{}}', '{"days":[{"date":"22.10.2026","count":1,"latest":5}]}', '{"days":[{"date":"2026-10-22","count":0,"latest":5}]}'])
+    assert.throws(() => parseHistoryDays(raw));
+  const afternoon = at(2026, 10, 22, 14) + 5 * 60_000;
+  assert.match(timeLabel(afternoon), /^2:05\s?PM$/u);
+  assert.equal(timeLabel(afternoon, false), '14:05');
+  assert.equal(timeLabel(at(2026, 10, 22, 0) + 60_000, false), '00:01');
+  assert.equal(parseHistoryPage('{"visits":[],"more":false,"hour12":false}').hour12, false);
+  assert.throws(() => parseHistoryPage('{"visits":[],"more":false,"hour12":"no"}'));
+  assert.match(dayLabel(at(2025, 12, 30), now), /2025/);
+});
+
+test('groups carry their day key', () => {
+  const visits = [at(2026, 10, 22, 14), at(2026, 10, 21)].map((visitedAt, i) => ({ id: i + 1, url: 'https://a.test/', title: '', visitedAt }));
+  assert.deepEqual(groupByDay(visits, now).map(g => g.key), ['2026-10-22', '2026-10-21']);
+});

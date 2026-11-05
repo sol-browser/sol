@@ -66,7 +66,8 @@ void OnSpacesProbeLoad(const std::shared_ptr<State>& state, const std::string& u
         Later(s, 1300, [](const std::shared_ptr<State>& s) {
           Step(s, "work_again");
           if (s->panel_popup) s->panel_popup->Toggle("space", CefRect(14, 90, 120, 26));
-          Later(s, 1500, [](const std::shared_ptr<State>& s) {
+          // The panel's first document can take a moment to present.
+          Later(s, 2500, [](const std::shared_ptr<State>& s) {
             Step(s, "editor");
             Later(s, 900, [](const std::shared_ptr<State>& s) {
             if (s->panel_popup) s->panel_popup->Hide(false);
@@ -85,7 +86,17 @@ void OnSpacesProbeLoad(const std::shared_ptr<State>& state, const std::string& u
                     if (auto peek = s->sidebar_peek ? s->sidebar_peek->browser() : nullptr)
                       peek->GetMainFrame()->ExecuteJavaScript("document.querySelector('.space-add')?.click()", peek->GetMainFrame()->GetURL(), 0);
                   });
-                  Later(s, 3000, [](const std::shared_ptr<State>& s) {
+                  // + opens the new-space panel: name the space, then Create space.
+                  Later(s, 2900, [](const std::shared_ptr<State>& s) {
+                    if (auto panel = s->panel_popup ? s->panel_popup->browser() : nullptr)
+                      panel->GetMainFrame()->ExecuteJavaScript(
+                          "(() => { const input = document.querySelector('input[placeholder=\"Name your space\"]'); if (!input) return;"
+                          " Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Brief');"
+                          " input.dispatchEvent(new Event('input', { bubbles: true }));"
+                          " setTimeout(() => document.querySelector('.orbit-done:not(:disabled)')?.click(), 300); })()",
+                          panel->GetMainFrame()->GetURL(), 0);
+                  });
+                  Later(s, 4400, [](const std::shared_ptr<State>& s) {
                     Step(s, "brief_empty");
                     // Deleted while the floating sidebar is still on screen: no outgoing page,
                     // so the page must show on its own (it stayed hidden behind a failed restack).
@@ -95,8 +106,8 @@ void OnSpacesProbeLoad(const std::shared_ptr<State>& state, const std::string& u
                         if (s->panel_popup) s->panel_popup->Hide(false);
                       });
                   });
-                  Later(s, 4800, [](const std::shared_ptr<State>& s) { Step(s, "brief_deleted_open"); s->sidebar_peek_probe = false; });
-                  Later(s, 6200, [](const std::shared_ptr<State>& s) {
+                  Later(s, 6200, [](const std::shared_ptr<State>& s) { Step(s, "brief_deleted_open"); s->sidebar_peek_probe = false; });
+                  Later(s, 7600, [](const std::shared_ptr<State>& s) {
                     Step(s, "brief_deleted");
                     s->workspace->SetSidebarVisible(true); s->spaces_done = true;
                   });

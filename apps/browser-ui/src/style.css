@@ -7,7 +7,11 @@
 }
 :root[data-theme="dark"] { color-scheme: dark; }
 /* Theme grain (theme-apply.ts) blends into the background gradient below it. */
-.workspace, .peek-root { background-blend-mode: overlay, normal; }
+.workspace, .peek-root { background-blend-mode: overlay, normal; isolation: isolate; }
+/* The previous space's background, faded out over the new one (theme-apply.ts). */
+.workspace::before, .peek-root::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: 0;
+  background-color: var(--theme-previous-color, transparent); background-image: var(--theme-previous-image, none); background-size: var(--theme-previous-size, auto);
+  background-position: var(--theme-previous-position, 0 0); background-repeat: var(--theme-previous-repeat, repeat); background-blend-mode: overlay, normal; }
 * { box-sizing: border-box; }
 body { margin: 0; }
 button, input { font: inherit; color: inherit; }

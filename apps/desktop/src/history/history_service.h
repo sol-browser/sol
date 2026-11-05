@@ -22,6 +22,7 @@ class HistoryService : public std::enable_shared_from_this<HistoryService> {
   void ImportVisits(std::vector<Visit> visits, std::function<void(int)> done);
   void UpdateTitle(const std::string& url, const std::string& title);
   void Visits(int64_t before, int limit, const std::string& query, std::function<void(std::vector<Visit>)> done);
+  void Days(int limit, const std::string& query, std::function<void(std::vector<VisitDay>)> done);
   void Suggest(const std::string& query, int limit, std::function<void(std::vector<Visit>)> done);
   void DeleteVisit(int64_t id, std::function<void(bool)> done);
   void DeleteRange(int64_t from, int64_t to, std::function<void(int)> done);

@@ -33,6 +33,8 @@
 #include "app/session.h"
 #include "app/profile_location.h"
 #include "app/updates.h"
+#include "windows/welcome_music.h"
+#include "windows/welcome_window.h"
 #include "windows/tab_drag_preview.h"
 #include "experiments/tab_probe.h"
 #include "experiments/window_transfer.h"
@@ -111,6 +113,8 @@
 #include "include/views/cef_display.h"
 #include "renderer/audible_detector.h"
 #include "extensions/profile_guard.h"
+#include "extensions/shell_reset.h"
+#include "app/web_profile_repair.h"
 #include "extensions/install_notice.h"
 #include "downloads/download_manager.h"
 #include "include/cef_download_handler.h"
@@ -220,9 +224,10 @@ class UiResources final : public CefSchemeHandlerFactory {
   }
   CefRefPtr<CefResourceHandler> Create(CefRefPtr<CefBrowser> browser,
       CefRefPtr<CefFrame> frame, const CefString&, CefRefPtr<CefRequest> request) override {
-    const auto state = browser && state_->session ? state_->session->UiOwner(browser->GetIdentifier()) : state_;
-    if (!state) return nullptr;
-    if (!browser || (browser->GetIdentifier() != state->shell_id.load() && browser->GetIdentifier() != state->command_id.load() &&
+    // A UI browser created before the session (the first-run welcome) is matched against this window.
+    const auto owner = browser && state_->session ? state_->session->UiOwner(browser->GetIdentifier()) : nullptr;
+    const auto state = owner ? owner : state_;
+    if (!browser || (browser->GetIdentifier() != state->shell_id.load() && browser->GetIdentifier() != state->welcome_id.load() && browser->GetIdentifier() != state->command_id.load() &&
                      browser->GetIdentifier() != state->panel_id.load() && browser->GetIdentifier() != state->peek_id.load() &&
                      browser->GetIdentifier() != state->settings_id.load() && browser->GetIdentifier() != state->boost_id.load() &&
                      browser->GetIdentifier() != state->menu_id[0].load() && browser->GetIdentifier() != state->menu_id[1].load() &&
@@ -269,18 +274,28 @@ class UiResources final : public CefSchemeHandlerFactory {
       headers.emplace("Cache-Control", "max-age=31536000, immutable");  // Versioned path.
       return new FaviconResource(bytes, stream, headers);
     }
-    auto found = assets_.find(path == "/command.html" || path == "/panel.html" || path == "/peek.html" || path == "/settings.html" || path == "/boost.html" || path == "/menu.html" || path == "/history.html" || path == "/downloads.html" ? "/index.html" : path);
+    if (path == "/welcome-music.mp3") {
+      // The welcome's track, for the welcome to read its rhythm (Windows plays it).
+      const auto track = red::WelcomeMusic::Track();
+      auto stream = track.empty() ? nullptr : CefStreamReader::CreateForFile(track.wstring());
+      if (!stream) return nullptr;
+      CefResponse::HeaderMap headers;
+      headers.emplace("X-Content-Type-Options", "nosniff");
+      headers.emplace("Cache-Control", "no-store");
+      return new CefStreamResourceHandler(200, "OK", "audio/mpeg", headers, stream);
+    }
+    auto found = assets_.find(path == "/command.html" || path == "/welcome.html" || path == "/panel.html" || path == "/peek.html" || path == "/settings.html" || path == "/boost.html" || path == "/menu.html" || path == "/history.html" || path == "/downloads.html" ? "/index.html" : path);
     if (found == assets_.end()) return nullptr;
     auto& asset = found->second;
     auto stream = CefStreamReader::CreateForData(asset.body.data(), asset.body.size());
     CefResponse::HeaderMap headers;
-    headers.emplace("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+    headers.emplace("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
     headers.emplace("X-Content-Type-Options", "nosniff");
     headers.emplace("Cache-Control", "no-store");
-    if (path == "/panel.html" || path == "/command.html" || path == "/settings.html" || path == "/boost.html" || path == "/menu.html" || path == "/history.html" || path == "/downloads.html") {
+    if (path == "/panel.html" || path == "/welcome.html" || path == "/command.html" || path == "/settings.html" || path == "/boost.html" || path == "/menu.html" || path == "/history.html" || path == "/downloads.html") {
       auto body = std::make_shared<std::string>(asset.body);
       const auto html = body->find("<html");
-      if (html != std::string::npos) body->insert(html + 5, path == "/panel.html" ? " data-ui=\"panel\"" : path == "/settings.html" ? " data-ui=\"settings\"" : path == "/boost.html" ? " data-ui=\"boost\"" : path == "/menu.html" ? " data-ui=\"menu\"" : path == "/history.html" || path == "/downloads.html" ? " data-ui=\"page\"" : " data-ui=\"command\"");
+      if (html != std::string::npos) body->insert(html + 5, path == "/panel.html" ? " data-ui=\"panel\"" : path == "/welcome.html" ? " data-ui=\"welcome\"" : path == "/settings.html" ? " data-ui=\"settings\"" : path == "/boost.html" ? " data-ui=\"boost\"" : path == "/menu.html" ? " data-ui=\"menu\"" : path == "/history.html" || path == "/downloads.html" ? " data-ui=\"page\"" : " data-ui=\"command\"");
       return new ThemeResource(body, CefStreamReader::CreateForData(body->data(), body->size()), headers, "text/html");
     }
     return new CefStreamResourceHandler(200, "OK", asset.mime, headers, stream);
@@ -809,7 +824,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
         callback->Failure(409, "No page address to copy"); return true;
       }
       const int code = red::CopyLinkText(state_->window ? state_->window->GetWindowHandle() : nullptr,
-          snapshot->GetString("url").ToWString());
+          CefString(std::string(red::ShownAddress(snapshot->GetString("url").ToString()))).ToWString());
       if (code) { callback->Failure(code, code == 409 ? "The clipboard is busy. Try again." : "Could not copy the page address"); return true; }
       red::FocusBrowser(state_->content);
       if (state_->embedded) state_->embedded->Notify("copy", L"Copied current URL");
@@ -920,7 +935,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       const bool numbers = dict->GetType("x") == VTYPE_INT && dict->GetType("y") == VTYPE_INT &&
           dict->GetType("width") == VTYPE_INT && dict->GetType("height") == VTYPE_INT;
       const auto bounds = state_->window ? state_->window->GetClientAreaBoundsInScreen() : CefRect();
-      if (!state_->panel_popup || persistent || dict->GetSize() != 6 || (kind != "archive" && kind != "downloads" && kind != "site" && kind != "history" && kind != "space") || !numbers ||
+      if (!state_->panel_popup || persistent || dict->GetSize() != 6 || (kind != "archive" && kind != "downloads" && kind != "site" && kind != "history" && kind != "space" && kind != "newSpace") || !numbers ||
           dict->GetInt("x") < 0 || dict->GetInt("y") < 0 || dict->GetInt("width") < 1 || dict->GetInt("height") < 1 ||
           dict->GetInt("x") + dict->GetInt("width") > bounds.width || dict->GetInt("y") + dict->GetInt("height") > bounds.height) {
         callback->Failure(400, "Invalid panel command"); return true;
@@ -1080,6 +1095,12 @@ class Client final : public CefClient, public CefLifeSpanHandler,
         callback->Failure(400, "Invalid URL"); return true;
       }
       auto url = dict->GetString("url");
+      // sol://history or sol://downloads typed on the empty space: their one tab.
+      if (const auto page = red::InternalPageForAddress(url.ToString()); !page.empty() && state_->workspace) {
+        if (page == red::kHistoryUrl) state_->workspace->OpenHistoryPage(); else state_->workspace->OpenDownloadsPage();
+        auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot());
+        callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
+      }
       CefURLParts parts;
       const bool local_file = state_->workspace && red::IsLocalFileUrl(url.ToString());
       if (!local_file && (!CefParseURL(url, parts) || !parts.host.length || parts.username.length ||
@@ -1553,7 +1574,10 @@ class WindowDelegate final : public CefWindowDelegate {
       state_->embedded = std::make_shared<red::EmbeddedContent>(weak, [weak](const std::string& id, bool history) -> CefRefPtr<CefClient> {
         auto state = weak.lock(); return state ? new Client(state, false, id, false, {-1, -1}, false, history) : nullptr;
       });
-      window->SetToFillLayout(); window->AddChildView(shell_); window->Show();
+      window->SetToFillLayout(); window->AddChildView(shell_);
+      // A new profile meets Sol in its own welcome window; this one appears when it finishes.
+      if (state_->fresh_profile && !state_->secondary_window && !state_->private_window && !state_->standalone_window) red::ShowWelcome(state_);
+      else window->Show();
       red::RefreshShortcuts(state_);
       ResizeWorkspace(window);
       state_->workspace->AttachContent();
@@ -2104,6 +2128,11 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
     // Native Chrome children choose their compositor opacity at creation.
     if (type.empty()) command->AppendSwitch("red-translucent-child-windows");
 #endif
+    // Websites and extensions live in <profile>\Default. Chrome otherwise starts
+    // in Local State's "last used" profile, which can become Shell (the trusted
+    // UI profile), and CEF's global context follows it: web tabs, Web Store
+    // installs and extensions then landed in Shell (user report 2026-11-06).
+    if (type.empty()) command->AppendSwitchWithValue("profile-directory", "Default");
     if (type.empty()) {
       // Pinned Chromium 154 uses OverlayScrollbar's mode parameter; Fluent is
       // already the Windows theme. Keep other caller-supplied feature overrides.
@@ -2133,11 +2162,24 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
     if (state_->probe) command->AppendSwitch("probe-report");
   }
   void OnRegisterCustomSchemes(CefRawPtr<CefSchemeRegistrar> registrar) override {
+    // FETCH_ENABLED: the welcome reads its music with fetch(). UiResources serves
+    // only Sol's own UI browsers, so websites still get nothing from sol://.
     registrar->AddCustomScheme("sol", CEF_SCHEME_OPTION_STANDARD | CEF_SCHEME_OPTION_SECURE |
-        CEF_SCHEME_OPTION_CORS_ENABLED | CEF_SCHEME_OPTION_DISPLAY_ISOLATED);
+        CEF_SCHEME_OPTION_CORS_ENABLED | CEF_SCHEME_OPTION_DISPLAY_ISOLATED | CEF_SCHEME_OPTION_FETCH_ENABLED);
   }
   void OnContextInitialized() override {
     CEF_REQUIRE_UI_THREAD();
+    // Websites must never run in the trusted Shell profile: the global context
+    // has to be <profile>\Default (--profile-directory, OnBeforeCommandLineProcessing).
+    {
+      const fs::path web = CefRequestContext::GetGlobalContext()->GetCachePath().ToWString();
+      std::error_code error;
+      if (!fs::equivalent(web, state_->profile / "Default", error)) {
+        LOG(ERROR) << "Web profile is not Default: " << web.u8string().size() << " chars";
+        MessageBoxW(nullptr, L"Sol could not open its website profile safely and will close.", L"Sol", MB_OK | MB_ICONERROR);
+        state_->exit_code = 18; CefQuitMessageLoop(); return;
+      }
+    }
     if (state_->probe && CefCommandLine::GetGlobalCommandLine()->HasSwitch("probe-window-transfer")) {
       red::StartWindowTransfer(state_, url_);
       return;
@@ -2215,7 +2257,7 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
       CefRefPtr<CefV8Context> context) override {
     if (trusted_[browser->GetIdentifier()] && frame->IsMain() &&
         (frame->GetURL().ToString() == red::kUiUrl || frame->GetURL().ToString() == red::kCommandUrl ||
-         frame->GetURL().ToString() == red::kPanelUrl || frame->GetURL().ToString() == red::kPeekUrl || frame->GetURL().ToString() == red::kSettingsUrl || frame->GetURL().ToString() == red::kBoostUrl || frame->GetURL().ToString() == red::kMenuUrl ||
+         frame->GetURL().ToString() == red::kPanelUrl || frame->GetURL().ToString() == red::kPeekUrl || frame->GetURL().ToString() == red::kSettingsUrl || frame->GetURL().ToString() == red::kWelcomeUrl || frame->GetURL().ToString() == red::kBoostUrl || frame->GetURL().ToString() == red::kMenuUrl ||
          red::IsInternalPageUrl(frame->GetURL().ToString())))
       renderer_router_->OnContextCreated(browser, frame, context);
     // Website frames only (the function checks http/https); never trusted UI.
@@ -2418,10 +2460,14 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   }
   if (!profile.is_absolute()) return 15;
   std::error_code profile_error;
+  state->fresh_profile = !state->probe && state->evidence_directory.empty() && !fs::exists(profile / "Default", profile_error);
+  profile_error.clear();
   fs::create_directories(profile, profile_error);
   if (profile_error) return 16;
   if (!fs::is_regular_file(directory / "ui" / "index.html", profile_error) || profile_error) return 17;
   state->profile = profile;
+  // Sol up to 0.1.2 could run websites in Shell; move such data to Default first.
+  const auto web_repair = red::RepairWebProfile(profile);
   // The last theme, before any window or UI document exists (no light flash).
   if (auto cached = red::ReadThemeCache(profile / "BrowserData" / "theme-cache"); cached && state->workspace_mode) {
     state->theme = *cached;
@@ -2432,6 +2478,8 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   CefString(&settings.log_file) = (profile / "cef.log").wstring();
   settings.log_severity = LOGSEVERITY_WARNING;
   if (!CefInitialize(args, settings, app, sandbox_info)) return CefGetExitCode();
+  if (web_repair != red::WebProfileRepair::None)
+    LOG(WARNING) << "Web profile repair: " << (web_repair == red::WebProfileRepair::Moved ? "Shell became Default" : "failed");
   red::InstallWindowIcons();
   // A newer version downloads in the background; the sidebar then offers
   // "Restart to update", and otherwise it applies on the next start.
@@ -2459,5 +2507,13 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->ui_context = nullptr;
   CefShutdown();
   state->Record("shutdown");
+  // The Shell profile guard found an extension there: reset that profile now that
+  // nothing holds it, then start again (shell_reset.h).
+  if (red::ShellResetScheduled()) {
+    const bool reset = red::ResetShellProfile(profile) == red::ShellReset::Done;
+    LOG(WARNING) << "Shell profile reset: " << (reset ? "done" : "failed");
+    if (!reset) MessageBoxW(nullptr, L"Sol could not reset its interface profile. Restart Windows, then start Sol again.", L"Sol", MB_OK | MB_ICONERROR);
+    else if (red::Relaunch()) return 0;
+  }
   return state->exit_code;
 }

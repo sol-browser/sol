@@ -1,6 +1,7 @@
 #include "app/preferences.h"
 #include "navigation/shortcut_settings.h"
 #include <sqlite3.h>
+#include <windows.h>
 #include <algorithm>
 #include "include/cef_app.h"
 #include "include/cef_parser.h"
@@ -75,6 +76,10 @@ bool Decode(const std::string& json, Preferences& value) {
     if (data->GetType("backdrop") != VTYPE_STRING || !ValidBackdrop(data->GetString("backdrop"))) return false;
     value.backdrop = data->GetString("backdrop");
   }
+  if (data->HasKey("clock")) {
+    if (data->GetType("clock") != VTYPE_STRING || !ValidClock(data->GetString("clock"))) return false;
+    value.clock = data->GetString("clock");
+  }
   if (data->HasKey("autoArchiveHours")) {
     if (data->GetType("autoArchiveHours")!=VTYPE_INT || !ValidAutoArchiveHours(data->GetInt("autoArchiveHours"))) return false;
     value.auto_archive_hours=data->GetInt("autoArchiveHours");
@@ -108,6 +113,20 @@ std::string Write(const std::filesystem::path& path, const std::string& json) {
 bool ValidSearchEngine(const std::string& engine) { return engine == "google" || engine == "duckduckgo" || engine == "bing" || engine == "brave"; }
 bool ValidUnloadMinutes(int minutes) { return minutes==0 || minutes==15 || minutes==30 || minutes==60 || minutes==120 || minutes==360; }
 bool ValidBackdrop(const std::string& backdrop) { return backdrop == "none" || backdrop == "mica" || backdrop == "acrylic"; }
+bool ValidClock(const std::string& clock) { return clock == "system" || clock == "12" || clock == "24"; }
+bool SystemTwelveHourClock() {
+  wchar_t format[80] = {};
+  if (GetLocaleInfoEx(LOCALE_NAME_USER_DEFAULT, LOCALE_SSHORTTIME, format, 80) > 0) {
+    // Format pictures: "h" is the 12-hour clock, "H" the 24-hour one; quoted text is literal.
+    bool quoted = false;
+    for (const wchar_t* c = format; *c; ++c) {
+      if (*c == L'\'') quoted = !quoted;
+      else if (!quoted && (*c == L'h' || *c == L'H')) return *c == L'h';
+    }
+  }
+  return true;
+}
+bool TwelveHourClock(const std::string& clock) { return clock == "12" || (clock != "24" && SystemTwelveHourClock()); }
 bool ValidAutoArchiveHours(int hours) { return hours==0 || hours==12 || hours==24 || hours==48 || hours==168; }
 bool ValidHomepage(const std::string& value) {
   if (value.empty() || value.size() > 4096 || std::any_of(value.begin(),value.end(),[](unsigned char c) { return c < 32 || c == 127; })) return false;
@@ -151,6 +170,7 @@ CefRefPtr<CefDictionaryValue> BrowserPreferences::ToDictionary(const Preferences
   data->SetBool("pipButton", value.pip_button);
   data->SetInt("unloadMinutes", value.unload_minutes);
   data->SetString("backdrop", value.backdrop);
+  data->SetString("clock", value.clock);
   data->SetString("startup", value.startup); data->SetString("homepage", value.homepage);
   auto shortcuts = CefDictionaryValue::Create();
   for (const auto& [name, key] : value.shortcuts) {

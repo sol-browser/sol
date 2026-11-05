@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { parseSnapshot, type Snapshot } from '../../../packages/browser-contracts/src';
 import { commandRows, inlineAddressCompletion, parseHistoryReply, type CommandRow, type HistoryEntry } from './command-model';
 import { Icon } from './Icon';
+import { shownAddress } from './internal-pages';
 import { applyTheme } from './theme-apply';
 import { usePopupPresentation } from './usePopupPresentation';
 import { resolveNavigationInput } from './navigation-input';
@@ -12,7 +13,8 @@ type CommandState = { request: number; open: boolean; mode: 'new' | 'navigate'; 
 function parse(raw: string): CommandState {
   const s = JSON.parse(raw) as CommandState;
   if (!Number.isSafeInteger(s.request) || typeof s.open !== 'boolean' || !['new', 'navigate'].includes(s.mode) || typeof s.sourceUrl !== 'string') throw new Error('Invalid command state');
-  return { ...s, snapshot: parseSnapshot(JSON.stringify(s.snapshot)) };
+  // Sol's own pages are edited by their short address (sol://history).
+  return { ...s, sourceUrl: shownAddress(s.sourceUrl), snapshot: parseSnapshot(JSON.stringify(s.snapshot)) };
 }
 export function CommandBar() {
   const [state, setState] = useState<CommandState>();

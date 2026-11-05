@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.3 — 2026-11-06
+
+- Security fix: after the floating sidebar was used, the next start could open
+  websites, logins and extensions in Sol's protected interface profile. Sites
+  now always open in your browser profile. If yours were affected, Sol moves
+  them back on the first start, so your logins, passwords and extensions stay.
+- If an extension ever lands in the interface profile, Sol cleans it up and
+  restarts instead of closing on every start.
+- A welcome for new profiles: a short intro, then bring your tabs, passwords
+  and more from Chrome, Edge, Arc or Zen, make Sol your default browser and
+  choose a search engine.
+- New spaces are set up before they exist: name, icon and theme, then Create
+  space. Switching spaces fades the theme instead of jumping.
+- History lists every day, and a click goes straight to any of them. Times
+  follow your Windows clock, or pick 12- or 24-hour in Settings > General.
+- History and Downloads have short addresses: sol://history and sol://downloads.
+- Sol checks for updates every 4 hours while it is open, not only when it
+  starts, so "Restart to update" appears without closing the browser first.
+
 ## 0.1.2 — 2026-11-05
 
 - Sol Web Installer (Sol-Web-Installer.exe): a small download that fetches the

@@ -2,6 +2,7 @@ import type { Snapshot, TreeNode } from '../../../packages/browser-contracts/src
 import { resolveNavigationInput, searchEngines } from './navigation-input.ts';
 import { normalizeInput, predictSites, predictionToken, websiteAddress } from './navigation-prediction.ts';
 import { displayTitle } from './sidebar-model.ts';
+import { internalPage } from './internal-pages.ts';
 
 export type CommandRow = { key: string; title: string; detail: string; icon?: string;
   action: { method: 'command.submit'; url: string } | { method: 'command.activate'; id: string };
@@ -22,6 +23,7 @@ export function parseHistoryReply(raw: string): { text: string; visits: HistoryE
   }) };
 }
 export function siteLabel(url: string): string {
+  const page = internalPage(url); if (page) return page.title;
   try { return new URL(url).host.replace(/^www\./u, ''); } catch { return url; }
 }
 export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'navigate', sourceUrl: string, history: HistoryEntry[] = [], completions: string[] = []): CommandRow[] {
@@ -37,7 +39,10 @@ export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'na
   const unchanged = mode === 'navigate' && text === sourceUrl && !!current;
   if (unchanged) primary = { ...tabRow(current), key: 'current', kind: 'current',
     action: { method: 'command.submit', url: sourceUrl }, detail: siteLabel(sourceUrl) };
-  else if (text) {
+  else if (internalPage(text)) {
+    const page = internalPage(text)!;
+    primary = { key: 'destination', title: page.title, detail: page.address, kind: 'visit', action: { method: 'command.submit', url: page.address } };
+  } else if (text) {
     try {
       const engine = snapshot.searchEngine ?? 'google';
       const destination = resolveNavigationInput(text, engine);

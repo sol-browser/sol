@@ -24,7 +24,7 @@ export const DATA_TYPES: Record<ImportSourceId, readonly { type: DataType; label
     { type: 'tabs', label: 'Tabs, Spaces and bookmarks', hint: 'Open and pinned tabs, folders, Essentials and bookmarks' },
     { type: 'history', label: 'History', hint: 'The last 90 days' },
     { type: 'cookies', label: 'Cookies and sign-ins', hint: 'Keeps you signed in on many sites' },
-    { type: 'passwords', label: 'Saved passwords', hint: 'Unlocked on this PC; never leave Sol' },
+    { type: 'passwords', label: 'Saved passwords', hint: '' },
   ],
   chrome: chromium('Chrome'), edge: chromium('Edge'), arc: chromium('Arc'),
 };
@@ -33,7 +33,7 @@ function chromium(name: string) {
     { type: 'tabs', label: 'Open and pinned tabs', hint: `From ${name}'s last session` },
     { type: 'bookmarks', label: 'Bookmarks', hint: 'Added as a folder in a new Space' },
     { type: 'history', label: 'History', hint: 'The last 90 days' },
-    { type: 'passwords', label: 'Saved passwords', hint: 'Unlocked on this PC; never leave Sol' },
+    { type: 'passwords', label: 'Saved passwords', hint: '' },
   ] as const;
 }
 export function defaultTypes(source: ImportSourceId): Record<DataType, boolean> {

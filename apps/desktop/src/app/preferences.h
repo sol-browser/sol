@@ -23,6 +23,8 @@ struct Preferences {
   std::map<std::string, bool> auto_pip_sites;  // Per-site override (origin -> on/off).
   bool pip_button = true;  // Picture-in-picture button over website videos.
   int unload_minutes = 60;  // Idle tabs leave memory (0: never).
+  // Times on History and Downloads: "system" (the Windows short time format), "12" or "24".
+  std::string clock = "system";
   std::string backdrop = "none";  // Window background: "none", "mica" or "acrylic" (Windows 11).
   std::string startup = "restore", homepage = "https://www.google.com/";
   std::map<std::string, KeyBinding> shortcuts;
@@ -51,5 +53,9 @@ bool ValidAutoArchiveHours(int hours);
 bool ValidUnloadMinutes(int minutes);
 bool ValidHomepage(const std::string& url);
 bool ValidBackdrop(const std::string& backdrop);
+bool ValidClock(const std::string& clock);
+// Whether Windows shows the short time with AM/PM (Region > Short time).
+bool SystemTwelveHourClock();
+bool TwelveHourClock(const std::string& clock);
 std::string SearchEngineName(const std::string& engine);
 }  // namespace red

@@ -6,7 +6,7 @@ import { SiteMark } from './Sidebar';
 import { SitePanel } from './Site';
 import { HistoryPanel } from './History';
 import { ThemePanel } from './Theme';
-import { SpacePanel } from './Space';
+import { NewSpacePanel, SpacePanel } from './Space';
 import { applyTheme } from './theme-apply';
 import { parseExtensions, parseSiteInfo, type SiteExtension, type SiteInfo } from './site-model';
 import { archiveOrder, displayTitle, inSpace } from './sidebar-model';
@@ -14,12 +14,12 @@ import { usePopupPresentation } from './usePopupPresentation';
 
 // The Archive/Downloads popover document (sol://ui/panel.html), hosted by its
 // own owned window. It only speaks the panel IPC; native code validates all.
-type Payload = { request: number; kind: 'archive' | 'downloads' | 'site' | 'history' | 'theme' | 'space'; open: boolean; snapshot: Snapshot; site?: SiteInfo; extensions?: SiteExtension[]; siteDetails?: number };
+type Payload = { request: number; kind: 'archive' | 'downloads' | 'site' | 'history' | 'theme' | 'space' | 'newSpace'; open: boolean; snapshot: Snapshot; site?: SiteInfo; extensions?: SiteExtension[]; siteDetails?: number };
 function parsePayload(raw: string, previous?:Payload): Payload {
   const value: unknown = JSON.parse(raw);
   if (typeof value !== 'object' || value === null) throw new Error('Invalid panel payload');
   const v = value as Record<string, unknown>;
-  if (!Number.isSafeInteger(v.request) || (v.kind !== 'archive' && v.kind !== 'downloads' && v.kind !== 'site' && v.kind !== 'history' && v.kind !== 'theme' && v.kind !== 'space') || typeof v.open !== 'boolean')
+  if (!Number.isSafeInteger(v.request) || (v.kind !== 'archive' && v.kind !== 'downloads' && v.kind !== 'site' && v.kind !== 'history' && v.kind !== 'theme' && v.kind !== 'space' && v.kind !== 'newSpace') || typeof v.open !== 'boolean')
     throw new Error('Invalid panel payload');
   return { request: v.request as number, kind: v.kind, open: v.open, snapshot: parseSnapshotUpdate(JSON.stringify(v.snapshot),previous?.snapshot),
     site: v.kind === 'site' ? parseSiteInfo(v.site) : undefined,
@@ -82,6 +82,7 @@ export function Panel() {
   return <div className="panel-root" ref={root} data-kind={payload?.kind} data-pointer={pointer} onMouseMove={() => { if (!pointer) setPointer(true); }}>
     {payload?.kind === 'theme' ? <ThemePanel key={`${payload.request}:${snapshot?.activeSpace}`} theme={snapshot?.theme} spaceId={snapshot?.activeSpace} probe={snapshot?.paletteProbe} closeOnDone command={call} /> :
     payload?.kind === 'space' && snapshot ? <SpacePanel key={`${payload.request}:${snapshot.activeSpace}`} snapshot={snapshot} command={call} /> :
+    payload?.kind === 'newSpace' && snapshot ? <NewSpacePanel key={payload.request} snapshot={snapshot} command={call} /> :
     payload?.kind === 'history' ? <HistoryPanel key={payload.request} query={query} onReady={() => setHistoryReady(payload.request)} /> :
     payload?.kind === 'site' && payload.site ? <SitePanel key={payload.request} site={payload.site} changed={changed}
       extensions={payload.extensions ?? []} details={payload.siteDetails ?? 0} command={run}

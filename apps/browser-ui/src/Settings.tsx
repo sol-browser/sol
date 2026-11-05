@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { parseSettingsSnapshot, type Backdrop, type SettingsCommand, type SettingsSnapshot } from '../../../packages/browser-contracts/src';
+import { parseSettingsSnapshot, type Backdrop, type Clock, type SettingsCommand, type SettingsSnapshot } from '../../../packages/browser-contracts/src';
 import { Settings2, Palette, ArrowDownToLine, ArrowUpRight, Check, Puzzle, NotebookPen, Search, Power, Keyboard, Archive } from 'lucide-react';
 import { PreferencesSettings } from './PreferencesSettings';
 import { Icon } from './Icon';
@@ -130,6 +130,17 @@ export function Settings() {
             <div><h2>Extensions</h2><p>Manage the extensions you’ve added to Sol.</p></div>
             <button type="button" className="settings-secondary" disabled={busy || !data?.ready}
               onClick={() => void action({ method: 'settings.extensions' })}>Manage<ArrowUpRight size={14} /></button>
+          </section>
+          <section className="settings-card">
+            <span className="settings-category">DATE AND TIME</span><h2>Time format</h2>
+            <p>How times appear in History and Downloads.</p>
+            <label className="settings-field" htmlFor="clock-format"><span>Show times as</span>
+              <select id="clock-format" value={data?.preferences.clock ?? 'system'}
+                disabled={busy || !data?.ready || !!data.preferencesError}
+                onChange={event => void action({ method: 'settings.set', key: 'clock', value: event.target.value as Clock })}>
+                <option value="system">Same as Windows ({data?.systemHour12 === false ? '14:30' : '2:30 PM'})</option>
+                <option value="12">12-hour (2:30 PM)</option><option value="24">24-hour (14:30)</option>
+              </select></label>
           </section>
           <div className="settings-version"><span>Red {data?.version ?? '…'}</span><span>Chromium {data?.chromiumVersion ?? '…'}</span></div>
         </> : section === 'search' || section === 'downloads' || section === 'startup' || section === 'keyboard' || section === 'tabs' ?

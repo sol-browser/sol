@@ -123,7 +123,7 @@ export function ImportSettings({ disabled }: { disabled: boolean }) {
         <legend>What to import</legend>
         {DATA_TYPES[source].map(item => <label key={item.type} className="import-type">
           <input type="checkbox" checked={types[item.type]} onChange={event => setTypes(t => ({ ...t, [item.type as DataType]: event.target.checked }))} />
-          <span><strong>{item.label}</strong><small>{item.hint}</small></span>
+          <span><strong>{item.label}</strong>{item.hint && <small>{item.hint}</small>}</span>
         </label>)}
       </fieldset>
       {needsPrimary && <label className="settings-field import-primary" htmlFor="import-primary">

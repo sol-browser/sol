@@ -1,6 +1,6 @@
 /* Orbit is intentionally neutral: the canvas previews the edited Space color. */
 .popover.theme-popover.orbit-editor{--orbit-top:#2e3037;--orbit-surface:#24252b;--orbit-well:#17191f;--orbit-ink:#eeedf2;--orbit-muted:#a9a7b1;--orbit-line:#ffffff0c;--orbit-tick:#ffffff16;box-sizing:border-box;padding:16px;border:0;border-radius:0;color:var(--orbit-ink);background:linear-gradient(145deg,var(--orbit-top),var(--orbit-surface) 55%);box-shadow:none;font-size:12px}
-.panel-root:is([data-kind=theme],[data-kind=space]){padding:0}
+.panel-root:is([data-kind=theme],[data-kind=space],[data-kind=newSpace]){padding:0}
 .popover.theme-popover.orbit-editor[data-appearance=light]{--orbit-top:#f0efec;--orbit-surface:#dededb;--orbit-well:#d2d2d0;--orbit-ink:#33343c;--orbit-muted:#686974;--orbit-line:#0000000c;--orbit-tick:#00000018;color-scheme:light}
 .orbit-editor *{box-sizing:border-box}
 .orbit-editor [hidden]{display:none!important}
@@ -15,6 +15,8 @@
 .orbit-editor .space-name{gap:12px;position:relative}
 .orbit-editor .space-name-mark{width:36px;height:36px;padding:0;border-radius:12px;font-size:21px;background:linear-gradient(150deg,#ffffff0c,#ffffff02);box-shadow:inset 0 1px #ffffff17,0 4px 9px #0003;color:var(--orbit-ink)}
 .orbit-editor .space-name input{width:100%;min-width:0;height:28px;padding:0;border:0;background:transparent;font-size:16px;font-weight:500;color:var(--orbit-ink);box-shadow:none}
+.orbit-editor .space-name input::placeholder{color:var(--orbit-muted);opacity:1}
+.orbit-editor .space-name-mark[data-empty=true]{font-size:19px;font-weight:400;color:var(--orbit-muted)}
 .popover.orbit-editor .space-name>input:is(:hover,:focus,:focus-visible){outline:none;border:0;background:transparent;box-shadow:none}
 .orbit-editor[data-focus-mode=keyboard] .space-name>input:focus-visible{box-shadow:inset 0 -1px var(--orbit-muted)}
 .orbit-editor .space-emoji-picker{position:absolute;z-index:20;left:0;top:calc(100% + 8px);width:288px;max-width:calc(100vw - 32px);padding:10px;border:1px solid var(--orbit-line);border-radius:16px;background:var(--orbit-surface);box-shadow:0 8px 25px #0005;color:var(--orbit-ink);font-size:12px;font-weight:400;overflow:hidden}
@@ -76,6 +78,7 @@
 .orbit-editor .orbit-modes button{height:28px;width:28px;padding:0;border-radius:9px;display:grid;place-items:center;background:transparent;color:var(--orbit-muted)}
 .orbit-editor .orbit-modes svg{width:14px;height:14px}
 .orbit-editor .orbit-done{height:33px;padding:0 10px;border-radius:10px;display:flex;align-items:center;gap:7px;font-size:11px;font-weight:500;background:linear-gradient(135deg,#d7c5e8,#c1bedc);color:#36313f;box-shadow:inset 0 1px #ffffff77,0 3px 8px #0003;white-space:nowrap}
+.orbit-editor .orbit-done:disabled{opacity:.45;cursor:default;box-shadow:none}
 .orbit-editor .space-footer{margin-top:8px;padding:6px 0 0;border-top:1px solid var(--orbit-line);min-height:26px;flex-wrap:wrap}
 .orbit-editor .space-confirm{color:var(--orbit-muted)}
 .orbit-editor .popover-text-button{color:var(--orbit-muted)}

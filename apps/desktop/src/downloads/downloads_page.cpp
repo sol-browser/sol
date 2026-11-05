@@ -1,5 +1,6 @@
 #include "downloads/downloads_page.h"
 #include "downloads/download_manager.h"
+#include "history/history_commands.h"
 #include "history/history_service.h"
 #include "include/cef_parser.h"
 
@@ -22,7 +23,7 @@ bool HandleDownloadsPageCommand(const std::shared_ptr<State>& state, const std::
   if (method == "downloads.page" && d->GetSize() == 2 && WholeNumber(d->GetValue("before"), number)) {
     constexpr size_t kPage = 60;
     const bool first = number == 0;
-    state->history->DownloadsBefore(number, kPage + 1, [cb, first, weak = std::weak_ptr<State>(state)](std::vector<DownloadRecord> records) {
+    state->history->DownloadsBefore(number, kPage + 1, [cb, first, hour12 = HourClock(state), weak = std::weak_ptr<State>(state)](std::vector<DownloadRecord> records) {
       auto state = weak.lock(); if (!state || !state->downloads) { cb->Failure(503, "Downloads unavailable"); return; }
       const bool more = records.size() > kPage; if (more) records.pop_back();
       auto items = CefListValue::Create();
@@ -38,7 +39,7 @@ bool HandleDownloadsPageCommand(const std::shared_ptr<State>& state, const std::
       }
       auto result = CefDictionaryValue::Create();
       result->SetList("active", first ? state->downloads->ActiveList() : CefListValue::Create());
-      result->SetList("items", items); result->SetBool("more", more);
+      result->SetList("items", items); result->SetBool("more", more); result->SetBool("hour12", hour12);
       cb->Success(Json(result));
     });
     return true;
