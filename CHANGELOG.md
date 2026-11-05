@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2 — 2026-11-05
+
+- Sol Web Installer (Sol-Web-Installer.exe): a small download that fetches the
+  latest Sol, checks it and installs it while the Sol logo fills up like
+  water. The full offline setup stays available next to it.
+- If you have Sol 0.1.1, this version arrives on its own: "Restart to update"
+  appears at the bottom of the sidebar.
+
 ## 0.1.1 — 2026-11-04
 
 - Sol now updates itself: it downloads a new version in the background, and

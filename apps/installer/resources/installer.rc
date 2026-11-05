@@ -1,0 +1,28 @@
+#include <winver.h>
+
+1 ICON "../../desktop/resources/red.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION SOL_VERSION_MAJOR, SOL_VERSION_MINOR, SOL_VERSION_PATCH, 0
+PRODUCTVERSION SOL_VERSION_MAJOR, SOL_VERSION_MINOR, SOL_VERSION_PATCH, 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "Sol Browser"
+      VALUE "FileDescription", "Sol Web Installer"
+      VALUE "FileVersion", SOL_INSTALLER_VERSION
+      VALUE "InternalName", "Sol-Web-Installer"
+      VALUE "OriginalFilename", "Sol-Web-Installer.exe"
+      VALUE "ProductName", "Sol"
+      VALUE "ProductVersion", SOL_INSTALLER_VERSION
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

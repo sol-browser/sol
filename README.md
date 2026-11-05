@@ -20,8 +20,10 @@ may work but is untested. Linux may come one day, much later.
 ## Download
 
 Releases will appear on the [Releases page](https://github.com/sol-browser/sol/releases).
-Download `Sol-Setup-<version>.exe` from the latest release. The setup is
-per-user (no administrator rights) and Sol keeps itself up to date afterwards.
+Download `Sol-Web-Installer.exe` from the latest release: it fetches the newest
+Sol, installs it and opens it. `Sol-Setup-<version>.exe` is the same release as
+a full offline setup. Both are per-user (no administrator rights), and Sol keeps
+itself up to date afterwards.
 It is not code-signed yet, so Windows SmartScreen asks once: **More info → Run
 anyway**.
 
@@ -71,6 +73,7 @@ python scripts/spaces_smoke.py
 |---|---|
 | `apps/desktop` | native host (C++20, CMake): windows, tabs, storage, engine integration |
 | `apps/browser-ui` | browser interface (React, TypeScript, Vite) |
+| `apps/installer` | `Sol-Web-Installer.exe`: downloads and installs the latest release (C++, Direct2D) |
 | `packages/browser-contracts` | typed messages between the interface and the host |
 | `cef-patches`, `cmake` | engine patches and pinned dependencies |
 | `installer` | release staging checks (Inno Setup); releases are packed with [Velopack](https://velopack.io) |

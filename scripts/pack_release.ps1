@@ -2,9 +2,10 @@
 # build_installer.ps1) with Velopack into the update feed Sol reads from GitHub
 # Releases (app/updates.cpp), and lists the files a release must carry:
 #   releases.win.json, SolBrowser-<v>-full.nupkg, SolBrowser-<v>-delta.nupkg
-#   (when an earlier Velopack release exists), and Sol-Setup-<v>.exe.
+#   (when an earlier Velopack release exists), Sol-Setup-<v>.exe, and the small
+#   Sol-Web-Installer.exe (apps/installer) that downloads and runs the latest setup.
 # Writes them to artifacts/velopack/publish. See docs/sol-plan.md, stage 4.
-param([switch]$NoDelta)
+param([ValidatePattern('^[A-Za-z0-9_-]+$')][string]$BuildDirectory = 'Release', [switch]$NoDelta)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $version = (Get-Content -LiteralPath (Join-Path $repoRoot 'VERSION') -Raw).Trim()
@@ -58,6 +59,10 @@ Copy-Item -LiteralPath $full, (Join-Path $feed 'releases.win.json') -Destination
 $delta = Join-Path $feed "SolBrowser-$version-delta.nupkg"
 if (Test-Path -LiteralPath $delta) { Copy-Item -LiteralPath $delta -Destination $publish }
 Copy-Item -LiteralPath $setup -Destination (Join-Path $publish "Sol-Setup-$version.exe")
+$installer = Join-Path $repoRoot "build/$BuildDirectory/apps/installer/Sol-Web-Installer.exe"
+if (!(Test-Path -LiteralPath $installer)) { throw "No built installer: $installer" }
+if ((Get-Item -LiteralPath $installer).VersionInfo.ProductVersion -ne $version) { throw 'Sol-Web-Installer.exe does not match VERSION' }
+Copy-Item -LiteralPath $installer -Destination $publish
 Get-ChildItem -LiteralPath $publish -File | ForEach-Object {
     "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
 } | Set-Content -LiteralPath (Join-Path $publish "Sol-$version.sha256") -Encoding ascii

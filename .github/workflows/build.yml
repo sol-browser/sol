@@ -23,20 +23,20 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/browser-ui/package-lock.json
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
       # The pinned engine archive (~176 MB), keyed by its lock.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .cache
           key: deps-${{ hashFiles('cmake/cef.lock.json', 'cmake/sqlite.lock.json', 'cmake/velopack.lock.json') }}
@@ -52,7 +52,7 @@ jobs:
           $version = (Get-Content VERSION -Raw).Trim()
           if ("v$version" -ne '${{ github.ref_name }}') { throw "Tag ${{ github.ref_name }} does not match VERSION $version" }
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           dotnet-version: 8.0.x
@@ -70,7 +70,7 @@ jobs:
           python scripts/verify_installer.py --build-directory Release
           ./scripts/pack_release.ps1
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           name: release
@@ -84,7 +84,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release
       - name: Draft the release
@@ -92,6 +92,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${GITHUB_REF_NAME#v}"
+          # Every attached file is needed: installed copies update from
+          # releases.win.json and the .nupkg; Sol-Web-Installer.exe reads the .sha256.
+          printf '%s\n' "Built by CI from $GITHUB_REF_NAME. Replace this text with the release notes." "" \
+            "<!-- Keep every attached file. Installed copies update from releases.win.json and the .nupkg;" \
+            "     Sol-Web-Installer.exe reads Sol-$version.sha256. Removing one breaks updates or the installer. -->" > notes.md
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
-            --title "Sol $version" --notes "Built by CI from $GITHUB_REF_NAME. Edit these notes before publishing." \
-            Sol-Setup-*.exe Sol-*.sha256 SolBrowser-*.nupkg releases.win.json
+            --title "Sol $version" --notes-file notes.md \
+            Sol-Web-Installer.exe Sol-Setup-*.exe Sol-*.sha256 SolBrowser-*.nupkg releases.win.json
