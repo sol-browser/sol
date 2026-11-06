@@ -46,6 +46,13 @@ void EmbeddedContent::SetSplitPages(int first, int second, bool vertical, int ra
   const bool enabled = first != -1 || second != -1;
   const bool changed = enabled != split_enabled_ || first != split_first_ || second != split_second_;
   if (changed) FinishPresentation(presentation_generation_,false);
+  // Leaving a split: its visible panes keep their place and size until the page
+  // shown next has painted over them (Activate); they are not stretched first.
+  split_leaving_.clear();
+  if (changed && !enabled && split_enabled_)
+    for (const int pane : {split_first_, split_second_})
+      if (const auto found = browsers_.find(pane); found != browsers_.end() && IsWindowVisible(found->second->GetHost()->GetWindowHandle()))
+        split_leaving_.insert(pane);
   split_enabled_ = enabled; split_first_ = first; split_second_ = second; split_vertical_ = vertical;
   split_ratio_ = std::clamp(ratio,1000,9000); split_reversed_ = reversed; split_expanded_ = expanded;
   split_crashed_ = crashed;

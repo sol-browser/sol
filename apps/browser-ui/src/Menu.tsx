@@ -31,7 +31,8 @@ function parseItems(value: unknown, depth = 0): MenuItem[] {
     if (v.separator === true) return { separator: true };
     if (!text(v.id, 16) || !text(v.label, 200) || typeof v.enabled !== 'boolean' || (v.icon !== undefined && !text(v.icon, 32)) ||
         (v.shortcut !== undefined && !text(v.shortcut, 40)) || (v.checked !== undefined && typeof v.checked !== 'boolean') ||
-        (v.image !== undefined && (!text(v.image, 200000) || !(v.image as string).startsWith('data:image/'))))
+        (v.image !== undefined && (!text(v.image, 200000) || !((v.image as string).startsWith('data:image/') ||
+          /^sol:\/\/ui\/favicon\/[a-z0-9.-]{1,253}\/\d{1,9}$/u.test(v.image as string)))))  // Cached site icons (tab history).
       throw new Error('Invalid menu');
     return { id: v.id as string, label: v.label as string, enabled: v.enabled, icon: v.icon as string | undefined, image: v.image as string | undefined,
       shortcut: v.shortcut as string | undefined, checked: v.checked === true, children: v.children === undefined ? undefined : parseItems(v.children, depth + 1) };

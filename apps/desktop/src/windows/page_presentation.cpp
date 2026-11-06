@@ -54,6 +54,14 @@ void EmbeddedContent::CaptureOutgoing(CefRefPtr<CefBrowser> browser) {
   page.outgoing_capture = browser->GetHost()->ExecuteDevToolsMethod(0, "Page.captureScreenshot", params);
   if (!page.outgoing_capture) FinishPresentation(presentation_generation_);
 }
+void EmbeddedContent::AwaitIncomingFrame(CefRefPtr<CefBrowser> browser) {
+  auto params = CefDictionaryValue::Create(); params->SetString("format", "png"); params->SetBool("optimizeForSpeed", true);
+  auto clip = CefDictionaryValue::Create(); clip->SetDouble("x", 0); clip->SetDouble("y", 0);
+  clip->SetDouble("width", 1); clip->SetDouble("height", 1); clip->SetDouble("scale", 1); params->SetDictionary("clip", clip);
+  auto& page = presentations_[browser->GetIdentifier()];
+  page.incoming_capture = browser->GetHost()->ExecuteDevToolsMethod(0, "Page.captureScreenshot", params);
+  if (!page.incoming_capture) FinishPresentation(presentation_generation_);
+}
 void EmbeddedContent::SettlePresentation() {
   const auto generation = ++presentation_generation_;
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, unsigned long long generation) {
@@ -64,6 +72,23 @@ void EmbeddedContent::OnPresentationResult(CefRefPtr<CefBrowser> browser, int me
   if (OnLinkPeekCapture(browser,message,success,data,size)) return;
   if (OnLinkPeekReadiness(browser,message,success,data,size)) return;
   const int id = browser->GetIdentifier();
+  // The incoming page has produced a frame: the outgoing picture goes now.
+  if (const auto incoming = presentations_.find(id); incoming != presentations_.end() && message && message == incoming->second.incoming_capture) {
+    incoming->second.incoming_capture = 0;
+    if (id == presenting_id_) {
+      if (auto s = state_.lock()) {
+        auto details = CefDictionaryValue::Create(); details->SetInt("browser_id", id);
+        details->SetDouble("painted_ms", static_cast<double>(GetTickCount64() - incoming->second.activated_ms));
+        s->Record("page_transition_painted", details);
+      }
+      // The screenshot returns once the frame is drawn, which can be a vsync
+      // before it is on screen: hide the outgoing page a frame later.
+      CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, unsigned long long generation) {
+        if (auto s = weak.lock(); s && s->embedded) s->embedded->FinishPresentation(generation);
+      }, state_, presentation_generation_), 16);
+    }
+    return;
+  }
   const auto found = presentations_.find(id);
   if (found == presentations_.end() || !message || message != found->second.outgoing_capture) return;
   found->second.outgoing_capture = 0;
@@ -84,14 +109,14 @@ void EmbeddedContent::OnPresentationResult(CefRefPtr<CefBrowser> browser, int me
   SetWindowPos(s->content->GetHost()->GetWindowHandle(), HWND_TOP, 0, 0, 0, 0,
       SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   ShowWindow(browser->GetHost()->GetWindowHandle(), SW_HIDE);
-  if (!corners_.FadeOutgoingPage()) { FinishPresentation(generation); return; }
+  // (Outgoing-picture path, no longer entered by tab switches.)
+  AwaitIncomingFrame(s->content);
   auto details = CefDictionaryValue::Create(); details->SetInt("browser_id", presenting_id_);
   details->SetInt("outgoing_browser_id", id);
   details->SetDouble("feedback_ms", static_cast<double>(GetTickCount64() - presentations_[presenting_id_].activated_ms));
   details->SetDouble("capture_ms", static_cast<double>(GetTickCount64() - found->second.capture_started_ms));
   details->SetBool("target_loading", s->content->IsLoading());
-  s->Record("page_transition_outgoing_fade", details);
-  SettlePresentation();
+  s->Record("page_transition_outgoing_held", details);
 }
 void EmbeddedContent::CheckPresentationTimeout(unsigned long long generation) {
   if (generation != presentation_generation_) return;
@@ -109,9 +134,13 @@ void EmbeddedContent::FinishPresentation(unsigned long long generation, bool foc
     timing->SetDouble("total_ms", static_cast<double>(GetTickCount64() - found->second.activated_ms));
   // Commit the live target and remove any remaining outgoing picture.
   // The target has been loading throughout; it never waits for a screenshot.
+  if (commit) split_leaving_.clear();
+  const bool parked = parked_; parked_ = false;
   if (commit && presenting_id_ != -1 && s && s->content) {
-    SetWindowPos(s->content->GetHost()->GetWindowHandle(), HWND_TOP, 0, 0, 0, 0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    // A page that painted parked outside the window moves into place now.
+    const auto place = PagePhysicalBounds(s->content->GetIdentifier());
+    SetWindowPos(s->content->GetHost()->GetWindowHandle(), HWND_TOP, place.x, place.y, place.width, place.height,
+        (parked ? 0 : SWP_NOMOVE | SWP_NOSIZE) | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     for (const auto& [id, page] : browsers_)
       if (id != s->content->GetIdentifier()) ShowWindow(page->GetHost()->GetWindowHandle(), SW_HIDE);
   }

@@ -29,6 +29,8 @@ export type DevicePreview = DeviceSettings & { id: number; pending: boolean; err
 export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boolean; probeMode: boolean;
   workspaceEnabled?: boolean; schemaVersion?: number; treeRevision?: number; ready?: boolean; error?: string; browserFullscreen?: boolean;
   windowKind?: 'workspace' | 'standalone';
+  /** The active page's zoom in percent when it is not 100 (the address bar's badge). */
+  zoom?: number;
   /** A downloaded Sol version waiting for "Restart to update". */
   updateReady?: string;
   searchEngine?: SearchEngine; searchSuggestions?: boolean; shortcutLabels?: Record<string, string>;
@@ -172,7 +174,9 @@ export type TreeMutation =
   | { method: 'space.edit'; id: string; title: string; icon: string }
   | { method: 'space.delete' | 'space.switch'; id: string }
   | { method: 'space.move'; id: string; position: number };
-export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'navigation.forward' | 'navigation.reload' | 'navigation.stop' | 'navigation.copyLink' | 'workspace.openDroppedFiles' }
+export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'navigation.forward' | 'navigation.reload' | 'navigation.stop' | 'navigation.copyLink' | 'navigation.resetZoom' | 'workspace.openDroppedFiles' }
+  | { method: 'navigation.openEntry'; offset: -1 | 1 }
+  | { method: 'navigation.historyMenu'; x: number; y: number; width: number; height: number }
   | { method: 'media.control'; id: string; action: 'toggle' | 'mute' | 'dismiss' | 'open' | 'pip' | 'previous' | 'next' }
   | { method: 'media.control'; id: string; action: 'seek'; value: number }
   | { method: 'linkPeek.control'; id: string; action: 'close' | 'promote' | 'split' | 'back' | 'forward' | 'reload' | 'stop' | 'hoverClose' | 'hoverSplit' | 'hoverPromote' | 'hoverNone' }
@@ -194,7 +198,9 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'downloads.clear' }
   | { method: 'menu.main'; x: number; y: number; width: number; height: number }
   | { method: 'extension.open' | 'extension.menu'; id: string; x: number; y: number; width: number; height: number }
-  | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragStarted' | 'tab.dragCancel' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
+  | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
+  | { method: 'tab.dragStarted'; id: string; previousId: string | null }
+  | { method: 'tab.dragCancel'; id: string }
   | { method: 'tab.setHome'; id: string; url: string; title: string }
   | { method: 'tab.mute'; id: string; muted: boolean }
   | { method: 'panel.open'; kind: 'archive' | 'downloads' | 'site' | 'history' | 'space' | 'newSpace'; x: number; y: number; width: number; height: number }
@@ -260,6 +266,7 @@ export function parseSnapshot(raw: string): Snapshot {
     if (s.searchSuggestions !== undefined && typeof s.searchSuggestions !== 'boolean') throw new Error('Invalid suggestion preference');
     if (s.updateReady !== undefined && (typeof s.updateReady !== 'string' || s.updateReady.length > 40 || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(s.updateReady))) throw new Error('Invalid update version');
     if (s.browserFullscreen !== undefined && typeof s.browserFullscreen!=='boolean') throw new Error('Invalid fullscreen state');
+    if (s.zoom !== undefined && (!integer(s.zoom) || (s.zoom as number) < 1 || (s.zoom as number) > 1000)) throw new Error('Invalid zoom');
     if (s.linkPeek !== undefined) {
       const p = s.linkPeek;
       if (!object(p) || typeof p.id !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(p.id) ||

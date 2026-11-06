@@ -6,6 +6,7 @@
 #include "windows/command_bar.h"
 #include "windows/clipboard.h"
 #include "windows/panel_popup.h"
+#include "windows/sidebar_peek.h"
 #include "workspace/tab_order.h"
 #include <algorithm>
 #include <cmath>
@@ -15,21 +16,36 @@
 #include "include/wrapper/cef_closure_task.h"
 
 namespace red {
-std::optional<WorkspaceController::SplitDrop> WorkspaceController::SplitDropAt(const std::string& id, POINT screen) const {
+std::optional<WorkspaceController::SplitDrop> WorkspaceController::SplitDropAt(const std::string& id, POINT screen) {
   const auto state = state_.lock();
   if (!state || !state->window || !state->embedded || !ready_ || shutting_down_ || !closing_.empty() || closing_commits_ ||
-      SelectedSplit() || tree_.active_id.empty() || tree_.active_id == id || state->embedded->IsPageFullscreen()) return {};
+      !tab_drag_ || tab_drag_->id != id || tab_drag_->space != tree_.active_space || state->embedded->IsPageFullscreen()) return {};
+  auto& drag = *tab_drag_;
+  if (drag.previous.empty() || drag.previous == id || (tree_.active_id != id && tree_.active_id != drag.previous)) return {};
   const auto root = state->window->GetWindowHandle();
-  if (IsIconic(root) || GetForegroundWindow() != root) return {};
-  const auto current = std::find_if(tree_.nodes.begin(),tree_.nodes.end(),[&](const auto& n) { return n.id == tree_.active_id; });
-  const auto dragged = std::find_if(tree_.nodes.begin(),tree_.nodes.end(),[&](const auto& n) { return n.id == id; });
-  if (current == tree_.nodes.end() || dragged == tree_.nodes.end() || current->folder || dragged->folder || current->archived || dragged->archived ||
-      (current->favorite && dragged->favorite)) return {};
-  const auto visible = OrderedTabs(tree_.nodes,tree_.active_space);
-  if (std::find(visible.begin(),visible.end(),id) == visible.end()) return {};
-  for (const auto& split : tree_.splits) if (split.anchor == id || split.other == id || split.anchor == current->id || split.other == current->id) return {};
+  const HWND foreground = GetForegroundWindow();
+  const HWND peek = state->sidebar_peek && state->sidebar_peek->window_visible() ? state->sidebar_peek->host() : nullptr;
+  if (IsIconic(root) || !foreground || (foreground != root && foreground != peek)) return {};
+  RECT sidebar{};
+  if (peek && GetWindowRect(peek, &sidebar) && PtInRect(&sidebar, screen)) return {};
   const auto area = state->embedded->SplitDropArea();
   POINT point = screen; if (!ScreenToClient(root,&point) || point.x < area.x || point.y < area.y || point.x >= area.x+area.width || point.y >= area.y+area.height) return {};
+  const auto current = std::find_if(tree_.nodes.begin(),tree_.nodes.end(),[&](const auto& n) { return n.id == drag.previous; });
+  const auto dragged = std::find_if(tree_.nodes.begin(),tree_.nodes.end(),[&](const auto& n) { return n.id == id; });
+  if (current == tree_.nodes.end() || dragged == tree_.nodes.end() || current->folder || dragged->folder || current->archived || dragged->archived ||
+      archiving_.contains(id) || archiving_.contains(current->id) || moving_unloads_.contains(id) || moving_unloads_.contains(current->id) ||
+      (current->favorite && dragged->favorite)) return {};
+  const auto visible = OrderedTabs(tree_.nodes,tree_.active_space);
+  if (std::find(visible.begin(),visible.end(),id) == visible.end() ||
+      std::find(visible.begin(),visible.end(),current->id) == visible.end()) return {};
+  for (const auto& split : tree_.splits) if (split.anchor == id || split.other == id || split.anchor == current->id || split.other == current->id) return {};
+  // A press selects the dragged tab. Restore its partner on entering the page,
+  // even at the center, and use that same partner if release beats activation.
+  if (!drag.restored && tree_.active_id == id) {
+    drag.restored = true;
+    TreeCommand activate{TreeAction::Activate}; activate.id = current->id;
+    Dispatch(activate, {}, true);
+  }
   const double x = (point.x-area.x) / static_cast<double>(std::max(1,area.width));
   const double y = (point.y-area.y) / static_cast<double>(std::max(1,area.height));
   const double edge = std::min({x,1-x,y,1-y}); if (edge > .28) return {};

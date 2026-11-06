@@ -15,6 +15,7 @@
 #include "include/cef_browser.h"
 #include "include/cef_command_line.h"
 #include "include/cef_parser.h"
+#include "include/cef_preference.h"
 #include "include/cef_process_message.h"
 #include "include/cef_sandbox_win.h"
 #include "include/cef_scheme.h"
@@ -33,9 +34,9 @@
 #include "app/session.h"
 #include "app/profile_location.h"
 #include "app/updates.h"
+#include "app/windows_locale.h"
 #include "windows/welcome_music.h"
 #include "windows/welcome_window.h"
-#include "windows/tab_drag_preview.h"
 #include "experiments/tab_probe.h"
 #include "experiments/window_transfer.h"
 #include "windows/embedded_content.h"
@@ -103,6 +104,7 @@
 #include "downloads/downloads_page.h"
 #include "history/favicon_cache.h"
 #include "windows/main_menu.h"
+#include "windows/tab_history_menu.h"
 #include "windows/settings_window.h"
 #include "windows/default_browser.h"
 #include "windows/window_icons.h"
@@ -308,6 +310,20 @@ class UiResources final : public CefSchemeHandlerFactory {
 };
 
 class Client;
+// Zooms |page| (Ctrl+wheel, Ctrl+=/-/0, the address bar's zoom badge) and shows
+// the level as a toast over that page; the top bar's badge follows.
+void ZoomPage(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page, cef_zoom_command_t command) {
+  page->GetHost()->Zoom(command);
+  CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
+    const auto state = weak.lock();
+    if (!state || !state->embedded || !page->IsValid()) return;
+    const int percent = static_cast<int>(std::lround(100 * std::pow(1.2, page->GetHost()->GetZoomLevel())));
+    // Just the level ("110%"), over the page that zoomed (in a split, the pane under the pointer).
+    state->embedded->Notify("zoom", std::to_wstring(percent) + L"%", {}, L"", 2500, page->GetIdentifier());
+    if (state->workspace) state->workspace->Refresh();
+    auto d = CefDictionaryValue::Create(); d->SetInt("percent", percent); state->Record("page_zoom", d);
+  }, std::weak_ptr<State>(state), page));
+}
 // Website tabs' clients by browser ID (UI thread), for live tab transfer.
 std::map<int, Client*>& PageClients() { static std::map<int, Client*> clients; return clients; }
 class Client final : public CefClient, public CefLifeSpanHandler,
@@ -495,20 +511,21 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     if (command == zoom_in || command == zoom_out || command == zoom_reset) {
       // Ctrl+wheel, Ctrl+=/-/0 on a page: zoom it and show Red's toast.
       // Chrome's own zoom bubble cannot be turned off yet (cef-patches.md).
-      if (shell_) return true;
-      browser->GetHost()->Zoom(command == zoom_in ? CEF_ZOOM_COMMAND_IN : command == zoom_out ? CEF_ZOOM_COMMAND_OUT : CEF_ZOOM_COMMAND_RESET);
-      CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
-        const auto state = weak.lock();
-        if (!state || !state->embedded || !page->IsValid()) return;
-        const int percent = static_cast<int>(std::lround(100 * std::pow(1.2, page->GetHost()->GetZoomLevel())));
-        const auto text = L"Zoom " + std::to_wstring(percent) + L"%";
-        if (percent == 100) state->embedded->Notify("zoom", text);
-        else state->embedded->Notify("zoom", text + L" ·", {L"Ctrl", L"0"}, L"to reset");
-        auto d = CefDictionaryValue::Create(); d->SetInt("percent", percent); state->Record("page_zoom", d);
-      }, std::weak_ptr<State>(state_), browser));
+      // Sol's own pages (History, Downloads) never zoom: they share the sol://ui
+      // origin and profile with the sidebar and top bar, and Chrome keeps zoom
+      // per origin, so zooming them scaled the whole browser.
+      if (shell_ || internal_page_) return true;
+      ZoomPage(state_, browser, command == zoom_in ? CEF_ZOOM_COMMAND_IN : command == zoom_out ? CEF_ZOOM_COMMAND_OUT : CEF_ZOOM_COMMAND_RESET);
       return true;
     }
     if (auto action = red::ChromeShortcut(command)) return red::ExecuteShortcut(state_, *action);
+    // Sol's own pages (trusted UI): none of Chrome's page commands (view source,
+    // save or print the page, DevTools console), only find in page.
+    if (internal_page_) {
+      static const int find = cef_id_for_command_id_name("IDC_FIND"), next = cef_id_for_command_id_name("IDC_FIND_NEXT"),
+          previous = cef_id_for_command_id_name("IDC_FIND_PREVIOUS");
+      return command != find && command != next && command != previous;
+    }
     return command == cef_id_for_command_id_name("IDC_NEW_WINDOW") ||
         command == cef_id_for_command_id_name("IDC_NEW_INCOGNITO_WINDOW");
   }
@@ -567,7 +584,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     state_ = std::move(state); node_id_ = std::move(node_id); page_load_trace_ = nullptr;
   }
   bool DoClose(CefRefPtr<CefBrowser> browser) override {
-    if (!internal_page_) return false;
+    if (!internal_page_ || browser->GetHost()->GetRuntimeStyle() != CEF_RUNTIME_STYLE_ALLOY) return false;
     // An Alloy child would send WM_CLOSE to our root window (re-entering the
     // window close sequence); destroy only this tab's child window instead.
     const HWND handle = browser->GetHost()->GetWindowHandle();
@@ -851,18 +868,15 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       callback->Success(CefWriteJSON(result, JSON_WRITER_DEFAULT)); return true;
     }
     if (method == "tab.detach" || method == "tab.dragStarted" || method == "tab.dragCancel" || method == "tab.dragEnded") {
-      if (!state_->workspace || persistent || dict->GetSize() != 2 || dict->GetType("id") != VTYPE_STRING || dict->GetString("id").length() != 36) {
+      if (!state_->workspace || persistent) {
         callback->Failure(400, "Invalid tab command"); return true;
       }
-      if (method == "tab.dragStarted" || method == "tab.dragCancel") {
-        state_->tab_dragging = method == "tab.dragStarted";
-        if (state_->tab_dragging) red::ShowTabDragPreview(state_, dict->GetString("id"));
-        else red::HideTabDragPreview(state_);
-      }
-      else if (method == "tab.dragEnded") state_->workspace->FinishTabDrag(dict->GetString("id"));
-      else if (!state_->workspace->MoveToNewWindow(dict->GetString("id"))) { callback->Failure(409, "Tab cannot move right now"); return true; }
-      auto result = CefValue::Create(); result->SetDictionary(state_->workspace->Snapshot());
-      callback->Success(CefWriteJSON(result, JSON_WRITER_DEFAULT)); return true;
+      state_->workspace->HandleTabDrag(dict, [callback](int code, const std::string& error, CefRefPtr<CefDictionaryValue> snapshot) {
+        if (code) { callback->Failure(code, error); return; }
+        auto result = CefValue::Create(); result->SetDictionary(snapshot);
+        callback->Success(CefWriteJSON(result, JSON_WRITER_DEFAULT));
+      });
+      return true;
     }
     if (method == "tab.copyLink" || method == "tab.archiveOthers" || method == "tab.archiveBelow" || method == "tab.clearToday" || method == "tab.moveToNewSpace" || method == "tab.setHome") {
       // Sidebar tab menu actions (ID from the native snapshot; Edit Pinned Page
@@ -913,6 +927,27 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       else red::ShowExtensionMenu(state_, id, below, popup);
       auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot());
       callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
+    }
+    // Back/Forward: right click lists the page's history, middle click opens the
+    // previous/next entry in a new tab; the address bar's zoom badge resets zoom.
+    if (method == "navigation.historyMenu" || method == "navigation.openEntry" || method == "navigation.resetZoom") {
+      const auto page = state_->content;
+      auto reply = [&] { auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot()); callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); };
+      if (!state_->workspace || persistent || !page || state_->internal_pages.contains(page->GetIdentifier())) { callback->Failure(409, "No page"); return true; }
+      if (method == "navigation.resetZoom" && dict->GetSize() == 1) { ZoomPage(state_, page, CEF_ZOOM_COMMAND_RESET); reply(); return true; }
+      if (method == "navigation.openEntry" && dict->GetSize() == 2 && dict->GetType("offset") == VTYPE_INT &&
+          (dict->GetInt("offset") == -1 || dict->GetInt("offset") == 1)) {
+        red::OpenHistoryEntryInNewTab(state_, page, dict->GetInt("offset")); reply(); return true;
+      }
+      const auto bounds = state_->window ? state_->window->GetClientAreaBoundsInScreen() : CefRect();
+      if (method == "navigation.historyMenu" && dict->GetSize() == 5 && dict->GetType("x") == VTYPE_INT && dict->GetType("y") == VTYPE_INT &&
+          dict->GetType("width") == VTYPE_INT && dict->GetType("height") == VTYPE_INT && dict->GetInt("x") >= 0 && dict->GetInt("y") >= 0 &&
+          dict->GetInt("width") >= 1 && dict->GetInt("height") >= 1 && dict->GetInt("x") + dict->GetInt("width") <= bounds.width &&
+          dict->GetInt("y") + dict->GetInt("height") <= bounds.height) {
+        red::ShowTabHistoryMenu(state_, page, CefRect(dict->GetInt("x"), dict->GetInt("y"), dict->GetInt("width"), dict->GetInt("height")));
+        reply(); return true;
+      }
+      callback->Failure(400, "Invalid navigation command"); return true;
     }
     if (method == "menu.main") {
       // The logo button: the browser menu, anchored under the button (DIP).
@@ -1089,6 +1124,11 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       return true;
     }
     auto content = state_->content;
+    // An empty space has no page: Back/Forward/Reload/Stop do nothing (no error).
+    if (!content && method != "navigation.load" && state_->workspace) {
+      auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot());
+      callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
+    }
     if (!content && method != "navigation.load") { callback->Failure(503, "Content browser not ready"); return true; }
     if (method == "navigation.load") {
       if (dict->GetType("url") != VTYPE_STRING || dict->GetString("url").length() > 4096) {
@@ -1575,8 +1615,9 @@ class WindowDelegate final : public CefWindowDelegate {
         auto state = weak.lock(); return state ? new Client(state, false, id, false, {-1, -1}, false, history) : nullptr;
       });
       window->SetToFillLayout(); window->AddChildView(shell_);
-      // A new profile meets Sol in its own welcome window; this one appears when it finishes.
-      if (state_->fresh_profile && !state_->secondary_window && !state_->private_window && !state_->standalone_window) red::ShowWelcome(state_);
+      // A first run from an OS link opens the requested page immediately.
+      if (state_->fresh_profile && state_->external_urls.empty() && !state_->secondary_window &&
+          !state_->private_window && !state_->standalone_window) red::ShowWelcome(state_);
       else window->Show();
       red::RefreshShortcuts(state_);
       ResizeWorkspace(window);
@@ -2108,10 +2149,22 @@ class UiContextReady final : public CefRequestContextHandler {
 
 class App final : public CefApp, public CefBrowserProcessHandler, public CefRenderProcessHandler {
  public:
-  App(std::shared_ptr<State> state, fs::path directory, std::string url)
-      : state_(state), directory_(std::move(directory)), url_(std::move(url)) {}
+  App(std::shared_ptr<State> state, fs::path directory, std::string url, std::string accept_languages)
+      : state_(state), directory_(std::move(directory)), url_(std::move(url)),
+        accept_languages_(std::move(accept_languages)) {}
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
   CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override { return this; }
+  void OnRegisterCustomPreferences(cef_preferences_type_t type,
+      CefRawPtr<CefPreferenceRegistrar> registrar) override {
+    if (type != CEF_PREFERENCES_TYPE_REQUEST_CONTEXT || accept_languages_.empty()) return;
+    // Chromium initializes an empty selected-language list from this default.
+    // CefSettings.accept_language_list would override saved profile choices.
+    auto value = CefValue::Create();
+    value->SetString(accept_languages_);
+    CefString error;
+    if (!registrar->SetDefaultPreference("intl.accept_languages", value, error))
+      LOG(WARNING) << "Could not set the default web languages: " << error.ToString();
+  }
   // Our host passes its own client to every browser it creates. In the
   // workspace, anything arriving here was created by Chrome itself.
   CefRefPtr<CefClient> GetDefaultClient() override {
@@ -2285,6 +2338,7 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
   std::shared_ptr<State> state_;
   fs::path directory_;
   std::string url_;
+  std::string accept_languages_;
   std::map<int, bool> trusted_;
   CefRefPtr<CefMessageRouterRendererSide> renderer_router_;
   CefRefPtr<CefRequestContext> ui_context_;
@@ -2418,7 +2472,8 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
     state->toolbar_probe = std::make_shared<red::ToolbarProbe>(weak, type == "location" ? CEF_CTT_LOCATION : CEF_CTT_NORMAL, type == "manual",
         [weak]() -> CefRefPtr<CefClient> { auto current = weak.lock(); return current ? new Client(current, false) : nullptr; });
   }
-  CefRefPtr<App> app = new App(state, directory, url);
+  auto locale = command->HasSwitch("type") ? red::BrowserLocale{} : red::ReadWindowsBrowserLocale();
+  CefRefPtr<App> app = new App(state, directory, url, std::move(locale.accept_languages));
   CefMainArgs args(instance);
   const int child_exit = CefExecuteProcess(args, app, sandbox_info);
   if (child_exit >= 0) return child_exit;
@@ -2439,6 +2494,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->Record("startup", version);
   CefSettings settings;
   settings.no_sandbox = false;
+  CefString(&settings.locale) = locale.chromium;
   wchar_t* local_data = nullptr;
   size_t env_length = 0;
   _wdupenv_s(&local_data, &env_length, L"LOCALAPPDATA");

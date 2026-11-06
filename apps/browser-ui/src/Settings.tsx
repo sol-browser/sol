@@ -94,7 +94,7 @@ export function Settings() {
       <nav aria-label="Settings">{visibleSections.map(({ id, title, icon: Glyph }) =>
         <button key={id} type="button" aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}>
           <Glyph size={18} strokeWidth={1.7} /><span>{title}</span></button>)}</nav>
-      <div className="settings-nav-footer">Red {data?.version ?? ''}</div>
+      <div className="settings-nav-footer">Sol {data?.version ?? ''}</div>
     </aside>
     <main className="settings-content">
       <div className="settings-page" key={section}>
@@ -142,7 +142,7 @@ export function Settings() {
                 <option value="12">12-hour (2:30 PM)</option><option value="24">24-hour (14:30)</option>
               </select></label>
           </section>
-          <div className="settings-version"><span>Red {data?.version ?? '…'}</span><span>Chromium {data?.chromiumVersion ?? '…'}</span></div>
+          <div className="settings-version"><span>Sol {data?.version ?? '…'}</span><span>Chromium {data?.chromiumVersion ?? '…'}</span></div>
         </> : section === 'search' || section === 'downloads' || section === 'startup' || section === 'keyboard' || section === 'tabs' ?
           <PreferencesSettings section={section} preferences={data?.preferences} keyboard={data?.keyboard ?? []}
             disabled={busy || !data?.ready || !!data.preferencesError} save={action} onError={setError} /> :
@@ -170,7 +170,7 @@ export function Settings() {
           {releaseNotes.map(release => <section key={release.version} className="settings-card settings-release"
             aria-labelledby={`release-${release.version}`}>
             <header className="settings-release-heading">
-              <h2 id={`release-${release.version}`}>Red {release.version}</h2>
+              <h2 id={`release-${release.version}`}>Sol {release.version}</h2>
               {data?.version === release.version && <span className="settings-badge">Current version</span>}
               <time dateTime={release.date}>{new Date(`${release.date}T12:00:00Z`).toLocaleDateString('en',
                 { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })}</time>

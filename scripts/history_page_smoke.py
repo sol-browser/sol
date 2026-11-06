@@ -1,7 +1,7 @@
 """Full history page (sol://ui/history.html) through actual CEF.
 
 Visits /alpha and /beta, opens the page with Ctrl+Shift+H's path, checks it
-runs as Alloy in the trusted UI profile (not the web profile), that a shell
+runs as a Chrome-style tab in the trusted UI profile (not the web profile), that a shell
 command from it is refused (403), that selecting both visits and "Delete
 selected" removes them from the store, and that it cannot navigate away.
 """
@@ -33,7 +33,7 @@ def main():
     messages = [r['details']['message'] for r in rows if r['event'] == 'history_page_probe']
     steps = [r['details']['step'] for r in rows if r['event'] == 'history_probe_step']
     checks = {
-        'opened_as_trusted_ui_tab': opened.get('alloy') is True and opened.get('ui_profile') is True and opened.get('registered') is True,
+        'opened_as_trusted_ui_tab': opened.get('chrome_style') is True and opened.get('ui_profile') is True and opened.get('registered') is True,
         'not_in_web_profile': opened.get('web_profile') is False,
         'shell_command_refused': 'RED_HISTORY_PAGE:shell_command:403' in messages,
         'rendered_visits': any(m.startswith('RED_HISTORY_PAGE:rows:') and int(m.rsplit(':', 1)[1]) >= 2 for m in messages),

@@ -30,6 +30,12 @@ export async function folderRemovalProbe(base: string) {
   const protectedTab = await tab(root, 'protected');
   const first = await tab(nested, 'first'), second = await tab(nested, 'second');
   await mutate({ method: 'split.create', id: first, otherId: second, vertical: false });
+  await request({ method: 'split.focus', id: second });
+  (await dom('.split-pane[data-focused="true"] [aria-label="Separate tabs"]')).click();
+  await waitFor(s => !s.splitView && s.activeId === second &&
+    [first, second].every(id => s.nodes!.some(n => n.id === id && n.live && !n.splitAnchor)));
+  console.info('RED_ORG_SPLIT_SEPARATED');
+  await mutate({ method: 'split.create', id: first, otherId: second, vertical: false });
   // A closed pin has an accessible X; clicking it must archive, not reopen.
   const pin = await tab(root, 'closed-pin');
   await mutate({ method: 'tree.close', id: pin });

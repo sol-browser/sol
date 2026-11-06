@@ -29,6 +29,9 @@ def main():
     try:
         first,rows=run(url,['--probe-organization'],profile=profile)
         if not any(row['event']=='organization_checks_pass' for row in rows): raise RuntimeError('Folder interaction checks missing')
+        separation=[row['details'] for row in rows if row['event']=='organization_split_separated']
+        if separation!=[{'single_visible_page':True,'full_bounds':True}]:
+            raise RuntimeError(f'Separate left stale native pane geometry: {separation}')
         decisions=[row['details']['leave'] for row in rows if row['event']=='organization_beforeunload_decision']
         if decisions!=[False,True]: raise RuntimeError('Real beforeunload cancellation/acceptance missing')
         before=saved()

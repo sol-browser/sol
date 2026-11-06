@@ -69,7 +69,7 @@ void OnHistoryProbeLoad(const std::shared_ptr<State>& state, CefRefPtr<CefBrowse
     } else if (url == kHistoryUrl && state->history_phase == 2) {
       state->history_phase = 3;
       auto data = CefDictionaryValue::Create();
-      data->SetBool("alloy", page->GetHost()->GetRuntimeStyle() == CEF_RUNTIME_STYLE_ALLOY);
+      data->SetBool("chrome_style", page->GetHost()->GetRuntimeStyle() == CEF_RUNTIME_STYLE_CHROME);
       data->SetBool("ui_profile", state->ui_context && page->GetHost()->GetRequestContext()->IsSharingWith(state->ui_context));
       data->SetBool("web_profile", page->GetHost()->GetRequestContext()->IsSharingWith(CefRequestContext::GetGlobalContext()));
       data->SetBool("registered", state->internal_pages.contains(page->GetIdentifier()));

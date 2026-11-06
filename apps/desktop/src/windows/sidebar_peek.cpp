@@ -1,6 +1,5 @@
 #include "app/session.h"
 #include "windows/pointer.h"
-#include "windows/tab_drag_preview.h"
 #include "windows/sidebar_peek.h"
 #include <dwmapi.h>
 #include <algorithm>
@@ -807,15 +806,11 @@ bool SidebarPeek::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t 
   if (method == "browser.shortcut" && d->GetSize() == 2 && d->GetType("action") == VTYPE_STRING && d->GetString("action") == "newTab") {
     ExecuteShortcut(s, Shortcut::NewTab); cb->Success(Json(s->workspace->Snapshot())); Hide(); return true;
   }
-  if ((method == "tab.detach" || method == "tab.dragStarted" || method == "tab.dragCancel" || method == "tab.dragEnded") && d->GetSize() == 2 && d->GetType("id") == VTYPE_STRING && d->GetString("id").length() == 36) {
-    if (method == "tab.dragStarted" || method == "tab.dragCancel") {
-      s->tab_dragging = method == "tab.dragStarted";
-      if (s->tab_dragging) ShowTabDragPreview(s, d->GetString("id")); else HideTabDragPreview(s);
-      cb->Success(Json(s->workspace->Snapshot())); return true;
-    }
-    if (method == "tab.dragEnded") s->workspace->FinishTabDrag(d->GetString("id"));
-    else if (!s->workspace->MoveToNewWindow(d->GetString("id"))) { cb->Failure(409, "Tab cannot move right now"); return true; }
-    cb->Success(Json(s->workspace->Snapshot())); return true;
+  if (method == "tab.detach" || method == "tab.dragStarted" || method == "tab.dragCancel" || method == "tab.dragEnded") {
+    s->workspace->HandleTabDrag(d, [cb](int code, const std::string& error, CefRefPtr<CefDictionaryValue> snapshot) {
+      if (code) cb->Failure(code, error); else cb->Success(Json(snapshot));
+    });
+    return true;
   }
   if ((method == "tab.copyLink" || method == "tab.archiveOthers" || method == "tab.archiveBelow" || method == "tab.clearToday" || method == "tab.moveToNewSpace" || method == "tab.setHome") &&
       d->GetType("id") == VTYPE_STRING && d->GetString("id").length() == 36) {

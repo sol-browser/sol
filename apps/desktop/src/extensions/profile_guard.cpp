@@ -60,8 +60,8 @@ void Fail(const std::shared_ptr<State>& state) {
   state->Record("shell_profile_violation");
   LOG(ERROR) << "Shell profile violation confirmed; closing";
   const HWND owner = state->window ? state->window->GetWindowHandle() : nullptr;
-  // Recover: after shutdown Sol deletes the Shell profile (no user data) and
-  // opens again (shell_reset.h). Straight back after a reset, Sol closes instead of looping.
+  // Recover by moving Shell aside after shutdown and opening again.
+  // A repeated violation closes Sol instead of looping.
   const bool reset = !state->probe && !state->profile.empty() && ShellResetAllowed(state->profile, std::filesystem::file_time_type::clock::now());
   state->Record(reset ? "shell_profile_reset_requested" : "shell_profile_reset_refused");
   if (reset) {

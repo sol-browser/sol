@@ -42,12 +42,11 @@ if (!$NoDelta) {
     if ($LASTEXITCODE) { Write-Warning 'No earlier Velopack release; packing without a delta' }
 }
 
-# Sol creates its own Start menu shortcut and registration (browser_identity.h,
-# default_browser.cpp), so Velopack makes none. The profile lives outside the
-# install folder and survives uninstall.
+# Sol creates its own Start menu shortcut and registration. Velopack still
+# updates existing shortcuts, so match kBrowserAppId in browser_identity.h.
 & $vpk pack --packId SolBrowser --packVersion $version --packDir $stage --mainExe sol.exe `
     --packTitle Sol --packAuthors 'Sol Browser' --icon (Join-Path $repoRoot 'apps/desktop/resources/red.ico') `
-    --shortcuts None --channel win --runtime win-x64 --outputDir $feed
+    --shortcuts None --aumid Sol.Browser --channel win --runtime win-x64 --outputDir $feed
 if ($LASTEXITCODE) { throw 'vpk pack failed' }
 
 $full = Join-Path $feed "SolBrowser-$version-full.nupkg"

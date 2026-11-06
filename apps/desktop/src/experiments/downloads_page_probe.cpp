@@ -40,7 +40,7 @@ void OnDownloadsPageProbeLoad(const std::shared_ptr<State>& state, CefRefPtr<Cef
   } else if (url == kDownloadsUrl && state->downloads_page_phase == 1) {
     state->downloads_page_phase = 2;
     auto data = CefDictionaryValue::Create();
-    data->SetBool("alloy", page->GetHost()->GetRuntimeStyle() == CEF_RUNTIME_STYLE_ALLOY);
+    data->SetBool("chrome_style", page->GetHost()->GetRuntimeStyle() == CEF_RUNTIME_STYLE_CHROME);
     data->SetBool("ui_profile", state->ui_context && page->GetHost()->GetRequestContext()->IsSharingWith(state->ui_context));
     data->SetBool("registered", state->internal_pages.contains(page->GetIdentifier()));
     state->Record("downloads_page_opened", data);

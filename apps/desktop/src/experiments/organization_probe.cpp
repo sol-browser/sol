@@ -3,6 +3,7 @@
 #include "include/base/cef_callback.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "include/views/cef_browser_view.h"
+#include "windows/embedded_content.h"
 #include "workspace/controller.h"
 namespace red {
 void ObserveOrganizationProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> browser, const std::string& message) {
@@ -37,6 +38,11 @@ void ObserveOrganizationProbe(const std::shared_ptr<State>& state, CefRefPtr<Cef
     }, browser), 200);
   } else if (browser->GetIdentifier() == state->organization_browser && message == "RED_ORG_STICKY:true") {
     state->organization_armed = true; state->Record("organization_real_user_activation");
+  } else if (browser->GetIdentifier() == state->shell_id && message == "RED_ORG_SPLIT_SEPARATED" && state->embedded) {
+    auto details = CefDictionaryValue::Create();
+    details->SetBool("single_visible_page", state->embedded->HasSingleVisibleActive());
+    details->SetBool("full_bounds", state->embedded->ActiveMatchesBounds());
+    state->Record("organization_split_separated", details);
   } else if (browser->GetIdentifier() == state->shell_id && message == "RED_ORGANIZATION_CHECKS:pass") {
     state->organization_checks = true; state->Record("organization_checks_pass", state->workspace->Snapshot());
   }

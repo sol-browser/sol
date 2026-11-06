@@ -1,5 +1,9 @@
 .split-view { position:absolute; inset:0; pointer-events:none; z-index:2; }
-.split-pane { position:absolute; container-type:inline-size; border:1px solid color-mix(in oklch,currentColor 12%,transparent); border-radius:8px; overflow:hidden; background:color-mix(in oklch,currentColor 3%,transparent); }
+/* In a split the page area's own (single-hue) backing would show between the panes and behind
+   their headers: it steps aside, so headers and gaps sit on the space's theme like the top bar. */
+.web-slot[data-split="true"] { background:transparent; box-shadow:none; }
+.split-pane { position:absolute; container-type:inline-size; border:1px solid color-mix(in oklch,currentColor 12%,transparent); border-radius:8px; overflow:hidden; background:color-mix(in oklch,currentColor 3%,transparent);
+  box-shadow:0 3px 14px oklch(calc(0.4607 + var(--theme-dark, 0) * 0.2659) min(calc(0.0804 * var(--theme-chroma, 1)), 0.24) calc(var(--theme-hue, 307) - 1.5) / 0.082); }
 .split-pane-header { height:29px; display:flex; align-items:center; gap:3px; padding:0 3px; pointer-events:auto; }
 .split-pane-header button { display:grid; place-items:center; flex:none; width:24px; height:24px; padding:0; border-radius:6px; }
 .split-pane-header button:hover { background:color-mix(in oklch,currentColor 10%,transparent); }

@@ -68,13 +68,18 @@ export async function browsingProbe() {
   await request({ method: 'probe.commandInput', url: `${new URL(origin).host}/typed` });
   await waitFor(s => s.url === `${origin}/typed` && !s.isLoading);
   const copy = document.querySelector<HTMLButtonElement>('[data-action="copy-link"]')!;
-  if (!copy || copy.disabled || copy.nextElementSibling?.nextElementSibling !== address ||
+  const copyStatus = copy?.nextElementSibling;
+  if (!copy || copy.disabled || copyStatus?.getAttribute('role') !== 'status' ||
+      copyStatus.nextElementSibling !== address.closest('.address-wrap') ||
       copy.getBoundingClientRect().right > address.getBoundingClientRect().left ||
       document.querySelector('.address-trigger svg')) throw new Error('Copy-link placement or address glyph mismatch');
+  const { color, backgroundColor } = getComputedStyle(copy);
   copy.focus();
   copy.click();
-  await waitFor(() => copy.dataset.copied === 'true');
-  await waitFor(() => document.activeElement !== copy);
+  await waitFor(() => !!copyStatus.textContent?.includes(`${origin}/typed`) && !copy.disabled && document.activeElement !== copy);
+  const copiedStyle = getComputedStyle(copy);
+  if (copiedStyle.color !== color || copiedStyle.backgroundColor !== backgroundColor)
+    throw new Error('Copy left a color highlight on the toolbar button');
   console.info('RED_BROWSING:copy-focus');
   await delay(1600);
   copy.click();

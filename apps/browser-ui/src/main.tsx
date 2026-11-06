@@ -63,6 +63,7 @@ function Shell() {
   const [dismissedNotice, setDismissedNotice] = useState(0);
   const [copiedUrl, setCopiedUrl] = useState('');
   const [copyingLink, setCopyingLink] = useState(false);
+  const [spinning, setSpinning] = useState(false);
   const probeStarted = useRef(false);
   const apply = useCallback((next: Snapshot) => {
     if (latest.current && next.revision < latest.current.revision) return;
@@ -89,7 +90,12 @@ function Shell() {
     try {
       const next = await request({ method: 'navigation.copyLink' }); apply(next); setCopiedUrl(next.url ?? '');
     } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
-    finally { setCopyingLink(false); }
+    finally {
+      setCopyingLink(false);
+      // The page has focus again (native): the button must not stay focused/highlighted.
+      const element = document.activeElement;
+      if (element instanceof HTMLElement && element.closest('.copy-link')) element.blur();
+    }
   }
   useEffect(() => {
     let alive = true;
@@ -213,9 +219,20 @@ function Shell() {
           <span className="toolbar-spacer" aria-hidden="true" />
           <span className="toolbar-separator" />
           <div className="toolbar-navigation" role="group" aria-label="Page navigation">
-          <button className="icon-button" type="button" disabled={!connected || !snapshot?.canGoBack} aria-label="Back" title="Back" onClick={() => void send({ method: 'navigation.back' })}><Icon name="back" /></button>
-          <button className="icon-button" type="button" disabled={!connected || !snapshot?.canGoForward} aria-label="Forward" title="Forward" onClick={() => void send({ method: 'navigation.forward' })}><Icon name="forward" /></button>
-          <button className="icon-button" type="button" disabled={!connected} aria-label={snapshot?.isLoading ? 'Stop loading' : 'Reload'} title={snapshot?.isLoading ? 'Stop loading (Esc)' : 'Reload (Ctrl+R)'} onClick={() => void send({ method: snapshot?.isLoading ? 'navigation.stop' : 'navigation.reload' })}><Icon name={snapshot?.isLoading ? 'close' : 'reload'} /></button>
+          {/* Middle click opens the previous/next page in a new tab; right click lists the tab's history (Chrome). */}
+          {([['back', -1, snapshot?.canGoBack], ['forward', 1, snapshot?.canGoForward]] as const).map(([direction, offset, can]) =>
+            <button key={direction} className="icon-button" type="button" data-nav={direction} disabled={!connected || !can} aria-label={direction === 'back' ? 'Back' : 'Forward'}
+              title={`${direction === 'back' ? 'Back' : 'Forward'} (right click for history)`}
+              onClick={() => void send({ method: direction === 'back' ? 'navigation.back' : 'navigation.forward' })}
+              onMouseDown={e => { if (e.button === 1) e.preventDefault(); }}
+              onAuxClick={e => { if (e.button !== 1) return; e.preventDefault(); void send({ method: 'navigation.openEntry', offset }); }}
+              onContextMenu={e => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect();
+                void send({ method: 'navigation.historyMenu', x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) }); }}>
+              <Icon name={direction} /></button>)}
+          <button className="icon-button" type="button" data-nav={snapshot?.isLoading && !spinning ? 'stop' : 'reload'} disabled={!connected || (workspace && !snapshot.activeId)} aria-label={snapshot?.isLoading ? 'Stop loading' : 'Reload'} title={snapshot?.isLoading ? 'Stop loading (Esc)' : 'Reload (Ctrl+R)'}
+            onClick={e => { if (!snapshot?.isLoading) { setSpinning(true); spin(e.currentTarget, () => setSpinning(false)); } void send({ method: snapshot?.isLoading ? 'navigation.stop' : 'navigation.reload' }); }}>
+            {/* The turn finishes on the reload arrow before Stop's cross replaces it. */}
+            <Icon name={snapshot?.isLoading && !spinning ? 'close' : 'reload'} /></button>
           </div>
         </div>
         {/* The page area below belongs to a native window, so notices stay in the toolbar. */}
@@ -223,14 +240,19 @@ function Shell() {
           <button type="button" className="notice-dismiss" onClick={() => setDismissedNotice(snapshot?.noticeId ?? 0)}>Dismiss</button></div> :
         <div className="page-toolbar">
           {workspace && <><button type="button" className="icon-button copy-link" data-action="copy-link" aria-label="Copy link"
-            title="Copy current URL" data-copied={!!copiedUrl && copiedUrl === snapshot.url}
+            title="Copy current URL"
             disabled={!ready || !snapshot.activeId || !snapshot.url || copyingLink} onClick={() => void copyLink()}><Icon name="link" /></button>
             <span className="sr-only" role="status">{copiedUrl && copiedUrl === snapshot.url ? `Copied Current URL ${copiedUrl}` : ''}</span></>}
-          {workspace ? <button type="button" className="address address-trigger" aria-label="Website address" title={`Edit address (${snapshot.shortcutLabels?.address ?? 'Ctrl + L'})`} disabled={!ready}
-            onClick={() => void send({ method: 'browser.shortcut', action: 'address' })}>
-            <AddressLoading loading={!!snapshot.activeId && !!snapshot.isLoading && !snapshot.activeCrashed} />
-            <span className="address-text">{compactAddress(snapshot.url ?? '') || 'Search or enter address'}</span>
-          </button> : <label className="address"><Icon name="globe" /><span className="sr-only">Website address</span><input ref={address} aria-label="Website address" placeholder="Search or enter address" value={url} onChange={e => setUrl(e.target.value)} spellCheck={false} autoComplete="off"
+          {workspace ? <span className="address-wrap" data-zoom={snapshot.zoom ? 'true' : undefined}>
+            <button type="button" className="address address-trigger" aria-label="Website address" title={`Edit address (${snapshot.shortcutLabels?.address ?? 'Ctrl + L'})`} disabled={!ready}
+              onClick={() => void send({ method: 'browser.shortcut', action: 'address' })}>
+              <AddressLoading loading={!!snapshot.activeId && !!snapshot.isLoading && !snapshot.activeCrashed} />
+              <span className="address-text">{compactAddress(snapshot.url ?? '') || 'Search or enter address'}</span>
+            </button>
+            {/* The page's zoom when it is not 100%; a click resets it (Ctrl+0). */}
+            {snapshot.zoom && <button type="button" className="address-zoom" disabled={!ready} aria-label={`Zoom ${snapshot.zoom}%, reset to 100%`}
+              title="Reset zoom (Ctrl+0)" onClick={e => { e.currentTarget.blur(); void send({ method: 'navigation.resetZoom' }); }}>{snapshot.zoom}%</button>}
+          </span> : <label className="address"><Icon name="globe" /><span className="sr-only">Website address</span><input ref={address} aria-label="Website address" placeholder="Search or enter address" value={url} onChange={e => setUrl(e.target.value)} spellCheck={false} autoComplete="off"
             onFocus={e => { const field = e.currentTarget; setTimeout(() => field.select()); }}
             onBlur={() => setUrl(latest.current?.url ?? url)}
             onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setUrl(latest.current?.url ?? ''); void send({ method: 'browser.shortcut', action: 'focusPage' }); } }} /></label>}
@@ -279,12 +301,20 @@ function Shell() {
       {snapshot.splitView && <SplitView view={snapshot.splitView} nodes={snapshot.nodes ?? []} disabled={!ready || busy} command={send} action={action} />}
       {snapshot.devTools && <DevToolsDock key={`${snapshot.devTools.id}-${snapshot.devTools.side}`} dock={snapshot.devTools} deviceEnabled={!!snapshot.devicePreview?.enabled} apply={apply} onError={setError} />}
       {snapshot.devicePreview?.enabled && <DeviceToolbar key={snapshot.devicePreview.id} device={snapshot.devicePreview} apply={apply} onError={setError} />}
-      <section className="web-slot" aria-label="Native website area" style={snapshot.linkPeek?.composed ? {left:snapshot.linkPeek.area.x,top:snapshot.linkPeek.area.y,width:snapshot.linkPeek.area.width,height:snapshot.linkPeek.area.height,right:'auto',bottom:'auto'} : undefined}>{snapshot.activeCrashed && !snapshot.splitView ?
+      <section className="web-slot" aria-label="Native website area" data-split={!!snapshot.splitView} style={snapshot.linkPeek?.composed ? {left:snapshot.linkPeek.area.x,top:snapshot.linkPeek.area.y,width:snapshot.linkPeek.area.width,height:snapshot.linkPeek.area.height,right:'auto',bottom:'auto'} : undefined}>{snapshot.activeCrashed && !snapshot.splitView ?
         <div className="empty-space page-failure" role="alert"><span className="empty-mark">r</span><h2>This page stopped working.</h2><p>Your saved tab is still here. Reload to try again.</p><button type="button" disabled={!ready} onClick={() => void send({ method: 'navigation.reload' })}>Reload page</button></div> :
         !snapshot.activeId && <EmptyStart snapshot={snapshot} load={url => send({ method: 'navigation.load', url })} activate={id => action({ method: 'tree.activate', id })} />}</section>
       {snapshot.linkPeek && <LinkPeek peek={snapshot.linkPeek} command={send} />}
     </>}
   </main>;
+}
+// Toolbar motion: pressed, the arrows lean their way and Reload turns a little
+// (style.css, :active); a Reload click then completes the turn from there.
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function spin(button: HTMLElement, done: () => void) {
+  const icon = button.querySelector('.icon');
+  if (reducedMotion() || !icon) { done(); return; }
+  icon.animate([{ transform: 'rotate(35deg)' }, { transform: 'rotate(360deg)' }], { duration: 520, easing: 'cubic-bezier(.25,.8,.3,1)' }).finished.then(done, done);
 }
 function siteLabel(node?: TreeNode) {
   const uses = [node?.mediaCamera && 'camera', node?.mediaMicrophone && 'microphone'].filter(Boolean).join(' and ');
@@ -302,9 +332,9 @@ function compactAddress(url: string) {
 installNativeInputFocus();
 // Red's own chrome (sidebar, panels, command bar, settings) never zooms:
 // Ctrl+wheel and touchpad pinch there would scale the browser UI itself.
-// History and Downloads are pages and zoom like any other tab.
-if (!['/history.html', '/downloads.html'].includes(location.pathname))
-  window.addEventListener('wheel', event => { if (event.ctrlKey) event.preventDefault(); }, { passive: false, capture: true });
+// History and Downloads do not zoom either: they share the sol://ui origin with
+// the sidebar and top bar, and Chrome keeps zoom per origin.
+window.addEventListener('wheel', event => { if (event.ctrlKey) event.preventDefault(); }, { passive: false, capture: true });
 createRoot(document.getElementById('root')!).render(location.pathname === '/peek.html' ? <Peek /> :
   location.pathname === '/welcome.html' ? <Welcome /> :
   location.pathname === '/settings.html' ? <Settings /> :

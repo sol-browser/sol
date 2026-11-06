@@ -68,8 +68,11 @@ def main():
             passed=passed and any(r['event']=='command_closed' for r in rows)
             passed=passed and all(any(r['event']==event and r['details']['pass'] for r in rows)
                                   for event in ['copy_focus_checked','notification_refresh_checked','notification_expiry_checked','command_cancel_focus_checked'])
-            passed=passed and any(r['event']=='notification_shown' and r['details']['kind']=='copy' and
-                                  r['details']['painted'] and r['details']['focus_preserved'] and r['details']['geometry_ok'] for r in rows)
+            toasts=[r['details'] for r in rows if r['event']=='notification_shown' and r['details']['kind']=='copy']
+            passed=passed and len(toasts)==2 and all(
+                t['painted'] and t['focus_preserved'] and t['geometry_ok'] and
+                t['animated']==toasts[0]['animated'] and
+                abs(t['top_inset_dip']-12)<=1 and abs(t['right_inset_dip']-12)<=1 for t in toasts)
             passed=passed and any(r['event']=='renderer_token' and r['details'].get('role')=='command' and r['details'].get('restricted') and r['details'].get('integrity_rid')==0 for r in rows)
             result={'passed':passed,'requests':dict(counts),'run':directory.name,'checks':required}
             (directory/'navigation.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2),flush=True)

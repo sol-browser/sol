@@ -88,7 +88,7 @@ export function PreferencesSettings({ section, preferences: prefs, keyboard, dis
     </section>
   </>;
   if (section === 'startup') return <section className="settings-card">
-    <span className="settings-category">WHEN RED STARTS</span><h2>Start your way</h2>
+    <span className="settings-category">WHEN SOL STARTS</span><h2>Start your way</h2>
     <p>Your saved tabs, folders and spaces are kept with every option.</p>
     <div className="settings-radio-list" role="radiogroup" aria-label="Startup behavior">
       {([

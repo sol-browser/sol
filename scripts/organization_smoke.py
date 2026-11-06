@@ -64,6 +64,10 @@ def main():
         assert sum(r['event'] == 'sidebar_menu_shown' for r in rows[open_index:close_index + 1]) == 1
         assert not any(r['event'] == 'sidebar_menu_open' for r in rows[rename_index + 1:close_index])
         organization_state = next(r['details'] for r in rows if r['event'] == 'organization_checks_pass')
+        favorite = next(n['id'] for n in organization_state['nodes'] if n['title'] == 'Mail')
+        saved_page = next(n['id'] for n in organization_state['nodes'] if n['title'] == 'Saved page')
+        assert any(r['event'] == 'organization_tab_drag' and
+                   r['details'] == {'id': favorite, 'active': favorite, 'previous': saved_page} for r in rows)
         renamed_id = next(n['id'] for n in organization_state['nodes'] if n['title'] == 'Project reference')
         assert rows[open_index]['details']['id'] == renamed_id
         if decisions != [False, True] or requests != expected:

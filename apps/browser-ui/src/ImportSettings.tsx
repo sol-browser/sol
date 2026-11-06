@@ -133,7 +133,7 @@ export function ImportSettings({ disabled }: { disabled: boolean }) {
       </label>}
       <div className="import-consent">
         <ShieldCheck size={16} strokeWidth={1.7} />
-        <p>Red will read this {name} profile on this PC without changing it. Close {name} first so its files aren’t locked.
+        <p>Sol will read this {name} profile on this PC without changing it. Close {name} first so its files aren’t locked.
           {types.passwords && ' Passwords are unlocked with your Windows account and saved only to Sol’s password manager.'}</p>
       </div>
       <div className="settings-card-actions">

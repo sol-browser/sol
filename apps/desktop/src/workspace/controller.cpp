@@ -281,6 +281,11 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   result->SetBool("activeCrashed", crashed);
   result->SetBool("isLoading", content && !crashed && (content->IsLoading() || !loaded_.contains(content->GetIdentifier())));
   result->SetString("url", crashed ? last_urls_.at(content->GetIdentifier()) : content ? content->GetMainFrame()->GetURL().ToString() : HasLinkPeek() ? link_peek_url_ : "");
+  // The active page's zoom when it is not 100% (the address bar's badge).
+  if (content && !crashed) {
+    const int zoom = static_cast<int>(std::lround(100 * std::pow(1.2, content->GetHost()->GetZoomLevel())));
+    if (zoom != 100 && zoom > 0 && zoom <= 1000) result->SetInt("zoom", zoom);
+  }
   auto nodes = CefListValue::Create();
   std::map<std::string,const SplitGroup*> split_members;
   const auto split_visible = OrderedTabs(tree_.nodes,tree_.active_space);
@@ -591,15 +596,49 @@ bool WorkspaceController::AdoptPage(CefRefPtr<CefBrowser> browser, const std::st
   EnsureActive(); Publish();
   return true;
 }
-void WorkspaceController::FinishTabDrag(const std::string& id) {
+void WorkspaceController::HandleTabDrag(CefRefPtr<CefDictionaryValue> request, Reply done) {
   const auto state = state_.lock();
-  if (!state || !state->tab_dragging) return;
+  const auto method = request->GetString("method");
+  const auto start = method == "tab.dragStarted";
+  const auto previous_type = request->GetType("previousId");
+  if (!state || request->GetSize() != (start ? 3U : 2U) || request->GetType("id") != VTYPE_STRING ||
+      request->GetString("id").length() != 36 ||
+      (start && previous_type != VTYPE_NULL && (previous_type != VTYPE_STRING || request->GetString("previousId").length() != 36))) {
+    done(400, "Invalid tab command", nullptr);
+    return;
+  }
+  const auto id = request->GetString("id").ToString();
+  if (start) {
+    tab_drag_ = TabDrag{id, previous_type == VTYPE_STRING ? request->GetString("previousId").ToString() : "", tree_.active_space};
+    state->tab_dragging = true;
+    if (state->organization_probe) {
+      auto details = CefDictionaryValue::Create();
+      details->SetString("id", id);
+      details->SetString("previous", tab_drag_->previous);
+      details->SetString("active", tree_.active_id);
+      state->Record("organization_tab_drag", details);
+    }
+    ShowTabDragPreview(state, id);
+  } else if (method == "tab.dragEnded" || method == "tab.dragCancel") {
+    FinishTabDrag(id, method == "tab.dragEnded");
+  } else if (!MoveToNewWindow(id)) {
+    done(409, "Tab cannot move right now", nullptr);
+    return;
+  }
+  done(0, "", Snapshot());
+}
+void WorkspaceController::FinishTabDrag(const std::string& id, bool dropped) {
+  const auto state = state_.lock();
+  if (!state || !state->tab_dragging || !tab_drag_ || tab_drag_->id != id) return;
+  POINT cursor{};
+  const bool released = dropped && state->window && session_ && !(GetAsyncKeyState(VK_ESCAPE) & 0x8000) &&
+    !PrimaryButtonDown() && GetCursorPos(&cursor);
+  const auto split = released ? SplitDropAt(id, cursor) : std::nullopt;
   state->tab_dragging = false;
+  tab_drag_.reset();
   HideTabDragPreview(state);
-  if (!state || !state->window || !session_ || (GetAsyncKeyState(VK_ESCAPE) & 0x8000) ||
-      PrimaryButtonDown()) return;
-  POINT cursor{}; if (!GetCursorPos(&cursor)) return;
-  if (auto split = SplitDropAt(id,cursor)) { Dispatch(split->command,{},true); return; }
+  if (!released) return;
+  if (split) { Dispatch(split->command,{},true); return; }
   RECT source{}; if (!GetWindowRect(state->window->GetWindowHandle(), &source)) return;
   InflateRect(&source, 12, 12);
   if (PtInRect(&source, cursor)) return;
@@ -651,13 +690,16 @@ void WorkspaceController::EnsureActive() {
     return;
   }
   expanded_split_pane_.clear(); split_preview_.reset();
+  const bool was_split = state->embedded->HasSplit();
   state->embedded->SetSplitPages(-1,-1,false,5000,false);
   if (tree_.active_id.empty()) { state->embedded->HideAll(); return; }
   if (closing_.contains(tree_.active_id) || moving_unloads_.contains(tree_.active_id)) return;
   const auto live = sessions_.find(tree_.active_id);
   if (live != sessions_.end()) {
     if (crashed_.contains(live->second->GetIdentifier())) { state->embedded->PresentCrash(live->second); return; }
-    if (state->content != live->second || !IsWindowVisible(live->second->GetHost()->GetWindowHandle())) {
+    // Separate can keep the focused pane selected. Apply the single-page layout
+    // even if that browser is already visible.
+    if (was_split || state->content != live->second || !IsWindowVisible(live->second->GetHost()->GetWindowHandle())) {
       state->embedded->Activate(live->second);
       std::erase(recent_, tree_.active_id); recent_.push_back(tree_.active_id);
     }

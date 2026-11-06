@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.4 — 2026-11-06
+
+- Tabs select on mouse press. The previous page stays visible while the new
+  page prepares its first frame, reducing flashes during tab switches.
+- Drag a tab toward the page to split it with the previously selected tab.
+  Separate tabs immediately restores the focused page to its full size.
+- Toolbar Back and Forward offer history on right-click and open the
+  previous or next page in a new tab on middle-click. The address shows
+  the current zoom and lets you reset it.
+- History and Downloads keep their own layout when page zoom changes.
+  Copy and zoom toasts are more compact and replay on each action.
+- Websites and extensions start with Windows language preferences on a new
+  profile. Existing website language choices are kept.
+- Updates preserve Sol's taskbar identity to prevent duplicate pins.
+- On first launch from an external link, Sol opens the requested page
+  directly. Settings and the import screen now show the Sol name.
+- Recovery moves the interface profile aside before starting with a clean
+  copy, preserving its files even when the History database is missing.
+
 ## 0.1.3 — 2026-11-06
 
 - Security fix: after the floating sidebar was used, the next start could open

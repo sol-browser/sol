@@ -47,10 +47,13 @@ class PageCorners {
   // No new HWND, focus target, site script or hit-test surface.
   // With |keys| the detail line shows them as key caps followed by |tail|
   // ("Press [Esc] to exit full screen"); the card's place and size are those
-  // of every toast. |animate| false replaces a visible toast's text in place.
+  // of every toast. Relayout passes |animate| false to keep any active motion.
   bool ShowNotification(HWND parent, const RECT& area, float scale,
                         const std::wstring& title, const std::wstring& detail,
-                        const std::vector<std::wstring>& keys = {}, const std::wstring& tail = L"", bool animate = true);
+                        const std::vector<std::wstring>& keys, const std::wstring& tail, bool animate,
+                        bool* animation_started = nullptr);
+  // Toasts take the space's theme: card, text and key caps (set before Show).
+  void SetNotificationTheme(const Theme& theme, bool dark) { notification_theme_ = theme; notification_dark_ = dark; }
   void PositionNotification(const RECT& area);
   void HideNotification();
   // Returns the compositor exit duration, or zero when motion is disabled.
@@ -126,12 +129,14 @@ class PageCorners {
   Microsoft::WRL::ComPtr<IDCompositionEffectGroup> notification_opacity_;
   Microsoft::WRL::ComPtr<IDCompositionScaleTransform> notification_growth_;
   Microsoft::WRL::ComPtr<IDCompositionSurface> notification_surface_;
-  int notification_width_ = 0, notification_height_ = 0, notification_margin_ = 0;
+  int notification_width_ = 0, notification_height_ = 0;
   bool notification_visible_ = false;
   RECT notification_bounds_{};
   float notification_scale_ = 1;
   std::wstring notification_title_, notification_detail_, notification_tail_;
   std::vector<std::wstring> notification_keys_;
+  Theme notification_theme_{};
+  bool notification_dark_ = false;
   std::array<Microsoft::WRL::ComPtr<IDCompositionVisual>, 8> visuals_;
   std::array<Microsoft::WRL::ComPtr<IDCompositionSurface>, 8> surfaces_;
   std::array<COLORREF, 8> colors_{};

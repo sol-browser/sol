@@ -34,11 +34,19 @@ int wmain() {
   fs::create_directories(profile / L"Default");
   std::ofstream(profile / L"Default" / L"Bookmarks") << "{}";
   std::ofstream(profile / L"Shell" / L"Preferences") << "{}";
+  std::ofstream(profile / L"Shell" / L"Login Data") << "legacy-logins";
 
   Check(red::ShellResetAllowed(profile, fs::file_time_type::clock::now()), "first reset is allowed");
   Check(red::ResetShellProfile(L"relative") == red::ShellReset::Failed, "a relative profile is refused");
   Check(red::ResetShellProfile(profile) == red::ShellReset::Done, "reset");
-  Check(!fs::exists(profile / L"Shell"), "Shell profile is deleted");
+  Check(!fs::exists(profile / L"Shell"), "the Shell path is available for a clean profile");
+  Check(Count(profile, L"Shell (reset") == 1, "Shell without History is quarantined");
+  for (const auto& entry : fs::directory_iterator(profile)) {
+    if (!entry.path().filename().wstring().starts_with(L"Shell (reset")) continue;
+    std::string logins;
+    std::ifstream(entry.path() / L"Login Data") >> logins;
+    Check(logins == "legacy-logins", "quarantine keeps logins without relying on History");
+  }
   Check(fs::exists(profile / L"Default" / L"Bookmarks"), "the web profile is untouched");
   const auto now = fs::file_time_type::clock::now();
   Check(!red::ShellResetAllowed(profile, now), "a violation right after a reset closes instead");
@@ -47,6 +55,23 @@ int wmain() {
   Check(!red::ShellResetScheduled(), "nothing is scheduled unless the guard asks");
   red::ScheduleShellReset();
   Check(red::ShellResetScheduled(), "the request is remembered");
+  fs::remove_all(profile, ignored);
+
+  // A locked source cannot be renamed. Recovery must leave every file in place.
+  const auto locked = profile / L"Shell";
+  fs::create_directories(locked);
+  std::ofstream(locked / L"Login Data") << "locked-profile-logins";
+  const HANDLE lock = CreateFileW(locked.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+      nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+  Check(lock != INVALID_HANDLE_VALUE, "lock Shell without delete sharing");
+  if (lock != INVALID_HANDLE_VALUE) {
+    Check(red::ResetShellProfile(profile) == red::ShellReset::Failed, "a failed quarantine aborts reset");
+    std::string logins;
+    std::ifstream(locked / L"Login Data") >> logins;
+    Check(logins == "locked-profile-logins", "failed reset keeps the original files");
+    Check(!fs::exists(profile / L"shell-reset-done"), "a failed reset leaves no completion marker");
+    CloseHandle(lock);
+  }
   fs::remove_all(profile, ignored);
 
   // Sol up to 0.1.2 could run websites in Shell (web_profile_repair.h).

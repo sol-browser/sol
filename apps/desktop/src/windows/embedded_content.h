@@ -75,11 +75,10 @@ class EmbeddedContent {
   // Red's one toast style (docs/toasts.md): a compact single line in the
   // top-right corner that lands with a small bounce and leaves after 2.5 s.
   // |keys| are drawn as key caps after |text|, then |tail| ("Press [Esc] to
-  // exit full screen"). A toast of the kind already on screen changes its text
-  // in place, without landing again (zoom steps). Every Red toast goes through
-  // here; keep them identical.
+  // exit full screen"). Each call restarts the entry and resets the timeout.
+  // |page|: the browser it is about (a zoomed split pane), else the active page.
   void Notify(const std::string& kind, const std::wstring& text, const std::vector<std::wstring>& keys = {},
-              const std::wstring& tail = L"", int duration_ms = 2500);
+              const std::wstring& tail = L"", int duration_ms = 2500, int page = -1);
   void HideNotification();
   bool NotificationVisible() const { return corners_.notification_visible(); }
   bool NotificationGeometryOk() const;
@@ -98,11 +97,14 @@ class EmbeddedContent {
   void ObservePresentation(CefRefPtr<CefBrowser> browser);
   void CaptureOutgoing(CefRefPtr<CefBrowser> browser);
   void SettlePresentation();
+  // Asks |browser| for a frame (a 1x1 screenshot); the switch completes when it returns.
+  void AwaitIncomingFrame(CefRefPtr<CefBrowser> browser);
   void CheckPresentationTimeout(unsigned long long generation);
   void FinishPresentation(unsigned long long generation, bool focus = true, bool commit = true);
   struct Presentation {
     CefRefPtr<CefRegistration> registration;
     int outgoing_capture = 0;
+    int incoming_capture = 0;  // A 1x1 screenshot: it returns once the page has a frame.
     unsigned long long outgoing_generation = 0;
     unsigned long long activated_ms = 0, capture_started_ms = 0;
   };
@@ -184,7 +186,12 @@ class EmbeddedContent {
   void UpdateSplitCorners();
   PopupAnimationHost popup_animation_host_;
   unsigned long long notification_generation_ = 0;
-  std::string notification_kind_;
+  int notification_page_ = -1;
+  // Panes of a split being left: kept in place until the next page has painted.
+  std::set<int> split_leaving_;
+  bool parked_ = false;  // The page being shown paints outside the window first.
+  // Where the toast sits: the whole window in full screen, else its page.
+  CefRect NotificationArea() const;
   bool corners_recorded_ = false;  // Probe evidence, once.
   bool corners_composited_ = true;  // False: fall back to a (stair-stepped) window region.
 };

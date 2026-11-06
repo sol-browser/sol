@@ -35,7 +35,7 @@ type Props = { nodes: TreeNode[]; treeRevision: number; activeId: string; busy: 
   updateReady?: string;
   restartToUpdate?: () => void };
 export type TabCommand = { method: 'split.focus'; id: string }
-  | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragStarted' | 'tab.dragCancel' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
+  | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
   | { method: 'tab.setHome'; id: string; url: string; title: string } | { method: 'tab.mute'; id: string; muted: boolean }
   | Extract<Command, { method: 'media.control' }>;
 export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, newSpace, request, media, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate }: Props) {
@@ -117,8 +117,10 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   const [drop, setDrop] = useState<DropTarget>();
   const dropRef = useRef<DropTarget | undefined>(undefined);
   const dragRef = useRef<string | undefined>(undefined);
-  const pointerDrag = useRef<{ id: string; pointer: number; x: number; y: number; lastX: number; lastY: number; capture: HTMLElement; started: boolean } | undefined>(undefined);
+  const pointerDrag = useRef<{ id: string; previousId: string | null; pointer: number; x: number; y: number; lastX: number; lastY: number; capture: HTMLElement; started: boolean } | undefined>(undefined);
   const suppressDragClick = useRef(false);
+  // Tabs switch on press, like Chrome and Arc; the click that follows is then ignored.
+  const pressActivated = useRef<string | null>(null);
   const renameInput = useRef<HTMLInputElement>(null);
   const pendingFolder = useRef<{ ids: Set<string>; parent: string } | undefined>(undefined);
   useEffect(() => {
@@ -186,13 +188,13 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   function finishDrag() {
     const pointer = pointerDrag.current; pointerDrag.current = undefined;
     if (pointer?.capture.hasPointerCapture(pointer.pointer)) pointer.capture.releasePointerCapture(pointer.pointer);
-    if (pointer?.started) dragSignal('tab.dragCancel', pointer.id);
+    if (pointer?.started) dragSignal({ method: 'tab.dragCancel', id: pointer.id });
     dragRef.current = undefined; setDragId(undefined); updateDrop(undefined);
   }
-  function dragSignal(method: 'tab.dragStarted' | 'tab.dragCancel', id: string) {
+  function dragSignal(command: Extract<Command, { method: 'tab.dragStarted' | 'tab.dragCancel' }>) {
     // These are pointer-lifetime signals, not workspace mutations. Avoid the
     // normal command's busy state so dragging never disables its own drop.
-    window.cefQuery?.({ request: JSON.stringify({ method, id }), persistent: false,
+    window.cefQuery?.({ request: JSON.stringify(command), persistent: false,
       onSuccess: () => {}, onFailure: () => {} });
   }
   function pointerDown(event: React.PointerEvent<HTMLDivElement>, node: TreeNode) {
@@ -200,7 +202,8 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     suppressDragClick.current = false;
     if (!aside.current || node.kind === 'folder' || event.button !== 0 || busy || renaming || node.closing ||
         (event.target instanceof Element && event.target.closest('input,.row-action,.favorite-audio'))) return;
-    pointerDrag.current = { id: node.id, pointer: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY, capture: aside.current, started: false };
+    pointerDrag.current = { id: node.id, previousId: activeId || null, pointer: event.pointerId,
+      x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY, capture: aside.current, started: false };
   }
   function pointerMove(event: React.PointerEvent<HTMLElement>) {
     const pointer = pointerDrag.current;
@@ -216,7 +219,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       // throws, and the drag must still work without it.
       try { pointer.capture.setPointerCapture(event.pointerId); } catch { /* No active pointer to capture. */ }
       dragRef.current = pointer.id; setDragId(pointer.id);
-      dragSignal('tab.dragStarted', pointer.id);
+      dragSignal({ method: 'tab.dragStarted', id: pointer.id, previousId: pointer.previousId });
     }
     event.preventDefault();
     updateDrop(aside.current ? sidebarDropTarget(aside.current, current.current.nodes, pointer.id, activeSpace, event.clientX, event.clientY) : undefined);
@@ -358,6 +361,28 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       tabCommand({ method:'split.focus',id });
     }
     const tint = node.favorite ? faviconColor(node.favicon, retint) : undefined;
+    // A tab switches on press (Chrome, Arc); the click after it is then ignored.
+    const press = (e: React.PointerEvent<HTMLElement>) => {
+      pressActivated.current = null;
+      if (folder || group || selected || busy || node.closing || e.button !== 0 || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+      pressActivated.current = node.id; void perform({ method: 'tree.activate', id: node.id });
+    };
+    // Split rows: free space (edges, padding, the gap) belongs to the half under
+    // the pointer, or the nearer one; buttons inside keep their own actions.
+    const memberAt = (e: React.MouseEvent<HTMLElement>) => {
+      if (!group || (e.target instanceof Element && e.target.closest('button, input, form'))) return undefined;
+      let best: string | undefined, distance = Infinity;
+      for (const part of e.currentTarget.querySelectorAll<HTMLElement>('.split-row-part')) {
+        const r = part.getBoundingClientRect();
+        const d = e.clientX < r.left ? r.left - e.clientX : e.clientX > r.right ? e.clientX - r.right : 0;
+        if (d < distance) { distance = d; best = part.dataset.tabId; }
+      }
+      return best;
+    };
+    const open = () => {
+      if (!folder && pressActivated.current === node.id) { pressActivated.current = null; return; }
+      void perform(folder ? { method: 'tree.expand', id: node.id, value: !node.expanded } : { method: 'tree.activate', id: node.id });
+    };
     return <li className={`tree-node ${peek ? 'active-peek' : ''}`} key={peek ? `peek-${node.id}` : node.id} data-node-id={node.id} data-drag-source={dragId === node.id}>
       <div className="tree-row" data-tinted={tint !== undefined} style={tint ? { '--favorite-tint': tint } as CSSProperties : undefined} data-kind={node.kind} data-split={group} data-drop-inside={folder && drop?.targetId === node.id && drop.mode === 'inside'} data-motion-key={peek ? `peek-${node.id}` : node.id} data-favorite={node.favorite === true} data-live={node.live === true} data-peek={node.peek === true}
         title={away ? `${node.title}\n${node.currentUrl}` : node.favorite ? displayTitle(node) : node.pageTitle && node.pageTitle !== node.title ? node.pageTitle : undefined} data-active={selected} data-pinned-away={away}
@@ -368,7 +393,21 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
             tabCommand({ method: 'tab.dragEnded', id: node.id });
           finishDrag();
         }}
-        onPointerDown={event => pointerDown(event, node)}
+        // The whole highlighted row is the tab: its padding and edges (outside the
+        // name and icon buttons) press and click like the name.
+        onPointerDownCapture={event => pointerDown(event, node)}
+        onPointerDown={event => {
+          const member = memberAt(event);
+          if (member) {
+            pressActivated.current = null;
+            if (event.button === 0 && !busy && !event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) { pressActivated.current = member; void focusMember(member); }
+          } else if (event.target === event.currentTarget) press(event);
+        }}
+        onClick={event => {
+          const member = memberAt(event);
+          if (member) { if (pressActivated.current === member) pressActivated.current = null; else if (!busy) void focusMember(member); return; }
+          if (event.target === event.currentTarget && !group && !busy && !node.closing) open();
+        }}
         onAuxClick={event => {
           if (event.button !== 1 || folder) return;
           event.preventDefault(); event.stopPropagation();
@@ -422,7 +461,15 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
                   onChange={event => setDraft(event.target.value)} onBlur={() => void saveRename(member.id)} spellCheck={false} autoComplete="off"
                   onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelRename(); } }} />
               </form> : <button className="split-row-title" disabled={busy || member.closing} title={displayTitle(member)}
-                onDoubleClick={() => startRename(member)} onClick={() => void focusMember(member.id)}>
+                onPointerDown={e => {
+                  pressActivated.current = null;
+                  if (e.button !== 0 || busy || member.closing || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+                  pressActivated.current = member.id; void focusMember(member.id);
+                }}
+                onDoubleClick={() => startRename(member)} onClick={() => {
+                  if (pressActivated.current === member.id) { pressActivated.current = null; return; }
+                  void focusMember(member.id);
+                }}>
                 <SiteMark node={member} /><span className="split-row-label">{displayTitle(member)}</span>
                 {(member.mediaCamera || member.mediaMicrophone) && <span className="tab-media" role="img" aria-label={member.mediaCamera ? 'Using camera' : 'Using microphone'}><Icon name={member.mediaCamera ? 'camera' : 'mic'} /></span>}
               </button>}
@@ -434,7 +481,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
                 onClick={() => void perform({ method:'tree.close',id:member.id })}><Icon name={tabCloseIcon(member) ?? 'close'} /></button>
             </span>)}
           </div> : <button className="node-name" disabled={busy || node.closing} aria-label={node.favorite ? displayTitle(node) : undefined} aria-expanded={folder ? node.expanded : undefined}
-            onDoubleClick={folder ? undefined : () => startRename(node)} onClick={() => void perform(folder ? { method: 'tree.expand', id: node.id, value: !node.expanded } : { method: 'tree.activate', id: node.id })}>
+            onPointerDown={press} onDoubleClick={folder ? undefined : () => startRename(node)} onClick={open}>
             {folder && <FolderIcon expanded={node.expanded} />}
             {away && <span className="pinned-away-prefix" title="Away from saved address" aria-hidden="true">/</span>}
             <span className="node-title">{title}</span>

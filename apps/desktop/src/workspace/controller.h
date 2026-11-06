@@ -31,9 +31,9 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   bool MoveToNewWindow(const std::string& id);
   void DetachedReady(const std::string& id);
   std::optional<TreeNode> DetachedSeed(const std::string& id) const;
-  void FinishTabDrag(const std::string& id);
+  void HandleTabDrag(CefRefPtr<CefDictionaryValue> request, Reply done);
   struct SplitDrop { TreeCommand command; CefRect preview; };
-  std::optional<SplitDrop> SplitDropAt(const std::string& id, POINT screen) const;
+  std::optional<SplitDrop> SplitDropAt(const std::string& id, POINT screen);
   void OpenMovedTab(const std::string& id, const std::string& url);
   // Live tab transfer between windows (docs/multi-window.md): the source lets
   // go of a page without closing it (its entry is removed when |remove_entry|,
@@ -160,6 +160,12 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   CefRefPtr<CefListValue> DescribeMedia() const;
   bool HandleMedia(CefRefPtr<CefDictionaryValue> request, Reply done);
   const SplitGroup* SelectedSplit() const;
+  void FinishTabDrag(const std::string& id, bool dropped);
+  struct TabDrag {
+    std::string id, previous, space;
+    bool restored = false;
+  };
+  std::optional<TabDrag> tab_drag_;
   void EnsurePage(const std::string& id);
   bool HandleSplit(CefRefPtr<CefDictionaryValue> request, Reply done);
   CefRefPtr<CefDictionaryValue> DescribeSplitView() const;

@@ -201,10 +201,12 @@ bool EmbeddedContent::Create(const std::string& url, const std::string& node_id)
   const auto background = Themed({229, 223, 240}, state->theme, state->theme_dark);  // Behind the first paint.
   settings.background_color = CefColorSetARGB(255, background.r, background.g, background.b);
   if (IsInternalPageUrl(url)) {
-    // Our own internal pages (history, downloads): Alloy style in the trusted UI profile (no
-    // extensions, never the web profile), marked trusted for its renderer.
+    // Our own internal pages (history, downloads): in the trusted UI profile (no
+    // extensions, never the web profile), marked trusted for its renderer. Chrome
+    // style like every tab, so the engine rounds its corners the same way; its
+    // client keeps it locked (navigation, menus, DevTools, Chrome commands).
     if (!state->ui_context) return false;
-    info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+    info.runtime_style = CEF_RUNTIME_STYLE_CHROME;
     auto extra = CefDictionaryValue::Create(); extra->SetBool("trusted_ui", true);
     return CefBrowserHost::CreateBrowser(info, client_factory_(node_id, true), url, settings, extra, state->ui_context);
   }
@@ -236,6 +238,7 @@ void EmbeddedContent::Resize(const CefRect& bounds) {
     // thread, a visible stall). Activate() applies the current target bounds;
     // resizing never introduces a page-readiness or screenshot dependency.
     if (!IsWindowVisible(handle) && id != fullscreen_id_) continue;
+    if (split_leaving_.contains(id)) continue;  // Stays a pane until the next page covers it.
     RECT actual{};
     POINT origin{};
     const bool known = GetWindowRect(handle, &actual) != FALSE;
@@ -247,7 +250,7 @@ void EmbeddedContent::Resize(const CefRect& bounds) {
     Shape(handle);
   }
   UpdateCorners();
-  const auto area = IsFullscreen() ? FullClientBounds() : PhysicalBounds();
+  const auto area = NotificationArea();
   corners_.PositionNotification(RECT{area.x, area.y, area.x + area.width, area.y + area.height});
 }
 CefRect EmbeddedContent::FullClientBounds() const {
@@ -324,21 +327,32 @@ bool EmbeddedContent::ExitBrowserFullscreen() {
   if (!browser_fullscreen_ || fullscreen_id_ != -1) return false;
   ToggleBrowserFullscreen(); return true;
 }
+CefRect EmbeddedContent::NotificationArea() const {
+  if (IsFullscreen()) return FullClientBounds();
+  return notification_page_ != -1 && browsers_.contains(notification_page_) ? PagePhysicalBounds(notification_page_) : PhysicalBounds();
+}
 void EmbeddedContent::Notify(const std::string& kind, const std::wstring& text, const std::vector<std::wstring>& keys,
-                             const std::wstring& tail, int duration_ms) {
+                             const std::wstring& tail, int duration_ms, int page) {
   const auto state = state_.lock();
   if (!state || !state->window) return;
-  const auto area = IsFullscreen() ? FullClientBounds() : PhysicalBounds();
+  notification_page_ = page;
+  const auto area = NotificationArea();
   const auto generation = ++notification_generation_;
   const auto focus = ::GetFocus();
-  const bool again = NotificationVisible() && notification_kind_ == kind;
-  notification_kind_ = kind;
+  corners_.SetNotificationTheme(state->theme, state->theme_dark);
+  const auto scale = state->window->GetDisplay()->GetDeviceScaleFactor();
+  bool animated = false;
   const bool painted = corners_.ShowNotification(state->window->GetWindowHandle(),
-      RECT{area.x, area.y, area.x + area.width, area.y + area.height},
-      state->window->GetDisplay()->GetDeviceScaleFactor(), L"", text, keys, tail, !again);
+      RECT{area.x, area.y, area.x + area.width, area.y + area.height}, scale, L"", text, keys, tail, true, &animated);
   auto data = CefDictionaryValue::Create(); data->SetString("kind", kind);
   data->SetBool("painted", painted); data->SetBool("focus_preserved", focus == ::GetFocus());
   data->SetBool("geometry_ok", painted && NotificationGeometryOk());
+  data->SetBool("animated", animated);
+  if (painted && state->probe) {
+    const auto card = corners_.notification_bounds();
+    data->SetDouble("top_inset_dip", (card.top - area.y) / scale);
+    data->SetDouble("right_inset_dip", (area.x + area.width - card.right) / scale);
+  }
   state->Record("notification_shown", data);
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, unsigned long long generation) {
     if (auto s = weak.lock(); s && s->embedded && s->embedded->notification_generation_ == generation) {
@@ -353,7 +367,7 @@ void EmbeddedContent::Notify(const std::string& kind, const std::wstring& text, 
 bool EmbeddedContent::NotificationGeometryOk() const {
   const auto state = state_.lock();
   if (!state || !state->window || !NotificationVisible()) return false;
-  const auto area = IsFullscreen() ? FullClientBounds() : PhysicalBounds();
+  const auto area = NotificationArea();
   const auto r = corners_.notification_bounds();
   const auto gap = 32 * state->window->GetDisplay()->GetDeviceScaleFactor();
   return r.left >= area.x && r.top >= area.y && r.right <= area.x + area.width && r.bottom <= area.y + area.height &&
@@ -417,8 +431,9 @@ void EmbeddedContent::Shape(HWND handle) const {
   if (state && state->workspace_mode) {
     for (const auto& [id, browser] : browsers_) if (browser->GetHost()->GetWindowHandle() == handle) {
       // Clip the actual document subtree. Opaque corner mattes cannot match
-      // an Acrylic/Mica background. Split cells retain their existing frame.
-      browser->GetHost()->SetContentContainerCornerRadius(fullscreen || IsSplitPage(id) ? 0 : 6);
+      // an Acrylic/Mica background. Split cells are clipped too; their frame adds only the border.
+      // Split panes: 7, inside the frame's 8 DIP corner and 1 DIP border.
+      browser->GetHost()->SetContentContainerCornerRadius(fullscreen ? 0 : IsSplitPage(id) ? 7 : 6);
       break;
     }
   }
@@ -513,6 +528,41 @@ void EmbeddedContent::Activate(CefRefPtr<CefBrowser> browser) {
     return;
   }
   if (!state->ui_editing) state->keyboard_target = id;
+  // From a split to another tab: the panes stay as they are while the new page
+  // paints parked outside the window (shown, so it renders, but off screen); once
+  // it has a frame it moves into place and the panes are hidden in the same step
+  // (FinishPresentation). An unpainted child window cannot be used as a veil:
+  // Windows clips the siblings beneath it, so the parent would show through.
+  if (!split_leaving_.empty() && !split_leaving_.contains(id)) {
+    FinishPresentation(presentation_generation_, false, false);
+    presentations_[id].activated_ms = GetTickCount64();
+    crash_presented_ = -1;
+    if (state->devtools_dock) state->devtools_dock->Layout(WorkspacePhysicalBounds(), id, IsFullscreen());
+    state->content = browser;
+#if CEF_API_ADDED(CEF_EXPERIMENTAL)
+    browser->GetHost()->NotifyTabActivated();
+#endif
+    const auto physical = PagePhysicalBounds(id);
+    const HWND sidebar = InlineSidebar();
+    SetWindowPos(handle, sidebar ? sidebar : HWND_TOP, -physical.width - 32, -physical.height - 32, physical.width, physical.height,
+        SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    Shape(handle);
+    parked_ = true;
+    for (const auto& [other_id, item] : browsers_)
+      if (other_id != id && !split_leaving_.contains(other_id)) ShowWindow(item->GetHost()->GetWindowHandle(), SW_HIDE);
+    UpdateCorners();
+    presenting_id_ = id;
+    const auto generation = presentation_generation_;
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, unsigned long long generation) {
+      if (auto s = weak.lock(); s && s->embedded) s->embedded->CheckPresentationTimeout(generation);
+    }, state_, generation), 400);
+    AwaitIncomingFrame(browser);
+    if (state->ui_editing) FocusShell(state); else FocusBrowser(browser);
+    auto data = CefDictionaryValue::Create(); data->SetInt("browser_id", id); data->SetBool("left_split", true);
+    state->Record("embedded_activated", data);
+    return;
+  }
+  split_leaving_.clear();
   const auto retained = browsers_.find(presentation_backdrop_id_);
   // Before the fade the old live HWND is still on top; during the fade the
   // target is live beneath the outgoing picture and is the next outgoing page.
@@ -526,15 +576,15 @@ void EmbeddedContent::Activate(CefRefPtr<CefBrowser> browser) {
   if (fullscreen_id_ != -1 && fullscreen_id_ != id) { ExitFullscreenFor(fullscreen_id_); Resize(bounds_); }
   if (state->devtools_dock) state->devtools_dock->Layout(WorkspacePhysicalBounds(), id, IsFullscreen());
   const auto physical = PagePhysicalBounds(id);
-  BOOL motion = TRUE; SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &motion, 0);
   const auto previous = browsers_.find(previous_id);
   const HWND backdrop = previous != browsers_.end() && previous_id != id ? previous->second->GetHost()->GetWindowHandle() : nullptr;
   const bool retain_page = backdrop && IsWindowVisible(backdrop);
-  // Startup / empty workspace: expose the live page immediately. There is
-  // nothing to fade out, so no compositor cover, screenshot or input delay.
-  const bool covered = !sidebar_overlay_visible_ && switched && retain_page && motion != FALSE &&
-      corners_.BeginPageTransition(state->window->GetWindowHandle(),
-          RECT{physical.x, physical.y, physical.x + physical.width, physical.y + physical.height});
+  // No animation on tab switches (user decision, 2026-11-06), and no blank
+  // frame: the outgoing page stays live on top while the incoming one, shown
+  // right under it, paints its first frame; then the outgoing one is hidden
+  // at once (page_presentation.cpp). Pages are child windows, which Chromium's
+  // occlusion tracking does not treat as hidden, so the incoming one paints.
+  const bool covered = !sidebar_overlay_visible_ && switched && retain_page;
   presentation_backdrop_id_ = covered ? previous_id : -1;
   state->content = browser;
 #if CEF_API_ADDED(CEF_EXPERIMENTAL)
@@ -558,7 +608,7 @@ void EmbeddedContent::Activate(CefRefPtr<CefBrowser> browser) {
     CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, unsigned long long generation) {
       if (auto s = weak.lock(); s && s->embedded) s->embedded->CheckPresentationTimeout(generation);
     }, state_, generation), 400);
-    CaptureOutgoing(previous->second);
+    AwaitIncomingFrame(browser);
   } else {
     if (state->ui_editing) FocusShell(state); else FocusBrowser(browser);
     auto direct = CefDictionaryValue::Create(); direct->SetInt("browser_id", id);
@@ -630,7 +680,8 @@ void EmbeddedContent::RaiseActive() {
   // Reconcile our managed children on native show/reorder events as well.
   for (const auto& [id, browser] : browsers_) {
     const auto other = browser->GetHost()->GetWindowHandle();
-    if (id != state->content->GetIdentifier() && (id != presentation_backdrop_id_ || presentation_fading_) && IsWindowVisible(other)) ShowWindow(other, SW_HIDE);
+    if (id != state->content->GetIdentifier() && (id != presentation_backdrop_id_ || presentation_fading_) && !split_leaving_.contains(id) &&
+        IsWindowVisible(other)) ShowWindow(other, SW_HIDE);
   }
   const auto retained = browsers_.find(presentation_backdrop_id_);
   if (retained != browsers_.end() && !presentation_fading_) {

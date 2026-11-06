@@ -1,7 +1,7 @@
 """Full downloads page (sol://ui/downloads.html) through actual CEF.
 
 Downloads notes.txt, opens the page via the Ctrl+J path, checks it is a
-trusted-UI tab (Alloy, UI profile), that shell and history commands from it are
+trusted-UI tab (Chrome style, UI profile), that shell and history commands from it are
 refused (403), that it lists the file, that "Remove from list" deletes the saved
 entry (the file stays), and that it cannot navigate away.
 """
@@ -39,7 +39,7 @@ def main():
     messages = [r['details']['message'] for r in rows if r['event'] == 'downloads_page_probe']
     store = next((r['details'] for r in rows if r['event'] == 'downloads_page_store'), {})
     checks = {
-        'opened_as_trusted_ui_tab': opened.get('alloy') is True and opened.get('ui_profile') is True and opened.get('registered') is True,
+        'opened_as_trusted_ui_tab': opened.get('chrome_style') is True and opened.get('ui_profile') is True and opened.get('registered') is True,
         'shell_command_refused': 'RED_DOWNLOADS_PAGE:shell_command:403' in messages,
         'history_command_refused': 'RED_DOWNLOADS_PAGE:history_command:403' in messages,
         'listed_download': any(m.startswith('RED_DOWNLOADS_PAGE:rows:') and int(m.rsplit(':', 1)[1]) >= 1 for m in messages),

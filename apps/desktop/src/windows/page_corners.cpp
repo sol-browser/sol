@@ -105,7 +105,10 @@ bool PageCorners::Paint(int corner, int radius, COLORREF color, COLORREF border,
       d2d_->PushAxisAlignedClip(D2D1::RectF(0, 0, r, r), D2D1_ANTIALIAS_MODE_ALIASED);
       d2d_->Clear(D2D1::ColorF(0, 0, 0, 0));
       ok = SUCCEEDED(d2d_->CreateSolidColorBrush(D2D1::ColorF(GetRValue(color) / 255.f, GetGValue(color) / 255.f, GetBValue(color) / 255.f), &brush));
-      if (ok) d2d_->FillGeometry(outside.Get(), brush.Get());
+      // Split frames (drawn with a border) carry no matte: the engine clips the
+      // page itself, so an opaque corner square would only show on Acrylic,
+      // Mica or grain. Plain page corners (no border) keep their matte.
+      if (ok && border_width <= 0) d2d_->FillGeometry(outside.Get(), brush.Get());
       // The rectangular native page covers the CSS border's curved inner edge.
       // Restore that quarter-ring above it, in the same antialiased surface.
       if (ok && border_width > 0) {

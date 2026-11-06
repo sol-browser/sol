@@ -35,13 +35,14 @@ export async function organizationProbe() {
   const loaded = (id: string) => waitFor(s => s.activeId === id && !s.isLoading && s.nodes!.some(n => n.id === id && n.live && n.currentUrl === n.url));
   // The sidebar drags with pointer events (press, move past 6px, release) and
   // resolves the drop target from real geometry, as a person's drag does.
-  async function drop(id: string, target: string) {
+  async function drop(id: string, target: string, afterPress?: () => Promise<unknown>) {
     const source = await dom<HTMLElement>(row(id));
     const sidebar = await dom<HTMLElement>('.sidebar');
     const pointer = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true };
     const start = source.getBoundingClientRect();
     const sx = start.x + 30, sy = start.y + start.height / 2;
     source.dispatchEvent(new PointerEvent('pointerdown', { ...pointer, button: 0, buttons: 1, clientX: sx, clientY: sy }));
+    if (afterPress) await afterPress();
     sidebar.dispatchEvent(new PointerEvent('pointermove', { ...pointer, buttons: 1, clientX: sx, clientY: sy + 12 }));
     await sleep(60);
     const bounds = (await dom<HTMLElement>(target)).getBoundingClientRect();
@@ -140,6 +141,10 @@ export async function organizationProbe() {
   const favorite = (await mutate({ method: 'tree.createTab', parentId: '', title: 'Mail', url: base + '?favorite' })).createdId!;
   await loaded(favorite); await drop(favorite, '[data-section="favorites"]');
   await waitFor(s => s.nodes!.some(n => n.id === favorite && n.favorite));
+  await mutate({ method: 'tree.activate', id: saved.id }); await loaded(saved.id);
+  // Let the native selection settle before crossing the drag threshold.
+  // The start signal must still carry the tab from before pointerdown.
+  await drop(favorite, '[data-section="favorites"]', () => loaded(favorite));
   await mutate({ method: 'tree.activate', id: saved.id }); await loaded(saved.id);
   const empty = (await mutate({ method: 'tree.createFolder', parentId: '', title: 'Disposable empty folder' })).createdId!;
   await mutate({ method: 'tree.removeFolder', id: empty });
