@@ -1,3 +1,4 @@
+#include "windows/utility_window.h"
 #include "windows/extensions_window.h"
 #include "include/cef_request_context.h"
 #include "include/views/cef_browser_view.h"
@@ -10,7 +11,7 @@ namespace red {
 namespace {
 constexpr char kExtensionsUrl[] = "chrome://extensions/";
 
-class ExtensionsClient final : public CefClient, public CefLifeSpanHandler, public CefRequestHandler {
+class ExtensionsClient final : public UtilityWindowClient, public CefLifeSpanHandler, public CefRequestHandler {
  public:
   explicit ExtensionsClient(std::weak_ptr<State> state) : state_(std::move(state)) {}
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
@@ -38,17 +39,18 @@ class ChromeView final : public CefBrowserViewDelegate {
  public: cef_runtime_style_t GetBrowserRuntimeStyle() override { return CEF_RUNTIME_STYLE_CHROME; }
  private: IMPLEMENT_REFCOUNTING(ChromeView);
 };
-class ExtensionsWindowDelegate final : public CefWindowDelegate {
+class ExtensionsWindowDelegate final : public UtilityWindowDelegate {
  public:
-  ExtensionsWindowDelegate(std::weak_ptr<ExtensionsWindow> owner, CefRefPtr<CefBrowserView> view) : owner_(std::move(owner)), view_(view) {}
+  ExtensionsWindowDelegate(std::weak_ptr<State> state, std::weak_ptr<ExtensionsWindow> owner, CefRefPtr<CefBrowserView> view)
+      : UtilityWindowDelegate(std::move(state), CefSize(980, 720)), owner_(std::move(owner)), view_(view) {}
   cef_runtime_style_t GetWindowRuntimeStyle() override { return CEF_RUNTIME_STYLE_CHROME; }
-  CefSize GetPreferredSize(CefRefPtr<CefView>) override { return CefSize(980, 720); }
   void OnWindowCreated(CefRefPtr<CefWindow> window) override {
+    UtilityWindowDelegate::OnWindowCreated(window);
     window->SetTitle("Extensions — Sol");
     const auto icon = RedWindowIcon(); window->SetWindowIcon(icon); window->SetWindowAppIcon(icon);
     window->SetToFillLayout(); window->AddChildView(view_);
     if (auto owner = owner_.lock()) owner->Created(window);
-    window->CenterWindow(CefSize(980, 720)); window->Show(); view_->RequestFocus();
+    PresentUtilityWindow(window, parent()); view_->RequestFocus();
   }
   bool CanClose(CefRefPtr<CefWindow>) override {
     const auto browser = view_ ? view_->GetBrowser() : nullptr;
@@ -63,11 +65,11 @@ class ExtensionsWindowDelegate final : public CefWindowDelegate {
 }  // namespace
 
 void ExtensionsWindow::Show() {
-  if (window_) { window_->Show(); window_->Activate(); return; }
   auto state = state_.lock(); if (!state || !state->window) return;
+  if (window_) { PresentUtilityWindow(window_, state->window); return; }
   auto view = CefBrowserView::CreateBrowserView(new ExtensionsClient(state_), kExtensionsUrl, CefBrowserSettings(), nullptr,
-      CefRequestContext::GetGlobalContext(), new ChromeView());
-  CefWindow::CreateTopLevelWindow(new ExtensionsWindowDelegate(weak_from_this(), view));
+      state->WebContext(), new ChromeView());
+  CefWindow::CreateTopLevelWindow(new ExtensionsWindowDelegate(state_, weak_from_this(), view));
   state->Record("extensions_window_opened");
 }
 void ExtensionsWindow::Close() { if (auto window = window_) window->Close(); }

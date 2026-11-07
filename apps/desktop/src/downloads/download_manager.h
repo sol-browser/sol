@@ -16,6 +16,7 @@ namespace red {
 class DownloadManager : public std::enable_shared_from_this<DownloadManager> {
  public:
   DownloadManager(std::weak_ptr<State> state, std::filesystem::path directory);
+  void SetHistory(std::shared_ptr<HistoryService> history) { history_ = std::move(history); }
   // Default directory: FOLDERID_Downloads. Empty if Windows cannot provide it.
   static std::filesystem::path DefaultDirectory();
   bool OnBeforeDownload(CefRefPtr<CefDownloadItem> item, const CefString& suggested_name,
@@ -49,7 +50,10 @@ class DownloadManager : public std::enable_shared_from_this<DownloadManager> {
   void Persist(Entry& entry);
   void Forget(const Entry& entry);
   void SchedulePublish();
+  std::shared_ptr<State> Owner() const;
   std::weak_ptr<State> state_;
+  std::weak_ptr<AppSession> session_;
+  std::shared_ptr<HistoryService> history_;
   std::filesystem::path directory_;
   std::map<uint32_t, Entry> entries_;
   std::vector<uint32_t> order_;  // Oldest first.

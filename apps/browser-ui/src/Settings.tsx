@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { parseSettingsSnapshot, type Backdrop, type Clock, type SettingsCommand, type SettingsSnapshot } from '../../../packages/browser-contracts/src';
-import { Settings2, Palette, ArrowDownToLine, ArrowUpRight, Check, Puzzle, NotebookPen, Search, Power, Keyboard, Archive } from 'lucide-react';
+import { Settings2, Palette, ArrowDownToLine, ArrowUpRight, Check, Puzzle, NotebookPen, Search, Power, Keyboard, Archive, UserRound, KeyRound } from 'lucide-react';
 import { PreferencesSettings } from './PreferencesSettings';
 import { Icon } from './Icon';
 import { ThemePanel } from './Theme';
 import { ImportSettings } from './ImportSettings';
 import { applyTheme } from './theme-apply';
 import { releaseNotes } from './release-notes';
+import { PasswordsSettings } from './PasswordsSettings';
+import { ProfilesSettings } from './ProfilesSettings';
 import './settings.css';
 
 function query(command: object): Promise<SettingsSnapshot> {
@@ -14,7 +16,7 @@ function query(command: object): Promise<SettingsSnapshot> {
     if (!window.cefQuery) { reject(new Error('Native bridge unavailable')); return; }
     let id = -1;
     // A native folder chooser waits for the person, not a five-second RPC.
-    const interactive = 'method' in command && command.method === 'settings.chooseDownloadFolder';
+    const interactive = 'method' in command && (command.method === 'settings.chooseDownloadFolder' || command.method === 'profile.create');
     const timeout = interactive ? undefined : setTimeout(() => { if (id >= 0) window.cefQueryCancel?.(id); reject(new Error('Settings request timed out')); }, 5000);
     try {
       id = window.cefQuery({ request: JSON.stringify(command), persistent: false,
@@ -30,6 +32,8 @@ const sections = [
   { id: 'downloads', title: 'Downloads', icon: ArrowDownToLine },
   { id: 'startup', title: 'On startup', icon: Power },
   { id: 'tabs', title: 'Tabs', icon: Archive },
+  { id: 'profiles', title: 'Profiles', icon: UserRound },
+  { id: 'passwords', title: 'Passwords', icon: KeyRound },
   { id: 'keyboard', title: 'Shortcuts', icon: Keyboard },
   { id: 'import', title: 'Import', icon: ArrowDownToLine },
   { id: 'releases', title: 'What’s new', icon: NotebookPen },
@@ -40,6 +44,7 @@ export function Settings() {
   const [section, setSection] = useState<Section>('general');
   const [data, setData] = useState<SettingsSnapshot>();
   const [error, setError] = useState('');
+  const [profileCreateRequest,setProfileCreateRequest]=useState(0);
   const [busy, setBusy] = useState(false);
   const [windowsOpened, setWindowsOpened] = useState(false);
   const readySent = useRef(false), alive = useRef(true), sequence = useRef(0);
@@ -52,7 +57,11 @@ export function Settings() {
   }, []);
   useEffect(() => {
     // The main menu's "Import Browser Data…" opens this page on Import.
-    const open = (event: Event) => { if ((event as CustomEvent).detail === 'import') setSection('import'); };
+    const open = (event: Event) => {
+      const target=(event as CustomEvent).detail;
+      if(target==='import')setSection('import');
+      if(target==='profiles'||target==='newProfile'){setSection('profiles');if(target==='newProfile')setProfileCreateRequest(value=>value+1);}
+    };
     window.addEventListener('red-settings-section', open);
     return () => window.removeEventListener('red-settings-section', open);
   }, []);
@@ -87,7 +96,7 @@ export function Settings() {
     finally { if (alive.current) setBusy(false); }
   }
   const defaults = data?.defaultBrowser;
-  const visibleSections = sections.filter(item => !data?.standalone || (item.id !== 'appearance' && item.id !== 'import'));
+  const visibleSections = sections.filter(item => !data?.standalone || (item.id !== 'appearance' && item.id !== 'import' && item.id !== 'profiles'));
   return <div className="settings-shell">
     <aside className="settings-nav">
       <div className="settings-brand"><Icon name="logo" /><span>Sol<span>Settings</span></span></div>
@@ -106,7 +115,9 @@ export function Settings() {
             section === 'downloads' ? 'Keep new downloads where you want them.' :
             section === 'startup' ? 'Choose what opens when you start Sol.' :
             section === 'tabs' ? 'Keep Today tidy without losing your saved tabs.' :
-            section === 'keyboard' ? 'Make familiar actions feel natural.' : 'Move in from Zen, Chrome, Edge or Arc.'}</p></header>
+            section === 'keyboard' ? 'Make familiar actions feel natural.' :
+            section === 'passwords' ? 'Your sign-ins, kept with the right profile.' :
+            section === 'profiles' ? 'Keep work, personal browsing and website accounts separate.' : 'Move in from Zen, Chrome, Edge or Arc.'}</p></header>
         {section === 'general' ? <>
           <section className="settings-card" aria-labelledby="default-heading">
             <div className="settings-card-label"><span className="settings-category">BROWSER</span>
@@ -143,7 +154,9 @@ export function Settings() {
               </select></label>
           </section>
           <div className="settings-version"><span>Sol {data?.version ?? '…'}</span><span>Chromium {data?.chromiumVersion ?? '…'}</span></div>
-        </> : section === 'search' || section === 'downloads' || section === 'startup' || section === 'keyboard' || section === 'tabs' ?
+        </> : section === 'passwords' ? <PasswordsSettings profiles={data?.profiles ?? []} activeProfile={data?.activeProfile} ready={!!data?.ready} busy={busy} onOpen={(profile, settings)=>void action({method:'settings.passwords',profile,settings})} /> : section === 'profiles' ? <ProfilesSettings profiles={data?.profiles ?? []} spaces={data?.spaces ?? []}
+          activeProfile={data?.activeProfile} createRequest={profileCreateRequest} suggestedSpace={data?.spaceId} onCreateRequestHandled={()=>setProfileCreateRequest(0)}
+          command={async command=>{const next=await query(command);++sequence.current;if(alive.current)setData(next);}} /> : section === 'search' || section === 'downloads' || section === 'startup' || section === 'keyboard' || section === 'tabs' ?
           <PreferencesSettings section={section} preferences={data?.preferences} keyboard={data?.keyboard ?? []}
             disabled={busy || !data?.ready || !!data.preferencesError} save={action} onError={setError} /> :
           section === 'appearance' ? <><section className="settings-card settings-appearance">
@@ -177,7 +190,7 @@ export function Settings() {
             </header>
             <ul>{release.changes.map((change, index) => <li key={index}>{change}</li>)}</ul>
           </section>)}
-        </div> : <ImportSettings disabled={busy || !data?.ready} />}
+        </div> : <ImportSettings disabled={busy || !data?.ready} profileName={data?.profiles?.find(profile => profile.id === 'default')?.name ?? 'Default'} />}
         {error && <p className="settings-error" role="alert">{error}</p>}
         {data?.preferencesError && <p className="settings-error" role="alert">{data.preferencesError}</p>}
       </div>

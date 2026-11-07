@@ -27,6 +27,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   }
   void SetObserver(std::function<void(CefRefPtr<CefDictionaryValue>)> observer);
   void ReceiveSharedTree(const TreeSnapshot& tree);
+  std::shared_ptr<BrowsingProfile> ProfileForNode(const std::string& id) const;
   bool MoveToNewWindow(const std::string& id);
   void DetachedReady(const std::string& id);
   std::optional<TreeNode> DetachedSeed(const std::string& id) const;
@@ -88,7 +89,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   // A new tab for an address the person typed: a website or a local file.
   void OpenTyped(const std::string& url, Reply done);
   // Reopens a page an extension asked Chrome to open as a foreground Today tab.
-  bool AdoptExtensionPage(const std::string& url);
+  bool AdoptExtensionPage(const std::string& url, const std::string& profile = "");
   // Opens (or activates) an internal page tab (history, downloads).
   void OpenInternalPage(std::string_view url, const std::string& title);
   void OpenHistoryPage() { OpenInternalPage(kHistoryUrl, "History"); }
@@ -187,6 +188,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void FlushPageTitle(const std::string& id);
   void FinishClose(const std::string& id, bool archive, Reply done, const std::string& last_url = "");
   void RemoveFolder(TreeCommand command, Reply done);
+  void ChangeProfile(TreeCommand command, Reply done);
   void CancelFolderRemoval();
   struct FolderRemoval;
   std::shared_ptr<FolderRemoval> folder_removal_;
@@ -218,6 +220,8 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   std::map<std::string, std::pair<bool, Reply>> closing_;
   std::set<std::string> archiving_;  // Archive commit in flight after the page closed.
   std::map<std::string,std::function<void(bool)>> auto_closing_;
+  std::map<std::string,std::function<void(bool)>> profile_closing_;
+  bool profile_changing_ = false;
   std::set<int> auto_archive_media_;
   std::vector<std::string> recent_;
   std::vector<std::string> external_pending_;

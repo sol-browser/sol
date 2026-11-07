@@ -23,7 +23,7 @@ function importQuery(command: Record<string, unknown>): Promise<string> {
 const NAMES: Record<ImportSourceId, string> = { zen: 'Zen', chrome: 'Chrome', edge: 'Edge', arc: 'Arc' };
 type Stage = 'choose' | 'reading' | 'preview' | 'importing' | 'done';
 
-export function ImportSettings({ disabled }: { disabled: boolean }) {
+export function ImportSettings({ disabled, profileName = 'Default' }: { disabled: boolean; profileName?: string }) {
   const [sources, setSources] = useState<ImportSource[]>([]);
   const [source, setSource] = useState<ImportSourceId>('chrome');
   const [profile, setProfile] = useState('');
@@ -99,6 +99,7 @@ export function ImportSettings({ disabled }: { disabled: boolean }) {
       <span className="settings-category">FROM ANOTHER BROWSER</span>
       <h2 id="import-source-heading">Choose a browser</h2>
       <p>Bring your tabs, bookmarks, history and saved passwords into Sol. You’ll see everything before it’s imported.</p>
+      <p className="settings-note">Imported data is added to the "{profileName}" browsing profile.</p>
       <div className="import-sources" role="radiogroup" aria-label="Browser">
         {(['zen', 'chrome', 'edge', 'arc'] as const).map(id => {
           const found = sources.find(s => s.id === id)?.profiles.length ?? 0;

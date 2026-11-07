@@ -45,7 +45,7 @@ void SidebarMenu::Fill(MenuPopup::Builder& menu, const std::vector<SidebarMenuIt
   }
 }
 void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRefPtr<CefMessageRouterBrowserSide::Callback> callback,
-                       CefRefPtr<CefBrowser> source) {
+                       CefRefPtr<CefBrowser> source, bool space_menu) {
   auto state = state_.lock();
   // The docked sidebar, or the floating one while the docked one is hidden.
   const bool shown = state && (state->sidebar_visible || (state->sidebar_peek && state->sidebar_peek->is_open()));
@@ -65,6 +65,12 @@ void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRe
   for (size_t i = 0; space_rows && i < space_rows->GetSize(); ++i)
     spaces.push_back({space_rows->GetDictionary(i)->GetString("id"), space_rows->GetDictionary(i)->GetString("name")});
   auto items = SidebarMenuItems(nodes, id, spaces, snapshot->GetString("activeSpace"), state->standalone_window);
+  if (space_menu) {
+    if (state->standalone_window || !id.empty()) { callback->Failure(403,"Space actions are unavailable"); return; }
+    std::vector<MenuProfile> profiles; const auto list=snapshot->GetList("profiles");
+    for (size_t i=0;list && i<list->GetSize();++i) profiles.push_back({list->GetDictionary(i)->GetString("id"),list->GetDictionary(i)->GetString("name")});
+    items=SpaceMenuItems(spaces,profiles,snapshot->GetString("activeSpace"),snapshot->GetString("activeProfile"));
+  }
   CefRefPtr<CefDictionaryValue> entry, active;
   for (size_t i = 0; i < rows->GetSize(); ++i) {
     auto row = rows->GetDictionary(i); if (row->GetString("id") == id) entry = row;

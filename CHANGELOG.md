@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0 — 2026-11-08
+
+- Browsing profiles keep logins, cookies, history, extensions and passwords
+  separate. Assign a profile to one or more Spaces; existing browsing data
+  stays in Default.
+- Create and manage profiles in Settings. When creating a profile, choose
+  the Spaces that should use it before confirming.
+- Space actions now offer profile selection, Edit Theme, New Folder,
+  export and deletion. The theme editor opens beside the full sidebar.
+- Save and autofill passwords, update an existing password after changing
+  it, and open the password manager for each profile from Settings or the
+  browser menu.
+- The floating sidebar now shows Restart to update. Media controls stay
+  above the update notice instead of covering it.
+- Settings and the password and extension managers open on the browser's
+  monitor and return focus to the browser when closed. They remain resizable
+  without minimize, maximize or fullscreen actions.
+- The save-password prompt follows the browser when it moves. Its manager
+  link opens correctly, and closing a tab with a pending prompt is more reliable.
+
 ## 0.1.5 — 2026-11-07
 
 - Cold tabs switch immediately and show the space's background until the

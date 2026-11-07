@@ -1,3 +1,5 @@
+#include "windows/passwords_window.h"
+#include "windows/sidebar_actions.h"
 #include <windows.h>
 #include <dwmapi.h>
 #include <algorithm>
@@ -32,6 +34,7 @@
 #include "trust_policy.h"
 #include "app/state.h"
 #include "app/session.h"
+#include "app/browsing_profiles.h"
 #include "app/profile_location.h"
 #include "app/updates.h"
 #include "app/windows_locale.h"
@@ -265,7 +268,8 @@ class UiResources final : public CefSchemeHandlerFactory {
     }
     if (path.starts_with("/favicon/")) {
       // Versions are immutable within this cache and reset on the next run.
-      auto png = state->favicons ? state->favicons->PngForPath(path) : std::nullopt;
+      auto png = !state->private_window && state->session && state->session->profiles ? state->session->profiles->FaviconPng(path) :
+          state->favicons ? state->favicons->PngForPath(path) : std::nullopt;
       if (!png) return nullptr;
       auto bytes = std::make_shared<std::string>(std::move(*png));
       auto stream = CefStreamReader::CreateForData(bytes->data(), bytes->size());
@@ -388,13 +392,17 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   bool CanDownload(CefRefPtr<CefBrowser>, const CefString&, const CefString&) override {
     return !shell_ && !internal_page_ && state_->downloads != nullptr;
   }
-  bool OnBeforeDownload(CefRefPtr<CefBrowser>, CefRefPtr<CefDownloadItem> item, const CefString& suggested_name,
+  bool OnBeforeDownload(CefRefPtr<CefBrowser> browser, CefRefPtr<CefDownloadItem> item, const CefString& suggested_name,
                         CefRefPtr<CefBeforeDownloadCallback> callback) override {
-    return !shell_ && state_->downloads && state_->downloads->OnBeforeDownload(item, suggested_name, callback);
+    const auto profile = red::ProfileForBrowser(state_,browser);
+    const auto downloads = profile ? profile->downloads : state_->downloads;
+    return !shell_ && downloads && downloads->OnBeforeDownload(item, suggested_name, callback);
   }
-  void OnDownloadUpdated(CefRefPtr<CefBrowser>, CefRefPtr<CefDownloadItem> item,
+  void OnDownloadUpdated(CefRefPtr<CefBrowser> browser, CefRefPtr<CefDownloadItem> item,
                          CefRefPtr<CefDownloadItemCallback> callback) override {
-    if (!shell_ && state_->downloads) state_->downloads->OnUpdated(item, callback);
+    const auto profile = red::ProfileForBrowser(state_,browser);
+    const auto downloads = profile ? profile->downloads : state_->downloads;
+    if (!shell_ && downloads) downloads->OnUpdated(item, callback);
   }
   // Red's own UI (the shell) gets no browser page menu; website pages get Chrome's, drawn as Red's.
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { if (shell_) return new red::UiContextMenu(state_); return this; }
@@ -501,6 +509,11 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   }
   bool OnChromeCommand(CefRefPtr<CefBrowser> browser, int command, cef_window_open_disposition_t disposition) override {
     if (!state_->workspace || popup_) return false;
+    if (command == cef_id_for_command_id_name("IDC_SHOW_PASSWORD_MANAGER") || command == cef_id_for_command_id_name("IDC_VIEW_PASSWORDS")) {
+      // Resolve the source browser, which can belong to a background Space.
+      if(const auto profile=red::ProfileForBrowser(state_,browser))red::ShowPasswords(state_,profile->id);
+      return true;
+    }
     if (command == cef_id_for_command_id_name("IDC_DEV_TOOLS")) {
       red::ShowPageDevTools(state_, shell_ ? state_->content : browser, CefPoint(), true); return true;
     }
@@ -555,6 +568,14 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     CEF_REQUIRE_UI_THREAD();
     if (shell_ || internal_page_) red::RegisterSessionUi(state_, browser->GetIdentifier());
     state_->browsers[browser->GetIdentifier()] = browser;
+    if (!shell_ && state_->workspace) {
+      auto profile = red::ProfileForBrowser(state_,browser);
+      if (!profile && internal_page_) profile = state_->workspace->ProfileForNode(node_id_);
+      if (profile) {
+        state_->browser_profiles[browser->GetIdentifier()] = profile;
+        if (!internal_page_ && !profile->install_watch) profile->install_watch = red::WatchExtensionInstalls(state_,profile->context);
+      }
+    }
     if (MovablePage()) PageClients()[browser->GetIdentifier()] = this;
     if (foreign_) { OnForeignCreated(browser); return; }
     if (popup_) { state_->popup_browsers.insert(browser->GetIdentifier()); state_->popup_pending.erase(reservation_); }
@@ -613,6 +634,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     if (state_->audible_frames.erase(browser->GetIdentifier()) && state_->workspace) state_->workspace->Refresh();
     std::erase_if(state_->popup_pending, [&](const auto& key) { return key.first == browser->GetIdentifier(); });
     state_->browsers.erase(browser->GetIdentifier());
+    state_->browser_profiles.erase(browser->GetIdentifier());
     if (shell_) state_->shell_id = -1;
     else if (state_->content == browser) state_->content = nullptr;
     state_->Record(shell_ ? "shell_closed" : popup_ ? "popup_closed" : foreign_ ? "foreign_closed" : "content_closed");
@@ -739,8 +761,8 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       auto dict = parsed && parsed->GetType() == VTYPE_DICTIONARY ? parsed->GetDictionary() : nullptr;
       if (!dict || dict->GetType("method") != VTYPE_STRING ||
           !(frame->GetURL().ToString() == red::kHistoryUrl
-              ? red::HandleHistoryCommand(state_, dict->GetString("method").ToString(), dict, callback, {})
-              : red::HandleDownloadsPageCommand(state_, dict->GetString("method").ToString(), dict, callback)))
+              ? red::HandleHistoryCommand(state_, dict->GetString("method").ToString(), dict, callback, {}, red::ProfileForBrowser(state_,browser))
+              : red::HandleDownloadsPageCommand(state_, dict->GetString("method").ToString(), dict, callback, red::ProfileForBrowser(state_,browser))))
         callback->Failure(403, "Not a command of this page");
       return true;
     }
@@ -783,17 +805,17 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       }
       callback->Success(hovered ? "true" : "false"); return true;
     }
-    if (method == "workspace.contextMenu") {
+    if (method == "workspace.contextMenu" || method == "workspace.spaceMenu") {
       if (!state_->sidebar_menu || persistent || dict->GetSize() != 4 || dict->GetType("id") != VTYPE_STRING ||
           (dict->GetString("id").length() != 36 && !dict->GetString("id").empty()) || dict->GetType("x") != VTYPE_INT || dict->GetType("y") != VTYPE_INT) {
         callback->Failure(400, "Invalid sidebar menu request"); return true;
       }
-      state_->sidebar_menu->Open(dict->GetString("id"), dict->GetInt("x"), dict->GetInt("y"), query_id, callback); return true;
+      state_->sidebar_menu->Open(dict->GetString("id"), dict->GetInt("x"), dict->GetInt("y"), query_id, callback,nullptr,method=="workspace.spaceMenu"); return true;
     }
     if (method == "probe.contextMenuSelect" && state_->probe && state_->organization_probe && state_->sidebar_menu && !persistent) {
       const auto action=dict->HasKey("action") ? dict->GetString("action").ToString() : "rename";
       if (dict->GetSize()!=(dict->HasKey("action") ? 2U : 1U) || (dict->HasKey("action") && dict->GetType("action")!=VTYPE_STRING) ||
-          (action!="rename" && action!="removeFolder")) { callback->Failure(400,"Invalid probe menu action"); return true; }
+          (action!="rename" && action!="removeFolder" && action!="editTheme")) { callback->Failure(400,"Invalid probe menu action"); return true; }
       if (!state_->sidebar_menu->ProbeSelect(action)) { callback->Failure(409, "Menu is not shown"); return true; }
       auto result = CefValue::Create(); result->SetDictionary(state_->workspace->Snapshot()); callback->Success(CefWriteJSON(result, JSON_WRITER_DEFAULT)); return true;
     }
@@ -818,6 +840,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     if (state_->workspace && state_->workspace->WindowClosing() && method != "browser.getSnapshot" && method != "browser.subscribe") {
       callback->Failure(409, "Window is closing"); return true;
     }
+    if (red::HandleSidebarAction(state_,browser,method,dict,persistent,callback)) return true;
     if (method == "workspace.openDroppedFiles") {
       // Files the OS drag carried into the shell (recorded natively in
       // OnDragEnter; the shell document never supplies paths).
@@ -846,16 +869,6 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       auto value = CefValue::Create(); value->SetDictionary(snapshot);
       state_->Record("page_link_copied"); callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
     }
-    if (method == "browser.restartToUpdate") {
-      if (!state_->workspace || persistent || dict->GetSize() != 1 || !state_->session) {
-        callback->Failure(400, "Invalid update command"); return true;
-      }
-      // Velopack's updater waits for this process to exit; closing every window ends it.
-      if (!red::PrepareRestartToUpdate()) { callback->Failure(409, "No update is ready"); return true; }
-      callback->Success("{}");
-      for (const auto& window : state_->session->Windows()) if (window->window) window->window->Close();
-      return true;
-    }
     if (method == "browser.shortcut") {
       const auto action = dict->GetType("action") == VTYPE_STRING ? red::ShortcutNamed(dict->GetString("action").ToString()) : std::nullopt;
       if (!state_->workspace || persistent || dict->GetSize() != 2 || !action) {
@@ -864,47 +877,6 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       red::ExecuteShortcut(state_, *action);
       auto result = CefValue::Create(); result->SetDictionary(state_->workspace->Snapshot());
       callback->Success(CefWriteJSON(result, JSON_WRITER_DEFAULT)); return true;
-    }
-    if (method == "tab.detach" || method == "tab.dragStarted" || method == "tab.dragCancel" || method == "tab.dragEnded") {
-      if (!state_->workspace || persistent) {
-        callback->Failure(400, "Invalid tab command"); return true;
-      }
-      state_->workspace->HandleTabDrag(dict, [callback](int code, const std::string& error, CefRefPtr<CefDictionaryValue> snapshot) {
-        if (code) { callback->Failure(code, error); return; }
-        auto result = CefValue::Create(); result->SetDictionary(snapshot);
-        callback->Success(CefWriteJSON(result, JSON_WRITER_DEFAULT));
-      });
-      return true;
-    }
-    if (method == "tab.copyLink" || method == "tab.archiveOthers" || method == "tab.archiveBelow" || method == "tab.clearToday" || method == "tab.moveToNewSpace" || method == "tab.setHome") {
-      // Sidebar tab menu actions (ID from the native snapshot; Edit Pinned Page
-      // may carry a new address and title).
-      const bool home = method == "tab.setHome";
-      const bool edited = home && dict->GetSize() == 4 && dict->GetType("url") == VTYPE_STRING && dict->GetType("title") == VTYPE_STRING;
-      if (!state_->workspace || persistent || dict->GetType("id") != VTYPE_STRING || dict->GetString("id").length() != 36 ||
-          (dict->GetSize() != 2 && !edited)) { callback->Failure(400, "Invalid tab command"); return true; }
-      std::string error; const auto id = dict->GetString("id").ToString();
-      const int code = method == "tab.copyLink" ? state_->workspace->CopyTabLink(id, error)
-          : home ? state_->workspace->SetPinnedPage(id, edited ? dict->GetString("url").ToString() : "", edited ? dict->GetString("title").ToString() : "", error)
-          : method == "tab.moveToNewSpace" ? state_->workspace->MoveToNewSpace(id, error)
-          : state_->workspace->ArchiveTodayTabs(id, method == "tab.archiveBelow", error, method == "tab.clearToday");
-      if (code) { callback->Failure(code, error); return true; }
-      auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot());
-      callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
-    }
-    if (method == "tab.duplicate" || method == "tab.mute") {
-      // Sidebar menu actions on one tab (ID from the native snapshot).
-      const bool mute = method == "tab.mute";
-      if (!state_->workspace || persistent || dict->GetSize() != (mute ? 3u : 2u) || dict->GetType("id") != VTYPE_STRING ||
-          dict->GetString("id").length() != 36 || (mute && dict->GetType("muted") != VTYPE_BOOL)) {
-        callback->Failure(400, "Invalid tab command"); return true;
-      }
-      std::string error;
-      const int code = mute ? state_->workspace->SetMuted(dict->GetString("id"), dict->GetBool("muted"), error)
-                            : state_->workspace->Duplicate(dict->GetString("id"), error);
-      if (code) { callback->Failure(code, error); return true; }
-      auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot());
-      callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
     }
     if (method == "extension.open" || method == "extension.menu") {
       // A pinned extension's top-bar button (DIP rect): its popup opens under the button, right
@@ -1246,10 +1218,12 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   }
   void OnTitleChange(CefRefPtr<CefBrowser> browser, const CefString& title) override {
     if (!shell_ && !popup_ && !foreign_ && state_->workspace) state_->workspace->OnTitleChanged(browser);
-    if (!shell_ && !popup_ && !foreign_ && state_->history && !state_->private_window) {
+    const auto profile = red::ProfileForBrowser(state_,browser);
+    const auto history = profile ? profile->history : state_->history;
+    if (!shell_ && !popup_ && !foreign_ && history && !state_->private_window) {
       // Titles usually arrive before the load ends; remember it for the visit.
       title_url_ = browser->GetMainFrame()->GetURL().ToString(); title_ = title.ToString();
-      state_->history->UpdateTitle(title_url_, title_);
+      history->UpdateTitle(title_url_, title_);
     }
   }
   void OnFaviconURLChange(CefRefPtr<CefBrowser> browser, const std::vector<CefString>& icon_urls) override {
@@ -1318,7 +1292,9 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     if (!shell_ && !popup_ && status >= 200 && status < 400) {
       if (state_->history && !foreign_) {
         const auto url = frame->GetURL().ToString();
-        if (!state_->private_window) state_->history->RecordVisit(url, url == title_url_ ? title_ : "");
+        const auto profile = red::ProfileForBrowser(state_,browser);
+        const auto history = profile ? profile->history : state_->history;
+        if (!state_->private_window) history->RecordVisit(url, url == title_url_ ? title_ : "");
         red::OnPrivateProbeLoad(state_, url);
         red::OnHistoryProbeLoad(state_, browser, url);
         red::OnTabActionsProbeLoad(state_, url);
@@ -1442,7 +1418,8 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       SetWindowPos(foreign_root_, nullptr, -32000, -32000, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
       ShowWindow(foreign_root_, SW_HIDE);
     }
-    const bool content_profile = browser->GetHost()->GetRequestContext()->IsSharingWith(state_->WebContext());
+    const bool content_profile = browser->GetHost()->GetRequestContext()->IsSharingWith(state_->WebContext()) ||
+        red::ProfileForBrowser(state_,browser) != nullptr;
     auto details = CefDictionaryValue::Create();
     details->SetInt("browser_id", browser->GetIdentifier()); details->SetBool("content_profile", content_profile);
     details->SetString("root", std::to_string(reinterpret_cast<uintptr_t>(foreign_root_)));
@@ -1483,12 +1460,24 @@ class Client final : public CefClient, public CefLifeSpanHandler,
             if (!after_install) state->workspace->OpenNewTab();
           }, std::weak_ptr<State>(state)), 1500);
         }
-        else if (kind == red::ForeignPage::Adopt && state->workspace->AdoptExtensionPage(url)) outcome = "adopted";
+        else if (kind == red::ForeignPage::Passwords) {
+          // Chrome's save-bubble footer navigates directly, bypassing Chrome
+          // command callbacks. Reopen only the manager in the actual source
+          // profile; never adopt chrome:// into a workspace or fall back to
+          // whichever Space happens to be active now.
+          if(const auto profile=red::ProfileForBrowser(state,browser))
+            if(red::ShowPasswords(state,profile->id,url.starts_with("chrome://password-manager/settings")))outcome="password_manager";
+        }
+        else if (kind == red::ForeignPage::Adopt) {
+          const auto profile = red::ProfileForBrowser(state,browser);
+          if (state->workspace->AdoptExtensionPage(url,profile ? profile->id : state->active_profile)) outcome = "adopted";
+        }
       }
       // A page from the Shell profile is closed silently: the user cannot act
       // on it, and the Shell profile guard handles the underlying violation.
       if (state->workspace && outcome == "rejected" && !wrong_profile)
-        state->workspace->Notify(kind == red::ForeignPage::Adopt ? "An extension tried to open a page while tabs were busy. Try again." :
+        state->workspace->Notify(kind == red::ForeignPage::Passwords ? "Could not open the password manager for this profile." :
+            kind == red::ForeignPage::Adopt ? "An extension tried to open a page while tabs were busy. Try again." :
             "An extension tried to open a page Sol does not support, so it was blocked.");
       auto details = CefDictionaryValue::Create();
       details->SetInt("browser_id", browser->GetIdentifier()); details->SetString("outcome", outcome);
@@ -1603,7 +1592,7 @@ class WindowDelegate final : public CefWindowDelegate {
       state_->panel_popup = std::make_shared<red::PanelPopup>(state_);
       state_->extension_popup = std::make_shared<red::ExtensionPopup>(state_);
       state_->sidebar_peek = std::make_shared<red::SidebarPeek>(state_);
-      state_->extensions = std::make_shared<red::ExtensionCatalog>(state_->profile / "Default");
+      if (!state_->extensions) state_->extensions = std::make_shared<red::ExtensionCatalog>(state_->profile / "Default");
       state_->sidebar_menu = std::make_shared<red::SidebarMenu>(state_);
       window->SetTitle("Sol");
       const auto icon = red::RedWindowIcon();
@@ -1627,7 +1616,7 @@ class WindowDelegate final : public CefWindowDelegate {
       ResizeWorkspace(window);
       state_->workspace->AttachContent();
       state_->Record("window_shown");
-      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_peek_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles ? 30000 : 15000);
+      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_peek_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe ? 30000 : 15000);
       if (state_->input_probe) red::ObserveNativeInput(state_);
       if (!state_->import_probe.empty()) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
         if (auto s = weak.lock()) red::RunImportProbe(s);
@@ -1794,6 +1783,7 @@ class WindowDelegate final : public CefWindowDelegate {
     // parent. Moving the root must not resize pages or publish a workspace.
     if (state_->command_bar && state_->command_bar->is_open()) state_->command_bar->Reposition();
     if (state_->panel_popup && state_->panel_popup->is_open()) state_->panel_popup->Reposition();
+    if (state_->embedded) state_->embedded->NotifyWindowMoved();
     int layouts = 0;
     if (changed) {
       if (state_->workspace_mode) red::ApplyWindowCorners(window);
@@ -1953,6 +1943,8 @@ bool TransferPage(const std::shared_ptr<State>& from, const std::shared_ptr<Stat
   if (from->private_window || to->private_window) return false;
   const auto browser = from->workspace->LiveBrowser(source_id);
   if (!browser || !PageClients().contains(browser->GetIdentifier())) return false;
+  const auto destination_profile = to->workspace->ProfileForNode(node_id);
+  if (destination_profile && !destination_profile->context->IsSharingWith(browser->GetHost()->GetRequestContext())) return false;
   // Its Link Peek (open or parked) goes along; parked, it reopens over the
   // tab in the new window. One that cannot move now keeps the old reload path.
   std::optional<red::WorkspaceController::MovingPeek> peek;
@@ -1968,6 +1960,7 @@ bool TransferPage(const std::shared_ptr<State>& from, const std::shared_ptr<Stat
     if (from->tabs) from->tabs->OnClosed(page_id);
     auto move = [&](auto& from_map, auto& to_map) { if (auto at = from_map.find(page_id); at != from_map.end()) { to_map[page_id] = std::move(at->second); from_map.erase(at); } };
     move(from->audible_frames, to->audible_frames); move(from->media_access, to->media_access); move(from->pip_buttons, to->pip_buttons);
+    move(from->browser_profiles, to->browser_profiles);
     if (from->auto_pip_pages.erase(page_id)) to->auto_pip_pages.insert(page_id);
     std::erase_if(from->popup_pending, [&](const auto& key) { return key.first == page_id; });
     from->browsers.erase(page_id);
@@ -2063,11 +2056,17 @@ bool CreateWorkspaceWindow(const std::shared_ptr<State>& source, const fs::path&
     }
   }
   state->workspace_mode = true; state->profile = source->profile;
+  if (!state->private_window) { state->active_profile = source->active_profile; state->web_context = source->web_context; }
   state->ui_context = source->ui_context;
   state->theme = source->theme; state->sidebar_width = source->sidebar_width;
   state->backdrop_switch = source->backdrop_switch;
   state->downloads = source->downloads; state->history = source->history;
   state->favicons = source->favicons; state->extensions = source->extensions;
+  if (seed) if (const auto profile=source->workspace->ProfileForNode(seed->id)) {
+    state->active_profile=profile->id; state->web_context=profile->context;
+    state->history=profile->history; state->downloads=profile->downloads;
+    state->favicons=profile->favicons; state->extensions=profile->extensions;
+  }
   if (state->private_window) {
     // Dark violet so a private window is never mistaken for a normal one.
     state->theme = red::Theme{278, 100, red::ThemeMode::Dark, 0};
@@ -2245,7 +2244,7 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
       state_->workspace = std::make_shared<red::WorkspaceController>(state_);
       state_->workspace->QueueExternalUrls(state_->external_urls);
       state_->workspace->Start();
-      red::WatchExtensionInstalls(state_, CefRequestContext::GetGlobalContext());
+      state_->extension_install_watch = red::WatchExtensionInstalls(state_, CefRequestContext::GetGlobalContext());
       state_->downloads = std::make_shared<red::DownloadManager>(state_,
           state_->downloads_directory.empty() ? red::DownloadManager::DefaultDirectory() : state_->downloads_directory);
       // Browsing history and finished downloads survive restarts. Earlier
@@ -2259,9 +2258,9 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
             for (const auto& record : records) names->SetString(names->GetSize(), record.name);
             data->SetList("names", names); state->Record("downloads_saved_at_start", data);
           });
-      state_->history->LoadFavicons([weak = std::weak_ptr<State>(state_)](std::vector<std::pair<std::string, std::string>> icons) {
-        auto state = weak.lock(); if (!state || !state->favicons) return;
-        for (const auto& [host, png] : icons) state->favicons->Seed(host, png);
+      state_->history->LoadFavicons([weak = std::weak_ptr<State>(state_), favicons=state_->favicons](std::vector<std::pair<std::string, std::string>> icons) {
+        auto state = weak.lock(); if (!state) return;
+        for (const auto& [host, png] : icons) favicons->Seed(host, png);
         if (state->workspace) state->workspace->Refresh();
       });
       // Chrome's own download bubble ("Don't show when downloads finish") has
@@ -2274,6 +2273,11 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
       auto details = CefDictionaryValue::Create(); details->SetBool("disabled", bubble_off);
       if (!bubble_off) details->SetString("error", error.ToString().substr(0, 200));
       state_->Record("chrome_download_bubble", details);
+    }
+    if (state_->workspace_mode) {
+      state_->session->profiles = std::make_shared<red::BrowsingProfiles>();
+      state_->session->profiles->AdoptDefault(state_);
+      red::SelectBrowsingProfile(state_, "default");
     }
     // A separate regular profile also avoids sharing the theme service between
     // an off-the-record profile and its parent in the same Chrome window.
@@ -2423,7 +2427,8 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->boost_store = command->GetSwitchValue("probe-boost") == "store";
   state->boost_pick = command->GetSwitchValue("probe-boost") == "pick";
   state->ua_brand_probe = command->GetSwitchValue("probe-ua-brand").ToString().substr(0, 32);
-  state->link_headers_probe = command->HasSwitch("probe-link-headers");
+  state->passwords_probe = command->GetSwitchValue("probe-link-headers") == "passwords";
+  state->link_headers_probe = state->passwords_probe || command->HasSwitch("probe-link-headers");
   state->import_probe = command->GetSwitchValue("probe-import").ToString().substr(0, 2048);
   state->devtools_regression = state->probe && command->GetSwitchValue("probe-link-headers") == "devtools";
   if (state->devtools_regression) state->link_headers_cycles = 1;
@@ -2558,6 +2563,9 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
     for (const auto& window : state->session->Windows()) {
       if (window->workspace) window->workspace->Stop();
       window->ui_context = nullptr;
+      window->web_context = nullptr;
+      window->browser_profiles.clear();
+      window->password_windows.clear();
       window->shell_extension_watch = nullptr; window->extension_install_watch = nullptr;
     }
     state->session->StopWorkspaces();

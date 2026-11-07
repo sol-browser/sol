@@ -17,6 +17,7 @@
 #include "windows/sidebar_peek.h"
 #include "windows/window_corners.h"
 #include "workspace/controller.h"
+#include "app/browsing_profiles.h"
 
 namespace red {
 namespace {
@@ -215,8 +216,9 @@ bool EmbeddedContent::Create(const std::string& url, const std::string& node_id)
   // theme/backdrop colors belong to the shell and the Views container.
   settings.background_color = CefColorSetARGB(255, 255, 255, 255);
   info.runtime_style = CEF_RUNTIME_STYLE_CHROME;
+  const auto profile = state->workspace ? state->workspace->ProfileForNode(node_id) : nullptr;
   return CefBrowserHost::CreateBrowser(info, client_factory_(node_id, false), url,
-      settings, nullptr, state->WebContext());
+      settings, nullptr, profile ? profile->context : state->WebContext());
 }
 void EmbeddedContent::Resize(const CefRect& bounds) {
   // Never shrink pages to a minimized window's empty client area.
@@ -255,6 +257,11 @@ void EmbeddedContent::Resize(const CefRect& bounds) {
   if (cold_cover_) ShowColdCover();
   const auto area = NotificationArea();
   corners_.PositionNotification(RECT{area.x, area.y, area.x + area.width, area.y + area.height});
+}
+void EmbeddedContent::NotifyWindowMoved() {
+  for (const auto& [id, browser] : browsers_)
+    if (browser->IsValid() && IsWindowVisible(browser->GetHost()->GetWindowHandle()))
+      browser->GetHost()->NotifyMoveOrResizeStarted();
 }
 CefRect EmbeddedContent::FullClientBounds() const {
   const auto state = state_.lock();

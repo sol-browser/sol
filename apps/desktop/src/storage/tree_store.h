@@ -5,10 +5,20 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <algorithm>
 #include "app/theme_palette.h"
 
 struct sqlite3;
 namespace red {
+inline bool ValidBrowsingProfileId(const std::string& id) {
+  if (id == "default") return true;
+  if (id.size() != 36) return false;
+  for (size_t i = 0; i < id.size(); ++i) {
+    if (i == 8 || i == 13 || i == 18 || i == 23) { if (id[i] != '-') return false; }
+    else if (!((id[i] >= '0' && id[i] <= '9') || (id[i] >= 'a' && id[i] <= 'f'))) return false;
+  }
+  return true;
+}
 struct TreeNode {
   std::string id, parent, title, url;
   bool folder = false, pinned = false, expanded = true, favorite = false, archived = false;
@@ -20,8 +30,9 @@ struct TreeNode {
   int64_t archived_at = 0;
   int64_t last_active_at = 0;
   // Space of a top-level Pinned/Today/archived entry (schema v6). Empty for
-  // Favorites (shared by every space) and nested entries (their root's space).
+  // Favorites (shared by Spaces of one profile) and nested entries (their root's space).
   std::string space;
+  std::string profile = "default";  // Owner of Favorites, which have no Space.
   bool operator==(const TreeNode&) const = default;
 };
 // An Arc-style Space: its own Pinned, Today and theme; Favorites are shared.
@@ -31,7 +42,12 @@ struct Space {
   std::string active_id;  // Last page shown in this space, when it still exists.
   int theme_hue = 307, theme_intensity = 100, theme_mode = 0, theme_noise = 0;
   std::optional<ThemePalette> theme_palette;
+  std::string profile = "default";
   bool operator==(const Space&) const = default;
+};
+struct BrowsingProfileInfo {
+  std::string id, name;
+  bool operator==(const BrowsingProfileInfo&) const = default;
 };
 constexpr int kMaxSpaces = 24;
 struct SplitGroup {
@@ -49,20 +65,24 @@ struct TreeSnapshot {
   std::string active_space;
   std::vector<SplitGroup> splits;
   std::vector<SplitGroup> archived_splits;
+  std::vector<BrowsingProfileInfo> profiles{{"default", "Default"}};
   const Space* ActiveSpace() const;
 };
+std::string BrowsingProfileId(const TreeSnapshot& tree, const std::string& node = "");
 // Sorted root + descendant IDs; empty for an unknown/non-folder root.
 std::vector<std::string> FolderNodeIds(const TreeSnapshot& tree, const std::string& id);
 
 enum class TreeAction { CreateFolder, CreateTab, Rename, AutomaticTitle, Move, Place, Pin, Expand, Activate, RemoveLeaf, RemoveFolder, SetUrl, Unload, Archive, Restore,
   CreateSpace, EditSpace, DeleteSpace, SwitchSpace, MoveSpace, MoveToSpace,
-  CreateSplit, RemoveSplit, RenameSplit, LayoutSplit, SwapSplit, AutoArchive };
+  CreateSplit, RemoveSplit, RenameSplit, LayoutSplit, SwapSplit, AutoArchive, CreateProfile, RenameProfile, SetSpaceProfile, ExportSpace };
 struct TreeCommand {
   TreeAction action;
   std::int64_t expected_revision = 0;
   std::string id, parent, title, url, section, next_active;
   std::optional<std::string> page_title;  // Native metadata for the new URL.
   std::string space, icon;  // Space commands; MoveToSpace target.
+  std::string profile;
+  std::vector<std::string> spaces;  // Atomic initial assignment on CreateProfile.
   std::string after;  // CreateTab: a Today tab to open directly below (a link's opener); else first.
   std::string split_with;  // Native Peek adoption: atomically create Today + pair with this existing page.
   std::string split_source_url,split_source_title;  // Pinned/Favorite source is duplicated into Today.

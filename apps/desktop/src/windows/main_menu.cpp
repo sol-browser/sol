@@ -1,3 +1,4 @@
+#include "app/browsing_profiles.h"
 #include "windows/main_menu.h"
 #include "app/session.h"
 #include "navigation/shortcut_settings.h"
@@ -11,6 +12,8 @@
 #include "windows/menu_popup.h"
 #include "windows/panel_popup.h"
 #include "windows/settings_window.h"
+#include "windows/passwords_window.h"
+#include "include/cef_id_mappers.h"
 #include "workspace/controller.h"
 #include "import/zen_import.h"
 
@@ -29,7 +32,7 @@ void Workspace(const std::shared_ptr<State>& state, CefRefPtr<CefDictionaryValue
 }  // namespace
 
 void PinExtension(const std::shared_ptr<State>& state, const std::string& id, bool pinned) {
-  const auto pins = state->session ? state->session->pinned_extensions : nullptr;
+  const auto pins = ActiveProfilePins(state);
   if (!pins || !state->extensions || (pinned && !state->extensions->Find(id))) return;
   if (!pins->Set(id, pinned)) { if (state->workspace && pinned) state->workspace->Notify("Could not pin the extension."); return; }
   for (const auto& window : state->session->Windows()) if (window->workspace) window->workspace->Refresh();
@@ -42,7 +45,7 @@ void ShowExtensionMenu(const std::shared_ptr<State>& state, const std::string& i
   if (!item || !state->window) return;
   if (!state->menu_popup) state->menu_popup = std::make_shared<MenuPopup>(state);
   const std::weak_ptr<State> weak = state;
-  const auto pins = state->session ? state->session->pinned_extensions : nullptr;
+  const auto pins = ActiveProfilePins(state);
   const bool pinned = pins && pins->Contains(id);
   MenuPopup::Builder menu;
   const auto first = [chosen] { if (chosen) chosen(); };
@@ -142,8 +145,8 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
     s->extensions_window->Show();
   }));
   if (state->extensions && !state->private_window) {
-    const auto installed = state->extensions->List(CefRequestContext::GetGlobalContext());
-    const auto pins = state->session ? state->session->pinned_extensions : nullptr;
+    const auto installed = state->extensions->List(state->WebContext());
+    const auto pins = ActiveProfilePins(state);
     bool first = true;
     for (const auto& item : installed) {
       if (!item.action && item.popup.empty() && item.options.empty()) continue;
@@ -170,6 +173,14 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
 
   menu.Add("History", "history", shortcut(Shortcut::History), Chord(labels, "history"));
   menu.Add("Downloads", "download", shortcut(Shortcut::Downloads), Chord(labels, "downloads"));
+  auto& passwords = menu.Submenu("Passwords", "lock");
+  passwords.Add("Passwords for This Page", "lock", run([](const std::shared_ptr<State>& s) {
+    if (s->content && s->content->GetHost()->CanExecuteChromeCommand(cef_id_for_command_id_name("IDC_MANAGE_PASSWORDS_FOR_PAGE")))
+      s->content->GetHost()->ExecuteChromeCommand(cef_id_for_command_id_name("IDC_MANAGE_PASSWORDS_FOR_PAGE"), CEF_WOD_CURRENT_TAB);
+  }), "", state->content && state->content->GetHost()->CanExecuteChromeCommand(cef_id_for_command_id_name("IDC_MANAGE_PASSWORDS_FOR_PAGE")));
+  passwords.Add("Manage Passwords", "settings", run([](const std::shared_ptr<State>& s) {
+    ShowPasswords(s, s->active_profile);
+  }), "", !state->private_window && !standalone);
   menu.Separator();
   if (!standalone) menu.Add("Theme", "palette", run([anchor](const std::shared_ptr<State>& s) { if (s->panel_popup) s->panel_popup->Toggle("theme", anchor); }));
   menu.Add("Settings", "settings", run([](const std::shared_ptr<State>& s) { ShowSettings(s); }), Chord(labels, "settings"));

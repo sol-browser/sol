@@ -89,5 +89,15 @@ int main() {
     check(!Find(red::SidebarMenuItems(three, "d", spaces, "home"), "archiveBelow")->enabled, "last Today tab: nothing below");
     check(Find(red::SidebarMenuItems(spaced, "", spaces, "home"), "newSpace") != nullptr, "sidebar background offers a new space");
   }
+  {
+    auto items=red::SpaceMenuItems({{"home","Home"},{"work","Work"}},{{"default","Default"},{"office","Office"}},"home","office");
+    check(Find(items,"setProfile","office") && Find(items,"setProfile","office")->checked && !Find(items,"setProfile","default")->checked,
+      "Space menu checks its assigned profile");
+    check(Find(items,"editTheme") && Find(items,"newProfile") && Find(items,"newFolder") && Find(items,"exportSpace","work") && Find(items,"deleteSpace"),
+      "Space Edit offers theme, profiles, folder, export and deletion");
+    check(!Find(items,"rename") && !Find(items,"editIcon") && !Find(items,"exportSpace","home"),"Space menu excludes duplicated editor actions and self-export");
+    items=red::SpaceMenuItems({{"home","Home"}},{{"default","Default"}},"home","default");
+    check(!Find(items,"deleteSpace")->enabled,"last Space cannot be deleted from Edit");
+  }
   return failures ? 1 : 0;
 }

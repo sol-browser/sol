@@ -1,6 +1,7 @@
 #pragma once
 #include "history/favicon_request.h"
 #include <charconv>
+#include <atomic>
 #include <memory>
 #include <map>
 #include <mutex>
@@ -85,7 +86,6 @@ class FaviconCache {
   struct Site {
     IconPtr fallback;
     std::map<uint64_t, std::weak_ptr<const Icon>> icons;
-    uint64_t version = 0;
   };
   struct Page { FaviconRequest request; IconPtr icon; };
   static std::optional<std::string> IconUrl(const IconPtr& icon) {
@@ -100,12 +100,13 @@ class FaviconCache {
         it = site.icons.erase(it);
       }
     }
-    const auto version = ++site.version;
+    const auto version = ++next_version_;
     auto icon = std::make_shared<const Icon>(Icon{png, "sol://ui/favicon/" + host + "/v" + std::to_string(version)});
     site.icons.emplace(version, icon);
     return icon;
   }
   mutable std::mutex mutex_;
+  inline static std::atomic<uint64_t> next_version_{0};
   std::map<std::string, Site> sites_;
   std::map<int, Page> pages_;
 };

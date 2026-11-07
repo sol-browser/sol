@@ -14,7 +14,16 @@ export function isFaviconUrl(value: unknown): value is string {
     /^sol:\/\/ui\/favicon\/(?!\.)[a-z0-9.-]{1,253}\/v[1-9][0-9]{0,19}$/u.test(value);
 }
 /** An Arc-style Space: its own Pinned, Today and theme (hue/intensity for its switcher dot). */
-export type SpaceInfo = { id: string; name: string; icon: string; position: number; hue: number; intensity: number };
+export type BrowsingProfileInfo = { id: string; name: string };
+const validProfileId = (value: unknown): value is string => typeof value === 'string' &&
+  (value === 'default' || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value));
+function validProfiles(value: unknown): value is BrowsingProfileInfo[] {
+  return Array.isArray(value) && value.length >= 1 && value.length <= 24 &&
+    value.every(profile => object(profile) && validProfileId(profile.id) && typeof profile.name === 'string' &&
+      !!profile.name.trim() && profile.name.length <= 40) &&
+    new Set(value.map(profile => profile.id)).size === value.length;
+}
+export type SpaceInfo = { id: string; name: string; icon: string; position: number; hue: number; intensity: number; profileId?: string };
 /** Complete ZWJ/skin-tone emoji, bounded in code points and UTF-8 bytes. */
 export function validSpaceIcon(value:unknown):value is string {
   return typeof value==='string'&&Array.from(value).length<=16&&new TextEncoder().encode(value).length<=128&&!/[\u0000-\u0020\u007f\ud800-\udfff]/u.test(value);
@@ -58,7 +67,7 @@ export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boo
   lifecycleMode?: 'full' | 'restore' | 'hold' | 'manual'; lifecycleArmedCount?: number; lifecycleInspections?: number; windowCloseCancelled?: number;
   notice?: string; noticeId?: number; shellExtensions?: number; windowMaximized?: boolean;
   downloads?: DownloadItem[]; downloadsStarted?: number; downloadsProbe?: boolean; theme?: Theme; paletteProbe?: boolean;
-  spaces?: SpaceInfo[]; activeSpace?: string; devTools?: DevToolsInfo; devicePreview?: DevicePreview };
+  spaces?: SpaceInfo[]; activeSpace?: string; profiles?: BrowsingProfileInfo[]; activeProfile?: string; devTools?: DevToolsInfo; devicePreview?: DevicePreview };
 // Shell theme (Arc-style theme color): hue 0–359 replaces the authored purple,
 // intensity is percent of the authored chroma (0 gray … 160), noise 0–100 is
 // background grain. |dark| is the resolved mode (system follows Windows).
@@ -83,8 +92,13 @@ export type SettingsCommand = { method: 'settings.get' | 'settings.ready' | 'set
   | { method: 'settings.set'; key: 'askDownload' | 'searchSuggestions' | 'autoPictureInPicture' | 'pipButton'; value: boolean }
   | { method: 'settings.set'; key: 'autoArchiveHours' | 'unloadMinutes'; value: number }
   | { method: 'settings.shortcut'; action: string; binding: KeyBinding | null }
+  | { method: 'settings.passwords'; profile: string; settings: boolean }
+  | { method: 'profile.create'; title: string; spaceIds?: string[] }
+  | { method: 'profile.rename'; id: string; title: string }
   | ThemeCommand;
 export type SettingsSnapshot = {
+  profiles?: BrowsingProfileInfo[]; activeProfile?: string;
+  spaces?: SpaceInfo[];
   standalone?: boolean;
   theme: Theme; ready: boolean; spaceName: string; spaceId: string; version: string; chromiumVersion: string;
   defaultBrowser: { installed: boolean; registered: boolean; isDefault: boolean | null };
@@ -96,6 +110,14 @@ export type SettingsSnapshot = {
 };
 export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
   const value: unknown = JSON.parse(raw);
+  if (object(value) && value.spaces !== undefined && (!Array.isArray(value.spaces) || value.spaces.length>24 ||
+      new Set(value.spaces.map(space=>object(space)?space.id:undefined)).size!==value.spaces.length ||
+      !value.spaces.every(space=>object(space) && typeof space.id==='string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(space.id) &&
+        typeof space.name==='string' && !!space.name.trim() && space.name.length<=40 && validSpaceIcon(space.icon) &&
+        validProfileId(space.profileId) && Array.isArray(value.profiles) && value.profiles.some(profile=>object(profile)&&profile.id===space.profileId))))
+    throw new Error('Invalid profile Spaces');
+  if (object(value) && value.profiles !== undefined && (!validProfiles(value.profiles) ||
+      !value.profiles.some(profile => profile.id === value.activeProfile))) throw new Error('Invalid browsing profiles');
   if (!object(value) || !validTheme(value.theme) || typeof value.ready !== 'boolean' ||
       typeof value.spaceName !== 'string' || value.spaceName.length > 40 || typeof value.spaceId !== 'string' || value.spaceId.length > 36 ||
       typeof value.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(value.version) ||
@@ -175,11 +197,15 @@ export type TreeMutation =
   | { method: 'tree.activate' | 'tree.close' | 'tree.archive' | 'tree.restore' | 'tree.reset' | 'tree.usePageTitle'; id: string }
   | { method: 'tree.removeFolder'; id: string; confirmation?: { revision: number; tabs: number } }
   | { method: 'tree.moveToSpace'; id: string; space: string }
-  | { method: 'space.create'; title: string; icon: string }
+  | { method: 'space.create'; title: string; icon: string; profileId?: string }
+  | { method: 'profile.create'; title: string; spaceIds?: string[] }
+  | { method: 'profile.rename'; id: string; title: string }
+  | { method: 'space.profile'; id: string; profileId: string }
+  | { method: 'space.export'; id: string; space: string }
   | { method: 'space.edit'; id: string; title: string; icon: string }
   | { method: 'space.delete' | 'space.switch'; id: string }
   | { method: 'space.move'; id: string; position: number };
-export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'navigation.forward' | 'navigation.reload' | 'navigation.stop' | 'navigation.copyLink' | 'navigation.resetZoom' | 'workspace.openDroppedFiles' }
+export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'navigation.forward' | 'navigation.reload' | 'navigation.stop' | 'navigation.copyLink' | 'navigation.resetZoom' | 'workspace.openDroppedFiles' | 'settings.openProfiles' }
   | { method: 'navigation.openEntry'; offset: -1 | 1 }
   | { method: 'navigation.historyMenu'; x: number; y: number; width: number; height: number }
   | { method: 'media.control'; id: string; action: 'toggle' | 'mute' | 'dismiss' | 'open' | 'pip' | 'previous' | 'next' }
@@ -212,17 +238,17 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'navigation.load'; url: string }
   | { method: 'probe.commandInput'; url: string }
   | { method: 'probe.commandCancel' }
-  | { method: 'probe.contextMenuSelect'; action?: 'rename' | 'removeFolder' }
+  | { method: 'probe.contextMenuSelect'; action?: 'rename' | 'removeFolder' | 'editTheme' }
   | (TreeMutation & { expectedRevision: number });
 
 const object = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 export const sidebarMenuActions = ['cancel', 'activate', 'expand', 'rename', 'automaticTitle', 'newFolder', 'newTab', 'showArchive', 'restore', 'reset', 'favorites', 'pinned', 'today', 'folder', 'up', 'down', 'close', 'archive', 'removeFolder', 'duplicate', 'detach', 'mute', 'unmute', 'space', 'newSpace', 'split', 'unsplit', 'swapSplit', 'renamePane',
-  'copyLink', 'setHome', 'editPinned', 'archiveOthers', 'archiveBelow', 'newSpaceWith', 'editTheme'] as const;
+  'copyLink', 'setHome', 'editPinned', 'archiveOthers', 'archiveBelow', 'newSpaceWith', 'editTheme', 'setProfile', 'newProfile', 'exportSpace', 'deleteSpace'] as const;
 export type SidebarMenuChoice = { action: typeof sidebarMenuActions[number]; targetId: string };
 export function parseSidebarMenuChoice(raw: string): SidebarMenuChoice {
   const choice: unknown = JSON.parse(raw);
   if (!object(choice) || Object.keys(choice).length !== 2 || !sidebarMenuActions.includes(choice.action as SidebarMenuChoice['action']) ||
-      typeof choice.targetId !== 'string' || (choice.action === 'folder' || choice.action === 'space' || choice.action === 'split' || choice.action === 'renamePane' ? !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(choice.targetId) : choice.targetId !== ''))
+      typeof choice.targetId !== 'string' || (choice.action === 'setProfile' ? !validProfileId(choice.targetId) : choice.action === 'exportSpace' ? !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(choice.targetId) : (choice.action === 'folder' || choice.action === 'space' || choice.action === 'split' || choice.action === 'renamePane' ? !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(choice.targetId) : choice.targetId !== '')))
     throw new Error('Invalid sidebar menu choice');
   return choice as SidebarMenuChoice;
 }
@@ -336,6 +362,8 @@ export function parseSnapshot(raw: string): Snapshot {
     if (s.devTools !== undefined && !validDevTools(s.devTools)) throw new Error('Invalid developer tools layout');
     if (s.devicePreview !== undefined && !validDevicePreview(s.devicePreview)) throw new Error('Invalid device preview');
     if (s.theme !== undefined && !validTheme(s.theme)) throw new Error('Invalid theme');
+    if (s.profiles !== undefined && (!validProfiles(s.profiles) || !s.profiles.some(profile => profile.id === s.activeProfile)))
+      throw new Error('Invalid browsing profiles');
     if (s.spaces !== undefined) {
       if (!Array.isArray(s.spaces) || s.spaces.length < (s.windowKind === 'standalone' ? 0 : 1) || s.spaces.length > 24) throw new Error('Invalid spaces');
       const seen = new Set<string>();
@@ -344,6 +372,8 @@ export function parseSnapshot(raw: string): Snapshot {
           || v.name.length > 40 || !validSpaceIcon(v.icon) || !integer(v.position)
           || !integer(v.hue) || (v.hue as number) > 359 || !integer(v.intensity) || (v.intensity as number) > 160) throw new Error('Invalid space');
         seen.add(v.id);
+        if (v.profileId !== undefined && (!validProfileId(v.profileId) ||
+          (s.profiles && !s.profiles.some(profile => profile.id === v.profileId)))) throw new Error('Invalid space profile');
       }
       if (typeof s.activeSpace !== 'string' || (s.windowKind !== 'standalone' && !seen.has(s.activeSpace))) throw new Error('Invalid active space');
     }

@@ -1,6 +1,9 @@
+#include "experiments/utility_windows_probe.h"
 #include "experiments/link_headers_probe.h"
 #include "experiments/platform_codecs_probe.h"
 #include "experiments/devtools_probe.h"
+#include "experiments/profiles_probe.h"
+#include "experiments/passwords_probe.h"
 #include "experiments/page_background_probe.h"
 #include "include/base/cef_callback.h"
 #include "include/wrapper/cef_closure_task.h"
@@ -425,11 +428,23 @@ void Transfer(std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
 // Clicks the fixture's fixed link (at 60,60) with a real input gesture. What
 // the target server receives is the evidence; nothing is read from the page.
 void OnLinkHeadersProbeLoad(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page, const std::string& url) {
+  // The password-change fixture reuses one persistent profile. Session restore
+  // may first open its previous login page; explicitly navigate that disposable
+  // tab to this launch's requested stage before starting the input sequence.
+  if (state->probe && state->passwords_probe && state->link_headers_phase == 0 &&
+      state->initial_url.starts_with("http://127.0.0.1:") &&
+      (state->initial_url.ends_with("/source?passwords-update") || state->initial_url.ends_with("/source?passwords-updated")) &&
+      url != state->initial_url) {
+    page->GetMainFrame()->LoadURL(state->initial_url); return;
+  }
   if (state->link_headers_probe && state->link_headers_inspect && state->link_headers_phase == 0 && url.find("/source") != std::string::npos) {
     state->link_headers_phase = 1; Inspect(std::weak_ptr<State>(state), page); return;
   }
   if (!state->link_headers_probe || state->link_headers_phase != 0 || url.find("/source") == std::string::npos) return;
   state->link_headers_phase = 1;
+  if (url.ends_with("/source?utility-windows")) { StartUtilityWindowsProbe(state); return; }
+  if (url.ends_with("/source?passwords-update") || url.ends_with("/source?passwords-updated") || url.ends_with("/source?passwords-move") || url.ends_with("/source?passwords-link") || url.ends_with("/source?passwords-dismiss") || url.ends_with("/source?passwords-save") || url.ends_with("/source?passwords-check")) { StartPasswordsProbe(state, page, url); return; }
+  if (url.ends_with("/source?profiles")) { StartProfilesProbe(state, url); return; }
   if (state->devtools_regression) { StartDevToolsProbe(state, page); return; }
   if (state->platform_codecs_probe) { StartPlatformCodecs(state, page); return; }
   if (url.ends_with("/source?status")) { LinkStatus(std::weak_ptr<State>(state),page); return; }

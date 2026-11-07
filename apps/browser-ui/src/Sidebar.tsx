@@ -13,7 +13,7 @@ import { SpaceTransition } from './SpaceTransition';
 import { SpaceHeader } from './SpaceHeader';
 import { useAudioIndicator } from './useAudioIndicator';
 
-type Props = { nodes: TreeNode[]; treeRevision: number; activeId: string; busy: boolean; openNewTab: () => void; hidden: boolean; standalone?: boolean;
+export type SidebarProps = { nodes: TreeNode[]; treeRevision: number; activeId: string; busy: boolean; openNewTab: () => void; hidden: boolean; activeSurface?: boolean; standalone?: boolean;
   newTabShortcut?: string;
   /** Arc-style spaces: the switcher, header and which entries show. */
   spaces: SpaceInfo[]; activeSpace: string;
@@ -22,7 +22,7 @@ type Props = { nodes: TreeNode[]; treeRevision: number; activeId: string; busy: 
   /** Opens the native space editor (name, icon, theme) anchored at the element. */
   editSpace: (anchor: HTMLElement) => void;
   newSpace: (anchor: HTMLElement) => void;
-  /** A flow asked for by the browser menu (docked sidebar only). */
+  /** A browser-menu flow; only the active surface consumes it. */
   request?: { id: number; action: 'newSpace' | 'editSpace' | 'newFolder' };
   action: (command: TreeMutation) => Promise<boolean>;
   // Local files dropped on the sidebar (paths stay native; see OnDragEnter).
@@ -34,11 +34,13 @@ type Props = { nodes: TreeNode[]; treeRevision: number; activeId: string; busy: 
   /** A downloaded Sol version; the pill restarts Sol into it. */
   updateReady?: string;
   restartToUpdate?: () => void };
+type Props = SidebarProps;
 export type TabCommand = { method: 'split.focus'; id: string }
+  | { method:'settings.openProfiles' }
   | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
   | { method: 'tab.setHome'; id: string; url: string; title: string } | { method: 'tab.mute'; id: string; muted: boolean }
   | Extract<Command, { method: 'media.control' }>;
-export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, newSpace, request, media, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate }: Props) {
+export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, activeSurface = true, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, newSpace, request, media, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate }: Props) {
   // Favorite tiles are tinted with their icon's color, read once per icon.
   const [, retint] = useReducer((n: number) => n + 1, 0);
   // A closing Today tab leaves the list as soon as native close starts, so the
@@ -53,6 +55,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   const [removal, setRemoval] = useState<(NonNullable<ReturnType<typeof folderRemovalSummary>> & { revision: number; error?: string })>();
   const [removing, setRemoving] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [deletingSpace,setDeletingSpace]=useState<SpaceInfo>();
   const removalPending = useRef(false);
   const cancelRemovalButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -84,7 +87,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   useEffect(() => {
     if (!request || request.id === handled.current) return;
     handled.current = request.id;
-    if (hidden) return;
+    if (hidden || !activeSurface) return;
     if (request.action === 'newSpace') createSpace();
     else if (request.action === 'newFolder') void createFolder();
     else if (header.current) editSpace(header.current);
@@ -284,11 +287,12 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   }
   const activeAnchor = tree.find(n => n.id === activeId)?.splitAnchor ?? activeId;
   const active = nodes.find(n => n.id === activeAnchor);
-  async function context(id: string, x: number, y: number) {
+  async function context(id: string, x: number, y: number, spaceMenu = false) {
     if (current.current.busy || renaming) return;
     setMenuError('');
     try {
-      const choice = await openSidebarMenu(id, x, y);
+      const ownerSpace=activeSpace;
+      const choice = await openSidebarMenu(id, x, y, spaceMenu);
       const data = current.current.nodes;
       if (current.current.busy || choice.action === 'cancel') return;
       if (!id) {
@@ -297,6 +301,10 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
         else if (choice.action === 'showArchive' && archiveButton.current) openArchive(archiveButton.current);
         else if (choice.action === 'newSpace') createSpace();
         else if (choice.action === 'editTheme' && header.current) editSpace(header.current);
+        else if (choice.action === 'setProfile') await perform({method:'space.profile',id:ownerSpace,profileId:choice.targetId});
+        else if (choice.action === 'newProfile') tabCommand({method:'settings.openProfiles'});
+        else if (choice.action === 'exportSpace') await perform({method:'space.export',id:ownerSpace,space:choice.targetId});
+        else if (choice.action === 'deleteSpace') setDeletingSpace(spaces.find(space=>space.id===ownerSpace));
         return;
       }
       const node = data.find(n => n.id === id && !n.closing);
@@ -573,12 +581,20 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       e.preventDefault(); void context('', e.clientX || 20, e.clientY || 60);
     }} onWheel={onWheel}>
     {menuError && <p className="sidebar-menu-error" role="alert">{menuError}</p>}
+    {deletingSpace && <section className="space-delete-confirm" role="alertdialog" aria-labelledby="delete-space-question"
+      onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();setDeletingSpace(undefined);}}}>
+      <p id="delete-space-question">Delete “{deletingSpace.name}” and its tabs?</p>
+      <div><button type="button" autoFocus onClick={()=>setDeletingSpace(undefined)}>Cancel</button>
+        <button type="button" disabled={busy} onClick={()=>void perform({method:'space.delete',id:deletingSpace.id}).then(ok=>{if(ok)setDeletingSpace(undefined);})}>Delete Space</button></div>
+    </section>}
     {!standalone && <div className="sidebar-fixed">
     <div className="sidebar-favorites" ref={favoriteMotion.scrollRef}>
       {zone('favorites', 'Favorites')}
       <div className="sidebar-motion-layer" ref={favoriteMotion.layerRef} aria-hidden="true" />
     </div>
-    <SpaceHeader key={activeSpace} space={space} busy={busy} anchorRef={header} action={action} editSpace={editSpace} />
+    <SpaceHeader key={activeSpace} space={space} busy={busy} anchorRef={header} action={action} editSpace={anchor=>{
+      const bounds=anchor.getBoundingClientRect(); void context('',bounds.left,bounds.bottom,true);
+    }} />
     </div>}
     <SpaceTransition spaceId={activeSpace} position={space?.position ?? 0} hidden={hidden} scrollRef={scrollRef} layerRef={layerRef}>
     {!standalone && <>{zone('pinned', 'Pinned')}
@@ -586,10 +602,11 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       clear={() => { if (todayTabs[0]) tabCommand({ method: 'tab.clearToday', id: todayTabs[0].id }); setClearing(false); }} /></>}
     {zone('today', 'Today')}
     </SpaceTransition>
-    {!standalone && !!media?.length && <MediaStack media={media} nodes={tree} command={tabCommand} />}
-    {!standalone && updateReady && restartToUpdate && <button type="button" className="update-pill" data-action="restart-to-update"
+    {!standalone && <div className="sidebar-footer">
+    {!!media?.length && <MediaStack media={media} nodes={tree} command={tabCommand} />}
+    {updateReady && restartToUpdate && <button type="button" className="update-pill" data-action="restart-to-update"
       title={`Sol ${updateReady} is ready`} onClick={restartToUpdate}><Icon name="logo" /><span>Restart to update</span></button>}
-    {!standalone && <div className="sidebar-bottom">
+    <div className="sidebar-bottom">
       <button ref={archiveButton} data-action="archive" title="Archived tabs" aria-label="Archive" onClick={e => openArchive(e.currentTarget)}><Icon name="archive" /></button>
       {/* Arc: the space switcher along the bottom; Ctrl+1…9 or a horizontal swipe also switch. */}
       <nav className="space-switcher" aria-label="Spaces">
@@ -601,6 +618,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       </nav>
       <button type="button" className="space-add" aria-label="New space" title="New space" disabled={busy || spaces.length >= 24}
         onClick={createSpace}><Icon name="plus" /></button>
+    </div>
     </div>}
   </aside>;
 }

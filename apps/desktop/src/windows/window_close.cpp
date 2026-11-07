@@ -1,3 +1,4 @@
+#include "windows/browser_dialogs.h"
 #include "windows/window_close.h"
 #include "windows/tab_drag_preview.h"
 #include <windows.h>
@@ -7,6 +8,7 @@
 #include "windows/menu_popup.h"
 #include "windows/extension_popup.h"
 #include "windows/extensions_window.h"
+#include "windows/passwords_window.h"
 #include "windows/sidebar_peek.h"
 #include "windows/sidebar_menu.h"
 #include "include/base/cef_callback.h"
@@ -47,6 +49,7 @@ void WindowClose::Begin() {
   if (state->menu_popup) state->menu_popup->Close(false);
   if (state->extension_popup) state->extension_popup->Close();
   if (state->extensions_window) state->extensions_window->Close();
+  for (const auto& [id, manager] : state->password_windows) manager->Close();
   if (state->sidebar_peek) state->sidebar_peek->SetEnabled(false);
   for (const auto& [id, browser] : state->browsers)
     if (id != state->shell_id && id != state->command_id && id != state->panel_id && id != state->peek_id &&
@@ -85,7 +88,7 @@ void WindowClose::Advance() {
     if (state->sidebar_peek) state->sidebar_peek->Shutdown();
     state->window->Close();
   }
-  else browser->second->GetHost()->CloseBrowser(false);
+  else CloseBrowserWithDialogs(state_, browser->second, false);
 }
 void WindowClose::QueueAdvance() {
   if (queued_) return;

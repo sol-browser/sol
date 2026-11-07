@@ -8,7 +8,7 @@ class SidebarMenu : public std::enable_shared_from_this<SidebarMenu> {
  public:
   explicit SidebarMenu(std::weak_ptr<State> state) : state_(std::move(state)) {}
   void Open(const std::string& id, int x, int y, int64_t query, CefRefPtr<CefMessageRouterBrowserSide::Callback> callback,
-            CefRefPtr<CefBrowser> source = nullptr);
+            CefRefPtr<CefBrowser> source = nullptr, bool space_menu = false);
   void Cancel(int64_t query = -1, bool reply = true);
   void Execute(unsigned generation, int command);
   // A row chosen in Red's menu: remember it, then finish as a closing menu does.

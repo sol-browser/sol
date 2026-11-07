@@ -56,6 +56,11 @@ int main() {
     check(!red::IsExtensionPageUrl(url), "malformed or non-extension URL rejected");
   }
   using red::ForeignPage;
+  for(auto url:{"chrome://password-manager/","chrome://password-manager/passwords","chrome://password-manager/settings?referrer=1"})
+    check(red::ClassifyForeignPage(url)==ForeignPage::Passwords,"native password UI routes to the dedicated manager");
+  for(auto url:{"chrome://password-manager.evil/","chrome://password-manager@evil/","https://password-manager/","sol://password-manager/"})
+    check(!red::IsPasswordManagerUrl(url),"password manager requires the exact internal host");
+
   check(red::ClassifyForeignPage("") == ForeignPage::Wait && red::ClassifyForeignPage("about:blank") == ForeignPage::Wait, "initial blank waits");
   check(red::ClassifyForeignPage("chrome://newtab/") == ForeignPage::NewTab, "empty tabs.create maps to new-tab composer");
   check(red::ClassifyForeignPage("chrome://new-tab-page/") == ForeignPage::NewTab, "observed Chromium 154 new tab page maps to composer");

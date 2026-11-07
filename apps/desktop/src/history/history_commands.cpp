@@ -4,6 +4,7 @@
 #include "history/history_service.h"
 #include "app/preferences.h"
 #include "app/session.h"
+#include "app/browsing_profiles.h"
 #include "include/cef_parser.h"
 #include "workspace/controller.h"
 
@@ -42,15 +43,17 @@ bool HourClock(const std::shared_ptr<State>& state) {
 
 bool HandleHistoryCommand(const std::shared_ptr<State>& state, const std::string& method,
                           CefRefPtr<CefDictionaryValue> d, CefRefPtr<CefMessageRouterBrowserSide::Callback> cb,
-                          std::function<void()> opened) {
+                          std::function<void()> opened, std::shared_ptr<BrowsingProfile> profile) {
   if (!method.starts_with("history.")) return false;
-  if (!state->history || !state->workspace) { cb->Failure(503, "History unavailable"); return true; }
+  const auto history = profile ? profile->history : state->history;
+  const auto favicons = profile ? profile->favicons : state->favicons;
+  if (!history || !state->workspace) { cb->Failure(503, "History unavailable"); return true; }
   int64_t number = 0;
   if (method == "history.list" && d->GetSize() == 3 && WholeNumber(d->GetValue("before"), number) &&
       d->GetType("query") == VTYPE_STRING && d->GetString("query").length() <= 200) {
     constexpr size_t kPage = 60;
     const bool hour12 = HourClock(state);
-    state->history->Visits(number, kPage + 1, d->GetString("query"), [cb, hour12, favicons = state->favicons](std::vector<Visit> visits) {
+    history->Visits(number, kPage + 1, d->GetString("query"), [cb, hour12, favicons](std::vector<Visit> visits) {
       const bool more = visits.size() > kPage; if (more) visits.pop_back();
       cb->Success(VisitsJson(visits, more, hour12, favicons));
     });
@@ -58,7 +61,7 @@ bool HandleHistoryCommand(const std::shared_ptr<State>& state, const std::string
   }
   // The page's day rail: every day with history, not only the loaded pages.
   if (method == "history.days" && d->GetSize() == 2 && d->GetType("query") == VTYPE_STRING && d->GetString("query").length() <= 200) {
-    state->history->Days(400, d->GetString("query"), [cb](std::vector<VisitDay> days) {
+    history->Days(400, d->GetString("query"), [cb](std::vector<VisitDay> days) {
       auto list = CefListValue::Create();
       for (const auto& day : days) {
         auto row = CefDictionaryValue::Create(); row->SetString("date", day.date);
@@ -71,7 +74,7 @@ bool HandleHistoryCommand(const std::shared_ptr<State>& state, const std::string
     return true;
   }
   if (method == "history.delete" && d->GetSize() == 2 && WholeNumber(d->GetValue("id"), number) && number >= 1) {
-    state->history->DeleteVisit(number, [cb](bool removed) { if (removed) cb->Success("{}"); else cb->Failure(404, "Visit is no longer in history"); });
+    history->DeleteVisit(number, [cb](bool removed) { if (removed) cb->Success("{}"); else cb->Failure(404, "Visit is no longer in history"); });
     return true;
   }
   if (method == "history.deleteMany" && d->GetSize() == 2 && d->GetType("ids") == VTYPE_LIST) {
@@ -81,7 +84,7 @@ bool HandleHistoryCommand(const std::shared_ptr<State>& state, const std::string
       if (WholeNumber(list->GetValue(i), number) && number >= 1) ids.push_back(number);
     if (ids.empty() || ids.size() != list->GetSize()) { cb->Failure(400, "Invalid history selection"); return true; }
     auto remaining = std::make_shared<size_t>(ids.size()); auto removed = std::make_shared<int>(0);
-    for (const auto id : ids) state->history->DeleteVisit(id, [cb, remaining, removed](bool ok) {
+    for (const auto id : ids) history->DeleteVisit(id, [cb, remaining, removed](bool ok) {
       if (ok) ++*removed;
       if (--*remaining == 0) cb->Success("{\"removed\":" + std::to_string(*removed) + "}");
     });
@@ -91,7 +94,7 @@ bool HandleHistoryCommand(const std::shared_ptr<State>& state, const std::string
   if (method == "history.clear" && d->GetSize() == 2 && (range == "hour" || range == "day" || range == "week" || range == "all")) {
     const int64_t now = NowMs(), hour = 60LL * 60 * 1000;
     const int64_t from = range == "all" ? 0 : now - (range == "hour" ? hour : range == "day" ? 24 * hour : 7 * 24 * hour);
-    state->history->DeleteRange(from, now + 1, [cb, weak = std::weak_ptr<State>(state)](int removed) {
+    history->DeleteRange(from, now + 1, [cb, weak = std::weak_ptr<State>(state)](int removed) {
       if (auto s = weak.lock()) { auto data = CefDictionaryValue::Create(); data->SetInt("removed", removed); s->Record("history_cleared", data); }
       cb->Success("{}");
     });

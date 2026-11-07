@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { placement, descendant, ordered, displayTitle, sidebarWidth, archiveOrder, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary } from '../apps/browser-ui/src/sidebar-model.ts';
+import { sidebarPresentation } from '../apps/browser-ui/src/sidebar-presentation.ts';
+
 const n = (id, parentId, position, kind = 'tab', pinned = false) => ({ id, parentId, position, kind, pinned, archived: false, favorite: false });
 const nodes = () => [n('today', '', 0), n('folder', '', 1, 'folder', true), n('sibling', '', 2, 'tab', true), n('nested', 'folder', 0, 'folder', true), n('child', 'nested', 0, 'tab', true)];
 
@@ -124,4 +126,28 @@ test('spaces: top-level entries show in their space; Favorites and nested entrie
   assert.equal(neighborSpace(spaces, 'a', 1), 'b');
   assert.equal(neighborSpace(spaces, 'c', 1), undefined);
   assert.equal(neighborSpace(spaces, 'b', -1), 'a');
+});
+
+
+test('both sidebar surfaces receive updates, media and browser requests from the same projection', () => {
+  const snapshot={ready:true,nodes:[],treeRevision:12,activeId:'tab',spaces:[],activeSpace:'work',sidebarVisible:false,
+    updateReady:'0.1.6',sidebarRequest:{id:9,action:'newFolder'},media:[{id:4,title:'Playing'}],shortcutLabels:{newTab:'Ctrl+T'}};
+  const docked=sidebarPresentation(snapshot,'docked'), floating=sidebarPresentation(snapshot,'floating');
+  const {hidden:dh,activeSurface:da,...dockData}=docked;
+  const {hidden:fh,activeSurface:fa,...floatData}=floating;
+  assert.deepEqual(dockData,floatData);
+  assert.equal(floating.updateReady,'0.1.6');assert.equal(floating.media,snapshot.media);
+  assert.equal(floating.request,snapshot.sidebarRequest);assert.equal(floating.newTabShortcut,'Ctrl+T');
+  assert.deepEqual([dh,da,fh,fa],[true,false,false,true]);
+  const open={...snapshot,sidebarVisible:true};
+  assert.equal(sidebarPresentation(open,'docked').activeSurface,true);
+  assert.equal(sidebarPresentation(open,'floating').activeSurface,false);
+});
+test('closing, standalone and empty sidebar states have identical semantics in both hosts', () => {
+  for(const surface of ['docked','floating']) {
+    const empty=sidebarPresentation({ready:false},surface);
+    assert.equal(empty.busy,true);assert.deepEqual(empty.nodes,[]);assert.deepEqual(empty.spaces,[]);
+    const closing=sidebarPresentation({ready:true,windowClosing:true,windowKind:'standalone'},surface);
+    assert.equal(closing.busy,true);assert.equal(closing.standalone,true);
+  }
 });

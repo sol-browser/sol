@@ -1,4 +1,6 @@
 #include "experiments/sidebar_peek_probe.h"
+#include "experiments/shell_capture.h"
+#include "windows/panel_popup.h"
 #include <windows.h>
 #include <cstdio>
 #include "include/base/cef_callback.h"
@@ -11,6 +13,18 @@ namespace {
 constexpr char kScript[] = R"JS((async()=>{
 const q=r=>new Promise((ok,no)=>window.cefQuery({request:JSON.stringify(r),persistent:false,onSuccess:ok,onFailure:c=>no(c)}));
 let refused=0;try{await q({method:'navigation.load',url:'https://example.com/'});}catch(c){refused=c;}
+await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+const update=document.querySelector('[data-action="restart-to-update"]');
+const box=update?.getBoundingClientRect();
+const hit=box&&document.elementFromPoint(box.x+box.width/2,box.y+box.height/2);
+console.info('RED_PEEK:'+JSON.stringify({updateVisible:!!update&&!!box&&box.width>0&&box.height>0,updateClickable:!!update&&!!hit&&update.contains(hit),updateVersion:update?.title==='Sol 0.1.999 is ready',mediaVisible:document.querySelector('.media-stack')?.textContent?.includes('Synthetic media')===true}));
+// Keep the composed button visible long enough for native capture.
+await new Promise(r=>setTimeout(r,300));
+update?.click();
+for(let i=0;i<40&&!document.querySelector('.peek-error')?.textContent?.includes('409');++i)await new Promise(r=>setTimeout(r,10));
+let invalid=0;try{await q({method:'browser.restartToUpdate',extra:true});}catch(c){invalid=c;}
+console.info('RED_PEEK:'+JSON.stringify({restartRouted:document.querySelector('.peek-error')?.textContent?.includes('409')===true,invalidUpdate:invalid}));
+
 const rows=[...document.querySelectorAll('.tree-row .node-title')].map(n=>n.textContent);
 const row=[...document.querySelectorAll('.tree-row')].find(r=>r.querySelector('.node-title')?.textContent==='a');
 row?.querySelector('.node-name')?.click();
@@ -74,11 +88,33 @@ static void Start(const std::shared_ptr<State>& state) {
     // Leave room left of the window so the slide's clipping is visible on screen.
     if (!state->window->IsMaximized()) state->window->SetBounds(CefRect(240, 80, 1100, 820));
     state->workspace->SetSidebarVisible(false);
+    Later(state,650,[](const std::shared_ptr<State>& s){
+      const auto shell=s->browsers.find(s->shell_id);
+      if(shell!=s->browsers.end())shell->second->GetMainFrame()->ExecuteJavaScript(
+          "window.cefQuery({request:JSON.stringify({method:'browser.restartToUpdate'}),persistent:false,onSuccess:()=>{},onFailure:()=>{}})",
+          shell->second->GetMainFrame()->GetURL(),0);
+    });
     Later(state, 700, [](const std::shared_ptr<State>& s) { if (s->sidebar_peek) s->sidebar_peek->Show(); });
     Later(state, 1700, [](const std::shared_ptr<State>& s) {
       Record(s, "peek_state_open");
-      if (auto browser = s->sidebar_peek ? s->sidebar_peek->browser() : nullptr)
+      if (auto browser = s->sidebar_peek ? s->sidebar_peek->browser() : nullptr) {
+        // Synthetic UI state only: this disposable non-installed probe must
+        // never stage or apply a real package. The native ready state stays empty.
+        auto snapshot=s->workspace->Snapshot();snapshot->SetString("updateReady","0.1.999");
+        auto media=CefDictionaryValue::Create();media->SetString("id",snapshot->GetString("activeId"));
+        media->SetString("title","Synthetic media");media->SetString("artist","Fixture");
+        media->SetBool("playing",false);media->SetBool("video",false);media->SetBool("muted",false);
+        media->SetDouble("time",0);media->SetDouble("duration",30);
+        auto players=CefListValue::Create();players->SetDictionary(0,media);snapshot->SetList("media",players);
+        s->sidebar_peek->Publish(snapshot);
         browser->GetMainFrame()->ExecuteJavaScript(kScript, browser->GetMainFrame()->GetURL(), 0);
+      }
+    });
+    Later(state,1800,[](const std::shared_ptr<State>& s){
+      if(auto browser=s->sidebar_peek?s->sidebar_peek->browser():nullptr){
+        const auto capture=CaptureShell(browser,s->evidence_directory/"peek-update.png");
+        CefPostDelayedTask(TID_UI,base::BindOnce([](CefRefPtr<CefRegistration>){},capture),1000);
+      }
     });
     Later(state, 2600, [](const std::shared_ptr<State>& s) {
       auto data = CefDictionaryValue::Create(); data->SetString("url", s->workspace->Snapshot()->GetString("url").ToString().substr(0, 200));
@@ -104,6 +140,15 @@ static void Start(const std::shared_ptr<State>& state) {
     });
     Later(state, 3500, [](const std::shared_ptr<State>& s) { if (s->sidebar_peek) s->sidebar_peek->Hide(); });
     Later(state, 4300, [](const std::shared_ptr<State>& s) { Record(s, "peek_state_closed"); s->sidebar_peek_done = true; });
+    // Both documents remain subscribed after docking. A browser-menu flow
+    // must have exactly one active consumer, rather than toggling twice.
+    Later(state,5000,[](const std::shared_ptr<State>& s){s->workspace->SetSidebarVisible(true);});
+    Later(state,6000,[](const std::shared_ptr<State>& s){s->workspace->RequestSidebar("editSpace");});
+    Later(state,7200,[](const std::shared_ptr<State>& s){
+      auto data=CefDictionaryValue::Create();data->SetBool("docked",s->sidebar_visible);
+      data->SetBool("editor_open",s->panel_popup && s->panel_popup->is_open());s->Record("sidebar_request_owner",data);
+      if(s->panel_popup)s->panel_popup->Hide(false);
+    });
   }
 }
 }  // namespace red

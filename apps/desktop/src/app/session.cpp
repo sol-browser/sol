@@ -1,5 +1,6 @@
 #include "app/session.h"
 #include "app/auto_archive.h"
+#include "app/browsing_profiles.h"
 #include "workspace/controller.h"
 #include "include/cef_app.h"
 #include "include/base/cef_callback.h"
@@ -46,6 +47,7 @@ void AppSession::AddWorkspace(const std::shared_ptr<WorkspaceData>& data) { data
 void AppSession::StopWorkspaces() {
   if (auto_archive) auto_archive->Stop();
   if (preferences) preferences->Stop();
+  if (profiles) profiles->Stop();
   for (const auto& data : data_scopes_) StopData(data);
 }
 void AppSession::ReleaseUnusedWorkspaces() {

@@ -9,6 +9,8 @@
 #include "import/formats/import_tree.h"
 #include "import/formats/password_csv.h"
 #include "history/history_service.h"
+#include "app/browsing_profiles.h"
+#include "app/session.h"
 #include "workspace/controller.h"
 #include "include/cef_parser.h"
 #include "include/cef_thread.h"
@@ -273,6 +275,10 @@ class BrowserImport : public std::enable_shared_from_this<BrowserImport> {
   // Writes the confirmed preview into Red: workspace, history, cookies, passwords.
   void Commit(std::weak_ptr<State> weak_state, std::function<void(CefRefPtr<CefDictionaryValue>)> done) {
     auto data = std::move(pending); busy = true;
+    const auto owner = weak_state.lock();
+    // Cookie/password writers target the existing Default CEF profile. Keep
+    // the entire import there even if a Space switches during async work.
+    const auto destination = owner && owner->session && owner->session->profiles ? owner->session->profiles->Get(owner,"default") : nullptr;
     auto report = CefDictionaryValue::Create(); auto errors = CefListValue::Create();
     report->SetString("label", data->label);
     auto self = shared_from_this();
@@ -299,19 +305,18 @@ class BrowserImport : public std::enable_shared_from_this<BrowserImport> {
         report->SetDictionary("cookies", c); passwords();
       });
     };
-    auto history = [weak_state, data, report, error, cookies] {
-      auto s = weak_state.lock();
+    auto history = [destination, data, report, error, cookies] {
       if (data->history.empty()) { cookies(); return; }
-      if (!s || !s->history) { error("History could not be imported"); cookies(); return; }
-      s->history->ImportVisits(std::move(data->history), [report, cookies](int count) { report->SetInt("history", count); cookies(); });
+      if (!destination || !destination->history) { error("History could not be imported"); cookies(); return; }
+      destination->history->ImportVisits(std::move(data->history), [report, cookies](int count) { report->SetInt("history", count); cookies(); });
     };
     auto s = weak_state.lock();
-    if (s && s->favicons) {
+    if (destination) {
       int added = 0;
       for (auto& [host, png] : data->favicons) {
         const auto key = FaviconHost(host);
-        if (key.empty() || !s->favicons->Seed(key, png)) continue;  // Sol's own fallback wins.
-        if (s->history && !s->private_window) s->history->SaveFavicon(key, png);
+        if (key.empty() || !destination->favicons->Seed(key, png)) continue;  // Sol's own fallback wins.
+        destination->history->SaveFavicon(key, png);
         ++added;
       }
       report->SetInt("favicons", added);

@@ -244,7 +244,8 @@ kbd { margin-left: auto; font-family: inherit; font-size: 10px; color: oklch(cal
 .tab-composer button { min-height: 30px; color: oklch(calc(1.0000 + var(--theme-dark, 0) * -0.7140) 0.0000 89.9); background: oklch(calc(0.6032 + var(--theme-dark, 0) * 0.0072) min(calc(0.0828 * var(--theme-chroma, 1)), 0.24) calc(var(--theme-hue, 307) + 3.8)); font-size: 11px; }
 .tab-composer button:hover { background: oklch(calc(0.5303 + var(--theme-dark, 0) * 0.1411) min(calc(0.0820 * var(--theme-chroma, 1)), 0.24) calc(var(--theme-hue, 307) + 3.8)); }
 /* A downloaded update: one quiet row above the bottom bar; the sun mark carries Sol's yellow. */
-.update-pill { flex-shrink: 0; display: flex; align-items: center; gap: 8px; height: 32px; margin: 8px 4px 0; padding: 0 10px; border-radius: 9px;
+.sidebar-footer { position: relative; flex-shrink: 0; }
+.update-pill { width: calc(100% - 8px); flex-shrink: 0; display: flex; align-items: center; gap: 8px; height: 32px; margin: 8px 4px 0; padding: 0 10px; border-radius: 9px;
   color: inherit; font-size: 12px; font-weight: 500; background: color-mix(in oklch, currentColor 6%, transparent); }
 .update-pill:hover { background: color-mix(in oklch, currentColor 11%, transparent); }
 .update-pill .icon { width: 15px; height: 15px; color: #F9CA30; }
@@ -263,10 +264,15 @@ kbd { margin-left: auto; font-family: inherit; font-size: 10px; color: oklch(cal
 .space-title-edit input { display: block; width: 100%; height: 28px; padding: 3px 4px; margin-left: -4px; border: 0; border-radius: 6px;
   outline: 0; background: transparent; font-size: 15px; font-weight: 650; letter-spacing: -.15px; }
 .space-title-edit input:focus-visible { outline: 0; }
-.space-edit { flex: 0 0 auto; height: 24px; padding: 0 7px; font-size: 12px; font-weight: 500; border-radius: 6px;
-  opacity: 0; pointer-events: none; transition: opacity 120ms ease, background 120ms ease; }
+.space-edit { flex: 0 0 auto; height: 24px; padding: 0 2px; font:inherit; font-size: 11px; font-weight: 500; border:0; border-radius:0; box-shadow:none; background:none;
+  color:color-mix(in oklch,currentColor 50%,transparent); opacity: 0; pointer-events: none; transition: opacity 120ms ease, color 120ms ease; }
 .sidebar-heading:hover .space-edit, .sidebar-heading:focus-within .space-edit { opacity: 1; pointer-events: auto; }
-.space-edit:hover:enabled { background: color-mix(in oklch, currentColor 9%, transparent); }
+.space-edit:hover:enabled, .space-edit:focus-visible { color:var(--sidebar-text,inherit); background:none; }
+.space-delete-confirm { margin:8px; padding:12px; border-radius:10px; background:#17131ce0; color:#eae4ef; font-size:12px; }
+.space-delete-confirm p { margin:0 0 12px; line-height:1.5; }
+.space-delete-confirm>div { display:flex; justify-content:flex-end; gap:8px; }
+.space-delete-confirm button { border:0; background:none; color:inherit; padding:4px; font:inherit; }
+.space-delete-confirm button:last-child { color:#ff9ba9; }
 @media (hover: none) { .space-edit { opacity: 1; pointer-events: auto; } }
 .space-mark { flex: 0 0 auto; }
 .space-mark[data-emoji="true"] { background: none; box-shadow: none; border-radius: 0; font-size: 15px; color: inherit; }

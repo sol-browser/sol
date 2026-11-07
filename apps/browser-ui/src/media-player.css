@@ -1,9 +1,9 @@
 /* Sidebar players (Arc/Zen style) floating over the bottom of the tab list,
-   just above the space switcher. Several stack: the newest in front, older
+   anchored above the complete footer, including pending update notices. Several stack: the newest in front, older
    ones peeking 6 px above it, slightly smaller and dimmer. Hovering or focusing
    the stack fans them out into a column and grows every player upward with
    title, artist, progress and dismiss. */
-.media-stack { --ease: cubic-bezier(.22,1,.36,1); position: absolute; z-index: 6; left: 10px; right: 10px; bottom: 50px;
+.media-stack { --ease: cubic-bezier(.22,1,.36,1); position: absolute; z-index: 6; left: 0; right: 0; bottom: calc(100% + 6px);
   display: flex; flex-direction: column-reverse; }
 .media-player { position: relative; z-index: calc(3 - var(--depth, 0)); border-radius: 10px; color: rgb(255 255 255 / 92%);
   background: rgb(20 20 24 / 86%); backdrop-filter: blur(14px) saturate(1.2);

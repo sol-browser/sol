@@ -47,7 +47,7 @@ export function SpaceHeader({ space, busy, anchorRef, action, editSpace }: Props
         }} />
     </form> : <h1 className="space-title"><button type="button" disabled={busy || !space}
       aria-label={space ? `Rename space ${space.name}` : 'Space'} title="Rename space" onClick={start}>{space?.name ?? 'Your space'}</button></h1>}
-    <button type="button" className="space-edit" disabled={busy || !space} aria-label="Edit space" title="Edit space"
+    <button type="button" className="space-edit" disabled={busy || !space} aria-label="Edit space" aria-haspopup="menu"
       onMouseDown={event => event.preventDefault()}
       onClick={event => { const anchor = event.currentTarget; void save().then(saved => { if (saved && anchor.isConnected) editSpace(anchor); }); }}>Edit</button>
   </div>;

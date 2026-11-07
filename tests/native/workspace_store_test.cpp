@@ -1,4 +1,5 @@
 #include "storage/tree_store.h"
+#include "workspace/tab_order.h"
 #include <windows.h>
 #include <algorithm>
 #include <cstdio>
@@ -57,7 +58,8 @@ int wmain(int argc, wchar_t** argv) {
     }
     sqlite3_open16(legacy_path.c_str(), &db);
     Check(sqlite3_exec(db, "UPDATE nodes SET page_title='Away title' WHERE pinned=1 AND kind=0;"
-        "UPDATE nodes SET page_title='History title' WHERE pinned=0 AND kind=0; PRAGMA user_version=10;",
+        "UPDATE nodes SET page_title='History title' WHERE pinned=0 AND kind=0;"
+        "DROP TABLE browsing_profiles; ALTER TABLE nodes DROP COLUMN profile_id; ALTER TABLE spaces DROP COLUMN profile_id; PRAGMA user_version=10;",
         nullptr, nullptr, nullptr) == SQLITE_OK, "seed legacy titles before v11 migration");
     sqlite3_close(db);
     {
@@ -440,9 +442,9 @@ int wmain(int argc, wchar_t** argv) {
   }
   for (const auto& suffix:{L"",L"-wal",L"-shm"}) { std::error_code error; std::filesystem::remove(archive_path+suffix,error); }
   wchar_t exe[MAX_PATH]; GetModuleFileNameW(nullptr, exe, MAX_PATH);
-  std::wstring command = L"\"" + std::wstring(exe) + L"\" --crash-write \"" + path.wstring() + L"\"";
+  std::wstring crash_command = L"\"" + std::wstring(exe) + L"\" --crash-write \"" + path.wstring() + L"\"";
   STARTUPINFOW startup{}; startup.cb = sizeof(startup); PROCESS_INFORMATION process{};
-  if (CreateProcessW(exe, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
+  if (CreateProcessW(exe, crash_command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
     auto wait = WaitForSingleObject(process.hProcess, 5000);
     if (wait != WAIT_OBJECT_0) TerminateProcess(process.hProcess, 89);
     DWORD code = 0; GetExitCodeProcess(process.hProcess, &code);
@@ -464,6 +466,82 @@ int wmain(int argc, wchar_t** argv) {
     const auto old=std::find_if(saved.snapshot.spaces.begin(),saved.snapshot.spaces.end(),[&](const auto& item){return item.id==first;});
     Check(saved&&saved.snapshot.active_space==second.snapshot.active_space&&!saved.snapshot.ActiveSpace()->theme_palette&&
       old!=saved.snapshot.spaces.end()&&old->theme_palette==palette,"late explicit-space save leaves the active space untouched");
+  }
+  const auto profiles_path = path.wstring() + L"-profiles";
+  std::string personal, work, work_space, personal_favorite, work_favorite;
+  {
+    red::TreeStore store; const auto initial = store.Open(profiles_path);
+    personal = initial.snapshot.active_space;
+    Check(initial && initial.snapshot.profiles.size() == 1 && initial.snapshot.profiles[0].id == "default" &&
+      initial.snapshot.ActiveSpace()->profile == "default", "existing workspace defaults to original profile");
+    auto apply = [&](red::TreeCommand command) { command.expected_revision=store.Read().snapshot.revision; return store.Apply(command); };
+    red::TreeCommand command{red::TreeAction::CreateProfile}; command.title="Work";
+    auto result = apply(command); work=result.created_id;
+    Check(result && red::ValidBrowsingProfileId(work) && result.snapshot.active_space==personal, "profile creation keeps current Space");
+    command={red::TreeAction::RenameProfile}; command.id=work; command.title="Office"; result=apply(command);
+    const auto renamed=std::find_if(result.snapshot.profiles.begin(),result.snapshot.profiles.end(),[&](const auto& p){return p.id==work;});
+    Check(result && renamed!=result.snapshot.profiles.end() && renamed->name=="Office", "profile rename preserves its identity");
+    command={red::TreeAction::CreateTab}; command.title="Personal"; command.url="https://example.com/personal"; result=apply(command); personal_favorite=result.created_id;
+    command={red::TreeAction::Place}; command.id=personal_favorite; command.section="favorites"; result=apply(command);
+    Check(result && Find(result.snapshot,personal_favorite).profile=="default", "Favorite captures originating profile");
+    command={red::TreeAction::CreateSpace}; command.title="Work"; command.profile=work; result=apply(command); work_space=result.created_id;
+    Check(result && result.snapshot.ActiveSpace()->profile==work && red::OrderedTabsForSpace(result.snapshot,work_space).empty(), "different profile hides personal Favorites");
+    command={red::TreeAction::Activate}; command.id=personal_favorite;
+    Check(apply(command).code==400, "cannot activate another profile's Favorite");
+    command={red::TreeAction::CreateTab}; command.title="Office"; command.url="https://example.com/office"; result=apply(command); work_favorite=result.created_id;
+    command={red::TreeAction::Place}; command.id=work_favorite; command.section="favorites"; result=apply(command);
+    Check(result && Find(result.snapshot,work_favorite).profile==work && red::OrderedTabsForSpace(result.snapshot,work_space)==std::vector<std::string>{work_favorite},
+      "Favorites are scoped to the profile");
+    command={red::TreeAction::CreateSpace}; command.title="Shared office"; result=apply(command);
+    Check(result && result.snapshot.ActiveSpace()->profile==work && red::OrderedTabsForSpace(result.snapshot,result.created_id)==std::vector<std::string>{work_favorite},
+      "new Space inherits profile and shares its Favorites");
+    command={red::TreeAction::CreateTab}; command.title="Split anchor"; command.url="https://example.com/anchor"; result=apply(command); const auto anchor=result.created_id;
+    command={red::TreeAction::CreateSplit}; command.id=anchor; command.parent=personal_favorite;
+    Check(apply(command).code==400, "Split View cannot cross profile boundaries");
+    auto invalid=store.Read().snapshot; invalid.active_id=personal_favorite;
+    Check(!red::TreeStore::ValidateSnapshot(invalid), "snapshot rejects active Favorite from another profile");
+    invalid=store.Read().snapshot; invalid.splits.push_back({anchor,personal_favorite,"",5000,false,false});
+    Check(!red::TreeStore::ValidateSnapshot(invalid), "snapshot rejects imported cross-profile Split View");
+    command={red::TreeAction::SetSpaceProfile}; command.id=work_space; command.profile="../escape";
+    Check(apply(command).code==400 && red::ValidBrowsingProfileId("default") && !red::ValidBrowsingProfileId("../escape"), "unknown/path-shaped profiles are rejected");
+    command.profile="default"; result=apply(command);
+    const auto changed=std::find_if(result.snapshot.spaces.begin(),result.snapshot.spaces.end(),[&](const auto& s){return s.id==work_space;});
+    Check(result && changed!=result.snapshot.spaces.end() && changed->profile=="default" && changed->active_id.empty(), "profile reassignment resets remembered landing page");
+  }
+  {
+    red::TreeStore store; const auto restored=store.Open(profiles_path);
+    Check(restored && restored.snapshot.profiles.size()==2 && red::BrowsingProfileId(restored.snapshot,personal_favorite)=="default" &&
+      red::BrowsingProfileId(restored.snapshot,work_favorite)==work, "profile identities and Favorites survive SQLite restart");
+  }
+  for (const auto& suffix:{L"",L"-wal",L"-shm"}) { std::error_code error; std::filesystem::remove(profiles_path+suffix,error); }
+  {
+    red::TreeStore store; const auto initial=store.Open(":memory:"); const auto first=initial.snapshot.active_space;
+    auto apply=[&](red::TreeCommand item){item.expected_revision=store.Read().snapshot.revision;return store.Apply(item);};
+    red::TreeCommand item{red::TreeAction::CreateSpace}; item.title="Project"; auto result=apply(item);const auto project=result.created_id;
+    item={red::TreeAction::CreateFolder};item.title="Research";result=apply(item);const auto nested_folder=result.created_id;
+    item={red::TreeAction::CreateTab};item.title="Nested";item.url="https://example.com/nested";item.parent=nested_folder;result=apply(item);const auto nested_page=result.created_id;
+    item={red::TreeAction::CreateTab};item.title="Today";item.url="https://example.com/today";result=apply(item);const auto today=result.created_id;
+    item={red::TreeAction::CreateTab};item.title="Archived";item.url="https://example.com/archived";result=apply(item);const auto archive=result.created_id;
+    item={red::TreeAction::Archive};item.id=archive;apply(item);
+    const auto before=store.Read().snapshot;
+    item={red::TreeAction::CreateProfile};item.title="Client";item.spaces={project,"ffffffff-ffff-ffff-ffff-ffffffffffff"};
+    Check(apply(item).code==400 && store.Read().snapshot.profiles==before.profiles && store.Read().snapshot.spaces==before.spaces,
+      "profile creation with a missing Space rolls back every assignment and profile row");
+    item.spaces={project,project};Check(apply(item).code==400,"duplicate profile Space assignment rejected atomically");
+    item.spaces={first,project};result=apply(item);const auto client=result.created_id;
+    Check(result && std::all_of(result.snapshot.spaces.begin(),result.snapshot.spaces.end(),[&](const auto& s){return s.profile==client;}),
+      "profile and all selected Spaces commit together");
+    item={red::TreeAction::CreateSpace};item.title="Destination";item.profile="default";result=apply(item);const auto destination=result.created_id;
+    item={red::TreeAction::ExportSpace};item.id=project;item.space=project;
+    Check(apply(item).code==400,"export cannot consume its own destination Space");
+    item.space=destination;result=apply(item);const auto exported=result.created_id;
+    const auto folder_node=Find(result.snapshot,exported);
+    Check(result && result.snapshot.spaces.size()==2 && folder_node.folder && folder_node.title=="Project" && folder_node.space==destination,
+      "Space exports as a named folder in its destination");
+    Check(Find(result.snapshot,nested_folder).parent==exported && Find(result.snapshot,nested_page).parent==nested_folder &&
+      Find(result.snapshot,today).parent==exported && Find(result.snapshot,today).pinned && Find(result.snapshot,archive).archived &&
+      Find(result.snapshot,archive).space==destination && red::BrowsingProfileId(result.snapshot,today)=="default",
+      "export retains nesting, Today pages, archived pages and destination profile ownership");
   }
   std::printf("Workspace storage tests: %s\n", failures ? "FAIL" : "PASS");
   return failures ? 1 : 0;

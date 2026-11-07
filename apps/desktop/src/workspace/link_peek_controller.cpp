@@ -1,3 +1,4 @@
+#include "windows/browser_dialogs.h"
 #include "workspace/controller.h"
 #include "windows/embedded_content.h"
 #include "windows/focus.h"
@@ -69,7 +70,7 @@ void WorkspaceController::AdoptPeek(const std::string& opener, const MovingPeek&
 void WorkspaceController::CloseParkedPeek(const std::string& source) {
   const auto parked=parked_peeks_.find(source); if (parked==parked_peeks_.end()) return;
   const auto id=parked->second.id; parked_peeks_.erase(parked);
-  if (const auto browser=LiveBrowser(id)) { closing_peeks_.insert(id); browser->GetHost()->CloseBrowser(true); }
+  if (const auto browser=LiveBrowser(id)) { closing_peeks_.insert(id); CloseBrowserWithDialogs(state_, browser, true); }
   Publish();
 }
 bool WorkspaceController::IsLinkPeekBrowser(int browser) const {
@@ -168,7 +169,7 @@ void WorkspaceController::DismissLinkPeek(std::function<void(bool)> after) {
   if (const auto state=state_.lock(); state && state->embedded && LiveBrowser(link_peek_id_)) {
     const auto id=link_peek_id_;
     state->embedded->PrepareLinkPeekClose([weak=weak_from_this(),id] {
-      if (const auto self=weak.lock(); self && self->link_peek_id_==id && self->link_peek_closing_) if (const auto browser=self->LiveBrowser(id)) browser->GetHost()->CloseBrowser(false);
+      if (const auto self=weak.lock(); self && self->link_peek_id_==id && self->link_peek_closing_) if (const auto browser=self->LiveBrowser(id)) CloseBrowserWithDialogs(self->state_, browser, false);
     });
   }
 }

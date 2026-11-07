@@ -20,6 +20,7 @@ export function request(command: Command): Promise<Snapshot> {
     let query = -1;
     const timeout = setTimeout(() => { if (query >= 0) window.cefQueryCancel?.(query); reject(new Error('Native request timed out')); },
       command?.method === 'tree.close' || command?.method === 'tree.archive' || command?.method === 'tree.removeFolder' ||
+      command?.method === 'profile.create' || command?.method === 'space.profile' || command?.method === 'space.export' ||
       (command?.method === 'linkPeek.control' && command.action === 'close') ? 300000 : 5000);
     try {
       query = window.cefQuery({ request: JSON.stringify(command), persistent: false,
@@ -29,13 +30,13 @@ export function request(command: Command): Promise<Snapshot> {
     } catch (error) { clearTimeout(timeout); reject(error); }
   });
 }
-export function openSidebarMenu(id: string, x: number, y: number): Promise<SidebarMenuChoice> {
+export function openSidebarMenu(id: string, x: number, y: number, spaceMenu = false): Promise<SidebarMenuChoice> {
   return new Promise((resolve, reject) => {
     if (!window.cefQuery) { reject(new Error('Native bridge unavailable')); return; }
     let query = -1;
     const timeout = setTimeout(() => { if (query >= 0) window.cefQueryCancel?.(query); reject(new Error('Menu timed out')); }, 300000);
     try {
-      query = window.cefQuery({ request: JSON.stringify({ method: 'workspace.contextMenu', id, x: Math.round(x), y: Math.round(y) }), persistent: false,
+      query = window.cefQuery({ request: JSON.stringify({ method: spaceMenu ? 'workspace.spaceMenu' : 'workspace.contextMenu', id, x: Math.round(x), y: Math.round(y) }), persistent: false,
         onSuccess: raw => { clearTimeout(timeout); try { resolve(parseSidebarMenuChoice(raw)); } catch (error) { reject(error); } },
         onFailure: (code, message) => { clearTimeout(timeout); reject(new Error(`${code}: ${message}`)); } });
     } catch (error) { clearTimeout(timeout); reject(error); }

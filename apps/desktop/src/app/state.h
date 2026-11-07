@@ -30,11 +30,13 @@ class SidebarMenu;
 class DownloadManager;
 class HistoryService;
 class FaviconCache;
+struct BrowsingProfile;
 class PanelPopup;
 class MenuPopup;
 class ExtensionPopup;
 class ExtensionCatalog;
 class ExtensionsWindow;
+class PasswordsWindow;
 class SettingsWindow;
 class WelcomeWindow;
 class BoostWindow;
@@ -56,7 +58,10 @@ struct State {
   std::string backdrop = "none";
   std::string backdrop_switch;  // Probe override (--probe-backdrop=mica|acrylic).
   CefRefPtr<CefRequestContext> web_context;
-  // The web profile of this window's pages: the private context, else the global one.
+  std::string active_profile;
+  std::map<int,std::shared_ptr<BrowsingProfile>> browser_profiles;
+  // Selected Space's profile (or the private window's OTR context). Background
+  // pages keep their own binding in browser_profiles across Space switches.
   CefRefPtr<CefRequestContext> WebContext() const { return web_context ? web_context : CefRequestContext::GetGlobalContext(); }
   std::string initial_title = "New tab";
   bool initial_custom_title = false;
@@ -97,6 +102,7 @@ struct State {
   std::shared_ptr<ExtensionPopup> extension_popup;
   std::shared_ptr<SidebarPeek> sidebar_peek;  // Floating sidebar while the docked one is hidden.
   std::shared_ptr<ExtensionsWindow> extensions_window;  // chrome://extensions, on demand.
+  std::map<std::string, std::shared_ptr<PasswordsWindow>> password_windows;
   std::atomic<int> settings_id{-1};
   std::shared_ptr<SettingsWindow> settings_window;
   std::atomic<int> welcome_id{-1};
@@ -108,6 +114,7 @@ struct State {
   std::shared_ptr<ExtensionCatalog> extensions;  // Web profile extensions (site popover).
   std::shared_ptr<SidebarMenu> sidebar_menu;
   bool probe = false;
+  bool passwords_probe = false;
   bool probe_navigation = false;
   bool probe_tabs = false;
   bool native_tabs_reference = false;

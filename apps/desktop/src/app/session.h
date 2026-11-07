@@ -15,10 +15,11 @@
 namespace red {
 class AutoArchive;
 // One application/profile lifetime; shared workspace data plus isolated tab
-// data for standalone windows. Website request contexts remain shared.
+// data for standalone windows. Website contexts are shared within each profile.
 // Runtime methods run on TID_UI. Window enumeration also serves UI resources
 // on the IO thread, so that weak registry has its own lock.
 class BoostStore;
+class BrowsingProfiles;
 // One website page's Boost loader registration (windows/boosts.cpp), UI thread only.
 struct BoostSlot {
   CefRefPtr<CefBrowser> page;
@@ -60,6 +61,7 @@ class AppSession {
   std::weak_ptr<State> active_window;
   std::shared_ptr<WorkspaceData> workspace = std::make_shared<WorkspaceData>();
   std::shared_ptr<BrowserPreferences> preferences;
+  std::shared_ptr<BrowsingProfiles> profiles;
   std::shared_ptr<BoostStore> boosts;  // Per-site CSS (docs/boosts.md).
   std::filesystem::path boosts_path;
   std::map<int, std::shared_ptr<BoostSlot>> boost_slots;

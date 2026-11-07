@@ -2,6 +2,7 @@
 #include "downloads/download_manager.h"
 #include "history/history_commands.h"
 #include "history/history_service.h"
+#include "app/browsing_profiles.h"
 #include "include/cef_parser.h"
 
 namespace red {
@@ -16,15 +17,18 @@ std::string Json(CefRefPtr<CefDictionaryValue> d) { auto v = CefValue::Create();
 }  // namespace
 
 bool HandleDownloadsPageCommand(const std::shared_ptr<State>& state, const std::string& method,
-                                CefRefPtr<CefDictionaryValue> d, CefRefPtr<CefMessageRouterBrowserSide::Callback> cb) {
+                                CefRefPtr<CefDictionaryValue> d, CefRefPtr<CefMessageRouterBrowserSide::Callback> cb,
+                                std::shared_ptr<BrowsingProfile> profile) {
+  const auto history = profile ? profile->history : state->history;
+  const auto downloads = profile ? profile->downloads : state->downloads;
   if (!method.starts_with("downloads.")) return false;
-  if (!state->history || !state->downloads) { cb->Failure(503, "Downloads unavailable"); return true; }
+  if (!history || !downloads) { cb->Failure(503, "Downloads unavailable"); return true; }
   int64_t number = 0;
   if (method == "downloads.page" && d->GetSize() == 2 && WholeNumber(d->GetValue("before"), number)) {
     constexpr size_t kPage = 60;
     const bool first = number == 0;
-    state->history->DownloadsBefore(number, kPage + 1, [cb, first, hour12 = HourClock(state), weak = std::weak_ptr<State>(state)](std::vector<DownloadRecord> records) {
-      auto state = weak.lock(); if (!state || !state->downloads) { cb->Failure(503, "Downloads unavailable"); return; }
+    history->DownloadsBefore(number, kPage + 1, [cb, first, downloads, hour12 = HourClock(state), weak = std::weak_ptr<State>(state)](std::vector<DownloadRecord> records) {
+      auto state = weak.lock(); if (!state || !downloads) { cb->Failure(503, "Downloads unavailable"); return; }
       const bool more = records.size() > kPage; if (more) records.pop_back();
       auto items = CefListValue::Create();
       for (const auto& r : records) {
@@ -38,7 +42,7 @@ bool HandleDownloadsPageCommand(const std::shared_ptr<State>& state, const std::
         items->SetDictionary(items->GetSize(), row);
       }
       auto result = CefDictionaryValue::Create();
-      result->SetList("active", first ? state->downloads->ActiveList() : CefListValue::Create());
+      result->SetList("active", first ? downloads->ActiveList() : CefListValue::Create());
       result->SetList("items", items); result->SetBool("more", more); result->SetBool("hour12", hour12);
       cb->Success(Json(result));
     });
@@ -47,8 +51,8 @@ bool HandleDownloadsPageCommand(const std::shared_ptr<State>& state, const std::
   const auto action = d->GetType("action") == VTYPE_STRING ? d->GetString("action").ToString() : "";
   if (method == "downloads.file" && d->GetSize() == 3 && WholeNumber(d->GetValue("id"), number) && number >= 1 &&
       (action == "open" || action == "show" || action == "copy" || action == "recycle" || action == "remove")) {
-    state->history->Download(number, [cb, action, id = number, weak = std::weak_ptr<State>(state)](std::optional<DownloadRecord> record) {
-      auto state = weak.lock(); if (!state || !state->history) { cb->Failure(503, "Downloads unavailable"); return; }
+    history->Download(number, [cb, action, id = number, history, downloads, weak = std::weak_ptr<State>(state)](std::optional<DownloadRecord> record) {
+      auto state = weak.lock(); if (!state || !history) { cb->Failure(503, "Downloads unavailable"); return; }
       if (!record) { cb->Failure(404, "Download is no longer in the list"); return; }
       std::string error;
       if (action != "remove") {
@@ -57,8 +61,8 @@ bool HandleDownloadsPageCommand(const std::shared_ptr<State>& state, const std::
       }
       // Removing (or recycling) also takes it off the popover list. Never deletes files for "remove".
       if (action == "remove" || action == "recycle") {
-        state->history->DeleteDownload(id);
-        if (state->downloads) state->downloads->ForgetRecord(id);
+        history->DeleteDownload(id);
+        if (downloads) downloads->ForgetRecord(id);
       }
       cb->Success("{}");
     });
@@ -67,12 +71,12 @@ bool HandleDownloadsPageCommand(const std::shared_ptr<State>& state, const std::
   if (method == "downloads.control" && d->GetSize() == 3 && d->GetType("id") == VTYPE_INT && d->GetInt("id") >= 0 &&
       (action == "pause" || action == "resume" || action == "cancel")) {
     std::string error;
-    if (const int code = state->downloads->Control(static_cast<uint32_t>(d->GetInt("id")), action, error)) { cb->Failure(code, error); return true; }
+    if (const int code = downloads->Control(static_cast<uint32_t>(d->GetInt("id")), action, error)) { cb->Failure(code, error); return true; }
     cb->Success("{}");
     return true;
   }
   if (method == "downloads.clearAll" && d->GetSize() == 1) {
-    state->downloads->ClearFinished(true);  // Also clears the saved list.
+    downloads->ClearFinished(true);  // Also clears the saved list.
     cb->Success("{}");
     return true;
   }

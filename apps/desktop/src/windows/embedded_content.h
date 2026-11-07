@@ -17,6 +17,9 @@ class EmbeddedContent {
   void OnCreated(CefRefPtr<CefBrowser> browser);
   void OnClosed(int id);
   void Resize(const CefRect& bounds);
+  // Child HWNDs move with the root without changing their local bounds. Tell
+  // Chrome so its screen-space anchors (e.g. Save password) follow that move.
+  void NotifyWindowMoved();
   void Relayout();  // Dock placement changed without changing the workspace.
   // Repaints the page corners after the workspace background changed (theme).
   void RefreshCorners() { UpdateCorners(); }

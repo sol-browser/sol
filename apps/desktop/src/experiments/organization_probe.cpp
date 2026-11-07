@@ -5,9 +5,17 @@
 #include "include/views/cef_browser_view.h"
 #include "windows/embedded_content.h"
 #include "workspace/controller.h"
+#include "experiments/profile_settings_probe.h"
+#include "windows/settings_window.h"
 namespace red {
 void ObserveOrganizationProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> browser, const std::string& message) {
   if (!state->organization_probe) return;
+  if (browser->GetIdentifier()==state->shell_id && message=="RED_PROFILE_SETTINGS_OPEN") { StartProfileSettingsProbe(state); return; }
+  if (browser->GetIdentifier()==state->shell_id && message=="RED_PROFILE_EDITOR_CAPTURE") { CaptureProfileEditor(state); return; }
+  if (browser->GetIdentifier()==state->shell_id && message=="RED_PROFILE_SETTINGS_CLOSE") {
+    if (state->settings_window) if (const auto settings=state->settings_window->browser()) ObserveProfileSettingsProbe(settings,message);
+    return;
+  }
   if (browser->GetIdentifier() == state->shell_id && message == "RED_ORG_NAVIGATE_TODAY" && state->content) {
     state->content->GetMainFrame()->ExecuteJavaScript("document.querySelector('a').click();", state->content->GetMainFrame()->GetURL(), 0);
     return;

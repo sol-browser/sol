@@ -1,4 +1,8 @@
 #include "app/updates.h"
+#include "app/session.h"
+#include "workspace/controller.h"
+#include "include/base/cef_callback.h"
+#include "include/wrapper/cef_closure_task.h"
 #include <windows.h>
 #include <shellapi.h>
 #include <chrono>
@@ -181,6 +185,16 @@ bool PrepareRestartToUpdate() {
     LOG(WARNING) << "Restart to update failed: " << error.what();
     return false;
   }
+}
+
+bool RequestUpdateRestart(const std::shared_ptr<State>& state) {
+  if (!state || !state->session || !state->workspace || state->workspace->WindowClosing() || ReadyUpdate().empty()) return false;
+  if (!PrepareRestartToUpdate()) return false;
+  CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+    if (const auto owner=weak.lock(); owner && owner->session)
+      for (const auto& window:owner->session->Windows()) if(window->window)window->window->Close();
+  },std::weak_ptr<State>(state)));
+  return true;
 }
 
 void RunUpdateHooks() {

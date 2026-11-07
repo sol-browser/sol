@@ -79,7 +79,7 @@ std::string SpaceLanding(const TreeSnapshot& tree, const Space& space, const std
     const auto owner = SpaceOf(tree, *last);
     if (owner == space.id || owner.empty()) return last->id;
   }
-  for (const auto& id : OrderedTabs(tree.nodes, space.id)) if (!FindConst(tree, id)->favorite && allowed(id)) return id;
+  for (const auto& id : OrderedTabsForSpace(tree, space.id)) if (!FindConst(tree, id)->favorite && allowed(id)) return id;
   return "";
 }
 bool ValidSpaceTheme(const Space& s) {
@@ -97,13 +97,17 @@ bool Valid(const TreeSnapshot& tree) {
   if (tree.nodes.size() > 10000 || tree.revision < 0 || tree.sidebar_width < 200 || tree.sidebar_width > 480) return false;
   if (tree.spaces.empty() || tree.spaces.size() > kMaxSpaces) return false;
   std::set<std::string> space_ids; std::set<int> space_positions;
+  std::set<std::string> profiles;
+  for (const auto& profile : tree.profiles)
+    if (!ValidBrowsingProfileId(profile.id) || !SafeText(profile.name, 40) || !profiles.insert(profile.id).second) return false;
+  if (!profiles.contains("default") || profiles.size() > 24) return false;
   for (const auto& s : tree.spaces)
     if (s.id.size() != 36 || !SafeText(s.name, 40) || !ValidIcon(s.icon) || !ValidSpaceTheme(s) ||
-        !space_ids.insert(s.id).second || !space_positions.insert(s.position).second) return false;
+        !profiles.contains(s.profile) || !space_ids.insert(s.id).second || !space_positions.insert(s.position).second) return false;
   if (*space_positions.rbegin() != static_cast<int>(tree.spaces.size()) - 1 || !space_ids.contains(tree.active_space)) return false;
   std::map<std::string, const TreeNode*> nodes;
   std::map<std::string, std::set<int>> positions;
-  int favorites = 0;
+  std::map<std::string,int> favorites;
   for (const auto& n : tree.nodes) {
     if (n.id.size() != 36 || !SafeText(n.title, 240) || !SafeText(n.page_title, 240, true) || n.position < 0 || n.last_active_at < 0 ||
         (!n.folder && !SafeUrl(n.url)) || (n.folder && !n.url.empty()) ||
@@ -111,9 +115,9 @@ bool Valid(const TreeSnapshot& tree) {
         (!n.parent.empty() && (!n.pinned || n.favorite || n.archived)) ||
         (n.favorite && (!n.pinned || n.folder || n.archived)) ||
         (n.archived && (n.pinned || n.favorite || n.folder || !n.parent.empty())) ||
-        !nodes.emplace(n.id, &n).second || !positions[n.parent].insert(n.position).second) return false;
+        !profiles.contains(n.profile) || !nodes.emplace(n.id, &n).second || !positions[n.parent].insert(n.position).second) return false;
     if (n.parent.empty() && !n.favorite ? !space_ids.contains(n.space) : !n.space.empty()) return false;
-    if (n.favorite && ++favorites > 12) return false;
+    if (n.favorite && ++favorites[n.profile] > 12) return false;
   }
   for (const auto& [parent, slots] : positions) {
     if (!slots.empty() && *slots.rbegin() != static_cast<int>(slots.size()) - 1) return false;
@@ -134,6 +138,7 @@ bool Valid(const TreeSnapshot& tree) {
         a->second->archived || b->second->archived || a->second->favorite ||
         !SafeText(split.title,240,true) || split.ratio < 1000 || split.ratio > 9000 ||
         !split_members.insert(split.anchor).second || !split_members.insert(split.other).second ||
+        BrowsingProfileId(tree,split.anchor) != BrowsingProfileId(tree,split.other) ||
         (!b->second->favorite && SpaceOf(tree,*a->second) != SpaceOf(tree,*b->second))) return false;
   }
   for (const auto& split:tree.archived_splits) {
@@ -146,7 +151,7 @@ bool Valid(const TreeSnapshot& tree) {
   if (!nodes.contains(tree.active_id) || nodes.at(tree.active_id)->folder || nodes.at(tree.active_id)->archived) return false;
   // The page on screen belongs to the space on screen (or is a Favorite).
   const auto owner = SpaceOf(tree, *nodes.at(tree.active_id));
-  return owner.empty() || owner == tree.active_space;
+  return (owner.empty() || owner == tree.active_space) && BrowsingProfileId(tree,tree.active_id) == BrowsingProfileId(tree);
 }
 void Normalize(TreeSnapshot& tree, const std::string& parent) {
   std::vector<TreeNode*> siblings;
@@ -187,6 +192,18 @@ const Space* TreeSnapshot::ActiveSpace() const {
   auto it = std::find_if(spaces.begin(), spaces.end(), [&](const auto& s) { return s.id == active_space; });
   return it == spaces.end() ? nullptr : &*it;
 }
+std::string BrowsingProfileId(const TreeSnapshot& tree, const std::string& id) {
+  const auto* node = id.empty() ? nullptr : FindConst(tree, id);
+  if (node) {
+    for (int depth = 0; !node->parent.empty() && depth < 64; ++depth) {
+      node = FindConst(tree, node->parent);
+      if (!node) return "default";
+    }
+    if (node->favorite) return node->profile;
+  }
+  const auto space = std::find_if(tree.spaces.begin(), tree.spaces.end(), [&](const auto& s) { return s.id == (node ? node->space : tree.active_space); });
+  return space == tree.spaces.end() ? "default" : space->profile;
+}
 TreeStore::~TreeStore() { if (db_) sqlite3_close(db_); }
 bool TreeStore::ValidateSnapshot(const TreeSnapshot& snapshot) { return Valid(snapshot); }
 bool TreeStore::Exec(const char* sql) { return sqlite3_exec(db_, sql, nullptr, nullptr, nullptr) == SQLITE_OK; }
@@ -204,7 +221,7 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
     return Error(500, "Cannot inspect workspace schema");
   const int schema = sqlite3_column_int(version.value, 0), application = sqlite3_column_int(app.value, 0);
   version.Finish(); app.Finish();
-  if (schema > 11 ||(application != 0 && application != kApplicationId)) return Error(500, "Unsupported workspace schema");
+  if (schema > 12 ||(application != 0 && application != kApplicationId)) return Error(500, "Unsupported workspace schema");
   if (schema == 0) {
     Statement tables(db_, "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'");
     if (!tables.value || sqlite3_step(tables.value) != SQLITE_ROW || sqlite3_column_int(tables.value, 0) != 0)
@@ -296,6 +313,11 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
   // remain usable until the title of the saved destination is observed again.
   if (schema < 11 && !Exec("BEGIN IMMEDIATE; UPDATE nodes SET page_title='' WHERE kind=0 AND pinned=1 AND page_title<>'';"
       "PRAGMA user_version=11; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"Saved page title migration failed"); }
+  if (schema < 12 && !Exec("BEGIN IMMEDIATE; CREATE TABLE browsing_profiles(id TEXT PRIMARY KEY,name TEXT NOT NULL);"
+      "INSERT INTO browsing_profiles VALUES('default','Default');"
+      "ALTER TABLE spaces ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';"
+      "ALTER TABLE nodes ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';"
+      "PRAGMA user_version=12; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"Browsing profile migration failed"); }
   if (!Exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")) return Error(500, "Cannot configure workspace journal");
   Statement check(db_, "PRAGMA quick_check(1)");
   if (!check.value || sqlite3_step(check.value) != SQLITE_ROW || Text(check.value, 0) != "ok")
@@ -304,13 +326,17 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
 }
 TreeResult TreeStore::Load() {
   TreeResult result;
+  result.snapshot.profiles.clear();
+  Statement profiles(db_, "SELECT id,name FROM browsing_profiles ORDER BY id");
+  if (!profiles.value) return Error(500, "Browsing profiles unavailable");
+  while (sqlite3_step(profiles.value) == SQLITE_ROW) result.snapshot.profiles.push_back({Text(profiles.value,0),Text(profiles.value,1)});
   Statement state(db_, "SELECT revision,active_id,sidebar_width,active_space FROM state WHERE singleton=1");
   if (!state.value || sqlite3_step(state.value) != SQLITE_ROW) return Error(500, "Workspace state unavailable");
   result.snapshot.revision = sqlite3_column_int64(state.value, 0);
   result.snapshot.active_id = Text(state.value, 1);
   result.snapshot.sidebar_width = sqlite3_column_int(state.value, 2);
   result.snapshot.active_space = Text(state.value, 3);
-  Statement spaces(db_, "SELECT id,name,icon,position,coalesce(active_id,''),theme_hue,theme_intensity,theme_mode,theme_noise,theme_palette FROM spaces ORDER BY position");
+  Statement spaces(db_, "SELECT id,name,icon,position,coalesce(active_id,''),theme_hue,theme_intensity,theme_mode,theme_noise,theme_palette,profile_id FROM spaces ORDER BY position");
   if (!spaces.value) return Error(500, "Workspace spaces unavailable");
   while (sqlite3_step(spaces.value) == SQLITE_ROW) {
     Space space;
@@ -319,9 +345,10 @@ TreeResult TreeStore::Load() {
     space.theme_hue = sqlite3_column_int(spaces.value, 5); space.theme_intensity = sqlite3_column_int(spaces.value, 6);
     space.theme_mode = sqlite3_column_int(spaces.value, 7); space.theme_noise = sqlite3_column_int(spaces.value, 8);
     if (!DecodePalette(Text(spaces.value,9),space.theme_palette)) return Error(500,"Invalid saved palette");
+    space.profile = Text(spaces.value,10);
     result.snapshot.spaces.push_back(std::move(space));
   }
-  Statement nodes(db_, "SELECT id,coalesce(parent_id,''),kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at FROM nodes ORDER BY coalesce(parent_id,''),position");
+  Statement nodes(db_, "SELECT id,coalesce(parent_id,''),kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id FROM nodes ORDER BY coalesce(parent_id,''),position");
   if (!nodes.value) return Error(500, "Workspace nodes unavailable");
   int code;
   while ((code = sqlite3_step(nodes.value)) == SQLITE_ROW) {
@@ -331,6 +358,7 @@ TreeResult TreeStore::Load() {
     node.pinned = sqlite3_column_int(nodes.value, 6) != 0; node.expanded = sqlite3_column_int(nodes.value, 7) != 0;
     node.favorite = sqlite3_column_int(nodes.value, 8) != 0; node.archived = sqlite3_column_int(nodes.value, 9) != 0;
     node.page_title = Text(nodes.value, 10); node.custom_title = sqlite3_column_int(nodes.value, 11) != 0;
+    node.profile = Text(nodes.value, 15);
     node.archived_at = sqlite3_column_int64(nodes.value, 12);
     node.space = Text(nodes.value, 13);
     node.last_active_at = sqlite3_column_int64(nodes.value,14);
@@ -401,11 +429,52 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
   const bool space_command = command.action == TreeAction::CreateSpace || command.action == TreeAction::EditSpace ||
       command.action == TreeAction::DeleteSpace || command.action == TreeAction::SwitchSpace || command.action == TreeAction::MoveSpace;
   const bool split_command = command.action >= TreeAction::CreateSplit && command.action <= TreeAction::SwapSplit;
-  if (split_command) {
+  if (command.action == TreeAction::CreateProfile) {
+    if (tree.profiles.size() >= 24 || !SafeText(command.title,40)) return rollback(400,"Invalid profile name or profile limit reached");
+    std::set<std::string> selected;
+    for (const auto& space : command.spaces)
+      if (!FindSpace(tree,space) || !selected.insert(space).second) return rollback(400,"Invalid profile Spaces");
+    const auto id = NewId();
+    if (id.empty()) return rollback(500,"Cannot generate profile identity");
+    tree.profiles.push_back({id,command.title}); result.created_id = id;
+    for (auto& space : tree.spaces) if (selected.contains(space.id)) {
+      space.profile=id; space.active_id.clear();
+      if (tree.active_space==space.id) tree.active_id.clear();
+    }
+  } else if (command.action == TreeAction::RenameProfile) {
+    const auto profile = std::find_if(tree.profiles.begin(),tree.profiles.end(),[&](const auto& p) { return p.id == command.id; });
+    if (profile == tree.profiles.end() || !SafeText(command.title,40)) return rollback(400,"Invalid profile");
+    profile->name = command.title;
+  } else if (command.action == TreeAction::SetSpaceProfile) {
+    auto* space = FindSpace(tree,command.id);
+    if (!space || std::none_of(tree.profiles.begin(),tree.profiles.end(),[&](const auto& p) { return p.id == command.profile; })) return rollback(400,"Unknown profile or space");
+    space->profile = command.profile; space->active_id.clear();
+    if (tree.active_space == space->id) tree.active_id.clear();
+  } else if (command.action == TreeAction::ExportSpace) {
+    const auto* source=FindSpace(tree,command.id); const auto* destination=FindSpace(tree,command.space);
+    if (!source || !destination || source==destination || tree.spaces.size()<2) return rollback(400,"Choose another Space for this folder");
+    TreeNode folder; folder.id=NewId(); folder.folder=folder.pinned=true; folder.expanded=true;
+    folder.title=source->name; folder.space=destination->id; folder.profile=destination->profile;
+    if (folder.id.empty()) return rollback(500,"Cannot create exported folder");
+    folder.position=static_cast<int>(std::count_if(tree.nodes.begin(),tree.nodes.end(),[](const auto& n){return n.parent.empty();}));
+    const auto roots=tree.nodes;
+    int position=0;
+    for (const auto& root : roots) if (root.space==command.id && root.parent.empty() && !root.favorite) {
+      auto* entry=Find(tree,root.id);
+      if (entry->archived) { entry->space=command.space; continue; }
+      entry->parent=folder.id; entry->space.clear(); entry->pinned=true; entry->position=position++;
+    }
+    if (tree.active_space==command.id) { tree.active_space=command.space; tree.active_id.clear(); }
+    std::erase_if(tree.spaces,[&](const auto& space){return space.id==command.id;});
+    std::sort(tree.spaces.begin(),tree.spaces.end(),[](const auto& a,const auto& b){return a.position<b.position;});
+    for (size_t i=0;i<tree.spaces.size();++i) tree.spaces[i].position=static_cast<int>(i);
+    result.created_id=folder.id; tree.nodes.push_back(std::move(folder)); Normalize(tree,"");
+  } else if (split_command) {
     auto group = std::find_if(tree.splits.begin(),tree.splits.end(),[&](const auto& split) { return split.anchor == command.id; });
     if (command.action == TreeAction::CreateSplit) {
       const auto* other = FindConst(tree,command.parent);
       if (!node || !other || node->folder || other->folder || node->archived || other->archived || node->favorite || node->id == other->id ||
+          BrowsingProfileId(tree,node->id) != BrowsingProfileId(tree,other->id) ||
           (!other->favorite && SpaceOf(tree,*node) != SpaceOf(tree,*other))) return rollback(400,"Choose two distinct tabs in this space");
       for (const auto& split : tree.splits) if (split.anchor == node->id || split.other == node->id || split.anchor == other->id || split.other == other->id)
         return rollback(409,"Separate an existing split before combining these tabs");
@@ -431,6 +500,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         Space created;
         created.id = NewId(); if (created.id.empty()) return rollback(500, "Cannot generate space identity");
         created.name = command.title; created.icon = command.icon;
+        created.profile = command.profile.empty() ? BrowsingProfileId(tree) : command.profile;
         created.position = static_cast<int>(tree.spaces.size());
         // A new space gets its own color (golden angle from the current one).
         created.theme_hue = current ? (current->theme_hue + 137) % 360 : 307;
@@ -491,6 +561,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
     if (command.parent.empty()) created.space = tree.active_space;
     created.pinned = created.folder || !command.parent.empty();
     created.title = command.title; created.url = created.folder ? "" : command.url; created.last_active_at=now;
+    created.profile = BrowsingProfileId(tree);
     const auto* after = command.after.empty() ? nullptr : FindConst(tree, command.after);
     if (!created.folder && command.parent.empty() && after && after->parent.empty() && !after->folder && !after->pinned &&
         !after->favorite && !after->archived && after->space == tree.active_space) {
@@ -550,6 +621,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         node->expanded = command.value; break;
       case TreeAction::Activate:
         if (node->folder || node->archived) return rollback(400, "Entry is not an available page");
+        if (node->favorite && node->profile != BrowsingProfileId(tree)) return rollback(400,"Favorite belongs to another profile");
         // Showing a page of another space (e.g. from history) enters that space.
         if (!node_space.empty()) tree.active_space = node_space;
         tree.active_id = node->id; node->last_active_at=now; break;
@@ -577,6 +649,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         SetDestination(*node, command); break;
       case TreeAction::Place:
       case TreeAction::Move: {
+        const auto owner_profile = BrowsingProfileId(before,node->id);
         if (node->archived) return rollback(400, "Restore archived tabs before moving");
         if (command.action == TreeAction::Place && command.section == "favorites" &&
             std::any_of(tree.splits.begin(),tree.splits.end(),[&](const auto& split) { return split.anchor == node->id; }))
@@ -589,6 +662,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         if (!MoveNode(tree, *node, command.parent, command.position)) return rollback(400, "Invalid folder placement, cycle or sibling position");
         if (command.action == TreeAction::Place) {
           node->pinned = command.section != "today"; node->favorite = command.section == "favorites";
+          if (node->favorite) node->profile = owner_profile;
         }
         if (was_pinned != node->pinned && !command.url.empty()) {
           if (!SafeUrl(command.url)) return rollback(400, "Invalid pinned URL");
@@ -669,6 +743,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
   std::erase_if(tree.splits,[&](const auto& split) {
     const auto* a = FindConst(tree,split.anchor); const auto* b = FindConst(tree,split.other);
     return !a || !b || a->archived || b->archived || a->favorite ||
+      BrowsingProfileId(tree,a->id) != BrowsingProfileId(tree,b->id) ||
       (!b->favorite && SpaceOf(tree,*a) != SpaceOf(tree,*b)) ||
       (command.action == TreeAction::Unload && (split.anchor == command.id || split.other == command.id));
   });
@@ -683,6 +758,15 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
 TreeResult TreeStore::Save(TreeResult result, const TreeSnapshot& before) {
   auto& tree = result.snapshot;
   auto rollback = [&](int code, const char* message) { Exec("ROLLBACK"); return Error(code, message); };
+  if (tree.profiles != before.profiles) {
+    Statement put(db_,"INSERT INTO browsing_profiles(id,name) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name");
+    if (!put.value) return rollback(500,"Cannot prepare profile update");
+    for (const auto& profile : tree.profiles) {
+      put.Text(1,profile.id); put.Text(2,profile.name);
+      if (sqlite3_step(put.value) != SQLITE_DONE) return rollback(500,"Cannot save profile");
+      sqlite3_reset(put.value);
+    }
+  }
   if (tree.splits != before.splits) {
     if (!Exec("DELETE FROM splits")) return rollback(500,"Cannot update split views");
     Statement put(db_,"INSERT INTO splits(anchor,other,title,ratio,vertical,reversed) VALUES(?,?,?,?,?,?)");
@@ -703,8 +787,8 @@ TreeResult TreeStore::Save(TreeResult result, const TreeSnapshot& before) {
       if (sqlite3_step(put.value)!=SQLITE_DONE) return rollback(500,"Cannot save archived split"); sqlite3_reset(put.value);
     }
   }
-  Statement write(db_, "INSERT INTO nodes(id,parent_id,kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at) VALUES(?,NULLIF(?,''),?,?,?,?,?,?,?,?,?,?,?,?,?) "
-      "ON CONFLICT(id) DO UPDATE SET parent_id=excluded.parent_id,title=excluded.title,url=excluded.url,position=excluded.position,pinned=excluded.pinned,expanded=excluded.expanded,favorite=excluded.favorite,archived=excluded.archived,page_title=excluded.page_title,custom_title=excluded.custom_title,archived_at=excluded.archived_at,space_id=excluded.space_id,last_active_at=excluded.last_active_at");
+  Statement write(db_, "INSERT INTO nodes(id,parent_id,kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id) VALUES(?,NULLIF(?,''),?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+      "ON CONFLICT(id) DO UPDATE SET parent_id=excluded.parent_id,title=excluded.title,url=excluded.url,position=excluded.position,pinned=excluded.pinned,expanded=excluded.expanded,favorite=excluded.favorite,archived=excluded.archived,page_title=excluded.page_title,custom_title=excluded.custom_title,archived_at=excluded.archived_at,space_id=excluded.space_id,last_active_at=excluded.last_active_at,profile_id=excluded.profile_id");
   Statement erase(db_, "DELETE FROM nodes WHERE id=?");
   if (!write.value || !erase.value) return rollback(500, "Cannot prepare workspace update");
   for (const auto& old : before.nodes) {
@@ -717,7 +801,7 @@ TreeResult TreeStore::Save(TreeResult result, const TreeSnapshot& before) {
     write.Text(4, n.title); write.Text(5, n.url); sqlite3_bind_int(write.value, 6, n.position);
     sqlite3_bind_int(write.value, 7, n.pinned); sqlite3_bind_int(write.value, 8, n.expanded);
     sqlite3_bind_int(write.value, 9, n.favorite); sqlite3_bind_int(write.value, 10, n.archived);
-    write.Text(11, n.page_title); sqlite3_bind_int(write.value, 12, n.custom_title);
+    write.Text(11, n.page_title); sqlite3_bind_int(write.value, 12, n.custom_title); write.Text(16,n.profile);
     sqlite3_bind_int64(write.value, 13, n.archived_at); write.Text(14, n.space);
     sqlite3_bind_int64(write.value,15,n.last_active_at);
     if (sqlite3_step(write.value) != SQLITE_DONE) return rollback(500, "Workspace write failed");
@@ -725,9 +809,9 @@ TreeResult TreeStore::Save(TreeResult result, const TreeSnapshot& before) {
   }
   if (tree.spaces != before.spaces) {
     Statement drop(db_, "DELETE FROM spaces WHERE id=?");
-    Statement put(db_, "INSERT INTO spaces(id,name,icon,position,active_id,theme_hue,theme_intensity,theme_mode,theme_noise,theme_palette) VALUES(?,?,?,?,NULLIF(?,''),?,?,?,?,?) "
+    Statement put(db_, "INSERT INTO spaces(id,name,icon,position,active_id,theme_hue,theme_intensity,theme_mode,theme_noise,theme_palette,profile_id) VALUES(?,?,?,?,NULLIF(?,''),?,?,?,?,?,?) "
         "ON CONFLICT(id) DO UPDATE SET name=excluded.name,icon=excluded.icon,position=excluded.position,active_id=excluded.active_id,"
-        "theme_hue=excluded.theme_hue,theme_intensity=excluded.theme_intensity,theme_mode=excluded.theme_mode,theme_noise=excluded.theme_noise,theme_palette=excluded.theme_palette");
+        "theme_hue=excluded.theme_hue,theme_intensity=excluded.theme_intensity,theme_mode=excluded.theme_mode,theme_noise=excluded.theme_noise,theme_palette=excluded.theme_palette,profile_id=excluded.profile_id");
     if (!drop.value || !put.value) return rollback(500, "Cannot prepare spaces update");
     for (const auto& old : before.spaces) {
       if (std::any_of(tree.spaces.begin(), tree.spaces.end(), [&](const auto& s) { return s.id == old.id; })) continue;
@@ -737,7 +821,7 @@ TreeResult TreeStore::Save(TreeResult result, const TreeSnapshot& before) {
       put.Text(1, s.id); put.Text(2, s.name); put.Text(3, s.icon); sqlite3_bind_int(put.value, 4, s.position); put.Text(5, s.active_id);
       sqlite3_bind_int(put.value, 6, s.theme_hue); sqlite3_bind_int(put.value, 7, s.theme_intensity);
       sqlite3_bind_int(put.value, 8, s.theme_mode); sqlite3_bind_int(put.value, 9, s.theme_noise);
-      put.Text(10,EncodePalette(s.theme_palette));
+      put.Text(10,EncodePalette(s.theme_palette)); put.Text(11,s.profile);
       if (sqlite3_step(put.value) != SQLITE_DONE) return rollback(500, "Space write failed");
       sqlite3_reset(put.value);
     }
@@ -775,10 +859,11 @@ TreeResult TreeStore::Import(const TreeSnapshot& incoming, const std::filesystem
   if (tree.nodes.size() + incoming.nodes.size() > 10000) return rollback(409, "Import would exceed 10,000 entries");
   for (auto s : incoming.spaces) { s.position = static_cast<int>(tree.spaces.size()); tree.spaces.push_back(s); }
   int root_position = static_cast<int>(std::count_if(tree.nodes.begin(), tree.nodes.end(), [](const auto& n) { return n.parent.empty(); }));
-  int favorites = static_cast<int>(std::count_if(tree.nodes.begin(), tree.nodes.end(), [](const auto& n) { return n.favorite; }));
+  std::map<std::string,int> favorites;
+  for (const auto& n : tree.nodes) if (n.favorite) ++favorites[n.profile];
   for (auto n : incoming.nodes) {
     if (Find(tree, n.id)) return rollback(409, "This profile contains entries that are already imported");
-    if (n.favorite && ++favorites > 12) { n.favorite = false; n.space = incoming.active_space; }
+    if (n.favorite && ++favorites[n.profile] > 12) { n.favorite = false; n.space = incoming.active_space; }
     if (n.parent.empty()) n.position = root_position++;
     tree.nodes.push_back(std::move(n));
   }

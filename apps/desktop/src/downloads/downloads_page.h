@@ -10,5 +10,6 @@ namespace red {
 //   downloads.clearAll {}              forget all saved and finished downloads
 // File system paths never reach the page. Returns false for other methods.
 bool HandleDownloadsPageCommand(const std::shared_ptr<State>& state, const std::string& method,
-                                CefRefPtr<CefDictionaryValue> d, CefRefPtr<CefMessageRouterBrowserSide::Callback> cb);
+                                CefRefPtr<CefDictionaryValue> d, CefRefPtr<CefMessageRouterBrowserSide::Callback> cb,
+                                std::shared_ptr<BrowsingProfile> profile = nullptr);
 }  // namespace red

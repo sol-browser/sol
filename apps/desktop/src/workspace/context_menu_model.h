@@ -15,12 +15,26 @@ struct MenuNode {
   std::string space;  // Top-level Pinned/Today entries only.
 };
 struct MenuSpace { std::string id, name; };
+struct MenuProfile { std::string id, name; };
 struct SidebarMenuItem {
   std::string label, action, target;
   bool enabled = true;
   std::vector<SidebarMenuItem> children;
   bool checked = false;  // Shown with a check mark (the current space).
 };
+inline std::vector<SidebarMenuItem> SpaceMenuItems(const std::vector<MenuSpace>& spaces, const std::vector<MenuProfile>& profiles,
+                                                  const std::string& active, const std::string& profile) {
+  const auto space=std::find_if(spaces.begin(),spaces.end(),[&](const auto& s){return s.id==active;});
+  if (space==spaces.end()) return {};
+  SidebarMenuItem selection{"Set Profile","","",true,{}};
+  for (const auto& item : profiles) selection.children.push_back({item.name,"setProfile",item.id,true,{},item.id==profile});
+  selection.children.push_back({"","","",false,{}});
+  selection.children.push_back({"New Profile...","newProfile","",profiles.size()<24,{}});
+  SidebarMenuItem transfer{"Export \""+space->name+"\" into Folder","","",spaces.size()>1,{}};
+  for (const auto& item : spaces) if (item.id!=active) transfer.children.push_back({item.name,"exportSpace",item.id,true,{}});
+  return {{"Edit Theme...","editTheme","",true,{}},selection,{"","","",false,{}},
+    {"New Folder","newFolder","",true,{}},transfer,{"","","",false,{}},{"Delete Space","deleteSpace","",spaces.size()>1,{}}};
+}
 // |spaces|: every space in switcher order; |active|: the one on screen.
 inline std::vector<SidebarMenuItem> SidebarMenuItems(const std::vector<MenuNode>& nodes, const std::string& id,
                                                      const std::vector<MenuSpace>& spaces = {}, const std::string& active = "", bool standalone = false) {

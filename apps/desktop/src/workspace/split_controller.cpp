@@ -35,7 +35,7 @@ std::optional<WorkspaceController::SplitDrop> WorkspaceController::SplitDropAt(c
   if (current == tree_.nodes.end() || dragged == tree_.nodes.end() || current->folder || dragged->folder || current->archived || dragged->archived ||
       archiving_.contains(id) || archiving_.contains(current->id) || moving_unloads_.contains(id) || moving_unloads_.contains(current->id) ||
       (current->favorite && dragged->favorite)) return {};
-  const auto visible = OrderedTabs(tree_.nodes,tree_.active_space);
+  const auto visible = OrderedTabsForSpace(tree_,tree_.active_space);
   if (std::find(visible.begin(),visible.end(),id) == visible.end() ||
       std::find(visible.begin(),visible.end(),current->id) == visible.end()) return {};
   for (const auto& split : tree_.splits) if (split.anchor == id || split.other == id || split.anchor == current->id || split.other == current->id) return {};
@@ -90,7 +90,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::DescribeSplitView() const {
   result->SetList("panes",panes); return result;
 }
 const SplitGroup* WorkspaceController::SelectedSplit() const {
-  const auto visible = OrderedTabs(tree_.nodes,tree_.active_space);
+  const auto visible = OrderedTabsForSpace(tree_,tree_.active_space);
   for (const auto& split : tree_.splits) if ((split.anchor == tree_.active_id || split.other == tree_.active_id) &&
       std::find(visible.begin(),visible.end(),split.anchor) != visible.end() &&
       !closing_.contains(split.anchor) && !closing_.contains(split.other) &&

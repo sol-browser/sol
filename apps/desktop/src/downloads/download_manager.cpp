@@ -23,7 +23,15 @@ std::string Origin(const std::string& url) {
 }  // namespace
 
 DownloadManager::DownloadManager(std::weak_ptr<State> state, std::filesystem::path directory)
-    : state_(std::move(state)), directory_(std::move(directory)) {}
+    : state_(std::move(state)), directory_(std::move(directory)) {
+  if (const auto owner=state_.lock()) session_=owner->session;
+}
+std::shared_ptr<State> DownloadManager::Owner() const {
+  if (const auto state=state_.lock()) return state;
+  if (const auto session=session_.lock()) for (const auto& window : session->Windows())
+    if (!window->private_window && window->workspace && window->window) return window;
+  return nullptr;
+}
 
 std::filesystem::path DownloadManager::DefaultDirectory() {
   PWSTR raw = nullptr;
@@ -37,7 +45,7 @@ bool DownloadManager::OnBeforeDownload(CefRefPtr<CefDownloadItem> item, const Ce
                                        CefRefPtr<CefBeforeDownloadCallback> callback) {
   auto directory = directory_;
   bool ask = false;
-  if (const auto state = state_.lock(); state && !state->probe && state->session && state->session->preferences) {
+  if (const auto state = Owner(); state && !state->probe && state->session && state->session->preferences) {
     const auto& prefs = state->session->preferences->Get();
     if (!prefs.download_directory.empty()) directory = prefs.download_directory;
     ask = prefs.ask_download;
@@ -46,7 +54,7 @@ bool DownloadManager::OnBeforeDownload(CefRefPtr<CefDownloadItem> item, const Ce
   if (directory.empty() || (!std::filesystem::is_directory(directory, error) &&
                              !std::filesystem::create_directories(directory, error))) {
     // Returning true without continuing cancels; never fall back to Chrome's own UI.
-    if (auto state = state_.lock(); state && state->workspace) state->workspace->Notify("The download could not start: the Downloads folder is unavailable.");
+    if (auto state = Owner(); state && state->workspace) state->workspace->Notify("The download could not start: the Downloads folder is unavailable.");
     return true;
   }
   const auto name = SanitizeDownloadName(suggested_name.ToWString());
@@ -62,7 +70,7 @@ bool DownloadManager::OnBeforeDownload(CefRefPtr<CefDownloadItem> item, const Ce
   entry.total = item->GetTotalBytes();
   ++started_;
   callback->Continue(path.wstring(), ask);
-  if (auto state = state_.lock()) {
+  if (auto state = Owner()) {
     auto details = CefDictionaryValue::Create(); details->SetInt("id", static_cast<int>(entry.id));
     if (state->probe) details->SetString("file", entry.name);
     state->Record("download_started", details);
@@ -86,7 +94,7 @@ void DownloadManager::OnUpdated(CefRefPtr<CefDownloadItem> item, CefRefPtr<CefDo
   if (const auto full = item->GetFullPath().ToWString(); !full.empty()) {
     entry.path = full; entry.name = CefString(entry.path.filename().wstring()).ToString();
   }
-  if (entry.state != previous) if (auto state = state_.lock()) {
+  if (entry.state != previous) if (auto state = Owner()) {
     auto details = CefDictionaryValue::Create(); details->SetInt("id", static_cast<int>(entry.id));
     details->SetString("state", entry.state); details->SetDouble("received", static_cast<double>(entry.received));
     if (entry.state == "interrupted") details->SetInt("reason", item->GetInterruptReason());
@@ -210,23 +218,22 @@ void DownloadManager::ClearFinished(bool saved) {
     return done;
   });
   if (!saved) { SchedulePublish(); return; }
-  if (auto state = state_.lock(); state && state->history && !state->private_window) state->history->ClearDownloads();
+  if (history_) history_->ClearDownloads();
   SchedulePublish();
 }
 
 void DownloadManager::Persist(Entry& entry) {
-  auto state = state_.lock();
-  if (!state || !state->history || state->private_window) return;  // Private downloads are never recorded.
+  if (!history_) return;  // Only persistent profiles bind a history service.
   const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
   DownloadRecord record{entry.record_id, entry.name, entry.origin, entry.state, entry.path, entry.received, entry.total, now};
-  state->history->SaveDownload(record, [weak = weak_from_this(), id = entry.id](int64_t stored) {
+  history_->SaveDownload(record, [weak = weak_from_this(), id = entry.id](int64_t stored) {
     auto self = weak.lock(); if (!self || !stored) return;
     if (const auto found = self->entries_.find(id); found != self->entries_.end()) found->second.record_id = stored;
   });
 }
 void DownloadManager::Forget(const Entry& entry) {
   if (!entry.record_id) return;
-  if (auto state = state_.lock(); state && state->history && !state->private_window) state->history->DeleteDownload(entry.record_id);
+  if (history_) history_->DeleteDownload(entry.record_id);
 }
 
 void DownloadManager::SchedulePublish() {
@@ -237,7 +244,12 @@ void DownloadManager::SchedulePublish() {
     auto self = weak.lock();
     if (!self) return;
     self->publish_pending_ = false;
-    if (auto state = self->state_.lock(); state && state->workspace) state->workspace->Refresh();
+    if (auto state = self->Owner(); state && state->workspace) {
+      if (state->session) {
+        for (const auto& window : state->session->Windows())
+          if (window->workspace && window->downloads.get()==self.get()) window->workspace->Refresh();
+      } else state->workspace->Refresh();
+    }
   }, weak_from_this()), 250);
 }
 }  // namespace red

@@ -29,6 +29,10 @@ target_sources(${CEF_TARGET} PRIVATE src/workspace/controller.cpp src/experiment
 target_sources(${CEF_TARGET} PRIVATE src/workspace/folder_removal.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/window_transfer.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/session.cpp)
+target_sources(${CEF_TARGET} PRIVATE src/app/browsing_profiles.cpp)
+target_sources(${CEF_TARGET} PRIVATE src/workspace/profiles_controller.cpp)
+target_sources(${CEF_TARGET} PRIVATE src/experiments/profiles_probe.cpp)
+target_sources(${CEF_TARGET} PRIVATE src/experiments/profile_settings_probe.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/auto_archive.cpp src/workspace/auto_archive_controller.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/link_peek_layout.cpp src/windows/link_peek_scene.cpp src/windows/auto_pip.cpp src/windows/video_pip_button.cpp src/windows/link_peek_close.cpp src/windows/link_peek_readiness.cpp src/workspace/link_peek_controller.cpp src/workspace/media_controller.cpp src/workspace/tab_menu_actions.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/preferences.cpp src/app/updates.cpp src/app/windows_locale.cpp)
@@ -97,10 +101,10 @@ target_sources(${CEF_TARGET} PRIVATE src/windows/devtools.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/devtools_dock.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/device_emulation.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/import/zen_reader.cpp src/import/zen_import.cpp src/import/browser_import.cpp src/import/cookie_writer.cpp src/import/password_sink.cpp)
-target_link_libraries(${CEF_TARGET} PRIVATE comctl32 ole32 uuid)
+target_link_libraries(${CEF_TARGET} PRIVATE comctl32 ole32 oleaut32 uuid)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/lifecycle_probe.cpp src/experiments/toolbar_probe.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/extensions/profile_guard.cpp src/extensions/shell_reset.cpp src/windows/tab_history_menu.cpp src/app/web_profile_repair.cpp src/extensions/install_notice.cpp src/extensions/pinned_extensions.cpp src/extensions/extension_catalog.cpp src/windows/extension_popup.cpp src/windows/sidebar_peek.cpp
-  src/windows/extensions_window.cpp src/site/site_data.cpp)
+  src/windows/extensions_window.cpp src/windows/passwords_window.cpp src/site/site_data.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/downloads/download_manager.cpp src/windows/panel_popup.cpp src/windows/share_sheet.cpp src/windows/welcome_music.cpp src/windows/welcome_window.cpp src/windows/browser_icons.cpp src/windows/window_icons.cpp)
 target_link_libraries(${CEF_TARGET} PRIVATE runtimeobject velopack mfplay mfuuid)
 target_include_directories(${CEF_TARGET} PRIVATE src)
@@ -237,3 +241,11 @@ add_executable(link_status_text_test "${CMAKE_SOURCE_DIR}/tests/native/link_stat
 target_include_directories(link_status_text_test PRIVATE src)
 target_compile_options(link_status_text_test PRIVATE /W4 /WX /utf-8 /EHsc)
 add_test(NAME link_status_text COMMAND link_status_text_test)
+
+target_sources(${CEF_TARGET} PRIVATE src/experiments/passwords_probe.cpp)
+
+target_sources(${CEF_TARGET} PRIVATE src/windows/browser_dialogs.cpp)
+
+target_sources(${CEF_TARGET} PRIVATE src/windows/sidebar_actions.cpp)
+
+target_sources(${CEF_TARGET} PRIVATE src/windows/utility_window.cpp src/experiments/utility_windows_probe.cpp)

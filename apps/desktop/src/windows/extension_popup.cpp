@@ -146,7 +146,7 @@ void ExtensionPopup::Open(const std::string& id, const std::string& path, const 
   }
   id_ = id; anchor_ = anchor; size_ = CefSize(320, 120);
   auto view = CefBrowserView::CreateBrowserView(new PopupClient(weak_from_this(), state_, id), Origin(id) + path,
-      CefBrowserSettings(), nullptr, CefRequestContext::GetGlobalContext(), new PopupView());
+      CefBrowserSettings(), nullptr, state->WebContext(), new PopupView());
   CefWindow::CreateTopLevelWindow(new PopupWindow(weak_from_this(), state_, view));
   auto data = CefDictionaryValue::Create(); data->SetString("id", id.substr(0, 8));
   state->Record("ext_popup_opened", data);

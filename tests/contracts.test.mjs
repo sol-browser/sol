@@ -1,8 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSnapshot, parseSnapshotUpdate, parseSidebarMenuChoice, DEFAULT_THEME } from '../packages/browser-contracts/src/index.ts';
+import { parseSnapshot, parseSnapshotUpdate, parseSidebarMenuChoice, parseSettingsSnapshot, DEFAULT_THEME } from '../packages/browser-contracts/src/index.ts';
 const folder = '11111111-1111-4111-8111-111111111111';
 const tab = '22222222-2222-4222-8222-222222222222';
+test('Space actions validate profile and export destinations',()=>{
+  for(const [action,targetId] of [['setProfile','default'],['setProfile',tab],['exportSpace',folder],['newProfile',''],['deleteSpace','']])
+    assert.equal(parseSidebarMenuChoice(JSON.stringify({action,targetId})).targetId,targetId);
+  for(const [action,targetId] of [['setProfile','../escape'],['exportSpace','default'],['newProfile',tab],['deleteSpace',folder]])
+    assert.throws(()=>parseSidebarMenuChoice(JSON.stringify({action,targetId})));
+});
+test('profile settings accept only unique Spaces with known owners',()=>{
+  const settings={theme:DEFAULT_THEME,ready:true,spaceName:'Work',spaceId:folder,version:'0.1.5',chromiumVersion:'156.0.8078.48',
+    defaultBrowser:{installed:false,registered:false,isDefault:null},preferencesError:'',keyboard:[],activeProfile:'default',
+    profiles:[{id:'default',name:'Default'}],spaces:[{id:folder,name:'Work',icon:'',position:0,hue:10,intensity:40,profileId:'default'}]};
+  assert.equal(parseSettingsSnapshot(JSON.stringify(settings)).spaces.length,1);
+  for(const spaces of [[settings.spaces[0],settings.spaces[0]],[{...settings.spaces[0],profileId:tab}],[{...settings.spaces[0],id:'../escape'}]])
+    assert.throws(()=>parseSettingsSnapshot(JSON.stringify({...settings,spaces})));
+});
 test('theme preview merges only validated theme/revision and retains the existing tree',()=>{
   const previous={revision:20,activeSpace:folder,nodes:[{id:tab}],theme:DEFAULT_THEME};
   const delta={themeOnly:true,revision:21,activeSpace:folder,theme:{...DEFAULT_THEME,hue:42}};
@@ -40,6 +54,17 @@ const fixture = () => ({ revision: 4, canGoBack: false, canGoForward: false, pro
     { id: folder, parentId: '', kind: 'folder', title: 'Work', url: '', position: 0, pinned: true, expanded: false, live: false, favorite: false, archived: false, currentUrl: '', closing: false },
     { id: tab, parentId: folder, kind: 'tab', title: 'Tab', url: 'https://example.com/', position: 0, pinned: true, expanded: true, live: true, favorite: false, archived: false, currentUrl: 'https://example.com/current', closing: false },
   ] });
+
+test('browsing profiles validate identities and Space references', () => {
+  const state = {...fixture(), activeProfile:tab, profiles:[{id:'default',name:'Default'},{id:tab,name:'Work'}],
+    activeSpace:folder, spaces:[{id:folder,name:'Work',icon:'',position:0,hue:0,intensity:40,profileId:tab}]};
+  assert.equal(parseSnapshot(JSON.stringify(state)).spaces[0].profileId,tab);
+  for (const profiles of [[],[{id:'../escape',name:'Bad'}],[{id:'default',name:''}],
+    [{id:'default',name:'Default'},{id:'default',name:'Duplicate'}], [{id:'default',name:'x'.repeat(41)}]])
+    assert.throws(()=>parseSnapshot(JSON.stringify({...state,profiles})));
+  assert.throws(()=>parseSnapshot(JSON.stringify({...state,activeProfile:'unknown'})));
+  assert.throws(()=>parseSnapshot(JSON.stringify({...state,spaces:[{...state.spaces[0],profileId:'unknown'}]})));
+});
 test('detached inspector retains placement controls and validates device geometry', () => {
   const bounds = { x: 264, y: 36, width: 912, height: 28 };
   const devTools = { id: 5, side: 'window', extent: 0, header: bounds, divider: { x: 0, y: 0, width: 0, height: 0 } };

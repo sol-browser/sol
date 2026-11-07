@@ -1,3 +1,4 @@
+#include "windows/sidebar_actions.h"
 #include "app/session.h"
 #include "windows/pointer.h"
 #include "windows/sidebar_peek.h"
@@ -739,6 +740,7 @@ bool SidebarPeek::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t 
   }
   if (method == "browser.getSnapshot" && d->GetSize() == 1) { cb->Success(Json(s->workspace->Snapshot())); return true; }
   if (s->workspace->WindowClosing()) { cb->Failure(409, "Window is closing"); return true; }
+  if (HandleSidebarAction(s,b,method,d,persistent,cb)) return true;
   if (method == "workspace.sidebarResizeHovered") {
     if (d->GetSize() != 2 || d->GetType("width") != VTYPE_INT || (d->GetInt("width") != 2 && d->GetInt("width") != 8)) {
       cb->Failure(400, "Invalid sidebar hover request"); return true;
@@ -803,45 +805,15 @@ bool SidebarPeek::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t 
     });
     return true;
   }
-  if (method == "browser.shortcut" && d->GetSize() == 2 && d->GetType("action") == VTYPE_STRING && d->GetString("action") == "newTab") {
-    ExecuteShortcut(s, Shortcut::NewTab); cb->Success(Json(s->workspace->Snapshot())); Hide(); return true;
-  }
-  if (method == "tab.detach" || method == "tab.dragStarted" || method == "tab.dragCancel" || method == "tab.dragEnded") {
-    s->workspace->HandleTabDrag(d, [cb](int code, const std::string& error, CefRefPtr<CefDictionaryValue> snapshot) {
-      if (code) cb->Failure(code, error); else cb->Success(Json(snapshot));
-    });
-    return true;
-  }
-  if ((method == "tab.copyLink" || method == "tab.archiveOthers" || method == "tab.archiveBelow" || method == "tab.clearToday" || method == "tab.moveToNewSpace" || method == "tab.setHome") &&
-      d->GetType("id") == VTYPE_STRING && d->GetString("id").length() == 36) {
-    const bool home = method == "tab.setHome";
-    const bool edited = home && d->GetSize() == 4 && d->GetType("url") == VTYPE_STRING && d->GetType("title") == VTYPE_STRING;
-    if (d->GetSize() != 2 && !edited) { cb->Failure(400, "Invalid tab command"); return true; }
-    std::string error; const auto id = d->GetString("id").ToString();
-    const int code = method == "tab.copyLink" ? s->workspace->CopyTabLink(id, error)
-        : home ? s->workspace->SetPinnedPage(id, edited ? d->GetString("url").ToString() : "", edited ? d->GetString("title").ToString() : "", error)
-        : method == "tab.moveToNewSpace" ? s->workspace->MoveToNewSpace(id, error)
-        : s->workspace->ArchiveTodayTabs(id, method == "tab.archiveBelow", error, method == "tab.clearToday");
-    if (code) cb->Failure(code, error); else cb->Success(Json(s->workspace->Snapshot()));
-    return true;
-  }
-  if ((method == "tab.duplicate" || method == "tab.mute") && d->GetType("id") == VTYPE_STRING && d->GetString("id").length() == 36) {
-    const bool mute = method == "tab.mute";
-    if (d->GetSize() != (mute ? 3u : 2u) || (mute && d->GetType("muted") != VTYPE_BOOL)) { cb->Failure(400, "Invalid tab command"); return true; }
-    std::string error;
-    const int code = mute ? s->workspace->SetMuted(d->GetString("id"), d->GetBool("muted"), error) : s->workspace->Duplicate(d->GetString("id"), error);
-    if (code) cb->Failure(code, error); else cb->Success(Json(s->workspace->Snapshot()));
-    return true;
-  }
   // Coordinates from the peek document become root client coordinates.
   const auto client = s->window ? s->window->GetClientAreaBoundsInScreen() : CefRect();
   // The sidebar sits at its resting place in the host (Target) when used.
   const auto bounds = Target();
   const int dx = bounds.x, dy = bounds.y;
-  if (method == "workspace.contextMenu" && s->sidebar_menu && d->GetSize() == 4 && d->GetType("id") == VTYPE_STRING &&
+  if ((method == "workspace.contextMenu" || method=="workspace.spaceMenu") && s->sidebar_menu && d->GetSize() == 4 && d->GetType("id") == VTYPE_STRING &&
       (d->GetString("id").length() == 36 || d->GetString("id").empty()) && d->GetType("x") == VTYPE_INT && d->GetType("y") == VTYPE_INT) {
     const int x = std::clamp(d->GetInt("x") + dx, 0, std::max(0, SidebarWidth(s->sidebar_width, client.width) - 1));
-    s->sidebar_menu->Open(d->GetString("id"), x, d->GetInt("y") + dy, query, cb, b); return true;
+    s->sidebar_menu->Open(d->GetString("id"), x, d->GetInt("y") + dy, query, cb, b,method=="workspace.spaceMenu"); return true;
   }
   if (method == "panel.open" && s->panel_popup && d->GetSize() == 6 && d->GetType("kind") == VTYPE_STRING && (d->GetString("kind") == "archive" || d->GetString("kind") == "space" || d->GetString("kind") == "newSpace") &&
       d->GetType("x") == VTYPE_INT && d->GetType("y") == VTYPE_INT && d->GetType("width") == VTYPE_INT && d->GetType("height") == VTYPE_INT) {

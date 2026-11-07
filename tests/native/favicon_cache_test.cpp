@@ -48,5 +48,11 @@ int main() {
   auto reverted=request.Begin("https://example.com/icon.svg");
   check(reverted.has_value() && !request.Complete(*changed),"latest icon selection wins a callback race");
   check(!request.Begin(""),"empty URL rejected");
+  red::FaviconCache second_profile;
+  second_profile.Seed("example.com","different-profile-icon");
+  const auto other_icon = second_profile.Url("example.com");
+  check(other_icon && other_icon != fallback, "same-host icons in different profiles have distinct resource URLs");
+  check(other_icon && !cache.PngForPath(other_icon->substr(std::string("sol://ui").size())),
+        "another profile's icon URL never resolves to this profile's bytes");
   return failures ? 1 : 0;
 }

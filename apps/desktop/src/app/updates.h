@@ -1,5 +1,6 @@
 #pragma once
 #include <functional>
+#include <memory>
 #include <string>
 namespace red {
 // Velopack (https://velopack.io) installs, updates and uninstalls Sol by
@@ -29,4 +30,8 @@ std::string ReadyUpdate();
 // which waits for Sol to exit, applies it and starts Sol again. Returns false
 // when nothing is waiting; on true the caller closes Sol's windows.
 bool PrepareRestartToUpdate();
+// Shared trusted-UI entry for docked and floating sidebars. UI thread only.
+// Schedules window closure after the IPC response; refuses when not ready.
+struct State;
+bool RequestUpdateRestart(const std::shared_ptr<State>& state);
 }  // namespace red

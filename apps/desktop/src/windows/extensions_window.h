@@ -13,6 +13,7 @@ class ExtensionsWindow : public std::enable_shared_from_this<ExtensionsWindow> {
   explicit ExtensionsWindow(std::weak_ptr<State> state) : state_(std::move(state)) {}
   void Show();
   void Close();
+  CefRefPtr<CefWindow> window() const { return window_; }  // Native window probes only.
   void Created(CefRefPtr<CefWindow> window) { window_ = window; }
   void Destroyed(CefRefPtr<CefWindow> window) { if (window_ && window_->IsSame(window)) window_ = nullptr; }
  private:

@@ -15,6 +15,8 @@ class SettingsWindow : public std::enable_shared_from_this<SettingsWindow> {
   void BrowserClosed(int id);
   void Destroyed();
   void Close();
+  CefRefPtr<CefWindow> window() const { return window_; }  // Native window probes only.
+  CefRefPtr<CefBrowser> browser() const { return browser_; }  // Native probes only.
   // Opens Settings on one section ("import").
   void ShowSection(const std::string& section);
   bool Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, const CefString& request,
@@ -31,4 +33,5 @@ class SettingsWindow : public std::enable_shared_from_this<SettingsWindow> {
   bool creating_ = false, ready_ = false;
 };
 void ShowSettings(const std::shared_ptr<State>& state);
+void ShowProfileSettings(const std::shared_ptr<State>& state, bool create);
 }  // namespace red

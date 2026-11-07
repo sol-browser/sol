@@ -5,6 +5,7 @@
 #include "trust_policy.h"
 #include "workspace/controller.h"
 #include "app/session.h"
+#include "app/browsing_profiles.h"
 
 namespace red {
 namespace {
@@ -12,7 +13,9 @@ constexpr char kSettings[] = "extensions.settings";
 
 class Watcher final : public CefPreferenceObserver {
  public:
-  Watcher(std::weak_ptr<State> state, CefRefPtr<CefRequestContext> content) : state_(std::move(state)), content_(content) {}
+  Watcher(std::weak_ptr<State> state, CefRefPtr<CefRequestContext> content) : state_(std::move(state)), content_(content) {
+    if (const auto owner=state_.lock()) session_=owner->session;
+  }
   // Returns IDs of enabled, user-installed extensions with their display names.
   std::map<std::string, std::string> Installed() const {
     std::map<std::string, std::string> result;
@@ -37,31 +40,37 @@ class Watcher final : public CefPreferenceObserver {
   void Baseline() { for (const auto& [id, name] : Installed()) announced_.insert(id); }
   void OnPreferenceChanged(const CefString&) override {
     auto state = state_.lock();
+    if (!state) if (const auto session=session_.lock()) for (const auto& window : session->Windows())
+      if (!window->private_window && window->workspace && window->window) { state=window; break; }
     if (!state || !state->workspace) return;
     // Installs, removals and enable/disable change what the top bar's pins can show.
-    if (state->session && state->session->pinned_extensions) {
-      state->session->pinned_extensions->MarkStale();
+    if (state->session && state->session->profiles) {
+      if (const auto profile = state->session->profiles->ForContext(content_)) profile->pins->MarkStale();
       for (const auto& window : state->session->Windows()) if (window->workspace) window->workspace->Refresh();
     }
     for (const auto& [id, name] : Installed()) {
       if (!announced_.insert(id).second) continue;
-      state->last_extension_install_ms = GetTickCount64();
       auto details = CefDictionaryValue::Create(); details->SetString("id", id);
       state->Record("extension_install_announced", details);
-      state->workspace->Notify(name + " was added. Open it from the site controls, or pin it to the top bar from the browser menu.");
+      if (state->session) for (const auto& window : state->session->Windows()) {
+        if (window->private_window || !window->workspace || !content_->IsSharingWith(window->WebContext())) continue;
+        window->last_extension_install_ms = GetTickCount64();
+        window->workspace->Notify(name + " was added. Open it from the site controls, or pin it to the top bar from the browser menu.");
+      }
     }
   }
  private:
   std::weak_ptr<State> state_;
+  std::weak_ptr<AppSession> session_;
   CefRefPtr<CefRequestContext> content_;
   std::set<std::string> announced_;
   IMPLEMENT_REFCOUNTING(Watcher);
 };
 }  // namespace
 
-void WatchExtensionInstalls(const std::shared_ptr<State>& state, CefRefPtr<CefRequestContext> content) {
+CefRefPtr<CefRegistration> WatchExtensionInstalls(const std::shared_ptr<State>& state, CefRefPtr<CefRequestContext> content) {
   CefRefPtr<Watcher> watcher = new Watcher(state, content);
   watcher->Baseline();
-  state->extension_install_watch = content->AddPreferenceObserver(kSettings, watcher);
+  return content->AddPreferenceObserver(kSettings, watcher);
 }
 }  // namespace red

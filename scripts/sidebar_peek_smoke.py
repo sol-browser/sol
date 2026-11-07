@@ -29,6 +29,14 @@ def main():
         'peek_lists_tabs': {'a', 'b'} <= set(document.get('rows', [])),
         'sidebar_right_aligned_in_window': abs(document.get('right', -1) - document.get('width', -2)) <= 1,
         'non_sidebar_command_refused': document.get('refused') == 404,
+        'ready_update_visible_in_floating_sidebar': any(d.get('updateVisible') is True and d.get('updateVersion') is True for d in documents),
+        'media_state_reaches_floating_sidebar': any(d.get('mediaVisible') is True for d in documents),
+        'update_notice_not_covered_by_media': any(d.get('updateClickable') is True for d in documents),
+        'floating_restart_routes_to_native_update_handler': any(d.get('restartRouted') is True and d.get('invalidUpdate')==400 for d in documents),
+        'both_hosts_use_shared_restart_dispatch': {r['details']['surface'] for r in rows if r['event']=='shared_sidebar_action' and r['details']['method']=='browser.restartToUpdate'} == {'docked','floating'},
+        # Foreground policy can dismiss the native panel in a background runner;
+        # count dispatches, so a hidden subscriber cannot open/toggle it twice.
+        'browser_menu_flow_has_one_active_sidebar_owner': first('sidebar_request_owner').get('docked') is True and sum(r['event']=='panel_open' and r.get('details',{}).get('kind')=='space' for r in rows)==1,
         'row_menu_opens_from_floating_sidebar': any(r['event'] == 'sidebar_menu_open' for r in rows) and menu == 'shown',
         'row_click_activates_tab': first('peek_after_click').get('url', '').endswith('/a'),
         'slide_clipped_by_host_inside_window': bool(first('peek_mid_slide')) and first('peek_mid_slide')['sidebar_left'] < first('peek_mid_slide')['host_left']

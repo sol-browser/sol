@@ -8,7 +8,7 @@ import uuid
 from smoke import ROOT, run
 
 # The legacy fixture must migrate to the current workspace schema.
-CURRENT_SCHEMA = 11
+CURRENT_SCHEMA = 12
 
 
 def main():

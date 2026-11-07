@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type CSSPrope
 import { createRoot } from 'react-dom/client';
 import { request, subscribe, type Command, type Snapshot, type TreeMutation, type TreeNode } from './bridge';
 import { ipcProbe, workspaceProbe } from './probes';
-import { StableSidebar } from './Sidebar';
+import { WorkspaceSidebar } from './WorkspaceSidebar';
 import { Peek } from './Peek';
 import { SidebarResizer } from './SidebarResizer';
 import { AddressLoading } from './AddressLoading';
@@ -37,7 +37,6 @@ import { internalPage } from './internal-pages';
 // After every component stylesheet: popovers and menus share the Orbit look.
 import './popup.css';
 
-const EMPTY_NODES: TreeNode[] = [];
 function Shell() {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const theme = snapshot?.theme;
@@ -287,14 +286,7 @@ function Shell() {
       </form>
     </header>
     {workspace && <>
-      <StableSidebar nodes={snapshot.nodes ?? EMPTY_NODES} treeRevision={snapshot.treeRevision ?? 0} activeId={snapshot.activeId ?? ''} busy={!ready}
-        standalone={snapshot.windowKind === 'standalone'}
-        newTabShortcut={snapshot.shortcutLabels?.newTab} media={snapshot.media}
-        hidden={snapshot.sidebarVisible === false} openNewTab={() => void send({ method: 'browser.shortcut', action: 'newTab' })} action={action}
-        openArchive={button => openPanel('archive', button)} tabCommand={command => void send(command)} openDroppedFiles={() => void send({ method: 'workspace.openDroppedFiles' })}
-        spaces={snapshot.spaces ?? []} activeSpace={snapshot.activeSpace ?? ''} editSpace={anchor => openPanel('space', anchor)} newSpace={anchor => openPanel('newSpace', anchor)}
-        request={snapshot.sidebarRequest} updateReady={snapshot.updateReady}
-        restartToUpdate={() => void send({ method: 'browser.restartToUpdate' })} />
+      <WorkspaceSidebar snapshot={snapshot} surface="docked" command={send} mutate={action} panel={openPanel} />
       <SidebarResizer width={snapshot.sidebarWidth ?? 256} hidden={snapshot.sidebarVisible === false} disabled={!ready} apply={apply} onError={setError} />
       {snapshot.splitView && <SplitView view={snapshot.splitView} nodes={snapshot.nodes ?? []} disabled={!ready || busy} command={send} action={action} />}
       {snapshot.devTools && <DevToolsDock key={`${snapshot.devTools.id}-${snapshot.devTools.side}`} dock={snapshot.devTools} deviceEnabled={!!snapshot.devicePreview?.enabled} apply={apply} onError={setError} />}

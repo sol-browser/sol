@@ -1,3 +1,4 @@
+#include "app/browsing_profiles.h"
 #include "app/session.h"
 #include "windows/pointer.h"
 #include "windows/panel_popup.h"
@@ -152,18 +153,20 @@ class PanelWindow final : public CefWindowDelegate {
 // validated against the native list before the menu opened.
 class DownloadMenuDelegate final : public CefMenuModelDelegate {
  public:
-  DownloadMenuDelegate(std::weak_ptr<State> state, std::weak_ptr<PanelPopup> owner, int id) : state_(state), owner_(owner), id_(id) {}
+  DownloadMenuDelegate(const std::shared_ptr<State>& state, std::weak_ptr<PanelPopup> owner, int id)
+      : state_(state), owner_(owner), id_(id), downloads_(state->downloads) {}
   void MenuClosed(CefRefPtr<CefMenuModel>) override { if (auto o = owner_.lock()) o->MenuClosed(); }
   void ExecuteCommand(CefRefPtr<CefMenuModel>, int command, cef_event_flags_t) override {
     static constexpr const char* kActions[] = {"open", "copy", "show", "remove", "recycle"};
     if (command < 28000 || command >= 28000 + 5) return;
-    auto state = state_.lock(); if (!state || !state->downloads) return;
+    auto state = state_.lock(); if (!state || !downloads_) return;
     std::string error;
-    if (state->downloads->Control(static_cast<uint32_t>(id_), kActions[command - 28000], error) && state->workspace)
+    if (downloads_->Control(static_cast<uint32_t>(id_), kActions[command - 28000], error) && state->workspace)
       state->workspace->Notify(error);
   }
  private:
   std::weak_ptr<State> state_; std::weak_ptr<PanelPopup> owner_; int id_;
+  std::shared_ptr<DownloadManager> downloads_;
   IMPLEMENT_REFCOUNTING(DownloadMenuDelegate);
 };
 // Site popover "…" menu (Arc's): fixed commands for the visible page.
@@ -231,13 +234,18 @@ void PanelPopup::Reposition() {
   // the button's actual horizontal position as the growth origin, rather than
   // making the card grow from its unrelated geometric center.
   const int desired=kind_=="history"?kHistoryWidth:kPanelWidth;
-  const int width = std::max(1, std::min(desired, root.width - 16));
+  const bool editor=kind_=="space" || kind_=="newSpace" || kind_=="theme";
+  const auto state=state_.lock();
+  const auto page=WorkspaceContentArea(root.width,root.height,state && state->sidebar_visible,state?state->sidebar_width:kSidebarWidth);
+  const int width = std::max(1, std::min(desired, editor?page.width-32:root.width-16));
   const float button_center = anchor_.x + anchor_.width / 2.f;
   int x = static_cast<int>(std::lround(button_center - width / 2.f));
   int y = kind_ == "archive" ? anchor_.y - height - 6 : anchor_.y + anchor_.height + 6;
   x = std::clamp(x, 8, std::max(8, root.width - width - 8));
   y = std::clamp(y, kToolbarHeight, std::max(kToolbarHeight, root.height - height - 8));
+  if (editor) { x=page.x+std::min(24,std::max(0,(page.width-width)/2)); y=std::min(kToolbarHeight+24,std::max(kToolbarHeight,root.height-height-8)); }
   origin_x_ = std::clamp((button_center - x) / width, 0.f, 1.f);
+  if (editor) origin_x_=0;
   const CefRect target(root.x + x, root.y + y, width, height);
   if (window_->GetBounds() != target) { if (presented_) presentation_.Settle(); window_->SetBounds(target); }
 }
@@ -346,7 +354,7 @@ std::string PanelPopup::Response(CefRefPtr<CefDictionaryValue> theme) const {
     // icons from the packages; no paths).
     auto list = CefListValue::Create();
     if (s->extensions)
-      for (const auto& item : s->extensions->List(CefRequestContext::GetGlobalContext())) {
+      for (const auto& item : s->extensions->List(s->WebContext())) {
         auto row = CefDictionaryValue::Create();
         row->SetString("id", item.id); row->SetString("name", item.name); row->SetString("icon", item.icon);
         row->SetBool("popup", !item.popup.empty()); row->SetBool("options", !item.options.empty());
@@ -446,7 +454,7 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     cb->Success(PopupViewport(window_, request_, presentation_.composed(), origin_x_, kind_ == "archive")); return true;
   }
   if (!open_ || !s->workspace || s->workspace->WindowClosing()) { cb->Failure(409, "Panel is not open"); return true; }
-  if (kind_ == "space" && (method == "space.edit" || method == "space.delete")) {
+  if (kind_ == "space" && method == "space.edit") {
     // The space editor names the space; the revision check happens natively.
     auto command = d->Copy(false);
     command->SetDouble("expectedRevision", s->workspace->Snapshot()->GetDouble("treeRevision"));
@@ -463,7 +471,7 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     // The new-space editor: the space is made only now, with its name, icon
     // and the theme previewed on the window, saved as that space's own theme.
     Theme theme; bool save = false;
-    if (d->GetSize() != 4 || d->GetType("theme") != VTYPE_DICTIONARY ||
+    if (d->GetSize() != (d->HasKey("profileId") ? 5U : 4U) || d->GetType("theme") != VTYPE_DICTIONARY ||
         !WorkspaceController::ParseThemeCommand(d->GetDictionary("theme"), theme, save) || !save) { cb->Failure(400, "Invalid space command"); return true; }
     auto command = d->Copy(false); command->Remove("theme");
     command->SetDouble("expectedRevision", s->workspace->Snapshot()->GetDouble("treeRevision"));

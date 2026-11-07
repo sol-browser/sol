@@ -31,6 +31,88 @@ export async function organizationProbe() {
   const folder = snapshot.nodes!.find(n => n.title === 'Research')!;
   const base = snapshot.nodes!.find(n => n.title === 'Start')!.url;
   const row = (id: string) => `[data-node-id="${id}"] > .tree-row`;
+  if (new URL(base).pathname==='/profiles-settings') {
+    const originalSpace=snapshot.activeSpace!;
+    for (const name of ['UI Work','UI Personal']) {
+      await mutate({method:'space.create',title:name,icon:''});
+      await mutate({method:'tree.createTab',parentId:'',title:name+' page',url:base+'?space='+encodeURIComponent(name)});
+      await waitFor(s=>!s.isLoading && s.nodes!.some(node=>node.title===name+' page' && node.live));
+    }
+    console.info('RED_PROFILE_SETTINGS_OPEN');
+    snapshot=await waitFor(s=>s.profiles!.some(profile=>profile.name==='Studio') &&
+      s.spaces!.filter(space=>space.name.startsWith('UI ')).every(space=>space.profileId===s.profiles!.find(profile=>profile.name==='Studio')!.id) &&
+      s.nodes!.filter(node=>node.title.endsWith(' page')&&node.title.startsWith('UI ')).every(node=>!node.live&&!node.archived));
+    await sleep(500);console.info('RED_PROFILE_SETTINGS_CLOSE');await sleep(200);
+    const work=snapshot.spaces!.find(space=>space.name==='UI Work')!;
+    await mutate({method:'space.switch',id:work.id});
+    const page=snapshot.nodes!.find(node=>node.title==='UI Work page')!;
+    await mutate({method:'tree.activate',id:page.id});await waitFor(s=>!s.isLoading&&s.nodes!.some(node=>node.id===page.id&&node.live));
+    const edit=await dom<HTMLButtonElement>('.space-edit');
+    if(getComputedStyle(edit).borderTopWidth!=='0px'||getComputedStyle(edit).backgroundColor!=='rgba(0, 0, 0, 0)')throw Error('Edit still has a button frame');
+    edit.click();
+    let chosen=false;
+    for(let i=0;i<100&&!chosen;i++){try{await request({method:'probe.contextMenuSelect',action:'editTheme'});chosen=true;}catch{await sleep(30);}}
+    if(!chosen)throw Error('Space Edit menu did not open');
+    console.info('RED_PROFILE_EDITOR_CAPTURE');await waitFor(()=>Reflect.get(window,'profileEditorChecked')===true);
+    console.info('RED_ORG_ARM_UNLOAD');await waitFor(s=>s.organizationArmed===true);
+    let cancelled=false;
+    try {await mutate({method:'profile.create',title:'Cancelled profile',spaceIds:[work.id]});}catch(error){cancelled=String(error).includes('cancelled');}
+    if(!cancelled)throw Error('Profile change ignored beforeunload cancellation');
+    snapshot=await request({method:'browser.getSnapshot'});
+    if(snapshot.profiles!.some(profile=>profile.name==='Cancelled profile')||!snapshot.nodes!.find(node=>node.id===page.id)?.live)throw Error('Cancelled profile changed data');
+    await mutate({method:'profile.create',title:'Confirmed profile',spaceIds:[work.id]});
+    if(snapshot.nodes!.find(node=>node.id===page.id)?.live||snapshot.nodes!.find(node=>node.id===page.id)?.archived)throw Error('Profile change did not preserve the unloaded Today tab');
+    const destination=snapshot.spaces!.find(space=>space.name==='UI Personal')!;
+    await mutate({method:'space.export',id:work.id,space:destination.id});
+    if(snapshot.spaces!.some(space=>space.id===work.id)||!snapshot.nodes!.some(node=>node.kind==='folder'&&node.title==='UI Work'&&node.space===destination.id))throw Error('Space export failed');
+    await mutate({method:'space.switch',id:originalSpace});await mutate({method:'tree.activate',id:saved.id});
+    console.info('RED_ORGANIZATION_CHECKS:pass');return;
+  }
+  if (new URL(base).pathname === '/profiles-product') {
+    const originalSpace = snapshot.activeSpace!;
+    const already = snapshot.profiles!.some(profile => profile.name === 'Profile A');
+    if (!already) {
+      await mutate({ method: 'profile.create', title: 'Profile A' });
+      await mutate({ method: 'profile.create', title: 'Profile B' });
+      for (const label of ['A', 'B', 'A shared']) {
+        const profileId = snapshot.profiles!.find(profile => profile.name === 'Profile ' + label[0])!.id;
+        await mutate({ method: 'space.create', title: 'Space ' + label, icon: '', profileId });
+        await mutate({ method: 'tree.createTab', parentId: '', title: 'Page ' + label, url: base + '?name=' + label[0] });
+        await waitFor(s => !s.isLoading && s.activeProfile === profileId && s.nodes!.some(node => node.title === 'Page ' + label && node.live && node.pageTitle === 'Profile ' + label[0]));
+      }
+    } else {
+      for (const label of ['A', 'B', 'A shared']) {
+        const space = snapshot.spaces!.find(space => space.name === 'Space ' + label)!;
+        await mutate({ method: 'space.switch', id: space.id });
+        const page = snapshot.nodes!.find(node => node.title === 'Page ' + label)!;
+        await mutate({ method: 'tree.activate', id: page.id });
+        await waitFor(s => !s.isLoading && s.activeProfile === space.profileId && s.nodes!.some(node => node.id === page.id && node.live && node.pageTitle === 'Profile ' + label[0]));
+      }
+    }
+    const sharedSpace = snapshot.spaces!.find(space => space.name === 'Space A shared')!;
+    const otherProfile = snapshot.profiles!.find(profile => profile.name === 'Profile B')!.id;
+    const otherSpace = snapshot.spaces!.find(space => space.name === 'Space B')!;
+    const activePage = snapshot.nodes!.find(node => node.title === 'Page A shared')!;
+    for (const command of [
+      {method:'tree.moveToSpace', id:activePage.id, space:otherSpace.id},
+    ] as TreeMutation[]) {
+      let rejected = false;
+      try { await mutate(command); } catch (error) { rejected = String(error).includes('Unload'); }
+      if (!rejected) throw new Error('Live cross-profile change was not rejected');
+    }
+    await mutate({method:'tree.pin',id:activePage.id,value:true});
+    await mutate({method:'tree.close',id:activePage.id});
+    await waitFor(s => !s.nodes!.find(node => node.id === activePage.id)?.live);
+    await mutate({method:'space.profile',id:sharedSpace.id,profileId:otherProfile});
+    if (snapshot.activeProfile !== otherProfile) throw new Error('Cold Space profile did not change');
+    await mutate({method:'space.profile',id:sharedSpace.id,profileId:sharedSpace.profileId!});
+    await mutate({method:'tree.activate',id:activePage.id});
+    await waitFor(s => !s.isLoading && s.activeProfile === sharedSpace.profileId);
+    await mutate({ method: 'space.switch', id: originalSpace });
+    await mutate({ method: 'tree.activate', id: saved.id });
+    console.info('RED_ORGANIZATION_CHECKS:pass');
+    return;
+  }
   if (new URL(base).pathname === '/folder-removal') { await folderRemovalProbe(base); return; }
   if (new URL(base).pathname === '/saved-title') {
     const label = 'Title regression pin';

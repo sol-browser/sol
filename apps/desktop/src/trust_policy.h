@@ -85,11 +85,15 @@ inline bool IsExternalProtocolScheme(std::string_view scheme) {
 // A browser Chrome created on an extension's behalf (tabs.create, onboarding,
 // options page). The host never adopts it in place; it reopens the address as
 // a workspace page or rejects it visibly.
-enum class ForeignPage { Wait, Adopt, NewTab, Reject };
+inline bool IsPasswordManagerUrl(std::string_view url) {
+  return url == "chrome://password-manager" || url.starts_with("chrome://password-manager/");
+}
+enum class ForeignPage { Wait, Adopt, NewTab, Passwords, Reject };
 inline ForeignPage ClassifyForeignPage(std::string_view url) {
   if (url.empty() || url == "about:blank") return ForeignPage::Wait;
   // Chromium 154 loads its new tab page as chrome://new-tab-page/.
   if (url.starts_with("chrome://newtab") || url.starts_with("chrome://new-tab-page")) return ForeignPage::NewTab;
+  if (IsPasswordManagerUrl(url)) return ForeignPage::Passwords;
   if (IsExtensionPageUrl(url) || url.starts_with("https://") || url.starts_with("http://")) return ForeignPage::Adopt;
   return ForeignPage::Reject;
 }
@@ -119,6 +123,7 @@ inline bool IsTreeMethod(std::string_view method) {
       method == "tree.move" || method == "tree.pin" || method == "tree.expand" || method == "tree.activate" ||
       method == "tree.place" || method == "tree.close" || method == "tree.archive" || method == "tree.restore" || method == "tree.reset" || method == "tree.removeFolder" || method == "tree.usePageTitle" ||
       method == "tree.moveToSpace" || method == "space.create" || method == "space.edit" || method == "space.delete" ||
+      method == "profile.create" || method == "profile.rename" || method == "space.profile" || method == "space.export" ||
       method == "space.switch" || method == "space.move";
 }
 inline bool IsForbiddenSwitch(std::string_view name) {

@@ -1,3 +1,4 @@
+#include "windows/browser_dialogs.h"
 #include "workspace/controller.h"
 #include "app/session.h"
 #include "app/auto_archive.h"
@@ -11,7 +12,7 @@ bool WorkspaceController::AutoArchiveBusy() const {
   const auto state=state_.lock();
   if (!state || !state->window) return false;
   return !ready_ || stopped_ || shutting_down_ || HasLinkPeek() || pending_commands_ || closing_commits_ || !closing_.empty() ||
-    !creating_.empty() || !moving_unloads_.empty() || split_resizing_ || state->tab_dragging || state->ui_editing;
+    profile_changing_ || !creating_.empty() || !moving_unloads_.empty() || split_resizing_ || state->tab_dragging || state->ui_editing;
 }
 bool WorkspaceController::AutoArchiveProtected(const std::string& id) const {
   const auto state=state_.lock(); if (!state || !state->window) return false;
@@ -30,7 +31,7 @@ bool WorkspaceController::AutoArchiveProtected(const std::string& id) const {
 void WorkspaceController::AutoArchiveUnload(const std::string& id, std::function<void(bool)> done) {
   if (AutoArchiveBusy() || AutoArchiveProtected(id) || auto_closing_.contains(id)) { done(false); return; }
   const auto browser=LiveBrowser(id); if (!browser) { done(true); return; }
-  auto_closing_[id]=std::move(done); Publish(); browser->GetHost()->CloseBrowser(false);
+  auto_closing_[id]=std::move(done); Publish(); CloseBrowserWithDialogs(state_, browser, false);
 }
 bool WorkspaceController::UnloadKeepsPlace(const std::string& id) const {
   const auto node=std::find_if(tree_.nodes.begin(),tree_.nodes.end(),[&](const auto& n) { return n.id==id; });

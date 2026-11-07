@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { request, subscribe, treeCommand, type Command, type Snapshot, type TreeMutation } from './bridge';
-import { Sidebar } from './Sidebar';
+import { WorkspaceSidebar } from './WorkspaceSidebar';
 import { SidebarResizer } from './SidebarResizer';
 import { applyTheme } from './theme-apply';
 
@@ -44,7 +44,7 @@ export function Peek() {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); return false; }
     finally { inFlight.current = false; }
   }
-  const openPanel = (kind: 'space' | 'newSpace', anchor: HTMLElement) => {
+  const openPanel = (kind: 'archive' | 'space' | 'newSpace', anchor: HTMLElement) => {
     const r = anchor.getBoundingClientRect();
     void send({ method: 'panel.open', kind, x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)),
       width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
@@ -52,18 +52,7 @@ export function Peek() {
   if (!snapshot) return null;
   const ready = snapshot.ready && !snapshot.windowClosing;
   return <main className="peek-root" style={{ '--sidebar-size': `${snapshot.sidebarWidth ?? 256}px` } as CSSProperties}>
-    <Sidebar nodes={snapshot.nodes ?? []} treeRevision={snapshot.treeRevision ?? 0} activeId={snapshot.activeId ?? ''} busy={!ready} hidden={false}
-      standalone={snapshot.windowKind === 'standalone'}
-      newTabShortcut={snapshot.shortcutLabels?.newTab}
-      openNewTab={() => void send({ method: 'browser.shortcut', action: 'newTab' })} action={action}
-      openArchive={button => {
-        const r = button.getBoundingClientRect();
-        void send({ method: 'panel.open', kind: 'archive', x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)),
-          width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
-      }}
-      tabCommand={command => void send(command)} openDroppedFiles={() => void send({ method: 'workspace.openDroppedFiles' })}
-      spaces={snapshot.spaces ?? []} activeSpace={snapshot.activeSpace ?? ''}
-      editSpace={anchor => openPanel('space', anchor)} newSpace={anchor => openPanel('newSpace', anchor)} />
+    <WorkspaceSidebar snapshot={snapshot} surface="floating" command={send} mutate={action} panel={openPanel} />
     <SidebarResizer width={snapshot.sidebarWidth ?? 256} hidden={false} disabled={!ready}
       nativeDragging={snapshot.sidebarResizing}
       viewportWidth={(snapshot.contentBounds?.width ?? 784) + (snapshot.contentBounds?.x ?? 8) + 8}

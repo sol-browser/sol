@@ -1,3 +1,4 @@
+#include "windows/utility_window.h"
 #include "windows/focus.h"
 #include "windows/ui_context_menu.h"
 #include "app/session.h"
@@ -8,10 +9,12 @@
 #include "windows/window_close.h"
 #include "windows/window_corners.h"
 #include "windows/extensions_window.h"
+#include "windows/passwords_window.h"
 #include "windows/command_bar.h"
 #include "downloads/download_manager.h"
 #include "navigation/shortcut_settings.h"
 #include "workspace/controller.h"
+#include "experiments/profile_settings_probe.h"
 #include "import/browser_import.h"
 #include "trust_policy.h"
 #include "include/cef_app.h"
@@ -29,7 +32,7 @@ class FolderPicked final : public CefRunFileDialogCallback {
   std::function<void(const std::vector<CefString>&)> done_;
   IMPLEMENT_REFCOUNTING(FolderPicked);
 };
-class SettingsClient final : public CefClient, public CefLifeSpanHandler, public CefRequestHandler,
+class SettingsClient final : public UtilityWindowClient, public CefLifeSpanHandler, public CefRequestHandler, public CefDisplayHandler,
     public CefMessageRouterBrowserSide::Handler {
  public:
   explicit SettingsClient(std::weak_ptr<SettingsWindow> owner) : owner_(owner) {
@@ -37,6 +40,13 @@ class SettingsClient final : public CefClient, public CefLifeSpanHandler, public
   }
   ~SettingsClient() override { router_->RemoveHandler(this); }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
+  CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+  bool OnConsoleMessage(CefRefPtr<CefBrowser> browser,cef_log_severity_t,const CefString& message,const CefString&,int) override {
+    if (const auto owner=owner_.lock()) if (const auto window=owner->parent()) {
+      ObserveProfileSettingsProbe(browser,message.ToString());
+    }
+    return false;
+  }
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return new UiContextMenu(std::weak_ptr<State>()); }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override { if (auto owner = owner_.lock()) owner->BrowserCreated(browser); }
@@ -68,25 +78,21 @@ class SettingsView final : public CefBrowserViewDelegate {
  public: cef_runtime_style_t GetBrowserRuntimeStyle() override { return CEF_RUNTIME_STYLE_ALLOY; }
  private: IMPLEMENT_REFCOUNTING(SettingsView);
 };
-class SettingsDelegate final : public CefWindowDelegate {
+class SettingsDelegate final : public UtilityWindowDelegate {
  public:
-  SettingsDelegate(std::weak_ptr<SettingsWindow> owner, CefRefPtr<CefBrowserView> view) : owner_(owner), view_(view) {}
+  SettingsDelegate(std::weak_ptr<State> state, std::weak_ptr<SettingsWindow> owner, CefRefPtr<CefBrowserView> view)
+      : UtilityWindowDelegate(std::move(state), CefSize(940, 700)), owner_(owner), view_(view) {}
   cef_runtime_style_t GetWindowRuntimeStyle() override { return CEF_RUNTIME_STYLE_ALLOY; }
-  CefSize GetPreferredSize(CefRefPtr<CefView>) override { return CefSize(940, 700); }
   CefSize GetMinimumSize(CefRefPtr<CefView>) override { return CefSize(720, 520); }
-  CefRefPtr<CefWindow> GetParentWindow(CefRefPtr<CefWindow>, bool* is_menu, bool*) override {
-    *is_menu = false;
-    if (const auto owner = owner_.lock()) return owner->parent();
-    return nullptr;
-  }
   void OnWindowCreated(CefRefPtr<CefWindow> window) override {
+    UtilityWindowDelegate::OnWindowCreated(window);
     window->SetTitle("Settings — Sol"); window->SetBackgroundColor(CefColorSetARGB(255, 28, 26, 32));
     const auto icon = RedWindowIcon(); window->SetWindowIcon(icon); window->SetWindowAppIcon(icon);
     const BOOL dark = TRUE;
     DwmSetWindowAttribute(window->GetWindowHandle(), DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
     const COLORREF caption = RGB(28, 26, 32);
     DwmSetWindowAttribute(window->GetWindowHandle(), DWMWA_CAPTION_COLOR, &caption, sizeof(caption));
-    window->SetToFillLayout(); window->AddChildView(view_); window->CenterWindow(CefSize(940, 700));
+    window->SetToFillLayout(); window->AddChildView(view_);
     if (auto owner = owner_.lock()) owner->Created(window);
   }
   bool CanClose(CefRefPtr<CefWindow>) override {
@@ -103,6 +109,9 @@ void ShowSettings(const std::shared_ptr<State>& state) {
   if (!state->settings_window) state->settings_window = std::make_shared<SettingsWindow>(state);
   state->settings_window->Show();
 }
+void ShowProfileSettings(const std::shared_ptr<State>& state, bool create) {
+  ShowSettings(state); state->settings_window->ShowSection(create?"newProfile":"profiles");
+}
 void SettingsWindow::Show() {
   const auto state = state_.lock();
   if (!state || !state->window || !state->ui_context || !state->workspace || state->workspace->WindowClosing()) return;
@@ -114,7 +123,7 @@ void SettingsWindow::Show() {
   auto view = CefBrowserView::CreateBrowserView(new SettingsClient(weak_from_this()), std::string(kSettingsUrl),
       settings, extra, state->ui_context, new SettingsView());
   view->SetBackgroundColor(settings.background_color);
-  CefWindow::CreateTopLevelWindow(new SettingsDelegate(weak_from_this(), view));
+  CefWindow::CreateTopLevelWindow(new SettingsDelegate(state_, weak_from_this(), view));
 }
 void SettingsWindow::Destroyed() {
   window_ = nullptr; ready_ = false;
@@ -123,19 +132,24 @@ void SettingsWindow::Destroyed() {
 }
 void SettingsWindow::ShowSection(const std::string& section) {
   if (section.empty()) return;
-  section_ = section;
+  const auto requested=section;  // The caller may pass section_ itself.
+  section_ = requested;
   if (!ready_ || !browser_) return;
   section_.clear();
   // Fixed identifiers only; never page-controlled text.
-  if (section == "import") browser_->GetMainFrame()->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'import'}))", std::string(kSettingsUrl), 0);
+  if (requested == "import") browser_->GetMainFrame()->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'import'}))", std::string(kSettingsUrl), 0);
+  if (requested == "profiles" || requested == "newProfile") {
+    const auto script=requested=="profiles" ? "window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'profiles'}))" :
+      "window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'newProfile'}))";
+    browser_->GetMainFrame()->ExecuteJavaScript(script,std::string(kSettingsUrl),0);
+  }
 }
 CefRefPtr<CefWindow> SettingsWindow::parent() const {
   const auto state = state_.lock(); return state ? state->window : nullptr;
 }
 void SettingsWindow::Present() {
   if (!window_ || !ready_) return;
-  if (window_->IsMinimized()) window_->Restore();
-  window_->Show(); window_->Activate();
+  PresentUtilityWindow(window_, parent());
   if (browser_) browser_->GetHost()->SetFocus(true);
   if (const auto state = state_.lock()) {
     const HWND handle = window_->GetWindowHandle();
@@ -153,6 +167,7 @@ void SettingsWindow::BrowserCreated(CefRefPtr<CefBrowser> browser) {
   }
 }
 void SettingsWindow::BrowserClosed(int id) {
+  CloseProfileSettingsProbe(id);
   browser_ = nullptr; ready_ = creating_ = false;
   if (const auto state = state_.lock()) {
     UnregisterSessionUi(state, id); state->browsers.erase(id); state->settings_id = -1;
@@ -194,6 +209,10 @@ std::string SettingsWindow::Response(bool refresh_default) const {
   response->SetString("chromiumVersion", std::to_string(CHROME_VERSION_MAJOR) + "." + std::to_string(CHROME_VERSION_MINOR) + "." +
       std::to_string(CHROME_VERSION_BUILD) + "." + std::to_string(CHROME_VERSION_PATCH));
   response->SetString("spaceName", state->workspace->ActiveSpaceName()); response->SetString("spaceId", snapshot->GetString("activeSpace"));
+  const auto workspace = state->workspace->Snapshot();
+  if (workspace->HasKey("profiles")) response->SetList("profiles",workspace->GetList("profiles")->Copy());
+  response->SetList("spaces",workspace->GetList("spaces")->Copy());
+  response->SetString("activeProfile",state->active_profile);
   if (refresh_default || !default_status_) {
     default_status_ = DefaultBrowserStatus();
     auto details = CefDictionaryValue::Create();
@@ -234,6 +253,11 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
   const auto data = value->GetDictionary(); const auto method = data->GetString("method").ToString();
   if (HandleUiFocus(state, browser, method, data->GetSize(), persistent, callback)) return true;
   if (!state->workspace || state->workspace->WindowClosing()) { callback->Failure(409, "Browser is closing"); return true; }
+  if (method == "settings.passwords" && data->GetSize() == 3 && data->GetType("profile") == VTYPE_STRING && data->GetType("settings") == VTYPE_BOOL) {
+    if (!ShowPasswords(state, data->GetString("profile"), data->GetBool("settings"))) callback->Failure(409, "Choose an available browsing profile in a regular window");
+    else callback->Success(Response());
+    return true;
+  }
   if (method == "settings.get" && data->GetSize() == 1) { callback->Success(Response(true)); return true; }
   if (method == "settings.set" && data->GetSize() == 3 && data->GetType("key") == VTYPE_STRING && state->session && state->session->preferences) {
     auto next = state->session->preferences->Get();
@@ -313,6 +337,16 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
     std::string error;
     if (!OpenDefaultBrowserSettings(window_->GetWindowHandle(), error)) callback->Failure(500, error);
     else { callback->Success(Response(true)); state->Record("settings_default_apps_opened"); }
+    return true;
+  }
+  if (method == "profile.create" || method == "profile.rename") {
+    auto command = data->Copy(false);
+    command->SetDouble("expectedRevision",state->workspace->Snapshot()->GetDouble("treeRevision"));
+    state->workspace->Handle(command,[weak=weak_from_this(),callback](int code,const std::string& error,CefRefPtr<CefDictionaryValue>) {
+      if (code) { callback->Failure(code,error); return; }
+      if (const auto owner=weak.lock()) callback->Success(owner->Response());
+      else callback->Failure(410,"Settings closed");
+    });
     return true;
   }
   if (method == "workspace.setTheme") {
