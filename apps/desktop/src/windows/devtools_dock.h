@@ -15,6 +15,7 @@ class DevToolsDock {
   void Detached(int target, int frontend);
   CefRect PageBounds(int target, const CefRect& area) const;
   void Layout(const CefRect& area, int active, bool fullscreen);
+  HWND StackAfter(HWND above) const;
   void SetSide(int target, DevToolsSide side);
   void ToggleDock(int target);
   CefRefPtr<CefDictionaryValue> Describe() const;

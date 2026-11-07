@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import sqlite3
 import threading
+import time
 import uuid
 from smoke import ROOT, run
 
@@ -10,8 +11,26 @@ def main():
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*_): pass
         def do_GET(self):
-            body=b"<!doctype html><title>Folder removal fixture</title><h1>Folder removal fixture</h1><input value='unsaved'>"
-            self.send_response(200); self.send_header('Content-Type','text/html'); self.send_header('Content-Length',str(len(body)))
+            media = self.path.startswith('/late-image')
+            target = self.path.partition('?')[2]
+            slow = target in ('first', 'closed-pin') and not media
+            if target == 'abandoned':
+                time.sleep(2.2)
+            if slow:
+                time.sleep(2.2 if target == 'closed-pin' else .65)
+            if media:
+                time.sleep(1)
+                body=b'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+            else:
+                color = {'first': '#163e52', 'second': '#783b3c', 'closed-pin': '#2d6542'}.get(target, '#374d76')
+                body = f"<!doctype html><title>Folder removal fixture</title><style>html{{background:{color};color:white}}</style>".encode()
+                if target == 'closed-pin':
+                    body += b"<body><script>setTimeout(() => document.body.append('Late text'), 850)</script>"
+                else:
+                    body += b"<h1>Folder removal fixture</h1><input value='unsaved'>"
+                if slow:
+                    body += b'<img src="/late-image?' + target.encode() + b'" alt="" hidden>'
+            self.send_response(200); self.send_header('Content-Type','image/svg+xml' if media else 'text/html'); self.send_header('Content-Length',str(len(body)))
             self.end_headers(); self.wfile.write(body)
     server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
     threading.Thread(target=server.serve_forever,daemon=True).start()
@@ -32,6 +51,32 @@ def main():
         separation=[row['details'] for row in rows if row['event']=='organization_split_separated']
         if separation!=[{'single_visible_page':True,'full_bounds':True}]:
             raise RuntimeError(f'Separate left stale native pane geometry: {separation}')
+        # The two slow fixture pages, found by address: a time threshold also
+        # caught ordinary pages that loaded slowly on a busy machine.
+        def browser_for(target):
+            at = next(i for i, row in enumerate(rows) if row['event']=='address_change' and row['details']['url'].endswith('?'+target))
+            return next(row for row in reversed(rows[:at]) if row['event']=='embedded_activated')['details']['browser_id']
+        slow_pages = {browser_for('first'), browser_for('closed-pin')}
+        cold = [r for r in rows if r['event']=='page_transition_content_ready' and r['details']['browser_id'] in slow_pages and
+                r['details']['ready_ms']>=400 and not r['details']['load_finished']]
+        split_exits = {r['details']['browser_id'] for r in rows if r['event']=='embedded_activated' and r['details'].get('left_split')}
+        assert len(cold)==2 and sum(r['details']['browser_id'] in split_exits for r in cold)==1, cold
+        for r in cold:
+            browser_id = r['details']['browser_id']
+            activated = next(x for x in rows if x['event']=='embedded_activated' and x['details']['browser_id']==browser_id)
+            gradient = next(x for x in reversed(rows[:rows.index(activated)]) if x['event']=='page_transition_gradient_shown')
+            painted = next(x for x in rows if x['event']=='page_transition_painted' and x['details']['browser_id']==browser_id)
+            shown = next(x for x in rows if x['event']=='page_transition_finished' and x['details']['browser_id']==browser_id and x['details']['revealed'])
+            load_end = next(x for x in rows if x['event']=='load_end' and x['details']['browser_id']==browser_id)
+            assert 0 <= activated['tick_ms'] - gradient['tick_ms'] < 500, (gradient, activated)
+            assert r['tick_ms'] <= painted['tick_ms'] <= shown['tick_ms'] < load_end['tick_ms'], (r, painted, shown, load_end)
+            if browser_id in split_exits:
+                assert r['details']['source'] == 'firstPaint' and r['details']['ready_ms'] >= 1900, r
+                assert load_end['tick_ms'] - shown['tick_ms'] > 550, (shown, load_end)
+        canceled = [row['details']['browser_id'] for row in rows if row['event']=='page_transition_finished' and
+                    row['details']['browser_id'] >= 0 and not row['details']['revealed']]
+        assert any(not any(row['event'] in ('page_transition_painted', 'page_transition_content_ready') and
+                           row['details']['browser_id'] == browser_id for row in rows) for browser_id in canceled), canceled
         decisions=[row['details']['leave'] for row in rows if row['event']=='organization_beforeunload_decision']
         if decisions!=[False,True]: raise RuntimeError('Real beforeunload cancellation/acceptance missing')
         before=saved()

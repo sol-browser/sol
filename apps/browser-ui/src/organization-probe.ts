@@ -30,8 +30,59 @@ export async function organizationProbe() {
   const saved = snapshot.nodes!.find(n => n.title === 'Saved page')!;
   const folder = snapshot.nodes!.find(n => n.title === 'Research')!;
   const base = snapshot.nodes!.find(n => n.title === 'Start')!.url;
-  if (new URL(base).pathname === '/folder-removal') { await folderRemovalProbe(base); return; }
   const row = (id: string) => `[data-node-id="${id}"] > .tree-row`;
+  if (new URL(base).pathname === '/folder-removal') { await folderRemovalProbe(base); return; }
+  if (new URL(base).pathname === '/saved-title') {
+    const label = 'Title regression pin';
+    const home = base + '?home', away = base + '?away';
+    const existing = snapshot.nodes!.find(n => n.title === label);
+    const id = existing?.id ?? (await mutate({ method: 'tree.createTab', parentId: '', title: label, url: home })).createdId!;
+    const showing = (url: string, title: string, live: boolean) => waitFor(s =>
+      s.nodes!.some(n => n.id === id && n.url === home && n.currentUrl === url && n.pageTitle === title && n.live === live) &&
+      document.querySelector(`${row(id)} .node-title`)?.textContent === title);
+    if (existing) {
+      await showing(home, 'Home title', false);
+    } else {
+      await showing(home, 'Home title', true);
+      await mutate({ method: 'tree.pin', id, value: true });
+      await request({ method: 'navigation.load', url: away });
+      await showing(away, 'Away title', true);
+      await mutate({ method: 'tree.close', id });
+      await showing(home, 'Home title', false);
+      await mutate({ method: 'tree.activate', id });
+      await showing(home, 'Home title', true);
+      await request({ method: 'navigation.load', url: away });
+      await showing(away, 'Away title', true);
+      await mutate({ method: 'tree.activate', id: saved.id });
+    }
+    console.info('RED_ORGANIZATION_CHECKS:pass');
+    return;
+  }
+  if (new URL(base).pathname === '/favicon-isolation') {
+    const actions = (await mutate({ method: 'tree.createTab', parentId: '', title: 'Actions', url: base + '?actions' })).createdId!;
+    const before = (await waitFor(s => !s.isLoading && s.nodes!.some(n => n.id === actions && n.favicon)))
+      .nodes!.find(n => n.id === actions)!.favicon!;
+    const stable = (await mutate({ method: 'tree.createTab', parentId: '', title: 'Stable', url: base + '?stable' })).createdId!;
+    const after = await waitFor(s => !s.isLoading && s.nodes!.some(n => n.id === actions && n.live && n.favicon && n.favicon !== before) &&
+      s.nodes!.some(n => n.id === stable && n.live && n.favicon));
+    const actionsIcon = after.nodes!.find(n => n.id === actions)!.favicon!;
+    const stableIcon = after.nodes!.find(n => n.id === stable)!.favicon!;
+    if (stableIcon !== before) throw new Error('The Actions badge changed another open tab');
+    const pixels = async (url: string) => {
+      const response = await fetch(url, { cache: 'reload' });
+      if (!response.ok) throw new Error('The favicon version did not resolve');
+      const image = await createImageBitmap(await response.blob());
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext('2d')!;
+      context.drawImage(image, 0, 0, 1, 1); image.close();
+      return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).join(',');
+    };
+    if (await pixels(stableIcon) !== '44,84,180' || await pixels(actionsIcon) !== '43,162,76')
+      throw new Error('A favicon URL returned the wrong image');
+    console.info('RED_ORGANIZATION_CHECKS:pass');
+    return;
+  }
   const loaded = (id: string) => waitFor(s => s.activeId === id && !s.isLoading && s.nodes!.some(n => n.id === id && n.live && n.currentUrl === n.url));
   // The sidebar drags with pointer events (press, move past 6px, release) and
   // resolves the drop target from real geometry, as a person's drag does.

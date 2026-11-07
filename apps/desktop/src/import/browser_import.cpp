@@ -310,8 +310,7 @@ class BrowserImport : public std::enable_shared_from_this<BrowserImport> {
       int added = 0;
       for (auto& [host, png] : data->favicons) {
         const auto key = FaviconHost(host);
-        if (key.empty() || s->favicons->Png(key)) continue;  // Red's own icon wins.
-        s->favicons->Put(key, png);
+        if (key.empty() || !s->favicons->Seed(key, png)) continue;  // Sol's own fallback wins.
         if (s->history && !s->private_window) s->history->SaveFavicon(key, png);
         ++added;
       }

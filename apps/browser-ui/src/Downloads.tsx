@@ -8,7 +8,7 @@ export function DownloadsButton({ downloads, pulse, onOpen }: { downloads: Downl
   const { active, fraction: progress } = overallProgress(downloads);
   const circumference = 2 * Math.PI * 9;
   return <button className="icon-button downloads-button" type="button" data-action="downloads" aria-label="Downloads"
-    title={active ? `Downloads — ${active} in progress` : 'Downloads'} onClick={e => onOpen(e.currentTarget)}>
+    aria-description={active ? `${active} in progress` : undefined} onClick={e => onOpen(e.currentTarget)}>
     <span className="downloads-glyph" data-active={active > 0} key={pulse} data-pulse={pulse > 0}>
       {active > 0 && <svg className="downloads-ring" viewBox="0 0 22 22" aria-hidden="true">
         <circle cx="11" cy="11" r="9" className="track" />

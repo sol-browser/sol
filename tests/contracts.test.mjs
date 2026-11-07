@@ -104,7 +104,7 @@ test('split navigation state belongs to each pane and requires boolean flags', (
 });
 
 test('accepts live page title and cached favicon address', () => {
-  const value = fixture(); value.nodes[1].pageTitle = 'Example Domain'; value.nodes[1].favicon = 'sol://ui/favicon/example.com/3';
+  const value = fixture(); value.nodes[1].pageTitle = 'Example Domain'; value.nodes[1].favicon = 'sol://ui/favicon/example.com/v3';
   assert.equal(parseSnapshot(JSON.stringify(value)).nodes[1].pageTitle, 'Example Domain');
 });
 test('accepts native notice and unavailable shell extension check', () => {
@@ -148,7 +148,7 @@ for (const [name, change] of [
   ['remote favicon', s => { s.nodes[1].favicon = 'https://tracker.example/icon.png'; }],
   ['script favicon', s => { s.nodes[1].favicon = 'data:image/svg+xml;base64,PHN2Zz4='; }],
   ['inline PNG favicon (now served by address)', s => { s.nodes[1].favicon = 'data:image/png;base64,iVBORw0KGgo='; }],
-  ['favicon path traversal', s => { s.nodes[1].favicon = 'sol://ui/favicon/../index.html/1'; }],
+  ['favicon path traversal', s => { s.nodes[1].favicon = 'sol://ui/favicon/../v1'; }],
   ['oversized page title', s => { s.nodes[1].pageTitle = 'x'.repeat(241); }],
 ]) test(`rejects ${name}`, () => { const value = fixture(); change(value); assert.throws(() => parseSnapshot(JSON.stringify(value))); });
 test('accepts a native theme and rejects out-of-range or unknown values', () => {

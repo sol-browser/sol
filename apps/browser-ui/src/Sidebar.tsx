@@ -385,7 +385,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     };
     return <li className={`tree-node ${peek ? 'active-peek' : ''}`} key={peek ? `peek-${node.id}` : node.id} data-node-id={node.id} data-drag-source={dragId === node.id}>
       <div className="tree-row" data-tinted={tint !== undefined} style={tint ? { '--favorite-tint': tint } as CSSProperties : undefined} data-kind={node.kind} data-split={group} data-drop-inside={folder && drop?.targetId === node.id && drop.mode === 'inside'} data-motion-key={peek ? `peek-${node.id}` : node.id} data-favorite={node.favorite === true} data-live={node.live === true} data-peek={node.peek === true}
-        title={away ? `${node.title}\n${node.currentUrl}` : node.favorite ? displayTitle(node) : node.pageTitle && node.pageTitle !== node.title ? node.pageTitle : undefined} data-active={selected} data-pinned-away={away}
+        title={away ? `${node.title}\n${node.currentUrl}` : node.favorite ? displayTitle(node) : node.pageTitle && node.pageTitle !== node.title ? node.pageTitle : undefined} data-active={selected} data-pinned-away={away} data-expanded={folder ? node.expanded : undefined}
         draggable={folder && !busy && !renaming && !node.closing} onDragStart={e => { if (folder) drag(e, node.id); else e.preventDefault(); }} onDragEnd={event => {
           // Handle the drop before clearing the source: the window's bubbling
           // dragend listener runs after this row and used to see no drag ID.
@@ -517,7 +517,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
             onClick={() => void confirmFolderRemoval()}>{removing ? 'Removing…' : treeRevision !== removal.revision ? 'Review' : 'Delete folder'}</button>
         </div>
       </div>}
-      {folder && node.expanded && <ul className="tree-children">{renderRows(ordered(nodes.filter(n => n.parentId === node.id && !n.archived)), node.id, 'pinned')}</ul>}
+      {folder && node.expanded && <ul className="tree-children" data-folder-children={node.id}>{renderRows(ordered(nodes.filter(n => n.parentId === node.id && !n.archived)), node.id, 'pinned')}</ul>}
       {folder && !node.expanded && drop?.targetId === node.id && drop.mode === 'inside' && <ul className="tree-children drop-folder-preview">{dropSlot('pinned')}</ul>}
       {folder && !node.expanded && active && descendant(nodes, active.id, node.id) && <ul className="tree-children collapsed-active">{row(active, true)}</ul>}
     </li>;

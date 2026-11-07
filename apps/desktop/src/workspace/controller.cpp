@@ -15,6 +15,7 @@
 #include <tuple>
 #include "include/base/cef_callback.h"
 #include "include/cef_image.h"
+#include "include/cef_navigation_entry.h"
 #include "include/cef_parser.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "windows/embedded_content.h"
@@ -46,6 +47,15 @@ bool UserUrlAllowed(const std::string& url) { return UrlAllowed(url) || IsLocalF
 // opened itself, and local files the person opened.
 // Our history page is a saved tab too (created in the trusted UI profile).
 bool PageUrlAllowed(const std::string& url) { return UserUrlAllowed(url) || IsExtensionPageUrl(url) || IsInternalPageUrl(url); }
+std::string IconHost(const CefString& url) {
+  CefURLParts parts;
+  return CefParseURL(url, parts) ? FaviconHost(CefString(&parts.host).ToString()) : "";
+}
+bool SamePageUrl(const std::string& live, const std::string& saved) {
+  if (live == saved) return true;
+  CefURLParts parts;
+  return CefParseURL(saved, parts) && CefString(&parts.spec) == live;
+}
 // Tab title for a local file: its decoded file name.
 std::string FileTitle(const std::string& url) {
   const auto name = url.substr(url.find_last_of('/') + 1);
@@ -308,6 +318,8 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     row->SetBool("favorite", node.favorite); row->SetBool("archived", node.archived); row->SetDouble("archivedAt", static_cast<double>(node.archived_at));
     const auto live = sessions_.find(node.id);
     const bool failed = live != sessions_.end() && crashed_.contains(live->second->GetIdentifier());
+    const auto current = failed ? last_urls_.at(live->second->GetIdentifier()) :
+        live != sessions_.end() ? live->second->GetMainFrame()->GetURL().ToString() : node.url;
     row->SetBool("crashed", failed);
     bool camera = false, microphone = false;  // Live camera/microphone use.
     if (live != sessions_.end() && state)
@@ -318,17 +330,23 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     row->SetBool("audible", live != sessions_.end() && state && state->audible_frames.contains(live->second->GetIdentifier()));
     row->SetBool("customTitle", node.custom_title);
     const auto title = page_titles_.find(node.id);
-    row->SetString("pageTitle", title != page_titles_.end() ? title->second : node.page_title);
-    // Cached site icon (persisted per host), served to trusted UI as sol://ui/favicon/....
+    if (live != sessions_.end() && title != page_titles_.end() && title->second.url == current)
+      row->SetString("pageTitle", title->second.text);
+    else if (current.empty() || current == "about:blank" || SamePageUrl(current, node.url))
+      row->SetString("pageTitle", node.page_title);
+    // Live documents have their own selection. Only saved or not-yet-committed
+    // tabs use the host fallback directly.
     if (state && state->favicons) {
-      CefURLParts parts;
-      // A tab loading cold has no committed address yet (empty / about:blank);
-      // its saved address keeps the cached icon showing meanwhile.
-      const auto address = live != sessions_.end() && !failed ? live->second->GetMainFrame()->GetURL().ToString() : node.url;
-      if (!CefParseURL(address, parts) || !parts.host.length) { parts = CefURLParts(); CefParseURL(node.url, parts); }
-      if (parts.host.length) if (const auto url = state->favicons->Url(FaviconHost(CefString(&parts.host).ToString()))) row->SetString("favicon", *url);
+      std::optional<std::string> icon;
+      if (live != sessions_.end() && !failed) {
+        icon = state->favicons->PageUrl(live->second->GetIdentifier());
+        if (!icon && (current.empty() || current == "about:blank")) icon = state->favicons->Url(IconHost(node.url));
+      } else {
+        icon = state->favicons->Url(IconHost(node.url));
+      }
+      if (icon) row->SetString("favicon", *icon);
     }
-    row->SetString("currentUrl", failed ? last_urls_.at(live->second->GetIdentifier()) : live != sessions_.end() ? live->second->GetMainFrame()->GetURL().ToString() : node.url);
+    row->SetString("currentUrl", current);
     // Still "closing" while its archive is being saved, so the row never
     // reappears between the page closing and the archived snapshot.
     row->SetBool("closing", closing_.contains(node.id) || archiving_.contains(node.id) || auto_closing_.contains(node.id) ||
@@ -337,10 +355,9 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     const auto parked = parked_peeks_.find(node.id);
     const std::string peek = node.id == link_peek_opener_ && HasLinkPeek() ? link_peek_id_ : parked != parked_peeks_.end() ? parked->second.id : "";
     if (const auto preview = peek.empty() ? nullptr : LiveBrowser(peek)) {
-      const auto peek_title = page_titles_.find(peek); row->SetString("peekTitle", peek_title != page_titles_.end() ? peek_title->second.substr(0, 240) : "");
-      CefURLParts parts;
-      if (state && state->favicons && CefParseURL(preview->GetMainFrame()->GetURL(), parts))
-        if (const auto url = state->favicons->Url(FaviconHost(CefString(&parts.host).ToString()))) row->SetString("peekFavicon", *url);
+      const auto peek_title = page_titles_.find(peek); row->SetString("peekTitle", peek_title != page_titles_.end() ? peek_title->second.text : "");
+      if (state && state->favicons)
+        if (const auto url = state->favicons->PageUrl(preview->GetIdentifier())) row->SetString("peekFavicon", *url);
       row->SetBool("peek", true);
     }
     row->SetBool("live", sessions_.contains(node.id)); nodes->SetDictionary(i, row);
@@ -477,21 +494,29 @@ void WorkspaceController::Dispatch(TreeCommand command, Reply done, bool interna
   }
   const auto selection_started = command.action == TreeAction::Activate ? GetTickCount64() : 0;
   if (selection_started) if (auto s = state_.lock()) s->Record("tab_switch_requested");
+  if (!command.url.empty()) {
+    const auto title = page_titles_.find(command.id);
+    if (title != page_titles_.end() && SamePageUrl(title->second.url, command.url)) command.page_title = title->second.text;
+  }
   ++pending_commands_;
   worker_->GetTaskRunner()->PostTask(CefCreateClosureTask(base::BindOnce(
       [](std::shared_ptr<WorkspaceController> self, TreeCommand command, Reply done, bool internal, unsigned long long selection_started, TreeSnapshot window) {
         if (internal) command.expected_revision = self->data_->store->Read().snapshot.revision;
         auto result = self->data_->store->Apply(command, &window);
-        CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, TreeResult result, Reply done, unsigned long long selection_started) {
+        CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, TreeResult result, Reply done,
+            unsigned long long selection_started, std::string changed_destination) {
           if (auto owner = weak.lock()) {
             if (selection_started) if (auto s = owner->state_.lock()) {
               auto details = CefDictionaryValue::Create();
               details->SetDouble("commit_ms", static_cast<double>(GetTickCount64() - selection_started));
               details->SetBool("success", static_cast<bool>(result)); s->Record("tab_switch_committed", details);
             }
+            const bool saved = static_cast<bool>(result);
             --owner->pending_commands_; owner->Complete(std::move(result), std::move(done));
+            if (saved && !changed_destination.empty()) owner->SavePageTitle(changed_destination);
           }
-        }, std::weak_ptr<WorkspaceController>(self), std::move(result), std::move(done), selection_started));
+        }, std::weak_ptr<WorkspaceController>(self), std::move(result), std::move(done), selection_started,
+            command.url.empty() ? std::string{} : command.id));
       }, shared_from_this(), std::move(command), std::move(done), internal, selection_started, tree_)));
 }
 CefRefPtr<CefBrowser> WorkspaceController::LiveBrowser(const std::string& id) const {
@@ -575,6 +600,7 @@ CefRefPtr<CefBrowser> WorkspaceController::ReleaseForTransfer(const std::string&
   loaded_.erase(browser_id); last_urls_.erase(browser_id);
   sessions_.erase(id); browser_nodes_.erase(browser_id); std::erase(recent_, id);
   auto_archive_media_.erase(browser_id);
+  page_titles_.erase(id);
   if (tree_.active_id == id) {
     tree_.active_id.clear();
     for (const auto& candidate : OrderedTabs(tree_.nodes, tree_.active_space))
@@ -591,6 +617,7 @@ bool WorkspaceController::AdoptPage(CefRefPtr<CefBrowser> browser, const std::st
   creating_.erase(node_id);
   sessions_[node_id] = browser; browser_nodes_[browser->GetIdentifier()] = node_id;
   if (!browser->IsLoading()) loaded_.insert(browser->GetIdentifier());
+  OnTitleChanged(browser);
   TreeCommand activate{TreeAction::Activate}; activate.id = node_id;
   Dispatch(std::move(activate), {}, true);
   EnsureActive(); Publish();
@@ -699,15 +726,17 @@ void WorkspaceController::EnsureActive() {
     if (crashed_.contains(live->second->GetIdentifier())) { state->embedded->PresentCrash(live->second); return; }
     // Separate can keep the focused pane selected. Apply the single-page layout
     // even if that browser is already visible.
-    if (was_split || state->content != live->second || !IsWindowVisible(live->second->GetHost()->GetWindowHandle())) {
-      state->embedded->Activate(live->second);
+    if (was_split || state->embedded->HasPendingColdTab() || state->content != live->second ||
+        !IsWindowVisible(live->second->GetHost()->GetWindowHandle())) {
+      state->embedded->Activate(live->second, !loaded_.contains(live->second->GetIdentifier()));
       std::erase(recent_, tree_.active_id); recent_.push_back(tree_.active_id);
     }
     ResumeLinkPeek();
     return;
   }
-  if (creating_.contains(tree_.active_id)) return;
   EnsurePage(tree_.active_id);
+  if (creating_.contains(tree_.active_id)) state->embedded->ShowPendingColdTab();
+  else state->embedded->CancelPendingColdTab();
 }
 void WorkspaceController::EnsurePage(const std::string& id) {
   if (removing_folder_nodes_.contains(id)) return;
@@ -791,7 +820,7 @@ void WorkspaceController::OnCreated(CefRefPtr<CefBrowser> browser, const std::st
   }, weak_from_this()));
 }
 void WorkspaceController::OnClosed(int browser_id, const std::string& last_url) {
-  favicon_requests_.erase(browser_id);
+  if (const auto state = state_.lock(); state && state->favicons) state->favicons->ForgetPage(browser_id);
   const auto binding = browser_nodes_.find(browser_id);
   if (binding == browser_nodes_.end()) return;
   const auto id = binding->second;
@@ -814,19 +843,21 @@ void WorkspaceController::OnClosed(int browser_id, const std::string& last_url) 
   }
   if (const auto automatic=auto_closing_.find(id); automatic!=auto_closing_.end()) {
     auto done=std::move(automatic->second); auto_closing_.erase(automatic);
-    if (shutting_down_ || !PageUrlAllowed(last_url)) { done(false); return; }
+    if (shutting_down_ || !PageUrlAllowed(last_url)) { page_titles_.erase(id); done(false); return; }
     // Pinned/Favorites keep their saved address (unloaded only while on it).
     if (const auto node=std::find_if(tree_.nodes.begin(),tree_.nodes.end(),[&](const auto& n) { return n.id==id; });
-        node!=tree_.nodes.end() && (node->pinned || node->favorite)) { done(true); Publish(); return; }
+        node!=tree_.nodes.end() && (node->pinned || node->favorite)) { page_titles_.erase(id); done(true); Publish(); return; }
     TreeCommand update{TreeAction::SetUrl}; update.id=id; update.url=last_url;
     Dispatch(update,[done=std::move(done)](int code,const std::string&,CefRefPtr<CefDictionaryValue>) { done(code==0); },true);
+    page_titles_.erase(id);
     Publish(); return;
   }
   if (moving_unloads_.erase(id)) {
+    page_titles_.erase(id);
     if (detached_removals_.erase(id)) RemoveDetachedToday(id);
     EnsureActive(); Publish(); return;
   }
-  if (shutting_down_) { closing_.erase(id); Publish(); return; }
+  if (shutting_down_) { page_titles_.erase(id); closing_.erase(id); Publish(); return; }
   auto pending = closing_.find(id);
   if (pending != closing_.end()) {
     auto action = std::move(pending->second); closing_.erase(pending);
@@ -835,6 +866,7 @@ void WorkspaceController::OnClosed(int browser_id, const std::string& last_url) 
     const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
     if (node != tree_.nodes.end()) FinishClose(id, !node->pinned, {}, last_url);
   }
+  page_titles_.erase(id);
   Publish();
 }
 void WorkspaceController::Close(const std::string& id, bool archive, Reply done) {
@@ -876,8 +908,10 @@ void WorkspaceController::CancelClose(int browser_id) {
 void WorkspaceController::FinishClose(const std::string& id, bool archive, Reply done, const std::string& last_url) {
   TreeCommand command{archive ? TreeAction::Archive : TreeAction::Unload}; command.id = id;
   if (PageUrlAllowed(last_url)) command.url = last_url;
-  // The next page comes from the space on screen (or Favorites).
-  const auto ordered = OrderedTabs(tree_.nodes, tree_.active_space);
+  // Unloading the active peek of a collapsed folder dismisses that branch.
+  // Another live descendant must not replace the page beneath the folder.
+  const auto excluded_folder = !archive && tree_.active_id == id ? CollapsedFolderContaining(tree_.nodes, id) : std::string_view{};
+  const auto ordered = OrderedTabs(tree_.nodes, tree_.active_space, excluded_folder);
   for (auto i = recent_.rbegin(); i != recent_.rend(); ++i)
     if (*i != id && !removing_folder_nodes_.contains(*i) && sessions_.contains(*i) && std::find(ordered.begin(), ordered.end(), *i) != ordered.end()) { command.next_active = *i; break; }
   // A live page that was never shown (opened in the background) still beats the empty page,
@@ -921,84 +955,118 @@ void WorkspaceController::OnPageChanged(CefRefPtr<CefBrowser> browser) {
 }
 void WorkspaceController::OnLoadFinished(CefRefPtr<CefBrowser> browser) {
   loaded_.insert(browser->GetIdentifier());
-  if (IsLinkPeekBrowser(browser->GetIdentifier())) if (const auto state=state_.lock(); state && state->embedded) state->embedded->LinkPeekPageReady(browser);
+  if (const auto state = state_.lock(); state && state->embedded) {
+    if (IsLinkPeekBrowser(browser->GetIdentifier())) state->embedded->LinkPeekPageReady(browser);
+    else state->embedded->OnPresentationLoadFinished(browser);
+  }
   OnPageChanged(browser);
 }
-void WorkspaceController::OnTitleChanged(CefRefPtr<CefBrowser> browser, const std::string& raw) {
+void WorkspaceController::OnTitleChanged(CefRefPtr<CefBrowser> browser) {
   const auto binding = browser_nodes_.find(browser->GetIdentifier());
   if (binding == browser_nodes_.end()) return;
+  const auto entry = browser->GetHost()->GetVisibleNavigationEntry();
+  if (!entry || !entry->IsValid()) return;
+  const auto url = entry->GetURL().ToString();
+  if (url != browser->GetMainFrame()->GetURL().ToString() || !PageUrlAllowed(url)) return;
+  const auto raw = entry->GetTitle().ToString();
   // Page titles are untrusted text: no control characters, bounded length.
   size_t end = std::min<size_t>(raw.size(), 240);
   while (end < raw.size() && end > 0 && (static_cast<unsigned char>(raw[end]) & 0xC0) == 0x80) --end;  // UTF-8 boundary.
   std::string title;
   for (unsigned char c : raw.substr(0, end)) title += c < 32 || c == 127 ? ' ' : static_cast<char>(c);
   if (title.find_first_not_of(' ') == std::string::npos) title.clear();
-  if (page_titles_[binding->second] == title) return;
-  page_titles_[binding->second] = title;
+  if (title.empty() && browser->IsLoading()) return;
+  const PageTitle page{url, std::move(title)};
+  const auto old = page_titles_.find(binding->second);
+  if (old != page_titles_.end() && old->second == page) return;
+  page_titles_[binding->second] = page;
   Publish();
   if (IsPeekPage(binding->second)) return;
   SavePageTitle(binding->second);
 }
 void WorkspaceController::SavePageTitle(const std::string& id) {
+  if (stopped_ || shutting_down_ || !worker_) return;
+  const auto title = page_titles_.find(id);
+  if (title == page_titles_.end()) return;
+  const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
+  if (node == tree_.nodes.end() || !SamePageUrl(title->second.url, node->url)) return;
+  if (node->page_title == title->second.text && !pending_titles_.contains(id)) return;
+  pending_titles_[id] = {node->url, title->second.text};
+  FlushPageTitle(id);
+}
+void WorkspaceController::FlushPageTitle(const std::string& id) {
   if (stopped_ || shutting_down_ || !worker_ || !saving_titles_.insert(id).second) return;
   // Coalesce rapid script-driven title changes; don't write every intermediate
   // notification. PrepareShutdown flushes the latest titles before confirming.
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, std::string id) {
     auto self = weak.lock(); if (!self || self->stopped_) return;
     if (self->shutting_down_) { self->saving_titles_.erase(id); return; }
-    const auto title = self->page_titles_[id];
+    const auto title = self->pending_titles_.at(id);
     self->worker_->GetTaskRunner()->PostTask(CefCreateClosureTask(base::BindOnce(
-        [](std::shared_ptr<WorkspaceController> self, std::string id, std::string title) {
-          auto result = self->data_->store->SetPageTitle(id, title);
+        [](std::shared_ptr<WorkspaceController> self, std::string id, PageTitle title) {
+          auto result = self->data_->store->SetPageTitle(id, title.url, title.text);
           CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, std::string id,
-              std::string title, TreeResult result) {
+              PageTitle title, TreeResult result) {
             if (auto owner = weak.lock()) {
               owner->saving_titles_.erase(id);
               const bool saved = static_cast<bool>(result);
               owner->CompleteMetadata(std::move(result), {});
-              if (saved && owner->page_titles_[id] != title) owner->SavePageTitle(id);
+              if (saved && owner->pending_titles_.at(id) == title) owner->pending_titles_.erase(id);
+              else if (saved) owner->FlushPageTitle(id);
             }
           }, std::weak_ptr<WorkspaceController>(self), id, title, std::move(result)));
         }, self, id, title)));
   }, weak_from_this(), id), 200);
 }
+void WorkspaceController::OnDocumentStarted(int browser, const CefString& url) {
+  if (const auto state = state_.lock(); state && state->favicons) state->favicons->StartDocument(browser, IconHost(url));
+}
 void WorkspaceController::OnFaviconChanged(CefRefPtr<CefBrowser> browser, const std::vector<CefString>& urls) {
-  const auto binding = browser_nodes_.find(browser->GetIdentifier());
-  if (binding == browser_nodes_.end() || urls.empty()) return;
-  CefURLParts parts;
-  const auto host = CefParseURL(browser->GetMainFrame()->GetURL(), parts) ? FaviconHost(CefString(&parts.host).ToString()) : "";
+  const auto state = state_.lock();
+  const int id = browser->GetIdentifier();
+  if (!state || !state->favicons || !browser_nodes_.contains(id) || urls.empty()) return;
+  const auto host = IconHost(browser->GetMainFrame()->GetURL());
   if (host.empty()) return;
-  const int id=browser->GetIdentifier();
-  const auto token=favicon_requests_[id].Begin(urls.front().ToString());
+  const auto token = state->favicons->Begin(id, urls.front().ToString());
   if (!token) return;
   class Done final : public CefDownloadImageCallback {
    public:
-    Done(std::weak_ptr<WorkspaceController> owner, std::string host, int browser, uint64_t token)
-      : owner_(std::move(owner)), host_(std::move(host)), browser_(browser), token_(token) {}
+    Done(std::weak_ptr<FaviconCache> cache, std::weak_ptr<AppSession> session, std::weak_ptr<HistoryService> history,
+         std::string host, int browser, uint64_t token)
+      : cache_(std::move(cache)), session_(std::move(session)), history_(std::move(history)),
+        host_(std::move(host)), browser_(browser), token_(token) {}
     void OnDownloadImageFinished(const CefString&, int, CefRefPtr<CefImage> image) override {
-      auto self = owner_.lock(); auto state = self ? self->state_.lock() : nullptr;
-      if (!self) return;
-      const auto request=self->favicon_requests_.find(browser_);
-      if (request==self->favicon_requests_.end() || !request->second.Complete(token_)) return;
-      if (!state || !state->favicons || !image || image->IsEmpty()) return;
+      const auto cache = cache_.lock();
+      if (!cache) return;
       int width = 0, height = 0;
-      const auto png = image->GetAsPNG(1.0f, true, width, height);
+      const auto png = image && !image->IsEmpty() ? image->GetAsPNG(1.0f, true, width, height) : nullptr;
       // A 32 px icon is a few KB; refuse anything larger.
-      if (!png || png->GetSize() == 0 || png->GetSize() > 12 * 1024) return;
-      std::string bytes(png->GetSize(), char{}); png->GetData(bytes.data(), bytes.size(), 0);
-      if (const auto previous = state->favicons->Png(host_); previous && *previous == bytes) return;
-      state->favicons->Put(host_, bytes);
-      if (state->history && !state->private_window) state->history->SaveFavicon(host_, bytes);
-      self->Publish();
+      std::string bytes;
+      if (png && png->GetSize() <= 12 * 1024) {
+        bytes.resize(png->GetSize());
+        if (png->GetData(bytes.data(), bytes.size(), 0) != bytes.size()) bytes.clear();
+      }
+      const auto result = cache->Complete(browser_, token_, host_, bytes);
+      if (result.seeded) if (const auto history = history_.lock()) history->SaveFavicon(host_, bytes);
+      if (!result.changed) return;
+      // A live page can move to another window while the image is in flight.
+      if (const auto session = session_.lock()) for (const auto& window : session->Windows()) {
+        if (window->favicons != cache || !window->workspace || !window->workspace->browser_nodes_.contains(browser_)) continue;
+        window->workspace->Publish();
+        break;
+      }
     }
    private:
-    std::weak_ptr<WorkspaceController> owner_;
+    std::weak_ptr<FaviconCache> cache_;
+    std::weak_ptr<AppSession> session_;
+    std::weak_ptr<HistoryService> history_;
     std::string host_;
     int browser_; uint64_t token_;
     IMPLEMENT_REFCOUNTING(Done);
   };
   // The browser downloads with the page's own context; nothing reaches the shell's network.
-  browser->GetHost()->DownloadImage(urls.front(), true, 32, false, new Done(weak_from_this(), host, id, *token));
+  browser->GetHost()->DownloadImage(urls.front(), true, 32, false,
+      new Done(state->favicons, session_, state->private_window ? nullptr : state->history, host, id, *token));
 }
 bool WorkspaceController::PrepareShutdown(std::function<void(bool)> done) {
   CancelFolderRemoval();
@@ -1006,14 +1074,12 @@ bool WorkspaceController::PrepareShutdown(std::function<void(bool)> done) {
     error_ = "Please wait for the current tab operation before closing the window"; Publish(); return false;
   }
   shutting_down_ = true; Publish();
-  auto saved_titles=page_titles_; saved_titles.erase(link_peek_id_);
-  for (const auto& [source, parked] : parked_peeks_) saved_titles.erase(parked.id);
   worker_->GetTaskRunner()->PostTask(CefCreateClosureTask(base::BindOnce(
-      [](std::shared_ptr<WorkspaceController> self, std::map<std::string, std::string> titles, std::function<void(bool)> done) {
+      [](std::shared_ptr<WorkspaceController> self, std::map<std::string, PageTitle> titles, std::function<void(bool)> done) {
         auto result = self->data_->store->Read();
         for (const auto& [id, title] : titles) {
           if (!result) break;
-          result = self->data_->store->SetPageTitle(id, title);
+          result = self->data_->store->SetPageTitle(id, title.url, title.text);
         }
         CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, TreeResult result, std::function<void(bool)> done) {
           if (auto owner = weak.lock()) {
@@ -1021,10 +1087,14 @@ bool WorkspaceController::PrepareShutdown(std::function<void(bool)> done) {
             done(static_cast<bool>(result));
           }
         }, std::weak_ptr<WorkspaceController>(self), std::move(result), std::move(done)));
-      }, shared_from_this(), std::move(saved_titles), std::move(done))));
+      }, shared_from_this(), pending_titles_, std::move(done))));
   return true;
 }
-void WorkspaceController::CancelShutdown() { shutting_down_ = false; Publish(); EnsureActive(); }
+void WorkspaceController::CancelShutdown() {
+  shutting_down_ = false;
+  for (const auto& [id, title] : pending_titles_) FlushPageTitle(id);
+  Publish(); EnsureActive();
+}
 bool WorkspaceController::OnCrashed(CefRefPtr<CefBrowser> browser) {
   const auto id = browser->GetIdentifier();
   const auto binding = browser_nodes_.find(id);
@@ -1189,7 +1259,9 @@ int WorkspaceController::Duplicate(const std::string& id, std::string& error) {
   if (IsInternalPageUrl(url)) { OpenInternalPage(url, node->title); return 0; }  // One tab per internal page.
   if (!PageUrlAllowed(url)) { error = "This tab cannot be duplicated"; return 409; }
   if (!CanOpen()) { error = "Cannot open a tab now"; return 409; }
-  const auto title = page_titles_.contains(id) ? page_titles_.at(id) : node->title;
+  const auto live_title = page_titles_.find(id);
+  const auto title = live_title != page_titles_.end() && live_title->second.url == url && !live_title->second.text.empty() ? live_title->second.text :
+      SamePageUrl(url, node->url) && !node->page_title.empty() ? node->page_title : node->title;
   OpenPage(url, title.substr(0, 240), true, {});
   return 0;
 }
@@ -1284,16 +1356,21 @@ void WorkspaceController::LayoutSidebar(double width, bool final) {
                                   std::max(1, client.height - kToolbarHeight - kContentInset)));
   if (!final) return;
   state->embedded->QueueRaise();
-  // Probe evidence once the animation has settled.
-  if (state->probe) CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+  // Probe evidence once the animation has settled and the page is revealed
+  // (a cold page's input is held until its first frame; up to ~2 s).
+  if (state->probe) RecordSidebarLayout(state_, 40);
+}
+void WorkspaceController::RecordSidebarLayout(std::weak_ptr<State> weak, int attempts) {
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, int attempts) {
     auto state = weak.lock();
     if (!state || !state->embedded || !state->content) return;
+    if (state->embedded->Presenting() && attempts > 0) { RecordSidebarLayout(weak, attempts - 1); return; }
     auto data = CefDictionaryValue::Create();
     data->SetBool("visible", state->sidebar_visible);
     data->SetBool("native_geometry", state->embedded->ActiveMatchesBounds());
     data->SetBool("native_input", state->embedded->ActiveOwnsInputArea());
     state->Record("sidebar_native_layout", data);
-  }, state_));
+  }, weak, attempts), attempts == 40 ? 0 : 50);
 }
 void WorkspaceController::SetSidebarWidth(int width, bool save, Reply done) {
   auto state = state_.lock();

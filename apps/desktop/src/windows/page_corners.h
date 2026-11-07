@@ -60,12 +60,6 @@ class PageCorners {
   int DismissNotification();
   bool notification_visible() const { return notification_visible_; }
   RECT notification_bounds() const { return notification_bounds_; }
-  // Passive, in-memory page transition above child HWNDs, below corners/toasts.
-  static constexpr int kPageTransitionDurationMs = 180;
-  bool BeginPageTransition(HWND parent, const RECT& area);
-  bool HoldOutgoingPage(const void* png, size_t size);
-  bool FadeOutgoingPage();
-  void EndPageTransition();
   // Live bitmap of our own layered popup, scaled by the notification compositor.
   // Does not resize its CEF viewport or request a screenshot.
   static constexpr int kPopupShadowMarginDip = 36;
@@ -119,11 +113,6 @@ class PageCorners {
   Microsoft::WRL::ComPtr<IUnknown> popup_bitmap_;
   Microsoft::WRL::ComPtr<IDCompositionSurface> popup_shadow_surface_;
   HWND popup_source_ = nullptr;
-  Microsoft::WRL::ComPtr<IDCompositionVisual> page_transition_, page_picture_;
-  Microsoft::WRL::ComPtr<IDCompositionEffectGroup> page_opacity_;
-  Microsoft::WRL::ComPtr<IDCompositionRectangleClip> page_card_clip_;
-  Microsoft::WRL::ComPtr<IDCompositionSurface> page_snapshot_;
-  int page_width_ = 0, page_height_ = 0;
   Microsoft::WRL::ComPtr<IDCompositionVisual> notification_;
   Microsoft::WRL::ComPtr<IDCompositionVisual> notification_motion_;
   Microsoft::WRL::ComPtr<IDCompositionEffectGroup> notification_opacity_;

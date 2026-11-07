@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.5 — 2026-11-07
+
+- Cold tabs switch immediately and show the space's background until the
+  page paints, reducing white flashes during tab switches.
+- Tabs cascade out of folders on open and tuck back in quickly on close.
+  Unloading the active tab under a collapsed folder no longer opens another
+  tab from that folder.
+- Website icons update per tab. A GitHub Actions status change updates its
+  own tab without changing the icons on other GitHub tabs.
+- Pinned tabs restore the title of their saved address after unloading or
+  restarting. Manual names are preserved.
+- Docked DevTools receive clicks and hover again after resizing the browser
+  window or restoring it from the taskbar.
+- Removed hover tooltips from the top bar and device preview resize handles.
+
 ## 0.1.4 — 2026-11-06
 
 - Tabs select on mouse press. The previous page stays visible while the new

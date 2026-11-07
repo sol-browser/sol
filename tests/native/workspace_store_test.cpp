@@ -55,6 +55,18 @@ int wmain(int argc, wchar_t** argv) {
           "v1 migration preserves identities, revision, URLs, nesting, saved pinned names and default width");
       Check(Find(r.snapshot, "33333333-3333-4333-8333-333333333333").url == "sol://ui/history.html", "Red's own pages move to sol://");
     }
+    sqlite3_open16(legacy_path.c_str(), &db);
+    Check(sqlite3_exec(db, "UPDATE nodes SET page_title='Away title' WHERE pinned=1 AND kind=0;"
+        "UPDATE nodes SET page_title='History title' WHERE pinned=0 AND kind=0; PRAGMA user_version=10;",
+        nullptr, nullptr, nullptr) == SQLITE_OK, "seed legacy titles before v11 migration");
+    sqlite3_close(db);
+    {
+      red::TreeStore store; const auto r = store.Open(legacy_path);
+      const auto pin = Find(r.snapshot, r.snapshot.active_id);
+      Check(r && pin.page_title.empty() && pin.custom_title && pin.title == "Legacy page" &&
+          Find(r.snapshot, "33333333-3333-4333-8333-333333333333").page_title == "History title",
+          "migration discards unverified pin metadata and preserves saved labels and Today titles");
+    }
     for (const auto& suffix : {L"", L"-wal", L"-shm"}) { std::error_code error; std::filesystem::remove(legacy_path + suffix, error); }
   }
   red::TreeSnapshot expected;
@@ -74,15 +86,19 @@ int wmain(int argc, wchar_t** argv) {
     c = {red::TreeAction::Expand}; c.id = folder; c.value = false; Check(static_cast<bool>(apply(c)), "collapse preserves descendants");
     c = {red::TreeAction::Activate}; c.id = tab; Check(static_cast<bool>(apply(c)), "activate saved tab");
     const auto metadata_revision = store.Read().snapshot.revision;
-    auto metadata = store.SetPageTitle(tab, "Website title");
+    const std::string home = "https://example.com/";
+    auto metadata = store.SetPageTitle(tab, home, "Website title");
     Check(metadata && Find(metadata.snapshot, tab).page_title == "Website title" &&
           !Find(metadata.snapshot, tab).custom_title && metadata.snapshot.revision == metadata_revision,
           "site title persists independently of manual name and tree revision");
+    metadata = store.SetPageTitle(tab, home + "away", "Away title");
+    Check(metadata && Find(metadata.snapshot, tab).page_title == "Website title" &&
+          metadata.snapshot.revision == metadata_revision, "another address cannot replace a saved title");
     metadata = store.SetSidebarWidth(336);
     Check(metadata && metadata.snapshot.sidebar_width == 336 && metadata.snapshot.revision == metadata_revision,
           "saved sidebar preference does not conflict with tree edits");
     Check(store.SetSidebarWidth(199).code == 400 && store.SetSidebarWidth(481).code == 400 &&
-          store.SetPageTitle(tab, std::string("bad\0title", 9)).code == 400, "invalid preferences and metadata rejected");
+          store.SetPageTitle(tab, home, std::string("bad\0title", 9)).code == 400, "invalid preferences and metadata rejected");
     const auto fresh = store.Read().snapshot;
     Check(fresh.spaces.size() == 1 && fresh.spaces[0].name == "Personal" && fresh.ActiveSpace() &&
           fresh.ActiveSpace()->theme_hue == 307 && fresh.ActiveSpace()->theme_intensity == 100 &&
@@ -117,7 +133,7 @@ int wmain(int argc, wchar_t** argv) {
     Check(metadata&&!metadata.snapshot.ActiveSpace()->theme_palette,"legacy reset clears the palette");
     c = {red::TreeAction::Rename}; c.id = tab; c.title = "My name";
     Check(apply(c) && Find(store.Read().snapshot, tab).custom_title, "explicit rename opts out of automatic naming");
-    metadata = store.SetPageTitle(tab, "Changed website title");
+    metadata = store.SetPageTitle(tab, home, "Changed website title");
     Check(metadata && Find(metadata.snapshot, tab).title == "My name" && Find(metadata.snapshot, tab).custom_title,
           "dynamic page title cannot overwrite the manual name");
     c = {red::TreeAction::AutomaticTitle}; c.id = tab;
@@ -148,7 +164,7 @@ int wmain(int argc, wchar_t** argv) {
     sqlite3* injection = nullptr;
     sqlite3_open16(path.c_str(), &injection);
     sqlite3_exec(injection, "CREATE TRIGGER fail_write BEFORE UPDATE ON nodes BEGIN SELECT RAISE(ABORT,'injected failure'); END", nullptr, nullptr, nullptr);
-    Check(store.SetPageTitle(tab, "unsaved").code == 500 && Find(store.Read().snapshot, tab).page_title == "Changed website title",
+    Check(store.SetPageTitle(tab, home, "unsaved").code == 500 && Find(store.Read().snapshot, tab).page_title == "Changed website title",
           "metadata write failure surfaces and retains committed title");
     const auto rollback_before = store.Read().snapshot;
     c = {red::TreeAction::Move}; c.id = tab; c.parent = "";
@@ -158,8 +174,17 @@ int wmain(int argc, wchar_t** argv) {
     sqlite3_exec(injection, "DROP TRIGGER fail_write", nullptr, nullptr, nullptr); sqlite3_close(injection);
     c = {red::TreeAction::Place}; c.id = other; c.parent = ""; c.section = "today";
     r = apply(c); Check(static_cast<bool>(r) && !Find(r.snapshot, other).pinned && Find(r.snapshot, other).parent.empty(), "drop from folder into Today unpins and reparents atomically");
+    Check(static_cast<bool>(store.SetPageTitle(other, home, "Old destination")), "save old Today title");
+    red::TreeCommand change{red::TreeAction::SetUrl}; change.id = other; change.url = home + "new";
+    r = apply(change);
+    Check(r && Find(r.snapshot, other).page_title.empty(), "changing the destination discards its old title");
     c.section = "favorites"; c.url = "https://example.com/current";
-    r = apply(c); Check(static_cast<bool>(r) && Find(r.snapshot, other).favorite && Find(r.snapshot, other).url == c.url, "favorite captures live URL on promotion");
+    c.page_title = "New destination";
+    Check(static_cast<bool>(store.SetPageTitle(other, change.url, "Pending Today title")), "save title before changing destination again");
+    r = apply(c); Check(r && Find(r.snapshot, other).favorite && Find(r.snapshot, other).url == c.url &&
+          Find(r.snapshot, other).page_title == "New destination", "favorite captures live URL and title atomically on promotion");
+    r = store.SetPageTitle(other, change.url, "Late title from previous destination");
+    Check(r && Find(r.snapshot, other).page_title == "New destination", "a delayed title write cannot change the new destination's title");
     c = {red::TreeAction::SetUrl}; c.id = other; c.url = "https://example.com/changed";
     Check(apply(c).code == 400, "navigation cannot overwrite persistent home URL");
     c = {red::TreeAction::Unload}; c.id = other;

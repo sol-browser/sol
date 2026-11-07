@@ -142,7 +142,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::DescribeLinkPeek() const {
     value->SetDouble("width",rect.width/scale); value->SetDouble("height",rect.height/scale); return value;
   };
   result->SetString("id",link_peek_id_); result->SetString("url",(browser ? browser->GetMainFrame()->GetURL().ToString() : link_peek_url_).substr(0,4096));
-  const auto title=page_titles_.find(link_peek_id_); result->SetString("title",title==page_titles_.end() ? "Link preview" : title->second);
+  const auto title=page_titles_.find(link_peek_id_); result->SetString("title",title==page_titles_.end() ? "Link preview" : title->second.text);
   result->SetDictionary("bounds",bounds(card)); result->SetDictionary("area",bounds(area));
   result->SetBool("loading",!browser || browser->IsLoading()); result->SetBool("closing",link_peek_closing_ || link_peek_promoting_);
   result->SetBool("composed",state->embedded->LinkPeekComposed()); result->SetBool("opening",state->embedded->LinkPeekOpening());
@@ -207,10 +207,10 @@ bool WorkspaceController::HandleLinkPeek(CefRefPtr<CefDictionaryValue> request,R
         const auto source_browser=LiveBrowser(source->id);
         command.split_source_url=source_browser ? source_browser->GetMainFrame()->GetURL().ToString() : source->url;
         const auto page=page_titles_.find(source->id);
-        command.split_source_title=source->custom_title || page==page_titles_.end() || page->second.empty() ? source->title : page->second;
+        command.split_source_title=source->custom_title || page==page_titles_.end() || page->second.text.empty() ? source->title : page->second.text;
       }
     }
-    const auto title=page_titles_.find(link_peek_id_); command.title=title==page_titles_.end() || title->second.empty() ? url : title->second;
+    const auto title=page_titles_.find(link_peek_id_); command.title=title==page_titles_.end() || title->second.text.empty() ? url : title->second.text;
     link_peek_promoting_=true;
     Dispatch(command,[weak=weak_from_this(),done](int code,const std::string& error,CefRefPtr<CefDictionaryValue>) {
       if (auto self=weak.lock()) {

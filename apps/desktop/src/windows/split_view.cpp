@@ -45,10 +45,13 @@ CefRect EmbeddedContent::LayoutArea(int id) const {
 void EmbeddedContent::SetSplitPages(int first, int second, bool vertical, int ratio, bool reversed, int expanded, const std::set<int>& crashed) {
   const bool enabled = first != -1 || second != -1;
   const bool changed = enabled != split_enabled_ || first != split_first_ || second != split_second_;
-  if (changed) FinishPresentation(presentation_generation_,false);
+  if (changed) {
+    // Returning to a split cancels the pending single-page reveal.
+    FinishPresentation(presentation_generation_, false, !enabled);
+    if (enabled) split_leaving_.clear();
+  }
   // Leaving a split: its visible panes keep their place and size until the page
   // shown next has painted over them (Activate); they are not stretched first.
-  split_leaving_.clear();
   if (changed && !enabled && split_enabled_)
     for (const int pane : {split_first_, split_second_})
       if (const auto found = browsers_.find(pane); found != browsers_.end() && IsWindowVisible(found->second->GetHost()->GetWindowHandle()))
@@ -66,6 +69,7 @@ void EmbeddedContent::LayoutSplit() {
   if (state->devtools_dock) state->devtools_dock->Layout(LayoutArea(active),active,IsFullscreen());
   const HWND root = state->window->GetWindowHandle();
   HWND above = InlineSidebar();
+  if (state->devtools_dock) above = state->devtools_dock->StackAfter(above);
   for (const auto& [id,browser] : browsers_) {
     const bool shown = IsSplitPage(id) && !split_crashed_.contains(id) &&
         (fullscreen_id_ == -1 || fullscreen_id_ == id) && (split_expanded_ == -1 || split_expanded_ == id);

@@ -34,8 +34,10 @@ class Observer final : public CefDevToolsMessageObserver {
     if (!parsed || parsed->GetType() != VTYPE_DICTIONARY) return;
     const auto result = parsed->GetDictionary()->GetDictionary("result");
     const auto value = result ? result->GetDictionary("value") : nullptr;
-    if (value && value->GetBool("red_devtools_probe")) if (auto state = state_.lock())
-      state->Record(value->GetString("kind")=="shell" ? "devtools_probe_shell" : "devtools_probe_page", value->Copy(false));
+    if (value && value->GetBool("red_devtools_probe")) if (auto state = state_.lock()) {
+      const auto kind = value->GetString("kind");
+      state->Record(kind == "shell" ? "devtools_probe_shell" : kind == "frontend" ? "devtools_probe_frontend" : "devtools_probe_page", value->Copy(false));
+    }
   }
  private:
   int count_ = 0;
@@ -59,11 +61,64 @@ void Mouse(CefRefPtr<CefBrowser> shell,const char* type,double x,double y,bool h
   p->SetInt("buttons",std::string(type)=="mousePressed" || held ? 1 : 0);p->SetInt("clickCount",1);
   shell->GetHost()->ExecuteDevToolsMethod(0,"Input.dispatchMouseEvent",p);
 }
+void ResizeRoot(const std::shared_ptr<State>& state, int width, int height) {
+  auto bounds = state->window->GetBounds();
+  bounds.width = width; bounds.height = height;
+  state->window->SetBounds(bounds);
+}
+void TestDockInput(const std::shared_ptr<State>& state, std::string phase) {
+  const auto dock = state->devtools_dock->Describe();
+  if (!dock) return;
+  const int id = dock->GetInt("id");
+  const auto found = state->browsers.find(id);
+  if (found == state->browsers.end()) return;
+  const auto frontend = found->second;
+  const HWND root = state->window->GetWindowHandle();
+  const HWND handle = frontend->GetHost()->GetWindowHandle();
+  RECT rect{};
+  if (!GetWindowRect(handle, &rect)) return;
+  const POINT point{(rect.left + rect.right) / 2, rect.top + (rect.bottom - rect.top) / 3};
+  const auto hit = WindowFromPoint(point);
+  const bool same_root = GetAncestor(hit, GA_ROOT) == root;
+  auto details = CefDictionaryValue::Create();
+  details->SetString("phase", phase);
+  details->SetInt("frontend", id);
+  details->SetBool("frontend_hit", hit == handle || IsChild(handle, hit));
+  details->SetBool("inside_root", same_root);
+  details->SetBool("enabled", IsWindowEnabled(handle));
+  if (same_root) {
+    wchar_t name[128]{};
+    GetClassNameW(hit, name, 128);
+    details->SetString("hit_class", name);
+  }
+  state->Record("devtools_probe_hit", details);
+  const auto observer = frontend->GetHost()->AddDevToolsMessageObserver(new Observer(state));
+  Evaluate(frontend, R"JS((() => {
+    const seen = window.solTestPointer = { moves: 0, clicks: 0 };
+    addEventListener('pointermove', e => { if (e.isTrusted) ++seen.moves; }, { capture: true, once: true });
+    addEventListener('pointerdown', e => { if (e.isTrusted) ++seen.clicks; }, { capture: true, once: true });
+  })())JS");
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> frontend,
+      CefRefPtr<CefRegistration> observer, HWND root, POINT point, std::string phase) {
+    const auto state = weak.lock();
+    if (!state || !state->window || GetAncestor(WindowFromPoint(point), GA_ROOT) != root ||
+        (GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
+    POINT previous{};
+    if (!GetCursorPos(&previous) || !SetCursorPos(point.x, point.y)) return;
+    state->window->SendMouseEvents(MBT_LEFT, true, true);
+    CefPostDelayedTask(TID_UI, base::BindOnce([](CefRefPtr<CefBrowser> frontend, CefRefPtr<CefRegistration> observer,
+        POINT point, POINT previous, std::string phase) {
+      Evaluate(frontend, "({red_devtools_probe:true,kind:'frontend',phase:'" + phase + "',...window.solTestPointer})");
+      POINT cursor{};
+      if (GetCursorPos(&cursor) && cursor.x == point.x && cursor.y == point.y) SetCursorPos(previous.x, previous.y);
+      CefPostDelayedTask(TID_UI, base::BindOnce([](CefRefPtr<CefRegistration>) {}, observer), 350);
+    }, frontend, observer, point, previous, std::move(phase)), 130);
+  }, std::weak_ptr<State>(state), frontend, observer, root, point, std::move(phase)), 80);
+}
 void Sample(const std::shared_ptr<State>& s, CefRefPtr<CefBrowser> page, const std::string& phase) {
   auto out = CefDictionaryValue::Create(); out->SetString("phase", phase);
-  CefURLParts parts;
-  if(s->favicons && CefParseURL(page->GetMainFrame()->GetURL(),parts))
-    if(auto url=s->favicons->Url(CefString(&parts.host).ToString()))out->SetString("favicon",*url);
+  if (s->favicons)
+    if (const auto url = s->favicons->PageUrl(page->GetIdentifier())) out->SetString("favicon", *url);
   if (s->devtools_dock) {
     if (auto dock = s->devtools_dock->Describe()) out->SetDictionary("dock", dock);
     if (auto device = s->devtools_dock->DescribeDevice()) out->SetDictionary("device", device);
@@ -99,15 +154,23 @@ void StartDevToolsProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowse
   at(100, [](auto s, auto page) { ShowPageDevTools(s, page); });
   const auto shell_registration=Shell(state)->GetHost()->AddDevToolsMessageObserver(new Observer(state));
   at(25000,[shell_registration](auto,auto) {});
+  at(1450, [](auto s, auto) { TestDockInput(s, "initial"); });
   at(1600, [](auto s, auto page) { Sample(s, page, "before_resize"); });
   for (int i = 0; i < 8; ++i) at(1800 + i * 100, [i](auto s, auto page) {
-    s->window->SetBounds(CefRect(90,90,1120+(i%2)*60,800+(i%2)*20));
+    ResizeRoot(s,1120+(i%2)*60,800+(i%2)*20);
     const auto url=page->GetMainFrame()->GetURL().ToString();
     s->workspace->OnFaviconChanged(page,{url.substr(0,url.rfind('/'))+"/icon.svg"});
   });
-  at(3100, [](auto s, auto page) { Sample(s,page,"after_resize"); });
+  at(3100, [](auto s, auto page) { Sample(s,page,"after_resize"); TestDockInput(s,"resized"); });
   at(3400, [](auto, auto page) { Evaluate(page,"document.querySelector('link[rel=icon]').href='/icon-b.svg'"); });
-  at(4100, [](auto s, auto page) { Sample(s,page,"icon_changed"); s->devtools_dock->SetSide(page->GetIdentifier(),DevToolsSide::Window); });
+  at(3510, [](auto s, auto) { s->window->Minimize(); });
+  at(3690, [](auto s, auto) {
+    auto details = CefDictionaryValue::Create(); details->SetBool("minimized", s->window->IsMinimized());
+    s->Record("devtools_probe_minimize", details);
+    s->window->Restore(); s->window->Activate();
+  });
+  at(3940, [](auto s, auto) { TestDockInput(s,"restored"); });
+  at(4450, [](auto s, auto page) { Sample(s,page,"icon_changed"); s->devtools_dock->SetSide(page->GetIdentifier(),DevToolsSide::Window); });
   at(5400, [](auto s, auto page) {
     Sample(s,page,"detached");
     Evaluate(Shell(s),"document.querySelector('[aria-label=\"Dock right\"]')?.click()");
@@ -118,7 +181,7 @@ void StartDevToolsProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowse
   });
   at(8000, [](auto s, auto page) { s->devtools_dock->ToggleDevice(page->GetIdentifier()); });
   at(9300, [](auto s, auto page) { Sample(s,page,"device"); });
-  for (int i=0;i<6;++i) at(9600+i*120,[i](auto s,auto) { s->window->SetBounds(CefRect(90,90,1100+(i%2)*100,780+(i%2)*40)); });
+  for (int i=0;i<6;++i) at(9600+i*120,[i](auto s,auto) { ResizeRoot(s,1100+(i%2)*100,780+(i%2)*40); });
   at(11400, [](auto s,auto page) { Sample(s,page,"device_resized"); });
   at(12000, [](auto s,auto page) {
     Evaluate(Shell(s),"document.querySelector('[aria-label=\"Rotate device\"]')?.click()");
@@ -134,6 +197,12 @@ void StartDevToolsProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowse
     const auto v=d->GetDictionary("viewport");
     pointer->first=v->GetDouble("x")+v->GetDouble("width")+4;
     pointer->second=v->GetDouble("y")+v->GetDouble("height")/2;
+    Evaluate(Shell(s),R"JS((() => {
+      const handles = [...document.querySelectorAll('.device-resizer')];
+      return {red_devtools_probe:true,kind:'shell',phase:'resize_handles',
+        accessible:handles.length === 4 && handles.every(handle => handle.tabIndex === 0 && handle.getAttribute('aria-label')),
+        tooltips:handles.filter(handle => handle.closest('[title]')).length};
+    })())JS");
     Evaluate(Shell(s),"({red_devtools_probe:true,kind:'shell',phase:'pointer',hit:document.elementFromPoint("+std::to_string(pointer->first)+","+std::to_string(pointer->second)+")?.outerHTML,handle:document.querySelector('[aria-label=\"Resize viewport width\"]')?.getBoundingClientRect().toJSON(),size:[innerWidth,innerHeight],errors:document.querySelector('[role=alert]')?.textContent})");
     Mouse(Shell(s),"mouseMoved",pointer->first,pointer->second);
     Mouse(Shell(s),"mousePressed",pointer->first,pointer->second);

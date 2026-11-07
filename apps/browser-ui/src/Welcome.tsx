@@ -168,8 +168,8 @@ export function Welcome() {
     <canvas ref={canvas} className="welcome-sky" aria-hidden="true" />
     <div className="welcome-drag" aria-hidden="true" />
     <span className="welcome-caption">
-      <button className="caption-button" type="button" aria-label="Minimize" title="Minimize" onClick={() => void welcomeQuery({ method: 'welcome.window', action: 'minimize' })}><WindowCaptionIcon name="minimize" /></button>
-      <button className="caption-button window-close" type="button" aria-label="Close and open Sol" title="Close" onClick={() => void welcomeQuery({ method: 'welcome.window', action: 'close' })}><WindowCaptionIcon name="close" /></button>
+      <button className="caption-button" type="button" aria-label="Minimize" onClick={() => void welcomeQuery({ method: 'welcome.window', action: 'minimize' })}><WindowCaptionIcon name="minimize" /></button>
+      <button className="caption-button window-close" type="button" aria-label="Close and open Sol" onClick={() => void welcomeQuery({ method: 'welcome.window', action: 'close' })}><WindowCaptionIcon name="close" /></button>
     </span>
     <div ref={logo} className="welcome-logo" aria-hidden="true">
       <svg viewBox={LOGO_VIEW}><path d={LOGO_PATH} fillRule="evenodd" /></svg>

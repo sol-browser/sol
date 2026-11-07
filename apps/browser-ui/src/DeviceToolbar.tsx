@@ -85,7 +85,6 @@ export function DeviceToolbar({ device, apply, onError }: { device: DevicePrevie
     <div className="device-frame-shadow" style={geometry(device.viewport)} aria-hidden="true" />
     {handles.map(({ edge, label, bounds }) => <div key={edge} className="device-resizer" style={geometry(bounds)}
       data-edge={edge} data-dragging={dragging} role="button" tabIndex={0} aria-label={label}
-      title={`${label} · arrow keys resize · Shift for larger steps · Escape cancels`}
       onPointerDown={e => {
         if (e.button !== 0) return;
         e.preventDefault(); focusToolbar(); e.currentTarget.focus(); e.currentTarget.setPointerCapture(e.pointerId);

@@ -22,7 +22,7 @@ test('validates native history pages', () => {
   for (const raw of ['{"visits":[],"more":"no"}', '{"visits":[{"id":0,"url":"https://a.test/","title":"","visitedAt":1}],"more":false}',
     '{"visits":[{"id":1,"url":"file:///c:/x","title":"","visitedAt":1}],"more":false}', '{"visits":[{"id":1.5,"url":"https://a.test/","title":"","visitedAt":1}],"more":false}'])
     assert.throws(() => parseHistoryPage(raw));
-  assert.equal(parseHistoryPage('{"visits":[{"id":1,"url":"https://a.test/","title":"A","visitedAt":5,"favicon":"sol://ui/favicon/a.test/3"}],"more":false}').visits[0].favicon, 'sol://ui/favicon/a.test/3');
+  assert.equal(parseHistoryPage('{"visits":[{"id":1,"url":"https://a.test/","title":"A","visitedAt":5,"favicon":"sol://ui/favicon/a.test/v3"}],"more":false}').visits[0].favicon, 'sol://ui/favicon/a.test/v3');
   for (const favicon of ['https://evil.test/x.png', 'sol://ui/favicon/a.test/x', 'data:image/png;base64,AA', 7])
     assert.throws(() => parseHistoryPage(JSON.stringify({ visits: [{ id: 1, url: 'https://a.test/', title: '', visitedAt: 1, favicon }], more: false })));
   assert.equal(host('https://www.example.com/a'), 'example.com');

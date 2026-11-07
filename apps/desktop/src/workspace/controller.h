@@ -6,7 +6,6 @@
 #include "app/state.h"
 #include "trust_policy.h"
 #include "storage/tree_store.h"
-#include "history/favicon_request.h"
 #include "include/cef_thread.h"
 
 namespace red {
@@ -63,9 +62,9 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void OnLoadFinished(CefRefPtr<CefBrowser> browser);
   // Native page metadata is untrusted text; automatic titles persist separately
   // from explicit user names.
-  void OnTitleChanged(CefRefPtr<CefBrowser> browser, const std::string& title);
+  void OnTitleChanged(CefRefPtr<CefBrowser> browser);
   void OnFaviconChanged(CefRefPtr<CefBrowser> browser, const std::vector<CefString>& urls);
-  void OnDocumentStarted(int browser) { favicon_requests_[browser].NewDocument(); }
+  void OnDocumentStarted(int browser, const CefString& url);
   void OpenNewTab();
   void FocusAddress();
   // Asks the docked sidebar to start one of its own flows: newSpace, editSpace, newFolder.
@@ -179,10 +178,13 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void DrainExternalUrls();
   // Gives the page the space beside a docked sidebar of |width|.
   void LayoutSidebar(double width, bool final);
+  // Probe only: sidebar layout evidence once no page is being revealed.
+  static void RecordSidebarLayout(std::weak_ptr<State> weak, int attempts);
   void Publish();
   void PublishTheme();
   void PublishLayout();
   void SavePageTitle(const std::string& id);
+  void FlushPageTitle(const std::string& id);
   void FinishClose(const std::string& id, bool archive, Reply done, const std::string& last_url = "");
   void RemoveFolder(TreeCommand command, Reply done);
   void CancelFolderRemoval();
@@ -205,7 +207,6 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   // the opener and the last tab opened from it.
   std::string link_opener_, link_last_;
   std::map<int, std::string> browser_nodes_;
-  std::map<int, FaviconRequest> favicon_requests_;
   std::set<std::string> creating_;
   std::set<std::string> moving_unloads_;
   std::set<std::string> detached_removals_;
@@ -271,7 +272,12 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   int closing_commits_ = 0;
   int pending_commands_ = 0;
   std::map<std::string, std::string> saving_urls_;
-  std::map<std::string, std::string> page_titles_;  // By node ID, this session.
+  struct PageTitle {
+    std::string url, text;
+    bool operator==(const PageTitle&) const = default;
+  };
+  std::map<std::string, PageTitle> page_titles_;
+  std::map<std::string, PageTitle> pending_titles_;  // Titles observed at saved destinations.
   std::set<std::string> saving_titles_;
 };
 }  // namespace red

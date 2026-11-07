@@ -35,6 +35,11 @@ bool SafeUrl(const std::string& url) {
   return SafeText(url, 4096) && (url.starts_with("https://") || url.starts_with("http://") || IsExtensionPageUrl(url) ||
                                  IsInternalPageUrl(url) || IsLocalFileUrl(url));
 }
+void SetDestination(TreeNode& node, const TreeCommand& command) {
+  if (node.url != command.url) node.page_title.clear();
+  node.url = command.url;
+  if (command.page_title) node.page_title = *command.page_title;
+}
 std::string NewId() {
   std::array<unsigned char, 16> bytes{};
   if (BCryptGenRandom(nullptr, bytes.data(), static_cast<ULONG>(bytes.size()), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) return "";
@@ -199,7 +204,7 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
     return Error(500, "Cannot inspect workspace schema");
   const int schema = sqlite3_column_int(version.value, 0), application = sqlite3_column_int(app.value, 0);
   version.Finish(); app.Finish();
-  if (schema > 10 ||(application != 0 && application != kApplicationId)) return Error(500, "Unsupported workspace schema");
+  if (schema > 11 ||(application != 0 && application != kApplicationId)) return Error(500, "Unsupported workspace schema");
   if (schema == 0) {
     Statement tables(db_, "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'");
     if (!tables.value || sqlite3_step(tables.value) != SQLITE_ROW || sqlite3_column_int(tables.value, 0) != 0)
@@ -287,6 +292,10 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
   // v10: Red became Sol; its own pages moved from red:// to sol://.
   if (schema < 10 && !Exec("BEGIN IMMEDIATE; UPDATE nodes SET url='sol://'||substr(url,7) WHERE url LIKE 'red://%';"
       "PRAGMA user_version=10; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"Sol address migration failed"); }
+  // Old pins could cache a title from an unrelated page. Their saved labels
+  // remain usable until the title of the saved destination is observed again.
+  if (schema < 11 && !Exec("BEGIN IMMEDIATE; UPDATE nodes SET page_title='' WHERE kind=0 AND pinned=1 AND page_title<>'';"
+      "PRAGMA user_version=11; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"Saved page title migration failed"); }
   if (!Exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")) return Error(500, "Cannot configure workspace journal");
   Statement check(db_, "PRAGMA quick_check(1)");
   if (!check.value || sqlite3_step(check.value) != SQLITE_ROW || Text(check.value, 0) != "ok")
@@ -532,7 +541,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         node->pinned = command.value; node->favorite = false;
         if (command.value != was_pinned && !node->folder && !command.url.empty()) {
           if (!SafeUrl(command.url)) return rollback(400, "Invalid pinned URL");
-          node->url = command.url;
+          SetDestination(*node, command);
         }
         break;
       }
@@ -565,7 +574,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         // "Edit Pinned Page", section "home"), never through navigation.
         if (node->folder || node->archived || !SafeUrl(command.url) || ((node->pinned || node->favorite) && command.section != "home"))
           return rollback(400, "Cannot replace a persistent home URL through navigation");
-        node->url = command.url; break;
+        SetDestination(*node, command); break;
       case TreeAction::Place:
       case TreeAction::Move: {
         if (node->archived) return rollback(400, "Restore archived tabs before moving");
@@ -583,7 +592,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         }
         if (was_pinned != node->pinned && !command.url.empty()) {
           if (!SafeUrl(command.url)) return rollback(400, "Invalid pinned URL");
-          node->url = command.url;
+          SetDestination(*node, command);
         }
         break;
       }
@@ -593,7 +602,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         if (command.action == TreeAction::Archive) {
           if (!node->pinned && !command.url.empty()) {
             if (!SafeUrl(command.url)) return rollback(400, "Invalid final page URL");
-            node->url = command.url;
+            SetDestination(*node, command);
           }
           if (!MoveNode(tree, *node, "", -1)) return rollback(400, "Cannot archive tab");
           node->pinned = false; node->favorite = false; node->archived = true;
@@ -789,11 +798,11 @@ TreeResult TreeStore::TouchTabs(const std::map<std::string,int64_t>& activity) {
   if (!Exec("COMMIT")) { Exec("ROLLBACK"); return Error(500,"Cannot commit tab activity"); }
   return Read();
 }
-TreeResult TreeStore::SetPageTitle(const std::string& id, const std::string& title) {
-  if (!db_ || id.size() != 36 || !SafeText(title, 240, true)) return Error(400, "Invalid page title");
-  Statement update(db_, "UPDATE nodes SET page_title=? WHERE id=? AND kind=0");
+TreeResult TreeStore::SetPageTitle(const std::string& id, const std::string& url, const std::string& title) {
+  if (!db_ || id.size() != 36 || !SafeUrl(url) || !SafeText(title, 240, true)) return Error(400, "Invalid page title");
+  Statement update(db_, "UPDATE nodes SET page_title=? WHERE id=? AND url=? AND kind=0");
   if (!update.value) return Error(500, "Cannot prepare page title");
-  update.Text(1, title); update.Text(2, id);
+  update.Text(1, title); update.Text(2, id); update.Text(3, url);
   if (sqlite3_step(update.value) != SQLITE_DONE) return Error(500, "Cannot save page title");
   return Read();
 }

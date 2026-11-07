@@ -151,8 +151,23 @@ void DevToolsDock::Layout(const CefRect& area, int active, bool fullscreen) {
 }
 void DevToolsDock::Relayout() {
   if (auto s = state_.lock(); s && s->embedded && s->window && s->workspace && !s->workspace->WindowClosing()) {
-    s->embedded->Relayout(); s->workspace->Refresh();
+    s->embedded->Relayout(); s->embedded->QueueRaise(); s->workspace->Refresh();
   }
+}
+HWND DevToolsDock::StackAfter(HWND above) const {
+  const auto state = state_.lock();
+  const auto active = entries_.find(active_);
+  if (!state || !state->window || fullscreen_ || active == entries_.end() ||
+      active->second->side == DevToolsSide::Window || active->second->reopening) return above;
+  const auto frontend = state->browsers.find(active->second->frontend);
+  if (frontend == state->browsers.end()) return above;
+  const HWND root = state->window->GetWindowHandle(), child = frontend->second->GetHost()->GetWindowHandle();
+  if (IsIconic(root) || !IsWindowVisible(child) || GetAncestor(child, GA_PARENT) != root) return above;
+  // The same stack pass places the site windows below the dock. Leaving the
+  // inspector in the old z-order lets Alloy's full-client input child cover it.
+  if (GetWindow(child, GW_HWNDPREV) != above &&
+      !SetWindowPos(child, above ? above : HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) return above;
+  return child;
 }
 CefRefPtr<CefDictionaryValue> DevToolsDock::Describe() const {
   auto s = state_.lock(); const auto at = entries_.find(active_);

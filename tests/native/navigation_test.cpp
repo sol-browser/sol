@@ -39,5 +39,14 @@ int main() {
         "tab cycle follows sidebar sections and collapsed descendants, excludes archive and other spaces");
   check(red::OrderedTabs(nodes, "home") == std::vector<std::string>{"favorite", "other-space"}, "favorites are shared by every space");
   check(red::OrderedTabs({}, "work").empty(), "empty workspace");
+  check(red::CollapsedFolderContaining(nodes, "nested-tab") == "folder", "the outer collapsed ancestor owns the visible peek");
+  check(red::OrderedTabs(nodes, "work", "folder") == std::vector<std::string>{"favorite", "today"},
+        "closing a collapsed peek excludes all descendants from its fallback");
+  check(red::OrderedTabs({nodes[1], nodes[2], nodes[3]}, "work", "folder").empty(),
+        "a collapsed folder by itself offers no replacement page");
+  nodes[1].expanded = true;
+  check(red::CollapsedFolderContaining(nodes, "nested-tab") == "nested", "an expanded outer folder leaves the inner peek independent");
+  nodes[2].expanded = true;
+  check(red::CollapsedFolderContaining(nodes, "nested-tab").empty(), "an expanded path uses the regular close order");
   return failures ? 1 : 0;
 }

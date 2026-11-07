@@ -202,7 +202,7 @@ function Shell() {
       <form className="chrome-controls" onSubmit={navigate}>
         <div className="toolbar-rail">
           {/* Arc: the logo is the browser menu (History, Downloads, Archive…). */}
-          {workspace ? <button type="button" className="brand-mark brand-button" data-action="menu" aria-label="Browser menu" aria-haspopup="menu" title="Menu"
+          {workspace ? <button type="button" className="brand-mark brand-button" data-action="menu" aria-label="Browser menu" aria-haspopup="menu"
             disabled={!ready} onClick={e => { const r = e.currentTarget.getBoundingClientRect();
               void send({ method: 'menu.main', x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) }); }}><Icon name="logo" /></button> :
           <span className="brand-mark" title="Sol"><Icon name="logo" /></span>}
@@ -211,7 +211,7 @@ function Shell() {
             title="Private window: history, cookies and site data from this window are not kept after it closes. Websites, your network and downloads you save can still see what you do.">
             <VenetianMask size={14} strokeWidth={2} aria-hidden="true" />Private</span>}
           {workspace && <button className="icon-button sidebar-toggle" data-action="toggle-sidebar" type="button" aria-label={snapshot.sidebarVisible ? 'Hide sidebar' : 'Show sidebar'}
-            aria-expanded={snapshot.sidebarVisible} aria-controls="browser-sidebar" title="Toggle sidebar (Ctrl+S)"
+            aria-expanded={snapshot.sidebarVisible} aria-controls="browser-sidebar"
             onClick={() => void send({ method: 'workspace.setSidebarVisible', visible: !snapshot.sidebarVisible })}><Icon name="sidebar" /></button>}
           {/* Arc puts Downloads beside the sidebar button; it opens a popover downward. */}
           {/* Only once something was downloaded in this session; Ctrl+J opens the full page anytime. */}
@@ -222,14 +222,13 @@ function Shell() {
           {/* Middle click opens the previous/next page in a new tab; right click lists the tab's history (Chrome). */}
           {([['back', -1, snapshot?.canGoBack], ['forward', 1, snapshot?.canGoForward]] as const).map(([direction, offset, can]) =>
             <button key={direction} className="icon-button" type="button" data-nav={direction} disabled={!connected || !can} aria-label={direction === 'back' ? 'Back' : 'Forward'}
-              title={`${direction === 'back' ? 'Back' : 'Forward'} (right click for history)`}
               onClick={() => void send({ method: direction === 'back' ? 'navigation.back' : 'navigation.forward' })}
               onMouseDown={e => { if (e.button === 1) e.preventDefault(); }}
               onAuxClick={e => { if (e.button !== 1) return; e.preventDefault(); void send({ method: 'navigation.openEntry', offset }); }}
               onContextMenu={e => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect();
                 void send({ method: 'navigation.historyMenu', x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) }); }}>
               <Icon name={direction} /></button>)}
-          <button className="icon-button" type="button" data-nav={snapshot?.isLoading && !spinning ? 'stop' : 'reload'} disabled={!connected || (workspace && !snapshot.activeId)} aria-label={snapshot?.isLoading ? 'Stop loading' : 'Reload'} title={snapshot?.isLoading ? 'Stop loading (Esc)' : 'Reload (Ctrl+R)'}
+          <button className="icon-button" type="button" data-nav={snapshot?.isLoading && !spinning ? 'stop' : 'reload'} disabled={!connected || (workspace && !snapshot.activeId)} aria-label={snapshot?.isLoading ? 'Stop loading' : 'Reload'}
             onClick={e => { if (!snapshot?.isLoading) { setSpinning(true); spin(e.currentTarget, () => setSpinning(false)); } void send({ method: snapshot?.isLoading ? 'navigation.stop' : 'navigation.reload' }); }}>
             {/* The turn finishes on the reload arrow before Stop's cross replaces it. */}
             <Icon name={snapshot?.isLoading && !spinning ? 'close' : 'reload'} /></button>
@@ -240,18 +239,17 @@ function Shell() {
           <button type="button" className="notice-dismiss" onClick={() => setDismissedNotice(snapshot?.noticeId ?? 0)}>Dismiss</button></div> :
         <div className="page-toolbar">
           {workspace && <><button type="button" className="icon-button copy-link" data-action="copy-link" aria-label="Copy link"
-            title="Copy current URL"
             disabled={!ready || !snapshot.activeId || !snapshot.url || copyingLink} onClick={() => void copyLink()}><Icon name="link" /></button>
             <span className="sr-only" role="status">{copiedUrl && copiedUrl === snapshot.url ? `Copied Current URL ${copiedUrl}` : ''}</span></>}
           {workspace ? <span className="address-wrap" data-zoom={snapshot.zoom ? 'true' : undefined}>
-            <button type="button" className="address address-trigger" aria-label="Website address" title={`Edit address (${snapshot.shortcutLabels?.address ?? 'Ctrl + L'})`} disabled={!ready}
+            <button type="button" className="address address-trigger" aria-label="Website address" disabled={!ready}
               onClick={() => void send({ method: 'browser.shortcut', action: 'address' })}>
               <AddressLoading loading={!!snapshot.activeId && !!snapshot.isLoading && !snapshot.activeCrashed} />
               <span className="address-text">{compactAddress(snapshot.url ?? '') || 'Search or enter address'}</span>
             </button>
             {/* The page's zoom when it is not 100%; a click resets it (Ctrl+0). */}
             {snapshot.zoom && <button type="button" className="address-zoom" disabled={!ready} aria-label={`Zoom ${snapshot.zoom}%, reset to 100%`}
-              title="Reset zoom (Ctrl+0)" onClick={e => { e.currentTarget.blur(); void send({ method: 'navigation.resetZoom' }); }}>{snapshot.zoom}%</button>}
+              onClick={e => { e.currentTarget.blur(); void send({ method: 'navigation.resetZoom' }); }}>{snapshot.zoom}%</button>}
           </span> : <label className="address"><Icon name="globe" /><span className="sr-only">Website address</span><input ref={address} aria-label="Website address" placeholder="Search or enter address" value={url} onChange={e => setUrl(e.target.value)} spellCheck={false} autoComplete="off"
             onFocus={e => { const field = e.currentTarget; setTimeout(() => field.select()); }}
             onBlur={() => setUrl(latest.current?.url ?? url)}
@@ -259,10 +257,10 @@ function Shell() {
           {/* Arc: site controls instead of a Go arrow; live camera/microphone use shows here too. */}
           {workspace ? <button className="icon-button site-button" type="button" data-action="site" disabled={!ready}
             data-live={activeNode?.mediaCamera || activeNode?.mediaMicrophone ? 'true' : undefined}
-            aria-label={siteLabel(activeNode)} title={siteLabel(activeNode)} onClick={e => openPanel('site', e.currentTarget)}>
+            aria-label={siteLabel(activeNode)} onClick={e => openPanel('site', e.currentTarget)}>
             {/* Square button: a live camera/microphone replaces the sliders glyph. */}
             {activeNode?.mediaCamera ? <Icon name="camera" className="media-live" /> : activeNode?.mediaMicrophone ? <Icon name="mic" className="media-live" /> : <Icon name="sliders" />}</button> :
-          <button className="icon-button go-button" disabled={!connected} type="submit" aria-label="Go" title="Go to address"><Icon name="arrow" /></button>}
+          <button className="icon-button go-button" disabled={!connected} type="submit" aria-label="Go"><Icon name="arrow" /></button>}
         </div>}
         <div className="window-side">
           {/* Pinned extensions (browser menu > Extensions > Pin to Top Bar, or right click in the site popover). */}
@@ -270,7 +268,7 @@ function Shell() {
             {snapshot.pinnedExtensions!.map(item => {
               const rect = (element: HTMLElement) => { const r = element.getBoundingClientRect();
                 return { x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) }; };
-              return <button key={item.id} type="button" className="icon-button extension-button" title={item.name} aria-label={item.name} disabled={!ready}
+              return <button key={item.id} type="button" className="icon-button extension-button" aria-label={item.name} disabled={!ready}
                 onClick={e => void send({ method: 'extension.open', id: item.id, ...rect(e.currentTarget) })}
                 onContextMenu={e => { e.preventDefault(); void send({ method: 'extension.menu', id: item.id, ...rect(e.currentTarget) }); }}>
                 {item.icon ? <img src={item.icon} alt="" draggable={false} /> : <span className="extension-letter">{[...item.name][0]?.toUpperCase()}</span>}
@@ -280,10 +278,10 @@ function Shell() {
           <span role="status" className={`connection-status ${error || snapshot?.error ? 'error' : ''}`} title={status}><span className={snapshot?.isLoading ? 'status-light loading' : 'status-light'} />{status}</span>
           {/* Windows caption appearance; actions retain the native close coordinator. */}
           {workspace && <span className="window-controls">
-            <button className="caption-button" type="button" aria-label="Minimize" title="Minimize" onClick={() => void send({ method: 'window.control', action: 'minimize' })}><WindowCaptionIcon name="minimize" /></button>
-            <button className="caption-button" type="button" aria-label={snapshot.windowMaximized ? 'Restore' : 'Maximize'} title={snapshot.windowMaximized ? 'Restore' : 'Maximize'}
+            <button className="caption-button" type="button" aria-label="Minimize" onClick={() => void send({ method: 'window.control', action: 'minimize' })}><WindowCaptionIcon name="minimize" /></button>
+            <button className="caption-button" type="button" aria-label={snapshot.windowMaximized ? 'Restore' : 'Maximize'}
               onClick={() => void send({ method: 'window.control', action: 'toggleMaximize' })}><WindowCaptionIcon name={snapshot.windowMaximized ? 'restore' : 'maximize'} /></button>
-            <button className="caption-button window-close" type="button" aria-label="Close window" title="Close" onClick={() => void send({ method: 'window.control', action: 'close' })}><WindowCaptionIcon name="close" /></button>
+            <button className="caption-button window-close" type="button" aria-label="Close window" onClick={() => void send({ method: 'window.control', action: 'close' })}><WindowCaptionIcon name="close" /></button>
           </span>}
         </div>
       </form>

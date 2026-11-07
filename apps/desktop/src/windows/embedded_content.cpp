@@ -109,7 +109,7 @@ CefRect EmbeddedContent::PhysicalBounds() const {
   return PagePhysicalBounds(state && state->content ? state->content->GetIdentifier() : -1);
 }
 void EmbeddedContent::Relayout() {
-  FinishPresentation(presentation_generation_, false);
+  if (!cold_cover_) FinishPresentation(presentation_generation_, false);
   Resize(bounds_);
 }
 bool EmbeddedContent::BeginPopupAnimation(HWND popup, bool bottom, float origin_x, bool closing, float from_scale) {
@@ -222,7 +222,8 @@ void EmbeddedContent::Resize(const CefRect& bounds) {
   // Never shrink pages to a minimized window's empty client area.
   if (const auto root = state_.lock(); bounds.width <= 0 || bounds.height <= 0 ||
       (root && root->window && IsIconic(root->window->GetWindowHandle()))) return;
-  if (bounds.x != bounds_.x || bounds.y != bounds_.y || bounds.width != bounds_.width || bounds.height != bounds_.height)
+  if (!cold_cover_ &&
+      (bounds.x != bounds_.x || bounds.y != bounds_.y || bounds.width != bounds_.width || bounds.height != bounds_.height))
     FinishPresentation(presentation_generation_);
   bounds_ = bounds;
   if (HasLinkPeek()) { LayoutLinkPeek(); return; }
@@ -232,7 +233,8 @@ void EmbeddedContent::Resize(const CefRect& bounds) {
       state->content ? state->content->GetIdentifier() : -1, IsFullscreen());
   for (const auto& [id, browser] : browsers_) {
     const HWND handle = browser->GetHost()->GetWindowHandle();
-    const auto target = PagePhysicalBounds(id);
+    auto target = PagePhysicalBounds(id);
+    if (parked_ && id == presenting_id_) { target.x = -target.width - 32; target.y = -target.height - 32; }
     // Only visible pages are resized now: resizing every hidden page made each
     // layout change cost ~5 ms per open tab (80 tabs: 400-700 ms on the UI
     // thread, a visible stall). Activate() applies the current target bounds;
@@ -250,6 +252,7 @@ void EmbeddedContent::Resize(const CefRect& bounds) {
     Shape(handle);
   }
   UpdateCorners();
+  if (cold_cover_) ShowColdCover();
   const auto area = NotificationArea();
   corners_.PositionNotification(RECT{area.x, area.y, area.x + area.width, area.y + area.height});
 }
@@ -415,10 +418,11 @@ bool EmbeddedContent::FullscreenGeometryOk() const {
       GetWindowRgnBox(handle, &region) == ERROR;
 }
 void EmbeddedContent::SetSidebarOverlayVisible(bool visible) {
-  if (sidebar_overlay_visible_ == visible) return;
-  if (visible) FinishPresentation(presentation_generation_, false);
+  if (sidebar_overlay_visible_ == visible && !cold_cover_) return;
+  if (visible && !cold_cover_) FinishPresentation(presentation_generation_, false);
   if (visible) HideLinkStatus();
   sidebar_overlay_visible_ = visible;
+  if (cold_cover_) ShowColdCover();
 }
 void EmbeddedContent::Shape(HWND handle) const {
   if (HasLinkPeek()) { ShapeLinkPeek(handle); return; }
@@ -509,7 +513,7 @@ void EmbeddedContent::OnCreated(CefRefPtr<CefBrowser> browser) {
     ShowWindow(browser->GetHost()->GetWindowHandle(), SW_HIDE);
   else Activate(browser);
 }
-void EmbeddedContent::Activate(CefRefPtr<CefBrowser> browser) {
+void EmbeddedContent::Activate(CefRefPtr<CefBrowser> browser, bool cold) {
   auto state = state_.lock();
   if (!state || !browsers_.contains(browser->GetIdentifier())) return;
   if (state->content != browser) HideLinkStatus();
@@ -534,7 +538,7 @@ void EmbeddedContent::Activate(CefRefPtr<CefBrowser> browser) {
   // (FinishPresentation). An unpainted child window cannot be used as a veil:
   // Windows clips the siblings beneath it, so the parent would show through.
   if (!split_leaving_.empty() && !split_leaving_.contains(id)) {
-    FinishPresentation(presentation_generation_, false, false);
+    FinishPresentation(presentation_generation_, false, false, true);
     presentations_[id].activated_ms = GetTickCount64();
     crash_presented_ = -1;
     if (state->devtools_dock) state->devtools_dock->Layout(WorkspacePhysicalBounds(), id, IsFullscreen());
@@ -551,26 +555,23 @@ void EmbeddedContent::Activate(CefRefPtr<CefBrowser> browser) {
     for (const auto& [other_id, item] : browsers_)
       if (other_id != id && !split_leaving_.contains(other_id)) ShowWindow(item->GetHost()->GetWindowHandle(), SW_HIDE);
     UpdateCorners();
-    presenting_id_ = id;
-    const auto generation = presentation_generation_;
-    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, unsigned long long generation) {
-      if (auto s = weak.lock(); s && s->embedded) s->embedded->CheckPresentationTimeout(generation);
-    }, state_, generation), 400);
-    AwaitIncomingFrame(browser);
-    if (state->ui_editing) FocusShell(state); else FocusBrowser(browser);
+    for (const int pane : split_leaving_) {
+      if (const auto found = browsers_.find(pane); found != browsers_.end())
+        BlockPresentationInput(found->second->GetHost()->GetWindowHandle());
+    }
+    BeginPresentation(browser, cold);
     auto data = CefDictionaryValue::Create(); data->SetInt("browser_id", id); data->SetBool("left_split", true);
     state->Record("embedded_activated", data);
     return;
   }
-  split_leaving_.clear();
   const auto retained = browsers_.find(presentation_backdrop_id_);
-  // Before the fade the old live HWND is still on top; during the fade the
-  // target is live beneath the outgoing picture and is the next outgoing page.
-  const int previous_id = !presentation_fading_ && retained != browsers_.end() &&
+  const int previous_id = retained != browsers_.end() &&
       IsWindowVisible(retained->second->GetHost()->GetWindowHandle()) ? presentation_backdrop_id_ :
       state->content ? state->content->GetIdentifier() : -1;
-  const bool switched = previous_id != id || !IsWindowVisible(handle);
-  FinishPresentation(presentation_generation_, false, false);
+  const bool switched = !split_leaving_.contains(id) && (previous_id != id || !IsWindowVisible(handle));
+  const bool keep_gradient = cold_cover_ && (switched || cold);
+  FinishPresentation(presentation_generation_, false, false, keep_gradient);
+  split_leaving_.clear();
   presentations_[id].activated_ms = GetTickCount64();
   crash_presented_ = -1;
   if (fullscreen_id_ != -1 && fullscreen_id_ != id) { ExitFullscreenFor(fullscreen_id_); Resize(bounds_); }
@@ -579,36 +580,32 @@ void EmbeddedContent::Activate(CefRefPtr<CefBrowser> browser) {
   const auto previous = browsers_.find(previous_id);
   const HWND backdrop = previous != browsers_.end() && previous_id != id ? previous->second->GetHost()->GetWindowHandle() : nullptr;
   const bool retain_page = backdrop && IsWindowVisible(backdrop);
-  // No animation on tab switches (user decision, 2026-11-06), and no blank
-  // frame: the outgoing page stays live on top while the incoming one, shown
-  // right under it, paints its first frame; then the outgoing one is hidden
-  // at once (page_presentation.cpp). Pages are child windows, which Chromium's
-  // occlusion tracking does not treat as hidden, so the incoming one paints.
-  const bool covered = !sidebar_overlay_visible_ && switched && retain_page;
-  presentation_backdrop_id_ = covered ? previous_id : -1;
+  // The incoming child can render underneath the outgoing child and the
+  // passive gradient. Warm switches only use the outgoing child.
+  const bool covered = keep_gradient || (cold && switched) || (!sidebar_overlay_visible_ && switched && retain_page);
+  // A cold page paints parked outside the window while the page area shows the
+  // empty-space look (ShowColdCover); a warm one paints beneath the outgoing page.
+  const bool park = covered && (keep_gradient || cold);
+  presentation_backdrop_id_ = covered && retain_page && !park ? previous_id : -1;
   state->content = browser;
 #if CEF_API_ADDED(CEF_EXPERIMENTAL)
   browser->GetHost()->NotifyTabActivated();
 #endif
   const HWND sidebar = InlineSidebar();
-  SetWindowPos(handle, covered ? backdrop : sidebar ? sidebar : HWND_TOP, physical.x, physical.y, physical.width, physical.height,
+  SetWindowPos(handle, presentation_backdrop_id_ != -1 ? backdrop : sidebar ? sidebar : HWND_TOP,
+      park ? -physical.width - 32 : physical.x, park ? -physical.height - 32 : physical.y, physical.width, physical.height,
       SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  parked_ = park;
   Shape(handle);
   for (const auto& [other_id, item] : browsers_)
     if (other_id != id && other_id != presentation_backdrop_id_) ShowWindow(item->GetHost()->GetWindowHandle(), SW_HIDE);
-  if (covered) {
-    EnableWindow(backdrop, FALSE);
-    SetWindowPos(backdrop, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  if (presentation_backdrop_id_ != -1) {
+    BlockPresentationInput(backdrop);
+    SetWindowPos(backdrop, sidebar ? sidebar : HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
   }
   UpdateCorners();
   if (covered) {
-    presenting_id_ = id;
-    presentation_input_ = handle; EnableWindow(handle, FALSE); FocusShell(state);
-    const auto generation = presentation_generation_;
-    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, unsigned long long generation) {
-      if (auto s = weak.lock(); s && s->embedded) s->embedded->CheckPresentationTimeout(generation);
-    }, state_, generation), 400);
-    AwaitIncomingFrame(browser);
+    BeginPresentation(browser, cold);
   } else {
     if (state->ui_editing) FocusShell(state); else FocusBrowser(browser);
     auto direct = CefDictionaryValue::Create(); direct->SetInt("browser_id", id);
@@ -630,8 +627,14 @@ void EmbeddedContent::OnClosed(int id) {
     else if (link_peek_return_delay_) for (const auto& [other,page]:browsers_) if (other!=id) SetWindowRgn(page->GetHost()->GetWindowHandle(),nullptr,TRUE);
     if (!link_peek_return_delay_) ClearLinkPeek();
   }
-  if (presenting_id_ == id || presentation_backdrop_id_ == id)
-    FinishPresentation(presentation_generation_, false, presenting_id_ != id);
+  if (const auto closing = browsers_.find(id); closing != browsers_.end())
+    presentation_disabled_.erase(closing->second->GetHost()->GetWindowHandle());
+  split_leaving_.erase(id);
+  if (presenting_id_ == id) FinishPresentation(presentation_generation_, false, false);
+  else if (presentation_backdrop_id_ == id) {
+    if (cold_cover_) presentation_backdrop_id_ = -1;
+    else FinishPresentation(presentation_generation_, false);
+  }
   presentations_.erase(id);
   if (fullscreen_id_ == id) {
     fullscreen_id_ = -1;
@@ -676,18 +679,20 @@ void EmbeddedContent::RaiseActive() {
   if (!state || !state->window || !state->content || !browsers_.contains(state->content->GetIdentifier())) return;
   if (split_enabled_) { LayoutSplit(); return; }
   if (state->devtools_dock) state->devtools_dock->Layout(WorkspacePhysicalBounds(), state->content->GetIdentifier(), IsFullscreen());
+  const HWND sidebar = InlineSidebar();
+  const HWND above = state->devtools_dock ? state->devtools_dock->StackAfter(sidebar) : sidebar;
   // Chrome can show a newly-created child again after OnAfterCreated hid it.
   // Reconcile our managed children on native show/reorder events as well.
   for (const auto& [id, browser] : browsers_) {
     const auto other = browser->GetHost()->GetWindowHandle();
-    if (id != state->content->GetIdentifier() && (id != presentation_backdrop_id_ || presentation_fading_) && !split_leaving_.contains(id) &&
+    if (id != state->content->GetIdentifier() && id != presentation_backdrop_id_ && !split_leaving_.contains(id) &&
         IsWindowVisible(other)) ShowWindow(other, SW_HIDE);
   }
   const auto retained = browsers_.find(presentation_backdrop_id_);
-  if (retained != browsers_.end() && !presentation_fading_) {
+  if (retained != browsers_.end()) {
     const auto backdrop = retained->second->GetHost()->GetWindowHandle();
-    if (IsWindowVisible(backdrop) && GetWindow(backdrop, GW_HWNDPREV))
-      SetWindowPos(backdrop, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    if (IsWindowVisible(backdrop) && GetWindow(backdrop, GW_HWNDPREV) != above)
+      SetWindowPos(backdrop, above ? above : HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     return;
   }
   const auto handle = state->content->GetHost()->GetWindowHandle();
@@ -700,9 +705,8 @@ void EmbeddedContent::RaiseActive() {
   // without changing keyboard focus or any browser's native parent.
   if (!IsWindowVisible(handle) || GetParent(handle) != state->window->GetWindowHandle()) return;
   if (IsFullscreen() && !FullscreenGeometryOk()) Resize(bounds_);
-  const HWND sidebar = InlineSidebar();
-  if (GetWindow(handle, GW_HWNDPREV) != sidebar)
-    SetWindowPos(handle, sidebar ? sidebar : HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  if (GetWindow(handle, GW_HWNDPREV) != above)
+    SetWindowPos(handle, above ? above : HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
   if (!IsFullscreen() && !corners_.visible()) UpdateCorners();
 }
 HWND EmbeddedContent::InlineSidebar() const {

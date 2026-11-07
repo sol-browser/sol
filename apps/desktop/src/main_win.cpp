@@ -264,16 +264,14 @@ class UiResources final : public CefSchemeHandlerFactory {
       return new ThemeResource(body, CefStreamReader::CreateForData(body->data(), body->size()), headers);
     }
     if (path.starts_with("/favicon/")) {
-      // /favicon/<host>/<version>: the cached site icon (PNG) for trusted UI.
-      const std::string rest = path.substr(9); const size_t slash = rest.find('/');
-      const auto host = slash == std::string::npos ? "" : red::FaviconHost(rest.substr(0, slash));
-      const auto png = state->favicons && !host.empty() ? state->favicons->Png(host) : std::nullopt;
+      // Versions are immutable within this cache and reset on the next run.
+      auto png = state->favicons ? state->favicons->PngForPath(path) : std::nullopt;
       if (!png) return nullptr;
-      auto bytes = std::make_shared<std::string>(*png);
+      auto bytes = std::make_shared<std::string>(std::move(*png));
       auto stream = CefStreamReader::CreateForData(bytes->data(), bytes->size());
       CefResponse::HeaderMap headers;
       headers.emplace("X-Content-Type-Options", "nosniff");
-      headers.emplace("Cache-Control", "max-age=31536000, immutable");  // Versioned path.
+      headers.emplace("Cache-Control", "no-store");
       return new FaviconResource(bytes, stream, headers);
     }
     if (path == "/welcome-music.mp3") {
@@ -1232,19 +1230,22 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   }
   void OnLoadStart(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, TransitionType) override {
     if (!shell_ && !popup_ && !foreign_ && !internal_page_ && frame->IsMain() && state_->workspace)
-      state_->workspace->OnDocumentStarted(browser->GetIdentifier());
+      state_->workspace->OnDocumentStarted(browser->GetIdentifier(), frame->GetURL());
   }
   void OnAddressChange(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, const CefString& url) override {
     if (!shell_ && !popup_ && frame->IsMain() && state_->embedded) state_->embedded->SetLinkStatus(browser, "");
     if (foreign_) { if (frame->IsMain()) ResolveForeign(browser, url.ToString()); return; }
-    if (!shell_ && !popup_ && frame->IsMain() && state_->workspace) state_->workspace->OnPageChanged(browser);
+    if (!shell_ && !popup_ && frame->IsMain() && state_->workspace) {
+      state_->workspace->OnTitleChanged(browser);
+      state_->workspace->OnPageChanged(browser);
+    }
     if (state_->probe && !shell_ && !popup_ && frame->IsMain()) {
       auto data = CefDictionaryValue::Create(); data->SetString("url", url.ToString().substr(0, 200));
       data->SetBool("can_go_back", browser->CanGoBack()); state_->Record("address_change", data);
     }
   }
   void OnTitleChange(CefRefPtr<CefBrowser> browser, const CefString& title) override {
-    if (!shell_ && !popup_ && !foreign_ && state_->workspace) state_->workspace->OnTitleChanged(browser, title.ToString());
+    if (!shell_ && !popup_ && !foreign_ && state_->workspace) state_->workspace->OnTitleChanged(browser);
     if (!shell_ && !popup_ && !foreign_ && state_->history && !state_->private_window) {
       // Titles usually arrive before the load ends; remember it for the visit.
       title_url_ = browser->GetMainFrame()->GetURL().ToString(); title_ = title.ToString();
@@ -1254,10 +1255,13 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   void OnFaviconURLChange(CefRefPtr<CefBrowser> browser, const std::vector<CefString>& icon_urls) override {
     if (!shell_ && !popup_ && !foreign_ && state_->workspace) state_->workspace->OnFaviconChanged(browser, icon_urls);
   }
-  void OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool, bool, bool) override {
+  void OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool loading, bool, bool) override {
     if (foreign_) { ResolveForeign(browser, MainUrl(browser)); return; }
     RestoreContentStack(state_);
-    if (!shell_ && !popup_ && state_->workspace) state_->workspace->OnPageChanged(browser);
+    if (!shell_ && !popup_ && state_->workspace) {
+      if (state_->embedded) state_->embedded->OnPresentationLoading(browser, loading);
+      state_->workspace->OnPageChanged(browser);
+    }
   }
   bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
       CefProcessId source, CefRefPtr<CefProcessMessage> message) override {
@@ -2257,7 +2261,7 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
           });
       state_->history->LoadFavicons([weak = std::weak_ptr<State>(state_)](std::vector<std::pair<std::string, std::string>> icons) {
         auto state = weak.lock(); if (!state || !state->favicons) return;
-        for (auto& [host, png] : icons) state->favicons->Put(host, std::move(png));
+        for (const auto& [host, png] : icons) state->favicons->Seed(host, png);
         if (state->workspace) state->workspace->Refresh();
       });
       // Chrome's own download bubble ("Don't show when downloads finish") has

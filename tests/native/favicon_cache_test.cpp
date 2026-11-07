@@ -9,13 +9,30 @@ int main() {
   };
   red::FaviconCache cache;
   check(!cache.Url("example.com"), "no icon, no URL");
-  check(cache.Put("example.com", "png-a") == 1, "first icon is version 1");
-  check(cache.Url("example.com") == "sol://ui/favicon/example.com/1", "URL names the version");
-  // A page re-downloading the same icon on a cold load keeps the URL, so the
-  // sidebar's image and tile tint do not reload.
-  check(cache.Put("example.com", "png-a") == 1, "same icon keeps its version");
-  check(cache.Put("example.com", "png-b") == 2, "a changed icon gets a new version");
-  check(cache.Put("other.org", "png-a") == 1, "versions are per host");
+  cache.StartDocument(1, "example.com");
+  cache.StartDocument(2, "example.com");
+  auto result = cache.Complete(1, *cache.Begin(1, "a"), "example.com", "png-a");
+  check(result.changed && result.seeded, "first document icon seeds the site fallback");
+  const auto fallback = cache.Url("example.com");
+  check(fallback == "sol://ui/favicon/example.com/v1", "URL names the version");
+  check(!cache.PageUrl(2), "a site fallback learned later does not repaint another document");
+  result = cache.Complete(2, *cache.Begin(2, "a"), "example.com", "png-a");
+  check(result.changed && !result.seeded && cache.PageUrl(2) == fallback, "identical images share one URL");
+  result = cache.Complete(1, *cache.Begin(1, "b"), "example.com", "png-b");
+  check(result.changed && !result.seeded && cache.PageUrl(1) == "sol://ui/favicon/example.com/v2", "a changed icon gets a new version");
+  check(cache.PageUrl(2) == fallback && cache.Url("example.com") == fallback, "another document and the site default stay independent");
+  check(cache.PngForPath("/favicon/example.com/v1") == "png-a" && cache.PngForPath("/favicon/example.com/v2") == "png-b",
+        "the resource serves the version named by the URL");
+  check(!cache.PngForPath("/favicon/example.com/v3") && !cache.PngForPath("/favicon/example.com/v01") &&
+        !cache.PngForPath("/favicon/example.com/v1/extra"), "unknown and malformed versions do not fall back");
+  check(!cache.Seed("example.com", "png-c"), "a later cache restore does not replace the site fallback");
+  const auto stale = cache.Begin(1, "pending");
+  cache.StartDocument(1, "example.com");
+  check(cache.PageUrl(1) == fallback && !cache.Complete(1, *stale, "example.com", "wrong").changed,
+        "a new document restores its own fallback and rejects the previous download");
+  check(!cache.PngForPath("/favicon/example.com/v2"), "an unreferenced version never serves the latest bytes");
+  cache.ForgetPage(2);
+  check(!cache.PageUrl(2) && cache.Url("example.com") == fallback, "closing a tab releases its selection but keeps the fallback");
   red::FaviconRequest request;
   auto first=request.Begin("https://example.com/icon.svg");
   check(first.has_value(),"first candidate starts a request");

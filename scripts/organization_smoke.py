@@ -7,9 +7,8 @@ import threading
 import uuid
 from smoke import ROOT, run
 
-# The legacy fixture must migrate to the current workspace schema
-# (storage/tree_store.cpp: v6 spaces, v8 activity).
-CURRENT_SCHEMA = 10
+# The legacy fixture must migrate to the current workspace schema.
+CURRENT_SCHEMA = 11
 
 
 def main():

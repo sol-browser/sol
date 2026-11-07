@@ -1,7 +1,6 @@
 // History popover model: validation of native replies, day groups, labels.
+import { isFaviconUrl } from '../../../packages/browser-contracts/src/index.ts';
 export type VisitRow = { id: number; url: string; title: string; visitedAt: number; favicon?: string };
-// Native sends only cached icons from the UI's own origin.
-const FAVICON = /^sol:\/\/ui\/favicon\/[a-z0-9.-]{1,253}\/\d{1,9}$/u;
 // hour12: native's clock choice (Settings > General, or the Windows format).
 export type HistoryPage = { visits: VisitRow[]; more: boolean; hour12?: boolean };
 // A local calendar day with history: date "YYYY-MM-DD", its visit count and
@@ -20,7 +19,7 @@ export function parseHistoryPage(raw: string): HistoryPage {
     if (typeof e !== 'object' || e === null || !Number.isSafeInteger(e.id) || (e.id as number) < 1 || typeof e.url !== 'string'
       || e.url.length > 4096 || !/^https?:\/\//u.test(e.url) || typeof e.title !== 'string' || e.title.length > 400
       || !Number.isSafeInteger(e.visitedAt) || (e.visitedAt as number) < 0
-      || (e.favicon !== undefined && (typeof e.favicon !== 'string' || !FAVICON.test(e.favicon)))) throw new Error('Invalid visit');
+      || (e.favicon !== undefined && !isFaviconUrl(e.favicon))) throw new Error('Invalid visit');
     const row: VisitRow = { id: e.id as number, url: e.url, title: e.title, visitedAt: e.visitedAt as number };
     if (typeof e.favicon === 'string') row.favicon = e.favicon;
     return row;

@@ -8,6 +8,11 @@ export type TreeNode = { id: string; parentId: string; kind: 'folder' | 'tab'; t
   space?: string;
   /** The tab has a Link Peek (shown or parked with it): the preview's icon and title. */
   peek?: boolean; peekFavicon?: string; peekTitle?: string };
+/** A versioned favicon served by Sol to its trusted UI. */
+export function isFaviconUrl(value: unknown): value is string {
+  return typeof value === 'string' && value === value.trim() &&
+    /^sol:\/\/ui\/favicon\/(?!\.)[a-z0-9.-]{1,253}\/v[1-9][0-9]{0,19}$/u.test(value);
+}
 /** An Arc-style Space: its own Pinned, Today and theme (hue/intensity for its switcher dot). */
 export type SpaceInfo = { id: string; name: string; icon: string; position: number; hue: number; intensity: number };
 /** Complete ZWJ/skin-tone emoji, bounded in code points and UTF-8 bytes. */
@@ -363,10 +368,8 @@ export function parseSnapshot(raw: string): Snapshot {
       if (object(n) && n.customTitle !== undefined && typeof n.customTitle !== 'boolean') throw new Error('Invalid custom title');
       if (object(n) && n.space !== undefined && (typeof n.space !== 'string' || (n.space !== '' && n.space.length !== 36))) throw new Error('Invalid node space');
       // Only our own cached-icon address; never a remote or script-bearing URL.
-      if (object(n) && n.favicon !== undefined && (typeof n.favicon !== 'string' || n.favicon.length > 300
-        || !/^sol:\/\/ui\/favicon\/[a-z0-9.-]{1,253}\/[0-9]{1,9}$/.test(n.favicon))) throw new Error('Invalid favicon');
-      if (object(n) && n.peekFavicon !== undefined && (typeof n.peekFavicon !== 'string' || n.peekFavicon.length > 300
-        || !/^sol:\/\/ui\/favicon\/[a-z0-9.-]{1,253}\/[0-9]{1,9}$/.test(n.peekFavicon))) throw new Error('Invalid preview icon');
+      if (object(n) && n.favicon !== undefined && !isFaviconUrl(n.favicon)) throw new Error('Invalid favicon');
+      if (object(n) && n.peekFavicon !== undefined && !isFaviconUrl(n.peekFavicon)) throw new Error('Invalid preview icon');
       if (object(n) && ((n.peek !== undefined && typeof n.peek !== 'boolean') || (n.peekTitle !== undefined && (typeof n.peekTitle !== 'string' || n.peekTitle.length > 240))))
         throw new Error('Invalid preview state');
       if (!object(n) || typeof n.id !== 'string' || n.id.length !== 36 || ids.has(n.id)

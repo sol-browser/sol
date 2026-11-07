@@ -184,7 +184,7 @@ CefRefPtr<CefListValue> WorkspaceController::DescribeMedia() const {
     auto result = CefDictionaryValue::Create();
     const auto title = page_titles_.find(node);
     result->SetString("id", node);
-    result->SetString("title", !media.title.empty() ? media.title : title != page_titles_.end() ? title->second.substr(0, 240) : "");
+    result->SetString("title", !media.title.empty() ? media.title : title != page_titles_.end() ? title->second.text : "");
     result->SetString("artist", media.artist);
     result->SetBool("playing", !media.paused); result->SetBool("video", media.video);
     result->SetBool("muted", browser->GetHost()->IsAudioMuted());

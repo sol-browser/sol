@@ -96,8 +96,8 @@ class Preview : public std::enable_shared_from_this<Preview> {
         title_ = row->GetBool("splitReversed") ? name + L" | " + title_ : title_ + L" | " + name; break;
       }
       CefURLParts parts;
-      const auto url = row->HasKey("currentUrl") ? row->GetString("currentUrl") : row->GetString("url");
-      if (state->favicons && CefParseURL(url, parts)) icon_ = state->favicons->Png(FaviconHost(CefString(&parts.host).ToString())).value_or("");
+      if (state->favicons && CefParseURL(row->GetString("favicon"), parts))
+        icon_ = state->favicons->PngForPath(CefString(&parts.path).ToString()).value_or("");
       break;
     }
     if (title_.empty()) return false;

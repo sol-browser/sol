@@ -236,6 +236,7 @@ void EmbeddedContent::LayoutLinkPeek() {
   }
   if (state->devtools_dock) state->devtools_dock->Layout(LinkPeekViewport(),link_peek_id_,IsFullscreen());
   const HWND sidebar=InlineSidebar();
+  const HWND above=state->devtools_dock ? state->devtools_dock->StackAfter(sidebar) : sidebar;
   std::vector<HWND> sources; HWND preview=nullptr;
   for (const auto& [id,browser]:browsers_) {
     const auto handle=browser->GetHost()->GetWindowHandle();
@@ -246,7 +247,7 @@ void EmbeddedContent::LayoutLinkPeek() {
       SetWindowPos(handle,nullptr,target.x,target.y,target.width,target.height,SWP_NOZORDER|SWP_NOACTIVATE);
     if (id==link_peek_id_) {
       preview=handle;
-      if (GetWindow(handle,GW_HWNDPREV)!=sidebar) SetWindowPos(handle,sidebar ? sidebar : HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+      if (GetWindow(handle,GW_HWNDPREV)!=above) SetWindowPos(handle,above ? above : HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
     } else { sources.push_back(handle); EnableWindow(handle,FALSE); }
   }
   const auto card=LinkPeekCard(),area=SplitDropArea();

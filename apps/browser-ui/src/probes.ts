@@ -145,6 +145,11 @@ export async function workspaceProbe(initial: Snapshot) {
     const close = document.querySelector<HTMLElement>('.window-close')!.getBoundingClientRect();
     if (close.right !== innerWidth || close.top !== 0 || close.height !== 31 || close.width !== 46)
       throw new Error('Windows caption close button is not flush with the corner');
+    for (const button of document.querySelectorAll<HTMLButtonElement>('.topbar button')) {
+      const label = button.getAttribute('aria-label') ?? (button.matches('.notice-dismiss') ? button.textContent : '');
+      if (!label?.trim() || button.closest('[title]') || button.querySelector('[title]'))
+        throw new Error(`Toolbar button needs an accessible name and no hover tooltip: ${button.className}`);
+    }
     const header = document.querySelector<HTMLElement>('.topbar')!.getBoundingClientRect();
     if (header.height !== 31 || slot.top !== header.bottom || area.y !== 31)
       throw new Error('The 31px toolbar and native page boundary disagree');

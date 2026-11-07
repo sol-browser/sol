@@ -13,7 +13,7 @@ struct TreeNode {
   std::string id, parent, title, url;
   bool folder = false, pinned = false, expanded = true, favorite = false, archived = false;
   int position = 0;
-  std::string page_title;
+  std::string page_title;  // Website title of url, if observed.
   bool custom_title = false;
   // Milliseconds since the Unix epoch when archived; 0 when not archived or
   // archived before schema v4 (unknown).
@@ -61,6 +61,7 @@ struct TreeCommand {
   TreeAction action;
   std::int64_t expected_revision = 0;
   std::string id, parent, title, url, section, next_active;
+  std::optional<std::string> page_title;  // Native metadata for the new URL.
   std::string space, icon;  // Space commands; MoveToSpace target.
   std::string after;  // CreateTab: a Today tab to open directly below (a link's opener); else first.
   std::string split_with;  // Native Peek adoption: atomically create Today + pair with this existing page.
@@ -92,7 +93,7 @@ class TreeStore {
   TreeResult Import(const TreeSnapshot& incoming, const std::filesystem::path& backup);
   static bool ValidateSnapshot(const TreeSnapshot& snapshot);
   // Metadata/preferences do not invalidate unrelated optimistic tree mutations.
-  TreeResult SetPageTitle(const std::string& id, const std::string& title);
+  TreeResult SetPageTitle(const std::string& id, const std::string& url, const std::string& title);
   TreeResult SetSidebarWidth(int width);
   TreeResult TouchTabs(const std::map<std::string,int64_t>& activity);
   // The active space's theme.

@@ -292,15 +292,16 @@ kbd { margin-left: auto; font-family: inherit; font-size: 10px; color: oklch(cal
 .archive-list button span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .archive-list button span:last-child { flex: 0 0 auto; color: oklch(calc(0.5133 + var(--theme-dark, 0) * 0.2256) calc(0.0782 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 3.6)); }
 .archive-list p { font-size: 11px; color: oklch(calc(0.5226 + var(--theme-dark, 0) * 0.2083) calc(0.0565 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 2.3)); padding: 0 5px; }
-.web-slot { position: absolute; left: calc(var(--sidebar-width) + 8px); top: var(--page-top); bottom: 8px; right: 8px; border-radius: 6px; background: oklch(calc(0.9134 + var(--theme-dark, 0) * -0.7053 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9134 - var(--theme-dark, 0) * -0.7053)) calc(0.0237 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) - 5.1)); box-shadow: 0 0 0 1px oklch(calc(0.5934 + var(--theme-dark, 0) * 0.0254) calc(0.0517 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 10.0) / 0.063), 0 3px 14px oklch(calc(0.4607 + var(--theme-dark, 0) * 0.2659) min(calc(0.0804 * var(--theme-chroma, 1)), 0.24) calc(var(--theme-hue, 307) - 1.5) / 0.082); }
+.web-slot { position: absolute; left: calc(var(--sidebar-width) + 8px); top: var(--page-top); bottom: 8px; right: 8px; border-radius: 6px; background: oklch(calc(1 - var(--theme-dark, 0)) 0 0 / calc(.32 - var(--theme-dark, 0) * .14)); box-shadow: 0 0 0 1px oklch(calc(0.5934 + var(--theme-dark, 0) * 0.0254) calc(0.0517 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 10.0) / 0.063), 0 3px 14px oklch(calc(0.4607 + var(--theme-dark, 0) * 0.2659) min(calc(0.0804 * var(--theme-chroma, 1)), 0.24) calc(var(--theme-hue, 307) - 1.5) / 0.082); }
 .empty-space { height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; color: oklch(calc(0.5119 + var(--theme-dark, 0) * 0.2282) calc(0.0519 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 6.5)); background: oklch(calc(0.9818 + var(--theme-dark, 0) * -0.7122) 0.0057 308.4); border-radius: inherit; }
 .empty-mark { font: 500 66px/1 "Segoe UI", sans-serif; color: oklch(calc(0.8418 + var(--theme-dark, 0) * -0.4511) calc(0.0408 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 4.7)); }
 .empty-space h2 { font-size: 21px; font-weight: 500; letter-spacing: -.5px; margin: 18px 0 0; }
 .empty-space p { font-size: 12px; color: oklch(calc(0.6009 + var(--theme-dark, 0) * 0.0612) calc(0.0448 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 5.2)); }
 .page-failure { pointer-events: auto; }
-/* No page on screen: the address field on a quiet tint of the window. With Acrylic or Mica the
-   material shows through; without it the tint is a shade of the window colour. */
-.web-slot:has(> .empty-start) { background: oklch(calc(1 - var(--theme-dark, 0)) 0 0 / calc(.32 - var(--theme-dark, 0) * .14));
+/* The page area is a quiet tint of the window (.web-slot): with Acrylic or Mica the material shows
+   through, without it the tint is a shade of the window colour. An empty space shows it with the
+   address field; a cold tab shows it alone until its page has painted. */
+.web-slot:has(> .empty-start) {
   box-shadow: 0 0 0 1px oklch(calc(0.5934 + var(--theme-dark, 0) * 0.0254) calc(0.0517 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 10.0) / 0.06); }
 .empty-start { position: relative; height: 100%; pointer-events: auto; }
 .empty-start-field { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); width: min(600px, calc(100% - 64px)); box-sizing: border-box;

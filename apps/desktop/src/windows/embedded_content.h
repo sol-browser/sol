@@ -21,7 +21,14 @@ class EmbeddedContent {
   // Repaints the page corners after the workspace background changed (theme).
   void RefreshCorners() { UpdateCorners(); }
   void RefreshTheme();
-  void Activate(CefRefPtr<CefBrowser> browser);
+  void ShowPendingColdTab();
+  void CancelPendingColdTab();
+  bool HasPendingColdTab() const { return presenting_id_ == -1 && cold_cover_; }
+  // A page is being revealed (input to it is held until its first frame).
+  bool Presenting() const { return presenting_id_ != -1 || cold_cover_; }
+  void Activate(CefRefPtr<CefBrowser> browser, bool cold = false);
+  void OnPresentationLoadFinished(CefRefPtr<CefBrowser> browser);
+  void OnPresentationLoading(CefRefPtr<CefBrowser> browser, bool loading);
   void SetSplitPages(int first, int second, bool vertical, int ratio, bool reversed, int expanded = -1, const std::set<int>& crashed = {});
   bool IsSplitPage(int id) const { return split_enabled_ && (id == split_first_ || id == split_second_); }
   bool HasSplit() const { return split_enabled_; }
@@ -91,29 +98,40 @@ class EmbeddedContent {
   bool ShowSidebarShadow(const RECT& panel, float scale, double progress);
   void HideSidebarShadow() { corners_.HideSidebarShadow(); }
   void OnPresentationResult(CefRefPtr<CefBrowser> browser, int message, bool success, const void* data, size_t size);
+  void OnPresentationEvent(CefRefPtr<CefBrowser> browser, const std::string& method, const std::string& json);
  private:
   // The F11 sidebar while it is a child of the root (pages stack below it), else null.
   HWND InlineSidebar() const;
   void ObservePresentation(CefRefPtr<CefBrowser> browser);
-  void CaptureOutgoing(CefRefPtr<CefBrowser> browser);
-  void SettlePresentation();
-  // Asks |browser| for a frame (a 1x1 screenshot); the switch completes when it returns.
+  // Cold page: the outgoing page goes at once and the page area shows what an
+  // empty space shows (the UI's .web-slot on the window material) until the new
+  // page has painted parked outside the window.
+  void ShowColdCover();
+  void BlockPresentationInput(HWND handle);
+  void BeginPresentation(CefRefPtr<CefBrowser> browser, bool cold);
+  void PresentationContentReady(CefRefPtr<CefBrowser> browser, const char* source, bool load_finished);
   void AwaitIncomingFrame(CefRefPtr<CefBrowser> browser);
+  void RetryIncomingFrame(CefRefPtr<CefBrowser> browser);
+  void ConfirmPresentationFrame(int id);
+  void RevealPresentationAfterFrame();
   void CheckPresentationTimeout(unsigned long long generation);
-  void FinishPresentation(unsigned long long generation, bool focus = true, bool commit = true);
+  void FinishPresentation(unsigned long long generation, bool focus = true, bool commit = true, bool keep_gradient = false);
   struct Presentation {
     CefRefPtr<CefRegistration> registration;
-    int outgoing_capture = 0;
-    int incoming_capture = 0;  // A 1x1 screenshot: it returns once the page has a frame.
-    unsigned long long outgoing_generation = 0;
-    unsigned long long activated_ms = 0, capture_started_ms = 0;
+    int incoming_capture = 0, frame_attempts = 0, frame_query = 0;
+    bool waiting_for_content = false, watching_paint = false, saw_loading = false;
+    bool load_ended = false;
+    std::string main_frame, loader;
+    unsigned long long activated_ms = 0;
   };
   std::map<int, Presentation> presentations_;
   int presenting_id_ = -1;
   int presentation_backdrop_id_ = -1;
   HWND presentation_input_ = nullptr;
+  std::set<HWND> presentation_disabled_;
   unsigned long long presentation_generation_ = 0;
-  bool presentation_fading_ = false;
+  bool cold_presentation_ = false;
+  bool cold_cover_ = false;
   CefRect FullClientBounds() const;
   void ExitFullscreenFor(int id);
   void ApplyFullscreenWindow(bool was_fullscreen);
