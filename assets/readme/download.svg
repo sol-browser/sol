@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="350" height="60" viewBox="0 0 350 60">
+  <rect width="350" height="60" rx="14" fill="#314f42"/>
+  <g fill="none" stroke="#f8f6ef" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M27 18v17m-6-6 6 6 6-6M19 40h16"/>
+    <path d="m321 35 10-10m-10 0h10v10"/>
+  </g>
+  <text x="52" y="35.5" fill="#f8f6ef" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600">Download Sol for Windows</text>
+</svg>
