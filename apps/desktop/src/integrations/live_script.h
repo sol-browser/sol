@@ -139,7 +139,8 @@ if(expected.service==='outlookMail'){
   const identified=rows.filter(e=>valid(id(e)));
   if(!identified.length)return empty('unsupported');
   const label=e=>(e.getAttribute('aria-label')||'').replace(/^[\s\u200e\u200f]+/u,'');
-  const unread=e=>e.matches('[data-unread="true"],[data-is-unread="true"],[data-isread="false"]')||
+)JS"
+    R"JS(  const unread=e=>e.matches('[data-unread="true"],[data-is-unread="true"],[data-isread="false"]')||
     /^(?:unread|непрочитан(?:о|ное|ный|ная|ные|е|ий|а|і)?)(?:[\s,:;.：–—-]|$)/iu.test(label(e));
   const read=e=>e.matches('[data-unread="false"],[data-is-unread="false"],[data-isread="true"]')||
     /^(?:read|прочитан(?:о|ное|ный|ная|ные|е|ий|а|і)?)(?:[\s,:;.：–—-]|$)/iu.test(label(e));
