@@ -38,7 +38,7 @@ PopupAnimationHost::~PopupAnimationHost() {
   End(); composition_.reset();
   if (host_ && IsWindow(host_)) DestroyWindow(host_);
 }
-bool PopupAnimationHost::Begin(HWND owner, HWND popup, bool bottom, float origin_x, bool closing, float from_scale) {
+bool PopupAnimationHost::Begin(HWND owner, HWND popup, bool bottom, float origin_x, bool closing, float from_scale, float origin_y) {
   if (!IsWindow(owner) || !IsWindow(popup)) return false;
   RECT panel{}; if (!GetWindowRect(popup, &panel)) return false;
   if (!host_) host_ = CreateAnimationHost(owner);
@@ -52,7 +52,7 @@ bool PopupAnimationHost::Begin(HWND owner, HWND popup, bool bottom, float origin
   if (!SetWindowPos(host_, HWND_TOP, panel.left - margin, panel.top - margin,
       panel.right - panel.left + 2 * margin, panel.bottom - panel.top + 2 * margin,
       SWP_NOACTIVATE | SWP_NOOWNERZORDER)) return false;
-  if (!composition_->BeginPopupAnimation(host_, popup, bottom, origin_x, closing, from_scale)) { End(); return false; }
+  if (!composition_->BeginPopupAnimation(host_, popup, bottom, origin_x, closing, from_scale, origin_y)) { End(); return false; }
   source_ = popup;
   SetWindowPos(host_, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
   return true;

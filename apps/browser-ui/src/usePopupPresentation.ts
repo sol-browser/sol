@@ -45,12 +45,14 @@ export function usePopupPresentation(root: RefObject<HTMLElement | null>, reques
           let composed = false, nativeMotion = true;
           try {
             const shown = JSON.parse(await query({ method: `${kind}.present`, request, reducedMotion: reduced })) as {
-              composed?: boolean; motion?: boolean; originX?: number; bottom?: boolean;
+              composed?: boolean; motion?: boolean; originX?: number; originY?: number; bottom?: boolean;
             };
             composed = shown.composed === true;
             nativeMotion = shown.motion !== false;
             const origin = typeof shown.originX === 'number' && Number.isFinite(shown.originX) ? Math.max(0, Math.min(1, shown.originX)) : .5;
-            element.style.transformOrigin = `${origin * 100}% ${shown.bottom === true || bottom ? '100%' : '0%'}`;
+            const vertical = typeof shown.originY === 'number' && Number.isFinite(shown.originY) ?
+              Math.max(0, Math.min(1, shown.originY)) : shown.bottom === true || bottom ? 1 : 0;
+            element.style.transformOrigin = `${origin * 100}% ${vertical * 100}%`;
           }
           finally { if (entry.current.request === request) entry.current.revealing = false; }
           if (entry.current.request !== request) return;

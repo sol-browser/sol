@@ -178,6 +178,8 @@ class PeekClient final : public CefClient, public CefLifeSpanHandler, public Cef
   bool OnPreKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& e, CefEventHandle, bool*) override {
     if (e.type != KEYEVENT_RAWKEYDOWN) return false;
     const auto state = state_.lock();
+    if (e.windows_key_code == VK_ESCAPE && !(e.modifiers & (EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN | EVENTFLAG_SHIFT_DOWN | EVENTFLAG_COMMAND_DOWN)) &&
+        state && state->panel_popup && state->panel_popup->DismissIntegration()) return true;
     const auto action = ShortcutKeyFor(state, e.windows_key_code, (e.modifiers & EVENTFLAG_CONTROL_DOWN) != 0,
         (e.modifiers & EVENTFLAG_SHIFT_DOWN) != 0, (e.modifiers & EVENTFLAG_ALT_DOWN) != 0);
     if (action == Shortcut::Fullscreen) {

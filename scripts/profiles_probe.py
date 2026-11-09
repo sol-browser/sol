@@ -10,7 +10,7 @@ from smoke import ROOT, run
 
 
 def main():
-    records, requests = [], []
+    records, requests, default_cookies = [], [], []
     class Fixture(BaseHTTPRequestHandler):
         def log_message(self, *_):
             pass
@@ -21,6 +21,8 @@ def main():
             if url.path == '/record':
                 records.append({key: values[0] for key, values in params.items()})
             name = params.get('name', [''])[0]
+            if url.path == '/source':
+                default_cookies.append(self.headers.get('Cookie', ''))
             if url.path == '/profile':
                 requests.append({'name': name, 'cookie': self.headers.get('Cookie', '')})
             body = '<!doctype html><title>Profile isolation</title><h1>Profile isolation</h1>'
@@ -35,6 +37,8 @@ def main():
             self.send_response(200)
             if url.path == '/profile':
                 self.send_header('Set-Cookie', f'profile={name}; Path=/; Max-Age=3600; SameSite=Lax')
+            if url.path == '/source':
+                self.send_header('Set-Cookie', 'default_session=owned; Path=/; HttpOnly; SameSite=Lax')
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Content-Length', str(len(data)))
             self.end_headers()
@@ -47,6 +51,7 @@ def main():
             for restart in (False, True):
                 records.clear()
                 requests.clear()
+                default_cookies.clear()
                 directory, rows = run(f'http://127.0.0.1:{server.server_port}/source?profiles',
                                       ['--probe-link-headers'], profile=profile)
                 created = [row['details'] for row in rows if row['event'] == 'profiles_probe_created']
@@ -55,6 +60,7 @@ def main():
                 assert finished == {'loaded': 2, 'closed': 2}, finished
                 assert len(records) == 2, records
                 assert len(requests) == 2, requests
+                assert default_cookies == (['default_session=owned'] if restart else ['']), default_cookies
                 for request in requests:
                     assert request['cookie'] == ('profile=' + request['name'] if restart else ''), request
                 for record in records:

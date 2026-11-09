@@ -93,7 +93,7 @@ class EmbeddedContent {
   bool NotificationVisible() const { return corners_.notification_visible(); }
   bool NotificationGeometryOk() const;
   bool BeginPopupAnimation(HWND popup, bool bottom, float origin_x,
-                           bool closing = false, float from_scale = 1.f);
+                           bool closing = false, float from_scale = 1.f, float origin_y = -1.f);
   bool FadePopupShadow(HWND popup, int duration_ms);
   void EndPopupAnimation(HWND popup);
   void ConfigurePopupOwner(HWND popup, bool allow_sidebar);

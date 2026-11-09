@@ -64,7 +64,7 @@ class PageCorners {
   // Does not resize its CEF viewport or request a screenshot.
   static constexpr int kPopupShadowMarginDip = 36;
   bool BeginPopupAnimation(HWND parent, HWND popup, bool bottom, float origin_x,
-                           bool closing = false, float from_scale = 1.f);
+                           bool closing = false, float from_scale = 1.f, float origin_y = -1.f);
   bool FadePopupShadow(HWND popup, int duration_ms);
   void EndPopupAnimation(HWND popup);
   bool ShowSidebarShadow(HWND parent, const RECT& panel, float scale, double progress);

@@ -52,7 +52,7 @@ void WindowClose::Begin() {
   for (const auto& [id, manager] : state->password_windows) manager->Close();
   if (state->sidebar_peek) state->sidebar_peek->SetEnabled(false);
   for (const auto& [id, browser] : state->browsers)
-    if (id != state->shell_id && id != state->command_id && id != state->panel_id && id != state->peek_id &&
+    if (id != state->shell_id && id != state->command_id && id != state->panel_id && id != state->integration_panel_id && id != state->peek_id &&
         id != state->menu_id[0] && id != state->menu_id[1] && id != state->menu_id[2] && !state->devtools_targets.contains(id)) pages.push_back(id);
   if (!sequence_.Begin(std::move(pages), state->shell_id)) return;
   if (!state->workspace->PrepareShutdown([weak = weak_from_this()](bool ok) {

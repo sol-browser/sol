@@ -38,13 +38,24 @@ void Evaluate(CefRefPtr<CefBrowser> page, const char* script) {
 }  // namespace
 // Off by default; a site's own switch (site controls) overrides the default.
 bool AutoPipEnabled(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page) {
-  if (!state->session || !state->session->preferences) return false;
+  if (!state->session || !state->session->preferences || !SitePipIntegrationEnabled(state, page)) return false;
   const auto& prefs = state->session->preferences->Get();
   const auto site = prefs.auto_pip_sites.find(SiteOrigin(page));
   return site != prefs.auto_pip_sites.end() ? site->second : prefs.auto_pip;
 }
-namespace {
-}  // namespace
+bool SitePipIntegrationEnabled(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page) {
+  const auto frame = page && page->IsValid() ? page->GetMainFrame() : nullptr;
+  const auto provider = frame ? IntegrationForUrl(frame->GetURL().ToString()) : std::string{};
+  return (provider != "youtube" && provider != "googleMeet") || BrowserIntegrationEnabled(state, provider);
+}
+void RefreshPipIntegrations(const std::shared_ptr<State>& state) {
+  for (const auto& [id, page] : state->browsers) {
+    if (!state->pip_buttons.contains(id) && !state->browser_profiles.contains(id)) continue;
+    if (state->internal_pages.contains(id) || !page->IsValid()) continue;
+    if (!SitePipIntegrationEnabled(state, page) && state->auto_pip_pages.erase(id)) Evaluate(page, kExit);
+    InstallVideoPipButton(state, page);
+  }
+}
 
 void TogglePictureInPicture(CefRefPtr<CefBrowser> page) { if (page && page->IsValid()) Evaluate(page, kToggle); }
 
@@ -59,7 +70,7 @@ void OnPageSwitched(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> l
   // (The outgoing page stays up during a tab transition, at most 400 ms.)
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
     const auto state = weak.lock();
-    if (!state || !page->IsValid() || state->content == page || IsWindowVisible(page->GetHost()->GetWindowHandle())) return;
+    if (!state || !page->IsValid() || !AutoPipEnabled(state, page) || state->content == page || IsWindowVisible(page->GetHost()->GetWindowHandle())) return;
     state->auto_pip_pages.insert(page->GetIdentifier());
     Evaluate(page, kEnter);
     state->Record("auto_pip_requested");

@@ -31,6 +31,8 @@
 #include "trust_policy.h"
 #include "downloads/download_manager.h"
 #include "windows/panel_popup.h"
+#include "integrations/integration_previews.h"
+#include "integrations/providers.h"
 #include "history/favicon_cache.h"
 #include "history/history_service.h"
 
@@ -135,6 +137,7 @@ void WorkspaceController::Start() {
 }
 void WorkspaceController::Stop() {
   stopped_ = true;
+  if (integration_previews_) integration_previews_->Stop();
   CancelFolderRemoval();
   observer_ = {};
   // AppSession closes all data scopes on their worker threads after the last
@@ -148,6 +151,7 @@ void WorkspaceController::SetObserver(std::function<void(CefRefPtr<CefDictionary
 }
 void WorkspaceController::Publish() {
   ++revision_;
+  UpdateIntegrationPreviews();
   UpdateMedia();
   const auto snapshot = Snapshot();
   if (auto state = state_.lock(); state && !state->protocols_probe.empty()) {
@@ -219,7 +223,10 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   result->SetBool("workspaceEnabled", true); result->SetBool("ready", ready_);
   if (state && state->session && state->session->preferences) {
     result->SetString("searchEngine", state->session->preferences->Get().search_engine);
+    result->SetDictionary("integrations", IntegrationSettingsDictionary(state->session->preferences->Get().integrations));
     result->SetBool("searchSuggestions", state->session->preferences->Get().search_suggestions);
+    result->SetList("siteSearches", SiteSearchList(state->session->preferences->Get().site_searches));
+    result->SetString("siteSearchActivation", state->session->preferences->Get().site_search_activation);
     result->SetDictionary("shortcutLabels", ShortcutLabels(state->session->preferences->Get()));
   }
   result->SetString("windowKind", state && state->standalone_window ? "standalone" : "workspace");
@@ -329,6 +336,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     row->SetString("url", node.url); row->SetInt("position", node.position);
     row->SetBool("pinned", node.pinned); row->SetBool("expanded", node.expanded);
     row->SetBool("favorite", node.favorite); row->SetBool("archived", node.archived); row->SetDouble("archivedAt", static_cast<double>(node.archived_at));
+    if (node.x_badge_hidden) row->SetBool("xBadgeHidden", true);
     const auto live = sessions_.find(node.id);
     const bool failed = live != sessions_.end() && crashed_.contains(live->second->GetIdentifier());
     const auto current = failed ? last_urls_.at(live->second->GetIdentifier()) :
@@ -462,6 +470,8 @@ void WorkspaceController::ApplyStartup() {
   const auto state = state_.lock();
   if (startup_applied_ || !ready_ || !state || !state->embedded || !state->window || !session_ || !session_->preferences) return;
   startup_applied_ = true;
+  if (!state->secondary_window && !state->private_window && !state->standalone_window &&
+      (!state->probe || state->sidebar_peek_probe)) WarmStartupBadgePins();
   if (state->probe || state->secondary_window || state->standalone_window || !external_pending_.empty()) return;
   const auto& preferences = session_->preferences->Get();
   if (preferences.startup == "newTab") { tree_.active_id.clear(); OpenNewTab(); }
@@ -473,6 +483,36 @@ void WorkspaceController::ApplyStartup() {
       TreeCommand activate{TreeAction::Activate}; activate.id = node.id; Dispatch(activate,{},true); return;
     }
     OpenLink(preferences.homepage,true);
+  }
+}
+void WorkspaceController::WarmStartupBadgePins() {
+  const auto state = state_.lock();
+  std::map<std::string_view, StartupBadgeSite> candidates;
+  for (const auto& node : tree_.nodes) {
+    if (!node.pinned || node.folder || node.archived) continue;
+    if (const auto site = StartupBadgeFor(node.url, node.x_badge_hidden); site && BrowserIntegrationEnabled(state, StartupBadgeId(*site)))
+      candidates.emplace(node.id, *site);
+  }
+  if (candidates.empty()) return;
+  std::set<StartupBadgeSite> scheduled;
+  for (const auto& id : OrderedTabsForSpace(tree_, tree_.active_space)) {
+    const auto candidate = candidates.find(id);
+    if (candidate == candidates.end() || !scheduled.insert(candidate->second).second) continue;
+    const auto site = candidate->second;
+    startup_badge_tabs_.insert(id);
+    // Stagger page loads behind startup navigation. EnsurePage preserves
+    // the saved pin's identity, request context and selection.
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, std::string space,
+        std::string id, StartupBadgeSite site) {
+      const auto self = weak.lock();
+      if (!self || self->stopped_ || !self->startup_badge_tabs_.contains(id)) return;
+      const auto node = std::find_if(self->tree_.nodes.begin(), self->tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
+      if (self->CanOpen() && self->tree_.active_space == space && node != self->tree_.nodes.end() &&
+          node->pinned && StartupBadgeFor(node->url, node->x_badge_hidden) == site &&
+          BrowserIntegrationEnabled(self->state_.lock(), StartupBadgeId(site)) &&
+          BrowsingProfileId(self->tree_, id) == BrowsingProfileId(self->tree_)) self->EnsurePage(id);
+      if (!self->creating_.contains(id) && !self->LiveBrowser(id)) self->startup_badge_tabs_.erase(id);
+    }, weak_from_this(), tree_.active_space, id, site), site == StartupBadgeSite::WhatsApp ? 800 : 1400);
   }
 }
 void WorkspaceController::ImportZen(const TreeSnapshot& incoming, Reply done) {
@@ -567,6 +607,37 @@ std::optional<TreeNode> WorkspaceController::DetachedSeed(const std::string& id)
     if (PageUrlAllowed(url)) seed.url = url;
   }
   return seed;
+}
+std::optional<std::string> WorkspaceController::SavedPreview(const std::string& id) const {
+  const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) {
+    return n.id == id && n.pinned && !n.archived && !n.folder;
+  });
+  const auto target = node == tree_.nodes.end() ? std::nullopt : PreviewTarget(node->url);
+  const auto provider = target ? LiveIntegration(*target) : std::nullopt;
+  return provider && BrowserIntegrationEnabled(state_.lock(), provider->id) ? target : std::nullopt;
+}
+void WorkspaceController::UpdateIntegrationPreviews() {
+  const auto state = state_.lock();
+  if (!state || state->private_window || state->standalone_window || (state->probe && !state->google_integrations_probe)) return;
+  const auto profile = ready() && !stopped_ ? ProfileForNode("") : nullptr;
+  std::vector<std::string> targets;
+  if (profile) {
+    for (const bool favorites : {true, false}) {
+      for (const auto& node : tree_.nodes) {
+        if (!node.pinned || node.archived || node.folder || node.favorite != favorites) continue;
+        const auto target = PreviewTarget(node.url);
+        const auto provider = target ? LiveIntegration(*target) : std::nullopt;
+        if (!target || BrowsingProfileId(tree_,node.id) != profile->id ||
+            !provider || !BrowserIntegrationEnabled(state, provider->id) ||
+            std::find(targets.begin(), targets.end(), *target) != targets.end()) continue;
+        targets.push_back(*target);
+        if (targets.size() == 12) break;
+      }
+      if (targets.size() == 12) break;
+    }
+  }
+  if (!integration_previews_ && !targets.empty()) integration_previews_ = std::make_shared<IntegrationPreviews>(state);
+  if (integration_previews_) integration_previews_->Update(profile, targets);
 }
 void WorkspaceController::DetachedReady(const std::string& id) {
   const auto seed = DetachedSeed(id);
@@ -860,6 +931,7 @@ void WorkspaceController::OnClosed(int browser_id, const std::string& last_url) 
   const auto binding = browser_nodes_.find(browser_id);
   if (binding == browser_nodes_.end()) return;
   const auto id = binding->second;
+  startup_badge_tabs_.erase(id);
   loaded_.erase(browser_id);
   crashed_.erase(browser_id); last_urls_.erase(browser_id);
   sessions_.erase(id); browser_nodes_.erase(binding); std::erase(recent_, id);
@@ -917,7 +989,10 @@ void WorkspaceController::Close(const std::string& id, bool archive, Reply done)
     if (done) done(409, "Page cannot close in its current state", nullptr); return;
   }
   const auto live = sessions_.find(id);
-  if (live == sessions_.end()) { FinishClose(id, archive || !node->pinned, std::move(done)); return; }
+  if (live == sessions_.end()) {
+    startup_badge_tabs_.erase(id);
+    FinishClose(id, archive || !node->pinned, std::move(done)); return;
+  }
   closing_[id] = {archive || !node->pinned, std::move(done)}; Publish();
   CloseBrowserWithDialogs(state_, live->second, false);
 }
@@ -973,6 +1048,8 @@ void WorkspaceController::OnPageChanged(CefRefPtr<CefBrowser> browser) {
   if (!crashed_.contains(browser->GetIdentifier()) && PageUrlAllowed(url)) last_urls_[browser->GetIdentifier()] = url;
   if (IsLinkPeekBrowser(browser->GetIdentifier())) { link_peek_url_=url; Publish(); return; }
   Publish();
+  if (integration_previews_ && browser_nodes_.contains(browser->GetIdentifier()))
+    integration_previews_->ObserveOutlookInbox(browser);
   if (stopped_ || shutting_down_ || !closing_.empty() || closing_commits_ || browser->IsLoading() || !loaded_.contains(browser->GetIdentifier())) return;
   const auto binding = browser_nodes_.find(browser->GetIdentifier());
   if (binding == browser_nodes_.end()) return;
@@ -1557,6 +1634,30 @@ void WorkspaceController::TogglePin() {
   }
   Dispatch(command, {}, true);
 }
+void WorkspaceController::NavigatePinned(const std::string& id, const std::string& url, Reply done) {
+  const auto node = std::find_if(tree_.nodes.begin(),tree_.nodes.end(),[&](const auto& n) {
+    return n.id == id && n.pinned && !n.archived && !n.folder;
+  });
+  if (!ready_ || shutting_down_ || tree_.active_id != id || node == tree_.nodes.end() ||
+      !closing_.empty() || closing_commits_ || folder_removal_ || !UserUrlAllowed(url)) {
+    done(409,"Pinned tab changed",nullptr);
+    return;
+  }
+  const auto browser = LiveBrowser(id);
+  const auto frame = browser ? browser->GetMainFrame() : nullptr;
+  if (!frame) {
+    done(409,"Pinned tab is still opening",nullptr);
+    return;
+  }
+  if (crashed_.erase(browser->GetIdentifier())) {
+    if (SelectedSplit()) EnsureActive();
+    else if (const auto state = state_.lock()) state->embedded->Activate(browser);
+  }
+  frame->LoadURL(url);
+  FocusBrowser(browser);
+  Publish();
+  done(0,"",Snapshot());
+}
 void WorkspaceController::Navigate(const std::string& url, Reply done) {
   if (!ready_ || shutting_down_ || folder_removal_ || !closing_.empty() || closing_commits_ || !UserUrlAllowed(url)) { done(400, "Invalid active tab or URL", nullptr); return; }
   if (HasLinkPeek()) {
@@ -1569,10 +1670,7 @@ void WorkspaceController::Navigate(const std::string& url, Reply done) {
   // The history page never navigates away; an address typed there opens a tab.
   if (active != tree_.nodes.end() && IsInternalPageUrl(active->url)) { open(); return; }
   if (active != tree_.nodes.end() && active->pinned) {
-    const auto live = sessions_.find(active->id);
-    if (live == sessions_.end()) { done(409, "Page is not ready", nullptr); return; }
-    if (crashed_.erase(live->second->GetIdentifier())) { if (SelectedSplit()) EnsureActive(); else if (auto state = state_.lock()) state->embedded->Activate(live->second); }
-    live->second->GetMainFrame()->LoadURL(url); FocusBrowser(live->second); Publish(); done(0, "", Snapshot()); return;
+    NavigatePinned(active->id,url,std::move(done)); return;
   }
   TreeCommand command{TreeAction::SetUrl}; command.id = tree_.active_id; command.url = url;
   const auto id = command.id;

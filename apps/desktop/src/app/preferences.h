@@ -6,6 +6,8 @@
 #include <string>
 #include "include/cef_thread.h"
 #include "include/cef_values.h"
+#include "navigation/site_search.h"
+#include "integrations/providers.h"
 
 namespace red {
 struct KeyBinding {
@@ -15,9 +17,13 @@ struct KeyBinding {
 };
 struct Preferences {
   std::string search_engine = "google";
+  std::string notes_provider = "googleDocs";
+  IntegrationSettings integrations;
   std::filesystem::path download_directory;
   bool ask_download = false;
   bool search_suggestions = true;
+  std::vector<SiteSearch> site_searches = DefaultSiteSearches();
+  std::string site_search_activation = "spaceOrTab";
   int auto_archive_hours = 12;  // 0 disables it; shared by all Spaces/windows.
   bool auto_pip = false;  // Video pops out when you leave its tab (default off).
   std::map<std::string, bool> auto_pip_sites;  // Per-site override (origin -> on/off).
@@ -49,6 +55,9 @@ class BrowserPreferences : public std::enable_shared_from_this<BrowserPreference
   bool busy_ = false;
 };
 bool ValidSearchEngine(const std::string& engine);
+CefRefPtr<CefDictionaryValue> IntegrationSettingsDictionary(const IntegrationSettings& settings);
+bool ReadSiteSearches(CefRefPtr<CefListValue> list, std::vector<SiteSearch>& sites);
+CefRefPtr<CefListValue> SiteSearchList(const std::vector<SiteSearch>& sites);
 bool ValidAutoArchiveHours(int hours);
 bool ValidUnloadMinutes(int minutes);
 bool ValidHomepage(const std::string& url);

@@ -15,6 +15,8 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   explicit PanelPopup(std::weak_ptr<State> state) : state_(std::move(state)) {}
   // |anchor| is the opening button in root client DIP coordinates.
   void Toggle(const std::string& kind, const CefRect& anchor);
+  bool PreviewIntegration(const std::string& node, const CefRect& anchor, HWND surface);
+  bool DismissIntegration();
   void Hide(bool restore_focus, bool animate = false);
   void Deactivated();
   void Shutdown();
@@ -29,7 +31,7 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   void Cancel(int64_t query);
   void Attach(CefRefPtr<CefWindow> window) { window_ = window; presentation_.Attach(window, state_); Reposition(); }
   bool shutting_down() const { return shutdown_; }
-  bool is_open() const { return open_ || presentation_.closing(); }
+  bool is_open() const { return open_ || presentation_.closing() || (hover_ && hover_->is_open()); }
   bool is_presented() const { return presented_; }
   CefRefPtr<CefWindow> parent() const;
   // The download menu closed; hide too if the person clicked outside.
@@ -46,6 +48,8 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
  private:
   std::string Response(CefRefPtr<CefDictionaryValue> theme = nullptr) const;
   bool PointerOverOpener() const;
+  bool PointerOverIntegration() const;
+  bool IntegrationOwnerVisible() const;
   void FinishOpenerPress(int request);
   void DismissInactive(int request);
   void SiteMenu(int x, int y, CefRefPtr<CefMessageRouterBrowserSide::Callback> callback);
@@ -55,12 +59,18 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   CefRefPtr<CefBrowser> browser_;
  public:
   CefRefPtr<CefBrowser> browser() const { return browser_; }  // Probes only.
+  const PanelPopup* hover_panel() const { return hover_.get(); }  // Probes only.
  private:
+  PanelPopup(std::weak_ptr<State> state, bool hover_only) : state_(std::move(state)), hover_only_(hover_only) {}
+  // The passive hover widget and focusable editors cannot share one CEF window:
+  // menu activation policy is fixed at creation.
+  std::shared_ptr<PanelPopup> hover_;
+  const bool hover_only_ = false;
   CefRefPtr<CefMessageRouterBrowserSide::Callback> observer_;
   int64_t observer_id_ = -1;
   std::string kind_ = "downloads";
   CefRect anchor_;
-  float origin_x_ = .5f;
+  float origin_x_ = .5f, integration_origin_y_ = 0.f;
   PopupPresentation presentation_;
   int height_ = 120, request_ = 0, site_details_ = 0;
   unsigned long long opened_ms_ = 0;
@@ -69,6 +79,20 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   // is dropped when the editor closes without creating the space.
   bool draft_theme_ = false;
   void DropDraftTheme();
+  void WatchIntegration(int request);
+  bool PreviewOpeningValid(const std::shared_ptr<State>& state) const;
+  void SyncIntegrationPreview();
+  void OpenCachedPreview(std::string token, bool compose, CefRefPtr<CefMessageRouterBrowserSide::Callback> cb);
+  void OpenPreviewInPin(const std::string& url, std::string token, bool compose,
+                        CefRefPtr<CefMessageRouterBrowserSide::Callback> cb, bool refresh_mail = false);
+  HWND integration_surface_ = nullptr;
+  CefRefPtr<CefDictionaryValue> integration_;
+  std::string integration_source_;
+  std::weak_ptr<BrowsingProfile> integration_profile_;
+  bool integration_cached_ = false, integration_favorite_ = false;
+  int integration_cache_revision_ = -1;
+  std::shared_ptr<int> pending_integration_action_;
+  unsigned long long integration_left_ = 0;
   bool prepared_ = false, presented_ = false;
 };
 }  // namespace red

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { parseSettingsSnapshot, type Backdrop, type Clock, type SettingsCommand, type SettingsSnapshot } from '../../../packages/browser-contracts/src';
+import { integrationEnabled, integrationSettingsCatalog, unlistedIntegrations, parseSettingsSnapshot, type Backdrop, type Clock, type SettingsCommand, type SettingsSnapshot } from '../../../packages/browser-contracts/src';
 import { Settings2, Palette, ArrowDownToLine, ArrowUpRight, Check, Puzzle, NotebookPen, Search, Power, Keyboard, Archive, UserRound, KeyRound } from 'lucide-react';
 import { PreferencesSettings } from './PreferencesSettings';
 import { Icon } from './Icon';
@@ -9,6 +9,7 @@ import { applyTheme } from './theme-apply';
 import { releaseNotes } from './release-notes';
 import { PasswordsSettings } from './PasswordsSettings';
 import { ProfilesSettings } from './ProfilesSettings';
+import { SiteSearchSettings } from './SiteSearchSettings';
 import './settings.css';
 
 function query(command: object): Promise<SettingsSnapshot> {
@@ -29,9 +30,11 @@ const sections = [
   { id: 'general', title: 'General', icon: Settings2 },
   { id: 'appearance', title: 'Appearance', icon: Palette },
   { id: 'search', title: 'Search', icon: Search },
+  { id: 'siteSearch', title: 'Manage search engines and site search', icon: Search },
   { id: 'downloads', title: 'Downloads', icon: ArrowDownToLine },
   { id: 'startup', title: 'On startup', icon: Power },
   { id: 'tabs', title: 'Tabs', icon: Archive },
+  { id: 'integrations', title: 'Integrations', icon: Puzzle },
   { id: 'profiles', title: 'Profiles', icon: UserRound },
   { id: 'passwords', title: 'Passwords', icon: KeyRound },
   { id: 'keyboard', title: 'Shortcuts', icon: Keyboard },
@@ -60,6 +63,8 @@ export function Settings() {
     const open = (event: Event) => {
       const target=(event as CustomEvent).detail;
       if(target==='import')setSection('import');
+      if(target==='search')setSection('search');
+      if(target==='siteSearch')setSection('siteSearch');
       if(target==='profiles'||target==='newProfile'){setSection('profiles');if(target==='newProfile')setProfileCreateRequest(value=>value+1);}
     };
     window.addEventListener('red-settings-section', open);
@@ -96,25 +101,32 @@ export function Settings() {
     finally { if (alive.current) setBusy(false); }
   }
   const defaults = data?.defaultBrowser;
-  const visibleSections = sections.filter(item => !data?.standalone || (item.id !== 'appearance' && item.id !== 'import' && item.id !== 'profiles'));
+  const integrations = data?.preferences.integrations;
+  const googleDocs = integrationEnabled(integrations, 'googleDocs');
+  const word = integrationEnabled(integrations, 'word');
+  const preferred = data?.preferences.notesProvider ?? 'googleDocs';
+  const notes = integrationEnabled(integrations, preferred) ? preferred : googleDocs ? 'googleDocs' : word ? 'word' : '';
+  const visibleSections = sections.filter(item => item.id !== 'siteSearch' && (!data?.standalone || (item.id !== 'appearance' && item.id !== 'import' && item.id !== 'profiles')));
   return <div className="settings-shell">
     <aside className="settings-nav">
       <div className="settings-brand"><Icon name="logo" /><span>Sol<span>Settings</span></span></div>
       <nav aria-label="Settings">{visibleSections.map(({ id, title, icon: Glyph }) =>
-        <button key={id} type="button" aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}>
+        <button key={id} type="button" aria-current={section === id || section === 'siteSearch' && id === 'search' ? 'page' : undefined} onClick={() => setSection(id)}>
           <Glyph size={18} strokeWidth={1.7} /><span>{title}</span></button>)}</nav>
       <div className="settings-nav-footer">Sol {data?.version ?? ''}</div>
     </aside>
     <main className="settings-content">
       <div className="settings-page" key={section}>
+        {section === 'siteSearch' && <button type="button" className="settings-text site-search-back" onClick={() => setSection('search')}><Icon name="back" />Search</button>}
         <header className="settings-heading"><h1>{sections.find(item => item.id === section)?.title}</h1>
           <p>{section === 'general' ? 'A few essentials to make Sol feel at home.' :
             section === 'appearance' ? `Make ${data?.spaceName ?? 'your space'} your own.` :
             section === 'releases' ? 'Every release, a little better. Here’s what changed.' :
-            section === 'search' ? 'Find things with your preferred search engine.' :
+            section === 'search' ? 'Find things with your preferred search engine.' : section === 'siteSearch' ? 'Search your sites directly from the command bar.' :
             section === 'downloads' ? 'Keep new downloads where you want them.' :
             section === 'startup' ? 'Choose what opens when you start Sol.' :
             section === 'tabs' ? 'Keep Today tidy without losing your saved tabs.' :
+            section === 'integrations' ? 'Choose which services Sol integrates with across all tabs and windows.' :
             section === 'keyboard' ? 'Make familiar actions feel natural.' :
             section === 'passwords' ? 'Your sign-ins, kept with the right profile.' :
             section === 'profiles' ? 'Keep work, personal browsing and website accounts separate.' : 'Move in from Zen, Chrome, Edge or Arc.'}</p></header>
@@ -136,6 +148,17 @@ export function Settings() {
             {defaults?.isDefault === null && <p className="settings-note">Windows couldn’t report the current default. You can check it in Default Apps.</p>}
             {windowsOpened && !defaults?.isDefault && <p className="settings-note" role="status">Choose “Set default” in Windows, then return here. Status refreshes automatically.</p>}
           </section>
+          <section className="settings-card">
+            <span className="settings-category">NEW DOCUMENTS</span><h2>New Note opens in</h2>
+            <p>Create a document from the command bar with New Note.</p>
+            <label className="settings-field" htmlFor="notes-provider"><span>Default Notes app</span>
+              <select id="notes-provider" value={notes}
+                disabled={busy || !data?.ready || !!data.preferencesError || !notes}
+                onChange={event => void action({ method:'settings.set',key:'notesProvider',value:event.target.value as 'googleDocs' | 'word' })}>
+                {!notes && <option value="">No provider enabled</option>}
+                <option value="googleDocs" disabled={!googleDocs}>Google Docs</option><option value="word" disabled={!word}>Word</option>
+              </select></label>
+          </section>
           <section className="settings-card settings-inline-card">
             <span className="settings-card-icon"><Puzzle size={21} strokeWidth={1.6} /></span>
             <div><h2>Extensions</h2><p>Manage the extensions you’ve added to Sol.</p></div>
@@ -154,11 +177,21 @@ export function Settings() {
               </select></label>
           </section>
           <div className="settings-version"><span>Sol {data?.version ?? '…'}</span><span>Chromium {data?.chromiumVersion ?? '…'}</span></div>
-        </> : section === 'passwords' ? <PasswordsSettings profiles={data?.profiles ?? []} activeProfile={data?.activeProfile} ready={!!data?.ready} busy={busy} onOpen={(profile, settings)=>void action({method:'settings.passwords',profile,settings})} /> : section === 'profiles' ? <ProfilesSettings profiles={data?.profiles ?? []} spaces={data?.spaces ?? []}
+        </> : section === 'integrations' ? <section className="settings-card integration-settings-list">
+          {integrationSettingsCatalog.filter(({id}) => !unlistedIntegrations.includes(id)).map(({id, name, detail}) => {
+            const enabled = integrationEnabled(integrations, id);
+            return <div key={id} className="settings-option-row"><div><h2>{name}</h2><p>{detail}</p></div>
+              <button type="button" className="settings-switch" role="switch" aria-label={name} aria-checked={enabled}
+                disabled={busy || !data?.ready || !!data.preferencesError}
+                onClick={() => void action({method:'settings.setIntegration',provider:id,enabled:!enabled})}><span /></button></div>;
+          })}
+        </section> : section === 'passwords' ? <PasswordsSettings profiles={data?.profiles ?? []} activeProfile={data?.activeProfile} ready={!!data?.ready} busy={busy} onOpen={(profile, settings)=>void action({method:'settings.passwords',profile,settings})} /> : section === 'profiles' ? <ProfilesSettings profiles={data?.profiles ?? []} spaces={data?.spaces ?? []}
           activeProfile={data?.activeProfile} createRequest={profileCreateRequest} suggestedSpace={data?.spaceId} onCreateRequestHandled={()=>setProfileCreateRequest(0)}
           command={async command=>{const next=await query(command);++sequence.current;if(alive.current)setData(next);}} /> : section === 'search' || section === 'downloads' || section === 'startup' || section === 'keyboard' || section === 'tabs' ?
           <PreferencesSettings section={section} preferences={data?.preferences} keyboard={data?.keyboard ?? []}
-            disabled={busy || !data?.ready || !!data.preferencesError} save={action} onError={setError} /> :
+            disabled={busy || !data?.ready || !!data.preferencesError} save={action} onError={setError} manageSiteSearch={() => setSection('siteSearch')} /> :
+          section === 'siteSearch' ? <SiteSearchSettings sites={data?.preferences.siteSearches} activation={data?.preferences.siteSearchActivation}
+            disabled={busy || !data?.ready || !!data.preferencesError} save={action} onError={setError} nativeError={error} /> :
           section === 'appearance' ? <><section className="settings-card settings-appearance">
           <span className="settings-category">CURRENT SPACE</span>
           <h2>{data?.spaceName ?? 'Your space'}</h2><p>Color, appearance and grain are saved for this space.</p>
@@ -188,7 +221,8 @@ export function Settings() {
               <time dateTime={release.date}>{new Date(`${release.date}T12:00:00Z`).toLocaleDateString('en',
                 { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })}</time>
             </header>
-            <ul>{release.changes.map((change, index) => <li key={index}>{change}</li>)}</ul>
+            <ul>{release.changes.map((change, index) => <li key={index}>
+              {change.title && <strong>{change.title}: </strong>}{change.text}</li>)}</ul>
           </section>)}
         </div> : <ImportSettings disabled={busy || !data?.ready} profileName={data?.profiles?.find(profile => profile.id === 'default')?.name ?? 'Default'} />}
         {error && <p className="settings-error" role="alert">{error}</p>}

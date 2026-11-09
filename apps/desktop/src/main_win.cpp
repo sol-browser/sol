@@ -37,6 +37,12 @@
 #include "app/browsing_profiles.h"
 #include "app/profile_location.h"
 #include "app/updates.h"
+#include "red_version.h"
+#include "app/release_notes.h"
+#include "app/widevine.h"
+#include "history/title_target.h"
+#include "windows/website_popup.h"
+#include "windows/website_popup_host.h"
 #include "app/windows_locale.h"
 #include "windows/welcome_music.h"
 #include "windows/welcome_window.h"
@@ -80,6 +86,8 @@
 #include "experiments/protocols_probe.h"
 #include "experiments/close_motion_probe.h"
 #include "experiments/sidebar_peek_probe.h"
+#include "experiments/google_integrations_probe.h"
+#include "experiments/integration_live_check.h"
 #include "experiments/sidebar_perf_probe.h"
 #include "experiments/pip_probe.h"
 #include "windows/auto_pip.h"
@@ -233,7 +241,8 @@ class UiResources final : public CefSchemeHandlerFactory {
     const auto owner = browser && state_->session ? state_->session->UiOwner(browser->GetIdentifier()) : nullptr;
     const auto state = owner ? owner : state_;
     if (!browser || (browser->GetIdentifier() != state->shell_id.load() && browser->GetIdentifier() != state->welcome_id.load() && browser->GetIdentifier() != state->command_id.load() &&
-                     browser->GetIdentifier() != state->panel_id.load() && browser->GetIdentifier() != state->peek_id.load() &&
+                     browser->GetIdentifier() != state->panel_id.load() && browser->GetIdentifier() != state->integration_panel_id.load() &&
+                     browser->GetIdentifier() != state->peek_id.load() &&
                      browser->GetIdentifier() != state->settings_id.load() && browser->GetIdentifier() != state->boost_id.load() &&
                      browser->GetIdentifier() != state->menu_id[0].load() && browser->GetIdentifier() != state->menu_id[1].load() &&
                      browser->GetIdentifier() != state->menu_id[2].load() && !state->internal_pages.contains(browser->GetIdentifier())) || !frame ||
@@ -344,7 +353,12 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     router_ = CefMessageRouterBrowserSide::Create(CefMessageRouterConfig());
     router_->AddHandler(this, false);
   }
-  ~Client() override { router_->RemoveHandler(this); }
+  ~Client() override {
+    router_->RemoveHandler(this);
+    // Popup creation was aborted after Sol made its window.
+    if (popup_host_ && !popup_created_) red::ReleaseWebsitePopupHost(popup_host_);
+  }
+  void SetPopupHost(HWND host) { popup_host_ = host; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
@@ -373,6 +387,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>,
       CefRefPtr<CefRequest> request, bool is_navigation, bool, const CefString&, bool&) override {
     if (shell_ || internal_page_ || foreign_ || !is_navigation || !state_->workspace) return nullptr;
+    if (auto fixture=red::IntegrationFixtureResource(state_,request->GetURL().ToString()))return fixture;
     CefURLParts parts;
     if (!CefParseURL(request->GetURL(), parts) || !red::IsExternalProtocolScheme(CefString(&parts.scheme).ToString())) return nullptr;
     return this;
@@ -472,6 +487,9 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   }
   bool OnPreKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& event, CefEventHandle,
                     bool*) override {
+    if (event.type == KEYEVENT_RAWKEYDOWN && event.windows_key_code == VK_ESCAPE &&
+        !(event.modifiers & (EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN | EVENTFLAG_SHIFT_DOWN | EVENTFLAG_COMMAND_DOWN)) &&
+        state_->panel_popup && state_->panel_popup->DismissIntegration()) return true;
     if (!popup_ && state_->workspace && state_->content && state_->devtools_dock && event.type == KEYEVENT_RAWKEYDOWN &&
         event.windows_key_code == 'M' && (event.modifiers & EVENTFLAG_CONTROL_DOWN) && (event.modifiers & EVENTFLAG_SHIFT_DOWN) &&
         !(event.modifiers & (EVENTFLAG_ALT_DOWN | EVENTFLAG_COMMAND_DOWN)))
@@ -579,6 +597,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     if (MovablePage()) PageClients()[browser->GetIdentifier()] = this;
     if (foreign_) { OnForeignCreated(browser); return; }
     if (popup_) { state_->popup_browsers.insert(browser->GetIdentifier()); state_->popup_pending.erase(reservation_); }
+    if (popup_host_) { popup_created_ = true; red::AttachWebsitePopupBrowser(popup_host_, browser); }
     if (internal_page_) state_->internal_pages.insert(browser->GetIdentifier());
     if (!shell_ && !popup_ && !internal_page_) page_load_trace_ = red::TracePageLoad(state_, browser);
     if (!shell_ && !popup_ && !internal_page_) red::InstallVideoPipButton(state_, browser);
@@ -637,13 +656,14 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     state_->browser_profiles.erase(browser->GetIdentifier());
     if (shell_) state_->shell_id = -1;
     else if (state_->content == browser) state_->content = nullptr;
+    if (popup_host_) red::ReleaseWebsitePopupHost(popup_host_);
     state_->Record(shell_ ? "shell_closed" : popup_ ? "popup_closed" : foreign_ ? "foreign_closed" : "content_closed");
     if (state_->window_close) state_->window_close->OnClosed(browser->GetIdentifier());
     if (state_->browsers.empty() && (!state_->window_close || !state_->window)) red::QuitIfLastWindow(state_);
   }
   bool OnBeforePopup(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int popup_id,
       const CefString& target_url, const CefString& frame_name, cef_window_open_disposition_t disposition, bool gesture,
-      const CefPopupFeatures& features, CefWindowInfo&, CefRefPtr<CefClient>& client,
+      const CefPopupFeatures& features, CefWindowInfo& window_info, CefRefPtr<CefClient>& client,
       CefBrowserSettings&, CefRefPtr<CefDictionaryValue>&, bool*) override {
     if (shell_ || foreign_ || internal_page_ || !state_->workspace || state_->workspace->WindowClosing() || !gesture) return true;
     CefURLParts parts;
@@ -666,7 +686,37 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     if (state_->popup_pending.size() + state_->popup_browsers.size() >= 8) return true;
     const auto key = std::make_pair(browser->GetIdentifier(), popup_id);
     state_->popup_pending.insert(key);
-    client = new Client(state_, false, "", true, key);
+    CefRefPtr<Client> popup = new Client(state_, false, "", true, key);
+    client = popup;
+    // Left to CEF this is a full Chrome window (tabs, toolbar) on the primary monitor, and with Sol
+    // as parent CEF embeds it inside Sol's window (both measured). Sol makes a plain window owned by
+    // its own, centred over it on its monitor and sized as the page asked, and creates the popup as
+    // that window's child. Chrome style is kept: popups match their opener's runtime style.
+    if (state_->window) {
+      const HWND owner = state_->window->GetWindowHandle();
+      MONITORINFO monitor{sizeof(monitor)};
+      RECT owner_rect{};
+      if (owner && GetWindowRect(owner, &owner_rect) && GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &monitor)) {
+        const UINT dpi = std::max(96u, GetDpiForWindow(owner));
+        const double scale = dpi / 96.0;
+        const RECT& work = monitor.rcWork;
+        const CefSize content = red::WebsitePopupContentSize(features.widthSet, features.width, features.heightSet, features.height,
+            CefSize(static_cast<int>((work.right - work.left) / scale), static_cast<int>((work.bottom - work.top) / scale)));
+        RECT outer{0, 0, static_cast<LONG>(content.width * scale), static_cast<LONG>(content.height * scale)};
+        AdjustWindowRectExForDpi(&outer, red::kWebsitePopupStyle, FALSE, 0, dpi);
+        const CefRect bounds = red::WebsitePopupBounds(
+            CefRect(owner_rect.left, owner_rect.top, owner_rect.right - owner_rect.left, owner_rect.bottom - owner_rect.top),
+            CefRect(work.left, work.top, work.right - work.left, work.bottom - work.top),
+            CefSize(outer.right - outer.left, outer.bottom - outer.top));
+        if (const HWND host = red::CreateWebsitePopupHost(owner, bounds, state_->theme_dark)) {
+          RECT client_rect{};
+          GetClientRect(host, &client_rect);
+          window_info.SetAsChild(host, CefRect(0, 0, client_rect.right, client_rect.bottom));
+          window_info.runtime_style = CEF_RUNTIME_STYLE_CHROME;
+          popup->SetPopupHost(host);
+        }
+      }
+    }
     state_->Record("native_popup_allowed");
     return false;  // CEF creates the real browsing context, retaining window.opener.
   }
@@ -1207,6 +1257,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   void OnAddressChange(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, const CefString& url) override {
     if (!shell_ && !popup_ && frame->IsMain() && state_->embedded) state_->embedded->SetLinkStatus(browser, "");
     if (foreign_) { if (frame->IsMain()) ResolveForeign(browser, url.ToString()); return; }
+    if (!shell_ && !popup_ && !internal_page_ && frame->IsMain()) red::ScheduleIntegrationLiveCheck(state_,browser);
     if (!shell_ && !popup_ && frame->IsMain() && state_->workspace) {
       state_->workspace->OnTitleChanged(browser);
       state_->workspace->OnPageChanged(browser);
@@ -1217,6 +1268,8 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     }
   }
   void OnTitleChange(CefRefPtr<CefBrowser> browser, const CefString& title) override {
+    // A website popup's own window shows its page title (taskbar previews, Alt+Tab).
+    if (popup_host_) red::SetWebsitePopupTitle(popup_host_, title.ToWString());
     if (!shell_ && !popup_ && !foreign_ && state_->workspace) state_->workspace->OnTitleChanged(browser);
     const auto profile = red::ProfileForBrowser(state_,browser);
     const auto history = profile ? profile->history : state_->history;
@@ -1224,6 +1277,8 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       // Titles usually arrive before the load ends; remember it for the visit.
       title_url_ = browser->GetMainFrame()->GetURL().ToString(); title_ = title.ToString();
       history->UpdateTitle(title_url_, title_);
+      // The page changed its address in place before setting the title (history/title_target.h).
+      if (red::TitleBelongsToVisit(visit_url_, title_url_)) history->UpdateTitle(visit_url_, title_);
     }
   }
   void OnFaviconURLChange(CefRefPtr<CefBrowser> browser, const std::vector<CefString>& icon_urls) override {
@@ -1281,6 +1336,8 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     }
     RestoreContentStack(state_);
     if (!shell_ && !popup_ && state_->workspace) state_->workspace->OnLoadFinished(browser);
+    if (!shell_ && !popup_ && !foreign_ && !internal_page_) red::OnGoogleIntegrationsProbeLoad(state_,browser);
+    if (!shell_ && !popup_ && !foreign_ && !internal_page_) red::ScheduleIntegrationLiveCheck(state_,browser);
     auto details = CefDictionaryValue::Create();
     details->SetInt("http_status", status);
     details->SetString("role", shell_ ? "shell" : popup_ ? "popup" : "content");
@@ -1294,7 +1351,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
         const auto url = frame->GetURL().ToString();
         const auto profile = red::ProfileForBrowser(state_,browser);
         const auto history = profile ? profile->history : state_->history;
-        if (!state_->private_window) history->RecordVisit(url, url == title_url_ ? title_ : "");
+        if (!state_->private_window) { history->RecordVisit(url, url == title_url_ ? title_ : ""); visit_url_ = url; }
         red::OnPrivateProbeLoad(state_, url);
         red::OnHistoryProbeLoad(state_, browser, url);
         red::OnTabActionsProbeLoad(state_, url);
@@ -1343,6 +1400,9 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   }
   bool OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t severity,
       const CefString& message, const CefString&, int) override {
+    if (state_->probe && state_->sidebar_peek_probe && shell_ && message.ToString().starts_with("RED_PEEK:")) {
+      auto data = CefDictionaryValue::Create(); data->SetString("result", message.ToString().substr(9, 1000)); state_->Record("peek_document", data);
+    }
     if(state_->probe&&state_->link_headers_minimize&&shell_&&message.ToString().starts_with("RED_SIDEBAR_RESTORE:")){
       const auto value=CefParseJSON(message.ToString().substr(20),JSON_PARSER_RFC);
       if(value&&value->GetType()==VTYPE_DICTIONARY)state_->Record("sidebar_restore_dom",value->GetDictionary()->Copy(false));
@@ -1509,7 +1569,10 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   bool foreign_resolved_ = false, foreign_profile_rejected_ = false;
   HWND foreign_root_ = nullptr;
   std::string title_, title_url_;  // Latest page title and the URL it belongs to.
+  std::string visit_url_;  // URL of the last visit recorded for this tab.
   std::pair<int, int> reservation_;
+  HWND popup_host_ = nullptr;  // A website popup's own window (windows/website_popup_host.h).
+  bool popup_created_ = false;
   CefRefPtr<CefMessageRouterBrowserSide> router_;
   CefRefPtr<CefRegistration> lifecycle_capture_;
   CefRefPtr<CefRegistration> page_load_trace_;
@@ -1552,13 +1615,21 @@ class WindowDelegate final : public CefWindowDelegate {
         }
       }
     }
-    if (!placement_) return CefRect();
+    const auto centered = [this] {
+      if (!state_->workspace_mode || state_->probe) return CefRect();
+      POINT cursor{};
+      const auto display = GetCursorPos(&cursor) ? CefDisplay::GetDisplayNearestPoint(CefPoint(cursor.x, cursor.y), true) : CefDisplay::GetPrimaryDisplay();
+      if (!display) return CefRect();
+      last_normal_ = red::CenteredWindowBounds(display->GetWorkArea(), CefSize(1200, 820));
+      return last_normal_;
+    };
+    if (!placement_) return centered();
     // Only if a connected display still shows a usable part of it.
     const auto display = CefDisplay::GetDisplayMatchingBounds(placement_->bounds, false);
     const auto area = display ? display->GetWorkArea() : CefRect();
     const int visible_w = std::min(placement_->bounds.x + placement_->bounds.width, area.x + area.width) - std::max(placement_->bounds.x, area.x);
     const int visible_h = std::min(placement_->bounds.y + placement_->bounds.height, area.y + area.height) - std::max(placement_->bounds.y, area.y);
-    if (visible_w < 200 || visible_h < 120) { placement_.reset(); return CefRect(); }
+    if (visible_w < 200 || visible_h < 120) { placement_.reset(); return centered(); }
     last_normal_ = placement_->bounds;
     return placement_->bounds;
   }
@@ -1616,7 +1687,7 @@ class WindowDelegate final : public CefWindowDelegate {
       ResizeWorkspace(window);
       state_->workspace->AttachContent();
       state_->Record("window_shown");
-      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_peek_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe ? 30000 : 15000);
+      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_peek_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe ? 30000 : 15000);
       if (state_->input_probe) red::ObserveNativeInput(state_);
       if (!state_->import_probe.empty()) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
         if (auto s = weak.lock()) red::RunImportProbe(s);
@@ -1713,6 +1784,7 @@ class WindowDelegate final : public CefWindowDelegate {
         (state_->protocols_probe.empty() || state_->protocols_done) &&
         (!state_->close_motion_probe || state_->close_motion_done) &&
         (!state_->sidebar_peek_probe || state_->sidebar_peek_done) &&
+        (!state_->google_integrations_probe || state_->google_integrations_checks) &&
         (!state_->sidebar_perf_probe || state_->sidebar_perf_done) &&
         (!state_->pip_probe || state_->pip_done) &&
         (!state_->capture_mute_probe || state_->capture_mute_done) &&
@@ -2236,12 +2308,18 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
         state_->exit_code = 18; CefQuitMessageLoop(); return;
       }
     }
+    red::EnsureWidevine(state_);
     if (state_->probe && CefCommandLine::GetGlobalCommandLine()->HasSwitch("probe-window-transfer")) {
       red::StartWindowTransfer(state_, url_);
       return;
     }
     if (state_->workspace_mode) {
       state_->workspace = std::make_shared<red::WorkspaceController>(state_);
+      // After an update, the new version's release notes open once. Queued before OS launch
+      // links, so a link the person clicked still ends up as the selected tab.
+      if (!state_->probe && !state_->private_window && !state_->standalone_window)
+        if (auto notes = red::ReleaseNotesAfterUpdate(state_->profile / "BrowserData", RED_APP_VERSION, state_->fresh_profile))
+          state_->workspace->QueueExternalUrls({*notes});
       state_->workspace->QueueExternalUrls(state_->external_urls);
       state_->workspace->Start();
       state_->extension_install_watch = red::WatchExtensionInstalls(state_, CefRequestContext::GetGlobalContext());
@@ -2408,6 +2486,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->protocols_probe = command->GetSwitchValue("probe-protocols").ToString();
   state->close_motion_probe = command->HasSwitch("probe-close-motion");
   state->sidebar_peek_probe = command->HasSwitch("probe-sidebar-peek");
+  state->google_integrations_probe = command->HasSwitch("probe-google-integrations");
   state->sidebar_perf_probe = command->HasSwitch("probe-sidebar-perf");
   state->pip_probe = command->HasSwitch("probe-pip");
   state->capture_mute_probe = command->HasSwitch("probe-capture-mute");
@@ -2503,6 +2582,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->Record("startup", version);
   CefSettings settings;
   settings.no_sandbox = false;
+  settings.windowless_rendering_enabled = true;  // Short-lived mailbox preview workers.
   CefString(&settings.locale) = locale.chromium;
   wchar_t* local_data = nullptr;
   size_t env_length = 0;
@@ -2540,6 +2620,9 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   }
   CefString(&settings.root_cache_path) = profile.wstring();
   CefString(&settings.cache_path) = (profile / "Default").wstring();
+  // Match the other persistent browsing profiles. Private windows use an
+  // independent request context with no cache path.
+  settings.persist_session_cookies = true;
   CefString(&settings.log_file) = (profile / "cef.log").wstring();
   settings.log_severity = LOGSEVERITY_WARNING;
   if (!CefInitialize(args, settings, app, sandbox_info)) return CefGetExitCode();

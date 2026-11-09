@@ -63,6 +63,14 @@ def main():
             command_inputs=[r['details'] for r in rows if r['event']=='command_input_probe']
             passed=passed and len(command_inputs)==1 and command_inputs[0]['focused'] and command_inputs[0]['selected'] and command_inputs[0]['nativeRejected']==8
             passed=passed and command_inputs[0]['predictionChecks']==4
+            passed=passed and [r['details'] for r in rows if r['event']=='command_actions_probe']==[{'pass':True,'nativeRejected':4}]
+            settings=[r['details'] for r in rows if r['event']=='site_search_settings_probe']
+            passed=passed and len(settings)==1 and settings[0].get('passed') and settings[0].get('persisted') and settings[0].get('nativeRejected')==8 and settings[0].get('dialog') and settings[0].get('activation')
+            passed=passed and any(r['event']=='site_search_command_route' for r in rows)
+            passed=passed and [r['details'] for r in rows if r['event']=='site_search_input_probe']==[{'passed':True,'checks':10}]
+            scoped_begin=next((i for i,r in enumerate(rows) if r['event']=='site_search_scoped_begin'),-1)
+            scoped_end=next((i for i,r in enumerate(rows) if r['event']=='site_search_scoped_end'),-1)
+            passed=passed and 0<=scoped_begin<scoped_end and not any(r['event'] in ('command_history_query','command_suggestion_query') for r in rows[scoped_begin:scoped_end])
             geometry=[r['details'] for r in rows if r['event']=='command_layout_probe']
             passed=passed and len(geometry)==1 and geometry[0]['centeredX'] and geometry[0]['anchoredY']
             passed=passed and any(r['event']=='command_closed' for r in rows)

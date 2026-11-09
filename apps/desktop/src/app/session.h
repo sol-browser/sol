@@ -74,6 +74,8 @@ class AppSession {
   std::vector<std::shared_ptr<WorkspaceData>> data_scopes_{workspace};
 };
 void QuitIfLastWindow(const std::shared_ptr<State>& state);
+bool BrowserIntegrationEnabled(const std::shared_ptr<State>& state, std::string_view id);
+void SaveIntegrationPreference(const std::shared_ptr<State>& state, std::string id, bool enabled, BrowserPreferences::Reply done);
 void RegisterSessionUi(const std::shared_ptr<State>& state, int browser);
 void UnregisterSessionUi(const std::shared_ptr<State>& state, int browser);
 }

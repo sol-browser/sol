@@ -76,6 +76,7 @@ int main() {
   check(!red::AnnouncedInstallLocation(8) && !red::AnnouncedInstallLocation(5) && !red::AnnouncedInstallLocation(6),
         "command-line, component and default external extensions are not announced");
   check(red::IsCommandUi(9, 9, true, red::kCommandUrl), "exact command document accepted");
+  check(red::IsAllowedBrowserSwitch("probe-google-integrations",true)&&!red::IsAllowedBrowserSwitch("probe-google-integrations",false),"Google fixture is probe-only");
   check(!red::IsTrustedUi(9, 9, true, red::kCommandUrl), "command document cannot call full shell IPC");
   check(!red::IsCommandUi(9, 9, true, red::kUiUrl), "shell document cannot call command IPC");
   check(!red::IsCommandUi(8, 9, true, red::kCommandUrl) && !red::IsCommandUi(9, 9, false, red::kCommandUrl), "browser and main frame required");

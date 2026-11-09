@@ -1,4 +1,5 @@
 #pragma once
+#include "integrations/providers.h"
 #include <algorithm>
 #include <map>
 #include <set>
@@ -13,6 +14,7 @@ struct MenuNode {
   bool custom_title = false;
   bool muted = false;
   std::string space;  // Top-level Pinned/Today entries only.
+  bool x_badge_hidden = false;
 };
 struct MenuSpace { std::string id, name; };
 struct MenuProfile { std::string id, name; };
@@ -67,6 +69,8 @@ inline std::vector<SidebarMenuItem> SidebarMenuItems(const std::vector<MenuNode>
     add("Rename\u2026", "rename");
     if (n.custom_title) add("Use Website Title", "automaticTitle");
     items.push_back({n.muted ? "Unmute" : "Mute", n.muted ? "unmute" : "mute", "", n.live, {}});
+    if (saved && XNotificationSite(n.url))
+      add(n.x_badge_hidden ? "Show Notification Badge" : "Hide Notification Badge", n.x_badge_hidden ? "showXBadge" : "hideXBadge");
     if (saved) items.push_back({"Edit Pinned Page", "", "", true, {
       {"Replace Pinned URL with Current", "setHome", "", n.live && !n.current_url.empty() && n.current_url != n.url, {}},
       {"Edit\u2026", "editPinned", "", true, {}}}});

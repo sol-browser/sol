@@ -2,6 +2,7 @@
 #include "app/session.h"
 #include "windows/pointer.h"
 #include "windows/panel_popup.h"
+#include "windows/command_actions.h"
 #include <dwmapi.h>
 #include <algorithm>
 #include <cmath>
@@ -18,6 +19,11 @@
 #include "windows/ui_context_menu.h"
 #include "windows/main_menu.h"
 #include "history/history_commands.h"
+#include "history/history_service.h"
+#include "integrations/providers.h"
+#include "integrations/live_reader.h"
+#include "integrations/integration_previews.h"
+#include <set>
 #include "include/base/cef_callback.h"
 #include "include/cef_app.h"
 #include "include/cef_parser.h"
@@ -27,6 +33,7 @@
 #include "windows/focus.h"
 #include "windows/window_close.h"
 #include "windows/workspace_layout.h"
+#include "windows/integration_card_bounds.h"
 #include "workspace/controller.h"
 
 namespace red {
@@ -54,6 +61,10 @@ class PanelClient final : public CefClient, public CefLifeSpanHandler, public Ce
   bool OnConsoleMessage(CefRefPtr<CefBrowser>, cef_log_severity_t, const CefString& message, const CefString&, int) override {
     // Probe evidence of what the popover actually rendered (fixed JSON from our UI).
     const auto text = message.ToString();
+    if (auto s=state_.lock();s && s->probe && s->sidebar_peek_probe && text.starts_with("RED_INTEGRATION:")) {
+      const auto v=CefParseJSON(text.substr(16),JSON_PARSER_RFC);
+      if(v && v->GetType()==VTYPE_DICTIONARY)s->Record("integration_document",v->GetDictionary());
+    }
     if (auto s = state_.lock(); s && s->probe && text.starts_with("RED_PANEL_RENDERED:")) {
       auto v = CefParseJSON(text.substr(19), JSON_PARSER_RFC);
       if (v && v->GetType() == VTYPE_DICTIONARY) s->Record("panel_rendered", v->GetDictionary());
@@ -113,21 +124,21 @@ class PanelView final : public CefBrowserViewDelegate {
 };
 class PanelWindow final : public CefWindowDelegate {
  public:
-  PanelWindow(std::weak_ptr<PanelPopup> owner, CefRefPtr<CefBrowserView> view, std::weak_ptr<State> state)
-      : owner_(owner), view_(view), state_(state) {}
+  PanelWindow(std::weak_ptr<PanelPopup> owner, CefRefPtr<CefBrowserView> view, bool passive)
+      : owner_(owner), view_(view), passive_(passive) {}
   cef_runtime_style_t GetWindowRuntimeStyle() override { return CEF_RUNTIME_STYLE_ALLOY; }
   bool IsFrameless(CefRefPtr<CefWindow>) override { return true; }
   bool CanResize(CefRefPtr<CefWindow>) override { return false; }
   bool CanMaximize(CefRefPtr<CefWindow>) override { return false; }
   bool CanMinimize(CefRefPtr<CefWindow>) override { return false; }
-  CefRefPtr<CefWindow> GetParentWindow(CefRefPtr<CefWindow>, bool* menu, bool*) override {
-    *menu = false; if (auto o = owner_.lock()) return o->parent(); return nullptr;
+  CefRefPtr<CefWindow> GetParentWindow(CefRefPtr<CefWindow>, bool* menu, bool* activate) override {
+    *menu = passive_; *activate = !passive_;
+    if (auto o = owner_.lock()) return o->parent(); return nullptr;
   }
   CefSize GetPreferredSize(CefRefPtr<CefView>) override { return CefSize(kPanelWidth, 120); }
   void OnWindowCreated(CefRefPtr<CefWindow> w) override {
     // Dark by default (user preference); matches the document's background.
     // Always dark; the theme only rotates its tint.
-    const auto s = state_.lock();
     const auto background = kPopupSurface;
     w->SetTitle("Sol — Panel"); w->SetBackgroundColor(CefColorSetARGB(255, background.r, background.g, background.b));
     const DWM_WINDOW_CORNER_PREFERENCE corners = DWMWCP_ROUND;
@@ -139,14 +150,14 @@ class PanelWindow final : public CefWindowDelegate {
   }
   // Clicking anywhere else closes the popover, like Arc's.
   void OnWindowActivationChanged(CefRefPtr<CefWindow>, bool active) override {
-    if (!active) if (auto o = owner_.lock(); o && o->is_presented()) o->Deactivated();
+    if (!active && !passive_) if (auto o = owner_.lock(); o && o->is_presented()) o->Deactivated();
   }
   bool CanClose(CefRefPtr<CefWindow>) override {
     if (auto o = owner_.lock(); o && !o->shutting_down()) { o->Hide(true); return false; } return true;
   }
   void OnWindowDestroyed(CefRefPtr<CefWindow>) override { view_ = nullptr; if (auto o = owner_.lock()) o->Destroyed(); }
  private:
-  std::weak_ptr<PanelPopup> owner_; CefRefPtr<CefBrowserView> view_; std::weak_ptr<State> state_;
+  std::weak_ptr<PanelPopup> owner_; CefRefPtr<CefBrowserView> view_; bool passive_;
   IMPLEMENT_REFCOUNTING(PanelWindow);
 };
 // Download row menu. Commands map to a fixed action list; the download ID was
@@ -181,7 +192,7 @@ class SiteMenuDelegate final : public CefMenuModelDelegate {
     owner->MenuDone(); owner->Hide(command != kManageExtensions);
     if (command == kClearCache) ClearSiteCache(state);
     else if (command == kClearCookies) ClearSiteCookies(state);
-    else if (command == kAddExtension) state->workspace->OpenLink("https://chromewebstore.google.com/", true);
+    else if (command == kAddExtension) state->workspace->OpenLink("https://chromewebstore.live.com/", true);
     else if (command == kManageExtensions) {
       if (!state->extensions_window) state->extensions_window = std::make_shared<ExtensionsWindow>(state);
       state->extensions_window->Show();
@@ -214,18 +225,23 @@ void PanelPopup::SiteMenu(int x, int y, CefRefPtr<CefMessageRouterBrowserSide::C
 CefRefPtr<CefWindow> PanelPopup::parent() const { auto s = state_.lock(); return s ? s->window : nullptr; }
 void PanelPopup::Created(CefRefPtr<CefBrowser> b) {
   browser_ = b;
-  if (auto s = state_.lock()) { s->panel_id = b->GetIdentifier(); RegisterSessionUi(s, b->GetIdentifier()); s->browsers[b->GetIdentifier()] = b; s->Record("panel_created"); }
+  if (auto s = state_.lock()) {
+    (hover_only_ ? s->integration_panel_id : s->panel_id) = b->GetIdentifier();
+    RegisterSessionUi(s, b->GetIdentifier()); s->browsers[b->GetIdentifier()] = b; s->Record("panel_created");
+  }
 }
 void PanelPopup::Closed(int id) {
   observer_ = nullptr; browser_ = nullptr;
   if (auto s = state_.lock()) {
-    UnregisterSessionUi(s, id); s->browsers.erase(id); s->panel_id = -1;
+    UnregisterSessionUi(s, id); s->browsers.erase(id);
+    (hover_only_ ? s->integration_panel_id : s->panel_id) = -1;
     if (s->window_close) s->window_close->OnClosed(id);
     if (!s->window && s->browsers.empty()) QuitIfLastWindow(s);
   }
 }
 void PanelPopup::Destroyed() { presentation_.Reset(); window_ = nullptr; ready_ = prepared_ = presented_ = false; }
 void PanelPopup::Reposition() {
+  if (hover_ && hover_->is_open()) hover_->Reposition();
   auto p = parent(); if (!p || !window_) return;
   if (presentation_.closing()) { presentation_.Conceal(); return; }
   const auto root = p->GetClientAreaBoundsInScreen();
@@ -233,7 +249,9 @@ void PanelPopup::Reposition() {
   // Center on the opening button where possible. At the window edges retain
   // the button's actual horizontal position as the growth origin, rather than
   // making the card grow from its unrelated geometric center.
-  const int desired=kind_=="history"?kHistoryWidth:kPanelWidth;
+  const bool compact_integration = hover_only_ && integration_ &&
+      (integration_->HasKey("kind") || integration_->GetString("service") == "figma");
+  const int desired=kind_=="history"?kHistoryWidth:compact_integration?248:kPanelWidth;
   const bool editor=kind_=="space" || kind_=="newSpace" || kind_=="theme";
   const auto state=state_.lock();
   const auto page=WorkspaceContentArea(root.width,root.height,state && state->sidebar_visible,state?state->sidebar_width:kSidebarWidth);
@@ -246,11 +264,17 @@ void PanelPopup::Reposition() {
   if (editor) { x=page.x+std::min(24,std::max(0,(page.width-width)/2)); y=std::min(kToolbarHeight+24,std::max(kToolbarHeight,root.height-height-8)); }
   origin_x_ = std::clamp((button_center - x) / width, 0.f, 1.f);
   if (editor) origin_x_=0;
-  const CefRect target(root.x + x, root.y + y, width, height);
+  CefRect target(root.x + x, root.y + y, width, height);
+  if (hover_only_) {
+    const auto placement = PlaceIntegrationCard(root, anchor_, width, height, kToolbarHeight, integration_favorite_);
+    target = placement.bounds; origin_x_ = placement.origin_x; integration_origin_y_ = placement.origin_y;
+  }
   if (window_->GetBounds() != target) { if (presented_) presentation_.Settle(); window_->SetBounds(target); }
 }
 void PanelPopup::Toggle(const std::string& kind, const CefRect& anchor) {
   auto s = state_.lock(); if (!s || !s->window || !s->workspace || s->workspace->WindowClosing() || shutdown_) return;
+  if (hover_only_ != (kind == "integration")) return;
+  if (hover_) hover_->DismissIntegration();
   if (open_ && kind == kind_) { Hide(true, true); return; }
   DropDraftTheme();
   kind_ = kind; anchor_ = anchor; ++request_; open_ = true;
@@ -265,12 +289,294 @@ void PanelPopup::Toggle(const std::string& kind, const CefRect& anchor) {
     auto view = CefBrowserView::CreateBrowserView(new PanelClient(weak_from_this(), s), std::string(kPanelUrl),
         settings, extra, shell->second->GetHost()->GetRequestContext(), new PanelView());
     view->SetBackgroundColor(settings.background_color);
-    CefWindow::CreateTopLevelWindow(new PanelWindow(weak_from_this(), view, s));
+    CefWindow::CreateTopLevelWindow(new PanelWindow(weak_from_this(), view, hover_only_));
   }
   Reposition(); Publish();
   auto d = CefDictionaryValue::Create(); d->SetString("kind", kind); s->Record("panel_open", d);
 }
 void PanelPopup::Ready() { ready_ = true; Publish(); }
+bool PanelPopup::PreviewIntegration(const std::string& node, const CefRect& anchor, HWND surface) {
+  const auto s = state_.lock();
+  if (!s || !s->workspace || s->private_window || s->workspace->WindowClosing() ||
+      s->window->IsMinimized() || !IsWindowVisible(surface) || shutdown_) return false;
+  if (!hover_only_) {
+    if (open_ || presentation_.closing()) return false;
+    if (!hover_ || (hover_->shutting_down() && !hover_->browser() && !hover_->window()))
+      hover_.reset(new PanelPopup(state_, true));
+    return hover_->PreviewIntegration(node, anchor, surface);
+  }
+  const auto target = s->workspace->SavedPreview(node);
+  const auto seed = s->workspace->DetachedSeed(node);
+  if (!seed || !seed->pinned) return false;
+  const auto provider = !target ? RecentIntegration(seed->url) : std::nullopt;
+  const auto live = target ? LiveIntegration(*target) : std::nullopt;
+  const auto profile = provider || live ? s->workspace->ProfileForNode(node) : nullptr;
+  if ((!provider && !live) || !BrowserIntegrationEnabled(s, live ? live->id : provider->id) ||
+      !profile || (!live && !profile->history) || profile != s->workspace->ProfileForNode("")) return false;
+  POINT cursor{};
+  const HWND root = s->window->GetWindowHandle();
+  if (!GetCursorPos(&cursor) || GetAncestor(WindowFromPoint(cursor),GA_ROOT) != GetAncestor(surface,GA_ROOT) ||
+      !ScreenToClient(root,&cursor)) return false;
+  const float scale = GetDpiForWindow(root)/96.f;
+  const float x = cursor.x/scale, y = cursor.y/scale;
+  if (x < anchor.x || x >= anchor.x+anchor.width || y < anchor.y || y >= anchor.y+anchor.height) return false;
+  if (open_ && integration_ && integration_->GetString("node") == node && integration_surface_ == surface &&
+      integration_favorite_ == seed->favorite) return true;
+  if (open_) Hide(false);
+  integration_ = CefDictionaryValue::Create();
+  integration_->SetString("node", node); integration_->SetString("service", live ? live->id : provider->id); integration_->SetString("name", live ? live->name : provider->name);
+  if (live) { integration_->SetString("kind", live->IsMail() ? "mail" : "calendar"); integration_->SetString("status", "loading"); }
+  integration_->SetBool("loading", true); integration_->SetList("items", CefListValue::Create());
+  integration_->SetInt("revision",0);
+  integration_source_ = target ? *target : seed->url;
+  integration_profile_ = profile;
+  integration_cached_ = target.has_value();
+  integration_favorite_ = seed->favorite;
+  integration_cache_revision_ = -1;
+  integration_surface_ = surface;
+  Toggle("integration", anchor); integration_left_ = 0;
+  const int opening = request_;
+  if (live) { WatchIntegration(opening); return true; }
+  profile->history->Suggest(provider->query, 300, [weak = weak_from_this(), opening, node, policy = *provider, profile](std::vector<Visit> visits) {
+    const auto self = weak.lock(); if (!self || !self->open_ || self->request_ != opening || !self->integration_) return;
+    const auto state = self->state_.lock();
+    const auto current = state && state->workspace ? state->workspace->DetachedSeed(node) : std::nullopt;
+    if (!current || !BrowserIntegrationEnabled(state, policy.id) || current->url != self->integration_source_ ||
+        state->workspace->ProfileForNode(node) != profile || state->workspace->ProfileForNode("") != profile) { self->Hide(false); return; }
+    // Visits arrive newest first. A Figma file appears once (its latest visit), named after the file:
+    // the newest visit whose title carries the name, else the name in its address, else "Untitled".
+    struct Row { std::string url, title; int64_t visited_at; bool named; };
+    std::vector<Row> rows; std::map<std::string, size_t> seen;
+    const bool figma = policy.id == "figma";
+    for (const auto& visit : visits) {
+      if (!RecentIntegrationPage(policy, visit.url)) continue;
+      const auto file = figma ? FigmaFileKey(visit.url) : std::string();
+      const auto key = file.empty() ? visit.url : "file:" + file;
+      std::string title = visit.title; bool named = true;
+      if (figma && !file.empty()) {
+        title = FigmaTitleName(visit.title);
+        if (title.empty()) { title = FigmaUrlName(visit.url); named = false; }
+      }
+      if (const auto found = seen.find(key); found != seen.end()) {
+        auto& row = rows[found->second];
+        if (!row.named && (named || row.title.empty()) && !title.empty()) { row.title = title; row.named = named; }
+        continue;
+      }
+      if (rows.size() == 8) continue;
+      seen.emplace(key, rows.size());
+      rows.push_back({visit.url, title, visit.visited_at, named});
+    }
+    auto items = CefListValue::Create();
+    for (const auto& entry : rows) {
+      auto row = CefDictionaryValue::Create(); row->SetString("url", entry.url);
+      row->SetString("title", (entry.title.empty() && figma ? std::string("Untitled") : entry.title).substr(0, 400));
+      if (figma && entry.visited_at >= 0 && entry.visited_at <= 8640000000000000LL)
+        row->SetDouble("visitedAt", static_cast<double>(entry.visited_at));
+      items->SetDictionary(items->GetSize(), row);
+    }
+    self->integration_->SetList("items", items); self->integration_->SetBool("loading", false); self->Publish();
+  });
+  WatchIntegration(opening); return true;
+}
+bool PanelPopup::DismissIntegration() {
+  if (hover_) return hover_->DismissIntegration();
+  if (!hover_only_ || !open_) return false;
+  Hide(false); return true;
+}
+bool PanelPopup::PreviewOpeningValid(const std::shared_ptr<State>& s) const {
+  if (!s || !s->workspace || !integration_ || !integration_cached_) return false;
+  const auto id = integration_->GetString("node").ToString();
+  const auto profile = integration_profile_.lock();
+  return profile && s->workspace->ProfileForNode("") == profile && s->workspace->ProfileForNode(id) == profile &&
+      s->workspace->SavedPreview(id) == integration_source_;
+}
+void PanelPopup::SyncIntegrationPreview() {
+  const auto s = state_.lock();
+  if (!PreviewOpeningValid(s)) { Hide(false); return; }
+  const auto cache = s->workspace->integration_previews();
+  const auto result = cache ? cache->Cached(integration_source_) : nullptr;
+  const int revision = result ? result->GetInt("revision") : cache && cache->Queued(integration_source_) ? 0 : -2;
+  if (integration_cache_revision_ == revision) return;
+  integration_cache_revision_ = revision;
+  integration_->SetInt("revision",integration_->GetInt("revision")+1);
+  integration_->SetBool("loading",revision == 0);
+  integration_->SetString("status",result ? result->GetString("status") : CefString(revision == 0 ? "loading" : "unsupported"));
+  integration_->SetBool("composeAvailable",result && result->GetBool("composeAvailable"));
+  if (result && result->GetType("mailView") == VTYPE_STRING) integration_->SetString("mailView",result->GetString("mailView"));
+  else integration_->Remove("mailView");
+  integration_->SetList("items",result ? result->GetList("items")->Copy() : CefListValue::Create());
+}
+namespace {
+using PanelReply = CefRefPtr<CefMessageRouterBrowserSide::Callback>;
+struct PinnedPreviewAction {
+  std::weak_ptr<State> state;
+  std::weak_ptr<int> opening;
+  std::shared_ptr<BrowsingProfile> profile;
+  std::string node, url, target, token, service;
+  PanelReply reply;
+  ULONGLONG deadline;
+  bool compose, refresh_mail;
+  bool navigated = false;
+  std::string initial_url;
+  int browser_id = -1;
+};
+void RefreshOpenedMail(std::shared_ptr<PinnedPreviewAction> action, bool wait_for_navigation) {
+  const auto s = action->state.lock();
+  if (!s || !s->workspace || s->workspace->WindowClosing() ||
+      s->workspace->ProfileForNode("") != action->profile || s->workspace->ProfileForNode(action->node) != action->profile ||
+      s->workspace->SavedPreview(action->node) != action->target) return;
+  if (wait_for_navigation) {
+    const auto browser = s->workspace->LiveBrowser(action->node);
+    const auto frame = browser ? browser->GetMainFrame() : nullptr;
+    if (!frame || browser->GetIdentifier() != action->browser_id) return;
+    const auto source = frame->GetURL().ToString();
+    const auto provider = LiveIntegration(action->target);
+    const bool opened = source == action->url || (provider && source != action->initial_url &&
+        source.starts_with(provider->base + "#all/") && MailboxTarget(source) == action->target);
+    if (!opened || browser->IsLoading()) {
+      if (GetTickCount64() < action->deadline)
+        CefPostDelayedTask(TID_UI,base::BindOnce(&RefreshOpenedMail,action,true),350);
+      return;
+    }
+  }
+  if (const auto cache = s->workspace->integration_previews()) cache->RefreshAfterMailOpen(action->target);
+}
+void RunPinnedPreview(std::shared_ptr<PinnedPreviewAction> action) {
+  const auto s = action->state.lock();
+  if (action->opening.expired() || !s || !s->workspace || s->workspace->WindowClosing() ||
+      !BrowserIntegrationEnabled(s, action->service) ||
+      s->workspace->ActiveNode() != action->node ||
+      s->workspace->ProfileForNode(action->node) != action->profile || s->workspace->ProfileForNode("") != action->profile ||
+      (!action->target.empty() && s->workspace->SavedPreview(action->node) != action->target)) {
+    action->reply->Failure(409,"Preview tab changed");
+    return;
+  }
+  if (GetTickCount64() >= action->deadline) {
+    s->workspace->Notify(action->compose ? "Couldn't open the compose form" : "Couldn't open the selected preview item");
+    action->reply->Failure(409,"Preview item unavailable");
+    return;
+  }
+  if (s->workspace->HasLinkPeek()) {
+    s->workspace->DismissLinkPeek([action](bool closed) {
+      if (closed) RunPinnedPreview(action);
+      else action->reply->Failure(409,"The link preview is still open");
+    });
+    return;
+  }
+  const auto browser = s->workspace->LiveBrowser(action->node);
+  const auto frame = browser ? browser->GetMainFrame() : nullptr;
+  const auto retry = [action] {
+    CefPostDelayedTask(TID_UI,base::BindOnce(&RunPinnedPreview,action),350);
+  };
+  if (!frame) { retry(); return; }
+  if (action->browser_id < 0) action->browser_id = browser->GetIdentifier();
+  if (action->browser_id != browser->GetIdentifier()) {
+    action->reply->Failure(409,"Preview tab changed");
+    return;
+  }
+  const auto source = frame->GetURL().ToString();
+  const bool click = action->compose || !action->token.empty();
+  const bool on_target = IsPreviewPage(action->target,source) &&
+      (!IsCalendarDayView(action->url) || action->navigated || source == action->url);
+  if (!action->navigated && (!click || !on_target)) {
+    action->initial_url = source;
+    action->navigated = true;
+    s->workspace->NavigatePinned(action->node,action->url,[action,click,retry](int code,const std::string& error,CefRefPtr<CefDictionaryValue>) {
+      if (code) action->reply->Failure(code,error);
+      else if (click) retry();
+      else {
+        if (action->refresh_mail) RefreshOpenedMail(action,true);
+        action->reply->Success("{}");
+      }
+    });
+    return;
+  }
+  if (on_target) {
+    if (const auto provider=LiveIntegration(source)) {
+      LiveRead::Click(browser,*provider,source,action->compose?LiveRead::Action::Compose:LiveRead::Action::Open,
+          action->token,[action,retry](bool clicked) {
+            if (!clicked) { retry(); return; }
+            if (action->refresh_mail) RefreshOpenedMail(action,false);
+            action->reply->Success("{}");
+          });
+    }
+    return;
+  }
+  if (source.empty() || source == "about:blank" || source == action->initial_url || PreviewTarget(source) == action->target) {
+    retry();
+  } else {
+    action->reply->Failure(409,"Preview tab changed");
+  }
+}
+}
+void PanelPopup::OpenCachedPreview(std::string token, bool compose, PanelReply cb) {
+  const auto s = state_.lock();
+  if (!PreviewOpeningValid(s)) { cb->Failure(409,"Preview changed"); return; }
+  const auto target = integration_source_;
+  const auto provider = LiveIntegration(target);
+  if (!provider || (!token.empty() && !IntegrationRowToken(*provider, token))) {
+    cb->Failure(403,"Invalid preview item"); return;
+  }
+  const bool direct = !compose && (token.empty() || provider->id == "gmail");
+  const bool refresh_mail = provider->IsMail() && !compose && !token.empty();
+  const auto url = direct && !token.empty() ? provider->base + "#all/" + token :
+      provider->id == "googleCalendar" ? provider->base + "r/day" : target;
+  OpenPreviewInPin(url,direct ? std::string{} : std::move(token),compose,cb,refresh_mail);
+}
+void PanelPopup::OpenPreviewInPin(const std::string& url, std::string token, bool compose, PanelReply cb, bool refresh_mail) {
+  const auto s = state_.lock();
+  const auto profile = integration_profile_.lock();
+  if (!s || !s->workspace || !profile || !integration_) {
+    cb->Failure(409,"Preview changed");
+    return;
+  }
+  const auto node = integration_->GetString("node").ToString();
+  pending_integration_action_ = std::make_shared<int>(0);
+  auto action = std::make_shared<PinnedPreviewAction>(PinnedPreviewAction{
+      state_,pending_integration_action_,profile,node,url,integration_cached_?integration_source_:std::string{},
+      std::move(token),integration_->GetString("service").ToString(),cb,GetTickCount64()+12000,compose,refresh_mail,false,{},-1});
+  Hide(false);
+  auto activate = CefDictionaryValue::Create();
+  activate->SetString("method","tree.activate");
+  activate->SetString("id",node);
+  activate->SetDouble("expectedRevision",s->workspace->Snapshot()->GetDouble("treeRevision"));
+  s->workspace->Handle(activate,[action](int code,const std::string& error,CefRefPtr<CefDictionaryValue>) {
+    if (code) action->reply->Failure(code,error);
+    else RunPinnedPreview(action);
+  });
+}
+void PanelPopup::WatchIntegration(int opening) {
+  if (!open_ || request_ != opening || kind_ != "integration") return;
+  const auto s = state_.lock();
+  if (!s || !s->workspace || s->workspace->WindowClosing() || !IntegrationOwnerVisible()) { Hide(false); return; }
+  if (integration_cached_) {
+    if (!PreviewOpeningValid(s)) { Hide(false); return; }
+  } else {
+    const auto node = integration_ ? s->workspace->DetachedSeed(integration_->GetString("node")) : std::nullopt;
+    if (!node || !node->pinned || node->archived || node->url != integration_source_ ||
+        s->workspace->ProfileForNode(node->id) != s->workspace->ProfileForNode("")) { Hide(false); return; }
+  }
+  // A short grace period spans the gap between the tile and the owned card.
+  if (PointerOverIntegration()) integration_left_ = 0;
+  else if (!integration_left_) integration_left_ = GetTickCount64();
+  else if (GetTickCount64() - integration_left_ > 350) { Hide(false); return; }
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<PanelPopup> weak, int request) {
+    if (auto self = weak.lock()) self->WatchIntegration(request);
+  }, weak_from_this(), opening), 100);
+}
+bool PanelPopup::IntegrationOwnerVisible() const {
+  const auto owner = parent();
+  return owner && !owner->IsMinimized() && IsWindowVisible(owner->GetWindowHandle()) && IsWindowVisible(integration_surface_);
+}
+bool PanelPopup::PointerOverIntegration() const {
+  if (!IntegrationOwnerVisible()) return false;
+  POINT cursor{};
+  if (!GetCursorPos(&cursor)) return false;
+  const HWND hit = GetAncestor(WindowFromPoint(cursor),GA_ROOT);
+  if (!hit) return false;
+  if (presented_ && window_ && hit == window_->GetWindowHandle()) return true;
+  return hit == GetAncestor(integration_surface_,GA_ROOT) && PointerOverOpener();
+}
 bool PanelPopup::PointerOverOpener() const {
   const auto owner = parent(); if (!owner) return false;
   const float scale = GetDpiForWindow(owner->GetWindowHandle()) / 96.f;
@@ -322,9 +628,13 @@ void PanelPopup::DismissInactive(int request) {
   if (open_ && request == request_ && window_ && !window_->IsActive()) Hide(false);
 }
 void PanelPopup::Hide(bool restore_focus, bool animate) {
+  if (hover_) hover_->Hide(false);
   if ((!open_ && !presentation_.closing()) || menu_open_) return;
   const bool animated = animate && presented_;
   DropDraftTheme();
+  if (kind_ == "integration" && integration_ && LiveIntegration(integration_source_)) {
+    integration_->SetList("items",CefListValue::Create()); integration_->SetBool("composeAvailable",false);
+  }
   open_ = false;
   prepared_ = presented_ = false;
   const bool closing = animated && presentation_.Dismiss(kind_ == "archive", origin_x_);
@@ -343,11 +653,15 @@ void PanelPopup::DropDraftTheme() {
   draft_theme_ = false;
   if (auto s = state_.lock(); s && s->workspace) s->workspace->RevertThemePreview();
 }
-void PanelPopup::Shutdown() { menu_open_ = false; Hide(false); shutdown_ = true; observer_ = nullptr; if (window_) window_->Close(); }
+void PanelPopup::Shutdown() {
+  if (hover_) hover_->Shutdown();
+  menu_open_ = false; Hide(false); shutdown_ = true; observer_ = nullptr; if (window_) window_->Close();
+}
 std::string PanelPopup::Response(CefRefPtr<CefDictionaryValue> theme) const {
   auto s = state_.lock(); auto d = CefDictionaryValue::Create();
   d->SetInt("request", request_); d->SetString("kind", kind_); d->SetBool("open", open_);
   d->SetDictionary("snapshot", theme ? theme->Copy(false) : s && s->workspace ? s->workspace->Snapshot() : CefDictionaryValue::Create());
+  if (kind_ == "integration" && integration_) d->SetDictionary("integration", integration_->Copy(false));
   if (s && kind_ == "site") {
     d->SetDictionary("site", SiteInfo(s));
     // Installed extensions for the popover's Extensions row (names and PNG
@@ -366,7 +680,13 @@ std::string PanelPopup::Response(CefRefPtr<CefDictionaryValue> theme) const {
   }
   auto value = CefValue::Create(); value->SetDictionary(d); return CefWriteJSON(value, JSON_WRITER_DEFAULT);
 }
-void PanelPopup::Publish(CefRefPtr<CefDictionaryValue> theme) { if (observer_ && open_) observer_->Success(Response(theme)); }
+void PanelPopup::Publish(CefRefPtr<CefDictionaryValue> theme) {
+  if (hover_) hover_->Publish(theme);
+  if (open_ && kind_ == "integration" && integration_ &&
+      !BrowserIntegrationEnabled(state_.lock(), integration_->GetString("service").ToString())) { Hide(false); return; }
+  if (open_ && integration_cached_) SyncIntegrationPreview();
+  if (observer_ && open_) observer_->Success(Response(theme));
+}
 void PanelPopup::Cancel(int64_t query) { if (query == observer_id_) { observer_ = nullptr; observer_id_ = -1; } }
 void PanelPopup::DownloadMenu(int id, int x, int y, CefRefPtr<CefMessageRouterBrowserSide::Callback> callback) {
   auto s = state_.lock();
@@ -410,7 +730,8 @@ void PanelPopup::MenuClosed() {
 bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t query, const CefString& raw,
                        bool persistent, CefRefPtr<CefMessageRouterBrowserSide::Callback> cb) {
   auto s = state_.lock();
-  if (!s || !IsPanelUi(b->GetIdentifier(), s->panel_id, f->IsMain(), f->GetURL().ToString())) { cb->Failure(403, "Untrusted panel document"); return true; }
+  if (!s || !IsPanelUi(b->GetIdentifier(), hover_only_ ? s->integration_panel_id.load() : s->panel_id.load(),
+                       f->IsMain(), f->GetURL().ToString())) { cb->Failure(403, "Untrusted panel document"); return true; }
   if (raw.length() > 4096) { cb->Failure(413, "Request too large"); return true; }
   auto value = CefParseJSON(raw, JSON_PARSER_RFC);
   if (!value || value->GetType() != VTYPE_DICTIONARY || value->GetDictionary()->GetType("method") != VTYPE_STRING) { cb->Failure(400, "Invalid command"); return true; }
@@ -421,23 +742,29 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     if (observer_) { cb->Failure(409, "Already subscribed"); return true; }
     observer_ = cb; observer_id_ = query; Publish(); return true;
   }
-  if (method == "panel.close" && d->GetSize() == 1) { cb->Success(Response()); Hide(true); return true; }
+  if (method == "panel.close" && d->GetSize() == 1) { cb->Success(Response()); Hide(!hover_only_); return true; }
   if ((method == "panel.resize" || method == "panel.present") &&
       (!open_ || !window_ || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_)) {
     cb->Failure(409, "Panel opening changed"); return true;
   }
   if (method == "panel.resize" && d->GetSize() == 3 && d->GetType("height") == VTYPE_INT &&
       d->GetInt("height") >= 60 && d->GetInt("height") <= 640) {
-    if (!presented_ && !PopupOwnerIsForeground(s->window)) { Hide(false); cb->Failure(409, "Panel owner is inactive"); return true; }
+    if (!presented_ && !(hover_only_ ? PointerOverIntegration() : PopupOwnerIsForeground(s->window))) {
+      Hide(false); cb->Failure(409, "Panel opener is unavailable"); return true;
+    }
     height_ = d->GetInt("height"); Reposition(); window_->Layout();
     prepared_ = true; if (!presented_) presentation_.Stage();
     cb->Success(PopupViewport(window_, request_)); return true;
   }
   if (method == "panel.present" && d->GetSize() == 3 && d->GetType("reducedMotion") == VTYPE_BOOL && prepared_) {
-    if (!PopupOwnerIsForeground(s->window)) { Hide(false); cb->Failure(409, "Panel owner is inactive"); return true; }
+    if (!(hover_only_ ? PointerOverIntegration() : PopupOwnerIsForeground(s->window))) {
+      Hide(false); cb->Failure(409, "Panel opener is unavailable"); return true;
+    }
     if (!presented_) {
-      presented_ = true; window_->Show(); window_->Activate(); FocusBrowser(browser_);
-      presentation_.Reveal(d->GetBool("reducedMotion"), kind_ == "archive", origin_x_);
+      presented_ = true;
+      if (!hover_only_) { window_->Show(); window_->Activate(); FocusBrowser(browser_); }
+      const bool reduced_motion = d->GetBool("reducedMotion");
+      presentation_.Reveal(reduced_motion, kind_ == "archive", origin_x_, true, hover_only_ ? integration_origin_y_ : -1.f);
       auto details = CefDictionaryValue::Create(); details->SetInt("request", request_);
       details->SetDouble("elapsed_ms", static_cast<double>(GetTickCount64() - opened_ms_));
       details->SetInt("height", window_->GetBounds().height); details->SetBool("layered", presentation_.layered());
@@ -447,13 +774,90 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
       details->SetDouble("button_center_x", anchor_.x + anchor_.width / 2.0);
       details->SetInt("width", window_->GetBounds().width);
       details->SetBool("bottom", kind_ == "archive");
+      if (hover_only_) {
+        const auto bounds = window_->GetBounds();
+        details->SetString("kind", "integration");
+        const auto peek = s->browsers.find(s->peek_id);
+        details->SetString("surface", peek != s->browsers.end() &&
+            peek->second->GetHost()->GetWindowHandle() == integration_surface_ ? "floating" : "docked");
+        details->SetBool("motion_enabled", !reduced_motion && NativeMotionEnabled());
+        details->SetBool("favorite", integration_favorite_);
+        details->SetDouble("origin_y", integration_origin_y_);
+        details->SetInt("anchor_right", anchor_.x + anchor_.width);
+        details->SetInt("anchor_top", anchor_.y);
+        details->SetInt("anchor_bottom", anchor_.y + anchor_.height);
+        details->SetInt("y", bounds.y - s->window->GetClientAreaBoundsInScreen().y);
+      }
       details->SetBool("foreground", GetForegroundWindow() == window_->GetWindowHandle());
       details->SetBool("keyboard_focus", GetAncestor(GetFocus(), GA_ROOT) == window_->GetWindowHandle());
       details->SetBool("command", false); s->Record("popup_presented", details);
     }
-    cb->Success(PopupViewport(window_, request_, presentation_.composed(), origin_x_, kind_ == "archive")); return true;
+    cb->Success(PopupViewport(window_, request_, presentation_.composed(), origin_x_, kind_ == "archive", true,
+                             hover_only_ ? integration_origin_y_ : -1.f)); return true;
   }
   if (!open_ || !s->workspace || s->workspace->WindowClosing()) { cb->Failure(409, "Panel is not open"); return true; }
+  if (kind_ == "integration" && method.starts_with("integration.") && integration_ &&
+      !BrowserIntegrationEnabled(s, integration_->GetString("service").ToString())) { cb->Failure(409, "Integration is disabled"); return true; }
+  if (kind_ == "integration" && (method == "integration.open" || method == "integration.join")) {
+    if (d->GetSize() != 4 || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_ ||
+        d->GetType("revision") != VTYPE_INT || !integration_ || d->GetInt("revision") != integration_->GetInt("revision") ||
+        d->GetType("index") != VTYPE_INT || !integration_ || integration_->GetBool("loading")) { cb->Failure(409, "Integration opening changed"); return true; }
+    const auto items = integration_->GetList("items"); const int index = d->GetInt("index");
+    if (integration_cached_) {
+      if (!items || index < 0 || static_cast<size_t>(index) >= items->GetSize() ||
+          !PreviewOpeningValid(s) || !s->workspace->integration_previews() || !s->workspace->integration_previews()->Cached(integration_source_)) {
+        cb->Failure(409,"Preview changed"); return true;
+      }
+      const auto item = items->GetDictionary(index);
+      if (method == "integration.open") {
+        OpenCachedPreview(item->GetString("token"),false,cb); return true;
+      }
+      const auto live = LiveIntegration(integration_source_);
+      const auto url = item->GetString("join").ToString();
+      if (!live || live->id != "googleCalendar" || !IntegrationJoinUrl(url)) {
+        cb->Failure(403,"Meeting link unavailable"); return true;
+      }
+      OpenPreviewInPin(url,{},false,cb);
+      return true;
+    }
+    const auto node = s->workspace->DetachedSeed(integration_->GetString("node"));
+    const auto provider = node ? RecentIntegration(node->url) : std::nullopt;
+    if (method != "integration.open" || index < 0 || !items || static_cast<size_t>(index) >= items->GetSize() ||
+        !node || !node->pinned || node->archived || !provider || node->url != integration_source_ ||
+        s->workspace->ProfileForNode(node->id) != s->workspace->ProfileForNode("")) { cb->Failure(409, "Integration is unavailable"); return true; }
+    const auto url = items->GetDictionary(index)->GetString("url").ToString();
+    if (!RecentIntegrationPage(*provider,url)) { cb->Failure(403,"Page is outside this integration"); return true; }
+    OpenPreviewInPin(url,{},false,cb);
+    return true;
+  }
+  if (kind_ == "integration" && method == "integration.control") {
+    if (d->GetSize()!=3 || d->GetType("request")!=VTYPE_INT || d->GetInt("request")!=request_ || d->GetType("action")!=VTYPE_STRING || !integration_) { cb->Failure(409,"Integration opening changed"); return true; }
+    const auto action=d->GetString("action");
+    if (integration_cached_) {
+      if (!PreviewOpeningValid(s)) { cb->Failure(409,"Preview changed"); return true; }
+      const auto cache = s->workspace->integration_previews();
+      if (action == "refresh" && cache && cache->Queued(integration_source_)) {
+        cache->Refresh(integration_source_); cb->Success("{}"); return true;
+      }
+      if (action == "open" || (action == "compose" && integration_->GetBool("composeAvailable") &&
+          cache && cache->Cached(integration_source_))) {
+        OpenCachedPreview({},action=="compose",cb); return true;
+      }
+      cb->Failure(400,"Invalid preview control"); return true;
+    }
+    if (action == "createFigma" && integration_->GetString("service") == "figma") {
+      const auto node = s->workspace->DetachedSeed(integration_->GetString("node"));
+      const auto provider = node ? RecentIntegration(node->url) : std::nullopt;
+      const auto profile = integration_profile_.lock();
+      if (!node || !node->pinned || node->archived || !provider || provider->id != "figma" ||
+          node->url != integration_source_ || !profile || s->workspace->ProfileForNode(node->id) != profile ||
+          s->workspace->ProfileForNode("") != profile) { cb->Failure(409,"Figma tab changed"); return true; }
+      OpenPreviewInPin(std::string(CommandDocumentUrl("newFigmaDesign")),{},false,cb);
+      return true;
+    }
+    cb->Failure(400,"Invalid integration control");return true;
+  }
+  if (hover_only_) { cb->Failure(404,"Unknown integration command"); return true; }
   if (kind_ == "space" && method == "space.edit") {
     // The space editor names the space; the revision check happens natively.
     auto command = d->Copy(false);
@@ -626,7 +1030,7 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     }
     else if (method == "extension.store" && d->GetSize() == 1) {
       cb->Success(Response()); Hide(false);
-      s->workspace->OpenLink("https://chromewebstore.google.com/", true); return true;
+      s->workspace->OpenLink("https://chromewebstore.live.com/", true); return true;
     }
     if (code > 0) { cb->Failure(code, error); return true; }
     if (code == 0) { cb->Success(Response()); Publish(); return true; }

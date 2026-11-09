@@ -98,6 +98,7 @@ struct State {
   std::atomic<int> command_id{-1};
   std::shared_ptr<CommandBar> command_bar;
   std::atomic<int> panel_id{-1};
+  std::atomic<int> integration_panel_id{-1};
   std::shared_ptr<PanelPopup> panel_popup;  // Archive/Downloads popover.
   std::shared_ptr<ExtensionPopup> extension_popup;
   std::shared_ptr<SidebarPeek> sidebar_peek;  // Floating sidebar while the docked one is hidden.
@@ -157,6 +158,8 @@ struct State {
   bool close_motion_probe = false, close_motion_done = false;
   std::atomic<int> peek_id{-1};
   bool sidebar_peek_probe = false, sidebar_peek_done = false;
+  bool google_integrations_probe = false, google_integrations_checks = false;
+  int google_integrations_phase = 0;
   bool sidebar_perf_probe = false, sidebar_perf_started = false, sidebar_perf_done = false;
   int sidebar_perf_tabs = 80;
   bool pip_probe = false, pip_done = false;

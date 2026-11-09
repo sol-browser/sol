@@ -29,7 +29,7 @@ class CommandBar : public std::enable_shared_from_this<CommandBar> {
       const CefString& request, bool persistent, CefRefPtr<CefMessageRouterBrowserSide::Callback> callback);
   void Cancel(int64_t query);
   // Fixed DOM driver, reachable only from the explicit organization/browsing probes.
-  void ProbeInput(const std::string& input, int attempts = 100);
+  void ProbeInput(const std::string& input, int attempts = 100, bool actions_checked = false);
   void ProbeCancel();
   bool shutting_down() const { return shutdown_; }
   bool is_open() const { return open_; }
@@ -57,6 +57,7 @@ class CommandBar : public std::enable_shared_from_this<CommandBar> {
   PopupPresentation presentation_;
   bool prepared_ = false, presented_ = false;
   bool menu_open_ = false;
+  bool site_probe_started_ = false;
   bool new_tab_ = true, open_ = false, ready_ = false, shutdown_ = false, submitting_ = false;
   std::string source_id_, source_url_;
   HWND owner_handle_ = nullptr;

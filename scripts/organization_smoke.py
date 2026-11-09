@@ -52,6 +52,8 @@ def main():
         command_inputs = [r['details'] for r in rows if r['event'] == 'command_input_probe']
         assert len(command_inputs) == 1 and command_inputs[0]['focused'] and command_inputs[0]['selected'] and command_inputs[0]['initial'] == '' and command_inputs[0]['nativeRejected'] == 8, command_inputs
         assert command_inputs[0]['predictionChecks'] == 4, command_inputs
+        actions = [r['details'] for r in rows if r['event'] == 'command_actions_probe']
+        assert actions == [{'pass': True, 'nativeRejected': 4}], actions
         geometry = [r['details'] for r in rows if r['event'] == 'command_layout_probe']
         assert len(geometry) == 1 and geometry[0]['centeredX'] and geometry[0]['anchoredY'], geometry
         assert any(r['event'] == 'command_closed' for r in rows), 'Owned command browser did not close'

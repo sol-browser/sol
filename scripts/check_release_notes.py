@@ -8,7 +8,10 @@ def main():
     root = Path(__file__).resolve().parents[1]
     version = (root / 'VERSION').read_text(encoding='utf-8-sig').strip()
     releases = []
-    for line in (root / 'CHANGELOG.md').read_text(encoding='utf-8-sig').splitlines():
+    text = (root / 'CHANGELOG.md').read_text(encoding='utf-8-sig')
+    # The format note at the top is an HTML comment with sample headings.
+    text = re.sub(r'<!--.*?-->', '', text, flags=re.S)
+    for line in text.splitlines():
         heading = re.fullmatch(r'## (\d+\.\d+\.\d+) — (\d{4}-\d{2}-\d{2})(?:\s.*)?', line)
         if line.startswith('## '):
             if not heading:

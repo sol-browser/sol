@@ -11,17 +11,21 @@ import { applyTheme } from './theme-apply';
 import { parseExtensions, parseSiteInfo, type SiteExtension, type SiteInfo } from './site-model';
 import { archiveOrder, displayTitle, inSpace } from './sidebar-model';
 import { usePopupPresentation } from './usePopupPresentation';
+import { parseIntegrationCard, type IntegrationCard as Card } from './integrations';
+import { IntegrationCard } from './IntegrationCard';
 
 // The Archive/Downloads popover document (sol://ui/panel.html), hosted by its
 // own owned window. It only speaks the panel IPC; native code validates all.
-type Payload = { request: number; kind: 'archive' | 'downloads' | 'site' | 'history' | 'theme' | 'space' | 'newSpace'; open: boolean; snapshot: Snapshot; site?: SiteInfo; extensions?: SiteExtension[]; siteDetails?: number };
+type Payload = { request: number; kind: 'archive' | 'downloads' | 'site' | 'history' | 'theme' | 'space' | 'newSpace' | 'integration'; open: boolean; snapshot: Snapshot; site?: SiteInfo; extensions?: SiteExtension[]; siteDetails?: number; integration?: Card };
 function parsePayload(raw: string, previous?:Payload): Payload {
   const value: unknown = JSON.parse(raw);
   if (typeof value !== 'object' || value === null) throw new Error('Invalid panel payload');
   const v = value as Record<string, unknown>;
-  if (!Number.isSafeInteger(v.request) || (v.kind !== 'archive' && v.kind !== 'downloads' && v.kind !== 'site' && v.kind !== 'history' && v.kind !== 'theme' && v.kind !== 'space' && v.kind !== 'newSpace') || typeof v.open !== 'boolean')
+  if (!Number.isSafeInteger(v.request) || (v.kind !== 'archive' && v.kind !== 'downloads' && v.kind !== 'site' && v.kind !== 'history' && v.kind !== 'theme' && v.kind !== 'space' && v.kind !== 'newSpace' && v.kind !== 'integration') || typeof v.open !== 'boolean')
     throw new Error('Invalid panel payload');
-  return { request: v.request as number, kind: v.kind, open: v.open, snapshot: parseSnapshotUpdate(JSON.stringify(v.snapshot),previous?.snapshot),
+  const snapshot = parseSnapshotUpdate(JSON.stringify(v.snapshot),previous?.snapshot);
+  return { request: v.request as number, kind: v.kind, open: v.open, snapshot,
+    integration: v.kind === 'integration' ? v.open ? parseIntegrationCard(v.integration, snapshot.integrations) : previous?.integration : undefined,
     site: v.kind === 'site' ? parseSiteInfo(v.site) : undefined,
     extensions: v.kind === 'site' ? parseExtensions(v.extensions) : undefined,
     siteDetails: v.kind === 'site' && Number.isSafeInteger(v.siteDetails) ? v.siteDetails as number : 0 };
@@ -80,7 +84,11 @@ export function Panel() {
   }, [payload?.request, payload?.kind, downloads.length, archived.length]);
   const run = (request: object) => void call(request).catch(e => setError(e instanceof Error ? e.message : String(e)));
   return <div className="panel-root" ref={root} data-kind={payload?.kind} data-pointer={pointer} onMouseMove={() => { if (!pointer) setPointer(true); }}>
-    {payload?.kind === 'theme' ? <ThemePanel key={`${payload.request}:${snapshot?.activeSpace}`} theme={snapshot?.theme} spaceId={snapshot?.activeSpace} probe={snapshot?.paletteProbe} closeOnDone command={call} /> :
+    {payload?.kind === 'integration' && payload.integration ? <IntegrationCard key={payload.request} card={payload.integration} active={payload.open}
+      open={index => run({ method: 'integration.open', request: payload.request, revision: payload.integration?.revision??0, index })}
+      join={index => run({ method: 'integration.join', request: payload.request, revision: payload.integration?.revision??0, index })}
+      control={action => run({ method: 'integration.control', request: payload.request, action })} /> :
+    payload?.kind === 'theme' ? <ThemePanel key={`${payload.request}:${snapshot?.activeSpace}`} theme={snapshot?.theme} spaceId={snapshot?.activeSpace} probe={snapshot?.paletteProbe} closeOnDone command={call} /> :
     payload?.kind === 'space' && snapshot ? <SpacePanel key={`${payload.request}:${snapshot.activeSpace}`} snapshot={snapshot} command={call} /> :
     payload?.kind === 'newSpace' && snapshot ? <NewSpacePanel key={payload.request} snapshot={snapshot} command={call} /> :
     payload?.kind === 'history' ? <HistoryPanel key={payload.request} query={query} onReady={() => setHistoryReady(payload.request)} /> :

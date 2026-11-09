@@ -2,6 +2,8 @@
 #include "app/auto_archive.h"
 #include "app/browsing_profiles.h"
 #include "workspace/controller.h"
+#include "windows/command_bar.h"
+#include "windows/auto_pip.h"
 #include "include/cef_app.h"
 #include "include/base/cef_callback.h"
 #include "include/wrapper/cef_closure_task.h"
@@ -17,6 +19,24 @@ void StopData(const std::shared_ptr<WorkspaceData>& data) {
 }
 void AppSession::Register(const std::shared_ptr<State>& window) {
   std::lock_guard lock(mutex_); windows_.push_back(window);
+}
+bool BrowserIntegrationEnabled(const std::shared_ptr<State>& state, std::string_view id) {
+  if (state && state->session && state->session->preferences) return IntegrationEnabled(state->session->preferences->Get().integrations, id);
+  return FindIntegrationSetting(id) != nullptr;
+}
+void SaveIntegrationPreference(const std::shared_ptr<State>& state, std::string id, bool enabled, BrowserPreferences::Reply done) {
+  const auto session = state ? state->session : nullptr;
+  if (!session || !session->preferences || !FindIntegrationSetting(id)) { done("Integration is unavailable"); return; }
+  auto next = session->preferences->Get();
+  next.integrations[id] = enabled;
+  session->preferences->Save(std::move(next), [weak = std::weak_ptr<AppSession>(session), id = std::move(id), done = std::move(done)](const std::string& error) {
+    if (error.empty()) if (const auto owner = weak.lock()) for (const auto& window : owner->Windows()) {
+      if (window->workspace) window->workspace->Refresh();
+      if (window->command_bar) window->command_bar->Refresh();
+      if (id == "youtube" || id == "googleMeet") RefreshPipIntegrations(window);
+    }
+    done(error);
+  });
 }
 std::vector<std::shared_ptr<State>> AppSession::Windows() const {
   std::lock_guard lock(mutex_);

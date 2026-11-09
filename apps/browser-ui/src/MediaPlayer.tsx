@@ -73,7 +73,7 @@ function MediaPlayer({ media, node, depth, command }: { media: MediaInfo; node?:
           onClick={() => control('next')}><SkipForward size={14} fill="currentColor" /></button>}
       </div>
       <div className="media-side">
-        {media.video && <button type="button" className="media-icon-button" aria-label="Picture-in-picture" title="Picture-in-picture"
+        {media.video && media.pipAvailable !== false && <button type="button" className="media-icon-button" aria-label="Picture-in-picture" title="Picture-in-picture"
           onClick={() => control('pip')}><PictureInPicture2 size={14} /></button>}
         <button type="button" className="media-icon-button" aria-label={media.muted ? 'Unmute tab' : 'Mute tab'} title={media.muted ? 'Unmute tab' : 'Mute tab'}
           onClick={() => control('mute')}>{media.muted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>

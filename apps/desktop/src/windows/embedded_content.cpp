@@ -113,7 +113,7 @@ void EmbeddedContent::Relayout() {
   if (!cold_cover_) FinishPresentation(presentation_generation_, false);
   Resize(bounds_);
 }
-bool EmbeddedContent::BeginPopupAnimation(HWND popup, bool bottom, float origin_x, bool closing, float from_scale) {
+bool EmbeddedContent::BeginPopupAnimation(HWND popup, bool bottom, float origin_x, bool closing, float from_scale, float origin_y) {
   const auto state = state_.lock();
   if (!state || !state->window) return false;
   const HWND root = state->window->GetWindowHandle();
@@ -126,13 +126,13 @@ bool EmbeddedContent::BeginPopupAnimation(HWND popup, bool bottom, float origin_
     corners_.EndPopupAnimation(popup);
     HWND owner = GetWindow(popup, GW_OWNER);
     if (!owner || GetAncestor(owner, GA_ROOTOWNER) != root) owner = root;
-    const bool success = popup_animation_host_.Begin(owner, popup, bottom, origin_x, closing, from_scale);
+    const bool success = popup_animation_host_.Begin(owner, popup, bottom, origin_x, closing, from_scale, origin_y);
     auto details = CefDictionaryValue::Create(); details->SetBool("success", success); details->SetBool("closing", closing);
     state->Record("popup_animation_above_sidebar", details);
     return success;
   }
   popup_animation_host_.End();
-  return corners_.BeginPopupAnimation(root, popup, bottom, origin_x, closing, from_scale);
+  return corners_.BeginPopupAnimation(root, popup, bottom, origin_x, closing, from_scale, origin_y);
 }
 bool EmbeddedContent::FadePopupShadow(HWND popup, int duration_ms) {
   return popup_animation_host_.Active(popup) ? popup_animation_host_.FadeShadow(popup, duration_ms) : corners_.FadePopupShadow(popup, duration_ms);

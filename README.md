@@ -90,11 +90,15 @@ Arc for macOS, including its signature features.
 | AI tools / Arc Max | No | ✓ |
 | Browser account required | No | Yes |
 | Tab sync across devices | No | Arc Sync |
+| Protected streaming (Spotify, Netflix)² | No | ✓ |
 
 **Not polished**: available, with rough edges.
 
 ¹ Chrome extension support is nearly complete, with work planned on the remaining
 compatibility gaps.
+
+² Sol includes Google's Widevine module, but these services also require the browser itself
+to be certified by Google (VMP signing), which Sol does not have yet.
 
 <details>
 <summary>Comparison scope and Arc sources</summary>

@@ -33,6 +33,7 @@ struct TreeNode {
   // Favorites (shared by Spaces of one profile) and nested entries (their root's space).
   std::string space;
   std::string profile = "default";  // Owner of Favorites, which have no Space.
+  bool x_badge_hidden = false;
   bool operator==(const TreeNode&) const = default;
 };
 // An Arc-style Space: its own Pinned, Today and theme; Favorites are shared.
@@ -74,7 +75,7 @@ std::vector<std::string> FolderNodeIds(const TreeSnapshot& tree, const std::stri
 
 enum class TreeAction { CreateFolder, CreateTab, Rename, AutomaticTitle, Move, Place, Pin, Expand, Activate, RemoveLeaf, RemoveFolder, SetUrl, Unload, Archive, Restore,
   CreateSpace, EditSpace, DeleteSpace, SwitchSpace, MoveSpace, MoveToSpace,
-  CreateSplit, RemoveSplit, RenameSplit, LayoutSplit, SwapSplit, AutoArchive, CreateProfile, RenameProfile, SetSpaceProfile, ExportSpace };
+  CreateSplit, RemoveSplit, RenameSplit, LayoutSplit, SwapSplit, AutoArchive, CreateProfile, RenameProfile, SetSpaceProfile, ExportSpace, SetXBadgeHidden };
 struct TreeCommand {
   TreeAction action;
   std::int64_t expected_revision = 0;

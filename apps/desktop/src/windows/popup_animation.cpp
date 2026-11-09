@@ -40,7 +40,7 @@ ComPtr<IDCompositionSurface> Shadow(IDCompositionDevice* device, ID2D1DeviceCont
   return ok ? surface : nullptr;
 }
 }
-bool PageCorners::BeginPopupAnimation(HWND parent, HWND popup, bool bottom, float origin_x, bool closing, float from_scale) {
+bool PageCorners::BeginPopupAnimation(HWND parent, HWND popup, bool bottom, float origin_x, bool closing, float from_scale, float origin_y) {
   if (!IsWindow(popup) || !(GetWindowLongPtr(popup, GWL_EXSTYLE) & WS_EX_LAYERED) || !Init(parent)) return false;
   const auto ease = closing ? ClosePopupMotion(device_.Get(), std::clamp(from_scale, 0.f, 1.f)) :
       EaseNativeMotion(device_.Get(), 0.f, 1.f, kPopupOpeningMs / 1000.f);
@@ -80,7 +80,7 @@ bool PageCorners::BeginPopupAnimation(HWND parent, HWND popup, bool bottom, floa
       FAILED(shadow->SetOffsetX(static_cast<float>(-margin))) || FAILED(shadow->SetOffsetY(static_cast<float>(-margin))) ||
       FAILED(anchor->AddVisual(shadow.Get(), TRUE, nullptr))) return false;
   growth->SetCenterX(width * std::clamp(origin_x, 0.f, 1.f));
-  growth->SetCenterY(bottom ? static_cast<float>(height) : 0.f);
+  growth->SetCenterY(height * (origin_y >= 0.f ? std::clamp(origin_y, 0.f, 1.f) : bottom ? 1.f : 0.f));
   if (FAILED(growth->SetScaleX(ease.Get())) || FAILED(growth->SetScaleY(ease.Get())) ||
       // With a null reference AddVisual(FALSE) is above all siblings; TRUE
       // inserts below all. Drawing the shadow above the bitmap darkens it.

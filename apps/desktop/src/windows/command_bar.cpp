@@ -1,6 +1,9 @@
 #include "app/session.h"
+#include "app/preferences.h"
 #include "windows/pointer.h"
 #include "windows/command_bar.h"
+#include "windows/command_actions.h"
+#include "windows/settings_window.h"
 #include "history/history_service.h"
 #include <dwmapi.h>
 #include <cmath>
@@ -14,6 +17,7 @@
 #include "windows/window_close.h"
 #include "navigation/shortcuts.h"
 #include "experiments/shell_capture.h"
+#include "experiments/site_search_probe.h"
 #include "include/cef_parser.h"
 #include "include/views/cef_fill_layout.h"
 #include "include/base/cef_callback.h"
@@ -40,6 +44,16 @@ class CommandClient final : public CefClient, public CefLifeSpanHandler, public 
     const auto text = message.ToString();
     if (auto s = state_.lock(); s && s->probe && text == "RED_COMMAND_CAPTURE")
       capture_ = CaptureShell(browser, s->evidence_directory / "command.png");
+    if (auto s = state_.lock(); s && s->probe && text == "RED_COMMAND_ACTION_CAPTURE")
+      capture_ = CaptureShell(browser, s->evidence_directory / "command-actions.png");
+    if (auto s = state_.lock(); s && s->probe && text == "RED_SITE_SEARCH_CAPTURE")
+      capture_ = CaptureShell(browser, s->evidence_directory / "site-search.png");
+    if (auto s = state_.lock(); s && s->probe && (text == "RED_SITE_SCOPE_BEGIN" || text == "RED_SITE_SCOPE_END"))
+      s->Record(text == "RED_SITE_SCOPE_BEGIN" ? "site_search_scoped_begin" : "site_search_scoped_end");
+    if (auto s = state_.lock(); s && s->probe && text.starts_with("RED_SITE_SEARCH_INPUT:")) {
+      const auto value = CefParseJSON(text.substr(22), JSON_PARSER_RFC);
+      if (value && value->GetType() == VTYPE_DICTIONARY) s->Record("site_search_input_probe", value->GetDictionary());
+    }
     if (auto s = state_.lock(); s && s->probe && text.starts_with("RED_COMMAND_INPUT:")) {
       auto v = CefParseJSON(text.substr(18), JSON_PARSER_RFC);
       if (v && v->GetType() == VTYPE_DICTIONARY) s->Record("command_input_probe", v->GetDictionary());
@@ -75,7 +89,7 @@ class CommandClient final : public CefClient, public CefLifeSpanHandler, public 
   }
   bool OnPreKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& e, CefEventHandle, bool*) override {
     if (e.type != KEYEVENT_RAWKEYDOWN) return false;
-    if (e.windows_key_code == VK_ESCAPE) { if (auto o = owner_.lock()) o->Hide(true); return true; }
+    // React handles Escape: leave action filtering first, then dismiss.
     if (auto s = state_.lock()) {
       if ((e.modifiers & EVENTFLAG_CONTROL_DOWN) && !(e.modifiers & (EVENTFLAG_ALT_DOWN | EVENTFLAG_SHIFT_DOWN))) {
         if (e.windows_key_code == 'T') { s->workspace->OpenNewTab(); return true; }
@@ -335,12 +349,66 @@ void CommandBar::Cancel(int64_t query) {
   if (query == observer_id_) { observer_ = nullptr; observer_id_ = -1; }
   if (query == suggestion_query_) { suggestion_query_ = -1; if (suggestions_) suggestions_->Cancel(); }
 }
-void CommandBar::ProbeInput(const std::string& input, int attempts) {
+void CommandBar::ProbeInput(const std::string& input, int attempts, bool actions_checked) {
   auto s = state_.lock(); if (!s || !s->probe || (!s->organization_probe && !s->browsing_probe) || !open_) return;
+  // Explicit native-input fixture: request activation of its own owner before
+  // the popup is presented. Production preparation still requires real focus.
+  if (attempts == 100 && !presented_ && s->window) s->window->Activate();
   if (!ready_ || !observer_) {
-    if (attempts > 0) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<CommandBar> weak, std::string text, int tries) {
-      if (auto o = weak.lock()) o->ProbeInput(text, tries);
-    }, weak_from_this(), input, attempts - 1), 30);
+    if (attempts > 0) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<CommandBar> weak, std::string text, int tries, bool checked) {
+      if (auto o = weak.lock()) o->ProbeInput(text, tries, checked);
+    }, weak_from_this(), input, attempts - 1, actions_checked), 30);
+    return;
+  }
+  if (!actions_checked) {
+    if (s->browsing_probe && !site_probe_started_) {
+      site_probe_started_ = true; const bool new_tab = new_tab_;
+      StartSiteSearchProbe(s, input, [weak = weak_from_this(), input, new_tab] {
+        if (const auto owner = weak.lock()) { owner->Open(new_tab); owner->ProbeInput(input); }
+      });
+      browser_->GetMainFrame()->ExecuteJavaScript(R"JS((async()=>{
+        const i=document.querySelector('[role="combobox"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,'Site Search Settings');
+        i.dispatchEvent(new Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,80));
+        if(document.querySelector('[role="option"]')?.dataset.kind!=='action')throw Error('Missing site-search settings action');
+        i.form.requestSubmit();
+      })())JS", std::string(kCommandUrl), 0);
+      return;
+    }
+    const bool sidebar = s->sidebar_visible, new_tab = new_tab_;
+    const std::string script = R"JS((async()=>{
+      const wait=()=>new Promise(r=>setTimeout(r,70));await wait();
+      const i=document.querySelector('[role="combobox"]');
+      const type=async text=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,text);i.dispatchEvent(new Event('input',{bubbles:true}));await wait();};
+      const key=async value=>{document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:value,bubbles:true,cancelable:true}));await wait();};
+      const check=(ok,label)=>{if(!ok)throw Error('Command actions: '+label);};
+      await type('');await key('Tab');
+      check(document.querySelector('.command-mode')&&[...document.querySelectorAll('[role="option"]')].every(r=>r.dataset.kind==='action'),'Tab filters actions');
+      console.info('RED_COMMAND_ACTION_CAPTURE');await wait();
+      await type('no matching action');check(!document.querySelector('[role="option"]'),'empty action results');
+      document.querySelector('.command-mode').focus();
+      await key('Escape');check(!document.querySelector('.command-mode')&&document.activeElement===i,'Escape from action chip returns focus to navigation');
+      const call=request=>new Promise((resolve,reject)=>cefQuery({request:JSON.stringify(request),onSuccess:raw=>resolve(JSON.parse(raw)),onFailure:code=>reject(code)}));
+      const state=await call({method:'command.snapshot'});
+      const reject=async request=>{let code=0;try{await call(request);}catch(e){code=e;}check(code>=400,'unsafe action rejected');};
+      await reject({method:'command.action',action:'address',request:state.request});
+      await reject({method:'command.action',action:'sidebar',request:state.request-1});
+      await reject({method:'command.action',action:'sidebar',request:state.request,extra:true});
+      await reject({method:'command.action',action:'sidebar'});
+      await type('toggle sidebar');check(document.querySelector('[role="option"]')?.dataset.kind==='action','exact action selected');
+      i.form.requestSubmit();
+    })())JS";
+    browser_->GetMainFrame()->ExecuteJavaScript(script, std::string(kCommandUrl), 0);
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<CommandBar> weak, std::string text, bool sidebar, bool new_tab) {
+      const auto owner = weak.lock(); if (!owner) return;
+      const auto state = owner->state_.lock(); if (!state) return;
+      const bool passed = !owner->open_ && state->sidebar_visible != sidebar;
+      auto details = CefDictionaryValue::Create(); details->SetBool("pass", passed); details->SetInt("nativeRejected", 4);
+      state->Record("command_actions_probe", details);
+      if (!passed) return;
+      ExecuteShortcut(state, Shortcut::Sidebar);  // Restore the fixture's original state.
+      owner->Open(new_tab); owner->ProbeInput(text, 100, true);
+    }, weak_from_this(), input, sidebar, new_tab), 1200);
     return;
   }
   auto v = CefValue::Create(); v->SetString(input);
@@ -350,7 +418,7 @@ void CommandBar::ProbeInput(const std::string& input, int attempts) {
   geometry->SetBool("centeredY", std::abs((popup.y - root.y) * 2 + popup.height - root.height) <= 1);
   geometry->SetBool("anchoredY", std::abs((popup.y - root.y) * 2 + AnchorHeight(root.height) - root.height) <= 1);
   geometry->SetInt("width", popup.width); geometry->SetInt("height", popup.height); s->Record("command_layout_probe", geometry);
-  const std::string script = R"JS((async()=>{await new Promise(r=>setTimeout(r,80));const i=document.querySelector('[role="combobox"]');
+  const std::string script = std::string(R"JS((async()=>{await new Promise(r=>setTimeout(r,80));const i=document.querySelector('[role="combobox"]');
     if(!i)throw Error('Missing command input');
     const initial={focused:document.activeElement===i,selected:i.selectionStart===0&&i.selectionEnd===i.value.length,initial:i.value};
     const type=async text=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,text);i.dispatchEvent(new Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,80));};
@@ -371,6 +439,25 @@ void CommandBar::ProbeInput(const std::string& input, int attempts) {
     await reject({method:'command.submit',url:'https://user:pass@example.com/'});
     await reject({method:'command.snapshot'},true);
     console.info('RED_COMMAND_INPUT:'+JSON.stringify({...initial,nativeRejected:8,predictionChecks:4}));
+    )JS") + (s->browsing_probe ? R"JS(
+    const key=async(key,extra={})=>{i.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...extra}));await new Promise(r=>setTimeout(r,50));};
+    await type('yt');await key('Tab',{ctrlKey:true});check(!document.querySelector('.command-site-mode'),'modified Tab keeps normal mode');
+    await key('Tab',{isComposing:true});check(!document.querySelector('.command-site-mode'),'IME Tab keeps normal mode');
+    await key('Tab');check(document.querySelector('.command-site-mode')?.textContent.includes('YouTube')&&i.value==='','Tab scopes YouTube');
+    console.info('RED_SITE_SCOPE_BEGIN');
+    i.form.requestSubmit();await type('кот & hi');check(i.value==='кот & hi'&&rows().length===1&&rows()[0].textContent.includes('YouTube'),'literal scoped query');
+    i.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));await new Promise(r=>setTimeout(r,30));i.form.requestSubmit();
+    await new Promise(r=>setTimeout(r,30));check(document.querySelector('.command-site-mode'),'IME submit suppressed');
+    i.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true}));console.info('RED_SITE_SCOPE_END');await key('Escape');
+    check(!document.querySelector('.command-site-mode')&&i.value==='yt кот & hi','Escape retains query in normal mode');
+    await type('yt');await key('Tab');await key('Backspace');check(!document.querySelector('.command-site-mode')&&i.value==='yt','empty Backspace restores shortcut');
+    await type('wiki');await key('Tab');check(document.querySelector('.command-site-mode')?.textContent.includes('Wikipedia')&&i.value==='','Tab uses typed prefix despite inline suffix');
+    await type('query');await key('Tab',{shiftKey:true});check(!document.querySelector('.command-site-mode')&&i.value==='wiki query','Shift Tab retains query');
+    await type('yt');await key(' ');check(document.querySelector('.command-site-mode')?.textContent.includes('YouTube'),'Space scopes the configured site');await key('Escape');
+    await type('owned.test');await key('Tab');check(document.querySelector('.command-site-mode')?.textContent.includes('Owned search'),'saved domain shortcut');
+    await type('typed');console.info('RED_SITE_SEARCH_CAPTURE');await new Promise(r=>setTimeout(r,70));
+    console.info('RED_SITE_SEARCH_INPUT:'+JSON.stringify({passed:true,checks:10}));i.form.requestSubmit();return;
+    )JS" : "") + R"JS(
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,)JS" + CefWriteJSON(v, JSON_WRITER_DEFAULT).ToString() + R"JS();
     i.dispatchEvent(new Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,80));i.form.requestSubmit();})())JS";
   browser_->GetMainFrame()->ExecuteJavaScript(script, std::string(kCommandUrl), 0);
@@ -422,6 +509,7 @@ bool CommandBar::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     cb->Success(PopupViewport(window_, request_, presentation_.composed())); return true;
   }
   if (method == "command.history" && !persistent && d->GetSize() == 2 && d->GetType("text") == VTYPE_STRING) {
+    if (s->probe) s->Record("command_history_query");
     // Address suggestions from our browsing history (http(s) visits only).
     const auto text = d->GetString("text").ToString();
     if (text.size() > 200 || !s->history) { cb->Failure(text.size() > 200 ? 413 : 503, "History unavailable"); return true; }
@@ -439,6 +527,7 @@ bool CommandBar::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     return true;
   }
   if (method == "command.suggest" && !persistent && d->GetSize() == 3 && d->GetType("text") == VTYPE_STRING && d->GetType("request") == VTYPE_INT) {
+    if (s->probe) s->Record("command_suggestion_query");
     const auto text = d->GetString("text").ToString();
     if (!open_ || d->GetInt("request") != request_ || !ValidSuggestionQuery(text)) { cb->Failure(400,"Invalid suggestion query"); return true; }
     const auto prefs = s->session ? s->session->preferences : nullptr;
@@ -459,6 +548,39 @@ bool CommandBar::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
         state->Record("command_suggestions",details);
       }
     });
+    return true;
+  }
+  if (method == "command.action" && !persistent) {
+    if (d->GetSize() != 3 || d->GetType("action") != VTYPE_STRING || d->GetType("request") != VTYPE_INT) {
+      cb->Failure(400, "Invalid action shape"); return true;
+    }
+    const auto action = CommandShortcut(d->GetString("action").ToString());
+    if (!action) { cb->Failure(400, "Unsupported command action"); return true; }
+    if (!open_ || submitting_ || d->GetInt("request") != request_ || s->workspace->WindowClosing()) {
+      cb->Failure(409, "Command bar is not ready"); return true;
+    }
+    const auto snapshot = s->workspace->Snapshot();
+    if (!CommandAvailable(*action, s->content != nullptr, snapshot->GetString("windowKind") == "standalone",
+                          snapshot->GetBool("canGoBack"), snapshot->GetBool("canGoForward"))) {
+      cb->Failure(409, "Action is unavailable"); return true;
+    }
+    if (CommandNeedsPage(*action) && snapshot->GetString("activeId").ToString() != source_id_) {
+      cb->Failure(409, "The active tab changed. Reopen the command bar."); return true;
+    }
+    const auto name = d->GetString("action").ToString();
+    const auto preferences = s->session ? s->session->preferences : nullptr;
+    const auto document_url = preferences ? EnabledDocumentUrl(name, preferences->Get().notes_provider, preferences->Get().integrations)
+                                          : CommandDocumentUrl(name);
+    if (!CommandDocumentUrl(name).empty() && document_url.empty()) { cb->Failure(409, "Integration is disabled"); return true; }
+    cb->Success(Response());
+    // Dismiss before opening a dialog/window, so focus restoration cannot cover it.
+    Hide(true);
+    if (!document_url.empty()) s->workspace->OpenLink(std::string(document_url), true);
+    else ExecuteShortcut(s, *action);
+    if (d->GetString("action") == "siteSearchSettings" && s->settings_window) {
+      s->settings_window->ShowSection("siteSearch");
+      if (s->probe) s->Record("site_search_command_route");
+    }
     return true;
   }
   const bool argument = method == "command.submit" || method == "command.activate";

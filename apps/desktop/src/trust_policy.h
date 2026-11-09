@@ -135,6 +135,8 @@ inline bool IsForbiddenSwitch(std::string_view name) {
 inline bool IsAllowedBrowserSwitch(std::string_view name, bool probe) {
   if(name=="probe-palette")return probe;
   if(name=="probe-theme-preview")return probe;
+  if(name=="probe-google-integrations")return probe;
+  if(name=="integration-diagnostics")return !probe;
   return name == "profile-dir" || name == "workspace" || name == "trace-tab-switches" || name == "make-default-browser" || name == "auto-archive-test-clock" || (probe && (name == "probe-report" ||
       name == "probe-url" || name == "probe-navigation" || name == "probe-browsing" || name == "probe-lifecycle" || name == "probe-tabs" || name == "probe-window-transfer" ||
       name == "probe-native-tabs" || name == "probe-embedded-tabs" || name == "probe-workspace" || name == "probe-organization" || name == "probe-input" || name == "probe-chrome-toolbar" || name == "probe-downloads-dir" || name == "probe-downloads" || name == "probe-fullscreen" || name == "probe-permissions" || name == "probe-site-settings" || name == "probe-history" || name == "probe-tab-actions" || name == "probe-audible" || name == "probe-downloads-page" || name == "probe-extension-popup" || name == "probe-protocols" || name == "probe-close-motion" || name == "probe-sidebar-peek" || name == "probe-sidebar-perf" || name == "probe-pip" || name == "probe-capture-mute" || name == "probe-theme" || name == "probe-spaces" || name == "probe-ua-brand" || name == "probe-boost" || name == "probe-menu" || name == "probe-private" || name == "probe-pin" || name == "probe-backdrop" || name == "probe-link-headers" || name == "probe-unload" || name == "probe-import" || name == "load-extension"));

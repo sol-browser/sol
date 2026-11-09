@@ -1,8 +1,79 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { commandRows, inlineAddressCompletion, parseHistoryReply } from '../apps/browser-ui/src/command-model.ts';
+import { commandRows, commandSelectionIndex, inlineAddressCompletion, parseHistoryReply } from '../apps/browser-ui/src/command-model.ts';
+import { commandActions } from '../apps/browser-ui/src/command-actions.ts';
 const tab = (id, extra = {}) => ({ id, kind: 'tab', title: id, url: `https://${id}.example/`, currentUrl: `https://${id}.example/`, position: 0, live: true, ...extra });
 const snapshot = { activeId: 'current', nodes: [tab('current', { pageTitle: 'Current title' }), tab('music', { pageTitle: 'My music' }), tab('saved', { live: false, pinned: true }), tab('gone', { archived: true }), tab('closing', { closing: true }), tab('folder', { kind: 'folder' })] };
+
+test('Arc-style action filter lists only available local commands', () => {
+  const rows = commandRows(snapshot, '', 'new', '', [], ['remote search'], { actionsOnly: true });
+  assert.equal(rows.length, 6); assert.ok(rows.every(row => row.kind === 'action'));
+  const settings = commandRows(snapshot, 'preferences', 'new', '')[0];
+  assert.deepEqual(settings.action, { method: 'command.action', action: 'settings' });
+  assert.equal(commandRows(snapshot, 'настройки', 'new', '')[0].action.action, 'settings');
+  assert.equal(commandRows(snapshot, 'site search settings', 'new', '')[0].action.action, 'siteSearchSettings');
+  assert.equal(commandRows(snapshot, 'site search', 'new', '')[0].action.action, 'siteSearchSettings');
+  assert.equal(commandRows(snapshot, 'settings ', 'new', '')[0].kind, 'search');
+  assert.equal(commandRows(snapshot, 'set', 'new', '')[0].kind, 'search');
+  assert.equal(commandRows(snapshot, 'not a command', 'new', '', [], [], { actionsOnly: true }).length, 0);
+});
+
+test('actions obey live-page, history, standalone and closing availability', () => {
+  const actions = s => commandActions.filter(action => commandRows(s, action.title, 'new', '', [], [], { actionsOnly: true })
+    .some(row => row.action.action === action.id)).map(action => action.id);
+  const empty = actions({}); assert.ok(empty.includes('settings')); assert.ok(!empty.includes('reload'));
+  const live = actions(snapshot); assert.ok(live.includes('reload')); assert.ok(!live.includes('back'));
+  assert.ok(actions({ ...snapshot, canGoBack: true }).includes('back'));
+  assert.ok(!actions({ ...snapshot, windowKind: 'standalone' }).includes('pin'));
+  assert.deepEqual(actions({ ...snapshot, windowClosing: true }), []);
+  const pinned = { ...snapshot, nodes: [tab('current', { pinned: true })] };
+  assert.equal(commandRows(pinned, 'unpin tab', 'new', '')[0].title, 'Unpin Tab');
+  assert.equal(commandRows(snapshot, 'settings', 'new', '', [], [], { includeActions: false })[0].kind, 'search');
+});
+
+test('action hints reflect configured shortcuts and URLs retain their destination', () => {
+  const rows = commandRows({ ...snapshot, shortcutLabels: { settings: 'Alt + S' } }, 'settings', 'new', '');
+  assert.equal(rows[0].shortcut, 'Alt + S');
+  assert.equal(commandRows(snapshot, 'https://settings.example/', 'new', '')[0].kind, 'visit');
+});
+test('document creation uses native actions rather than submitting a renderer URL', () => {
+  for(const [title,id] of [['New Google Doc','newGoogleDoc'],['New Word Document','newWordDoc'],['New Figma Design','newFigmaDesign'],['New Note','newNote']]) {
+    const row=commandRows(snapshot,title,'new','')[0];
+    assert.deepEqual(row.action,{method:'command.action',action:id});
+  }
+});
+
+test('every available action carries a distinct glyph, with a separate unpin state', () => {
+  const live = { ...snapshot, canGoBack: true, canGoForward: true };
+  const rows = commandActions.map(action => commandRows(live, action.title, 'new', '', [], [], { actionsOnly: true })
+    .find(row => row.action.action === action.id));
+  assert.ok(rows.every(row => row && row.actionIcon && !row.icon));
+  assert.equal(new Set(rows.map(row => row.actionIcon)).size, commandActions.length);
+  const pinned = { ...live, nodes: [tab('current', { pinned: true })] };
+  const unpin = commandRows(pinned, 'Unpin Tab', 'new', '', [], [], { actionsOnly: true })[0];
+  assert.equal(unpin.action.action, 'pin');
+  assert.notEqual(unpin.actionIcon, rows.find(row => row.action.action === 'pin').actionIcon);
+});
+
+test('remote suggestions retain four matching local rows, including tabs', () => {
+  const s = { nodes: Array.from({ length: 8 }, (_, i) => tab(`docs${i}`, { pageTitle: 'Guide notes', currentUrl: `https://example.org/${i}` })) };
+  const local = commandRows(s, 'guide', 'new', '');
+  const remote = commandRows(s, 'guide', 'new', '', [], ['guide one', 'guide two', 'guide three']);
+  assert.deepEqual(remote.slice(0,4), local.slice(0,4));
+  assert.equal(remote.filter(row => row.kind === 'tab').length, 3);
+  assert.equal(remote.length, 6);
+  const onlyRemote = commandRows({}, 'guide', 'new', '', [], ['one', 'two', 'three', 'four', 'five']);
+  assert.equal(onlyRemote.filter(row => row.key.startsWith('suggest:')).length, 3);
+});
+
+test('selection preserves identity across reordering and never falls back on disappearance', () => {
+  const before = commandRows(snapshot, 'music', 'new', '');
+  const key = before[0].key;
+  assert.equal(commandSelectionIndex(before, undefined), 0);
+  assert.equal(commandSelectionIndex([...before].reverse(), key), before.length - 1);
+  assert.equal(commandSelectionIndex(before.filter(row => row.key !== key), key), -1);
+  assert.equal(commandSelectionIndex([], undefined), -1);
+});
 test('address mode shows the real current site without a redundant reload destination', () => {
   const rows = commandRows(snapshot, 'https://current.example/', 'navigate', 'https://current.example/');
   assert.equal(rows[0].kind, 'current'); assert.equal(rows[0].title, 'Current title');

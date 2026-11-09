@@ -43,6 +43,8 @@ test('native sidebar menu choices are a closed, validated action vocabulary', ()
   assert.deepEqual(parseSidebarMenuChoice(JSON.stringify({ action: 'rename', targetId: '' })), { action: 'rename', targetId: '' });
   assert.deepEqual(parseSidebarMenuChoice(JSON.stringify({ action: 'folder', targetId: tab })), { action: 'folder', targetId: tab });
   assert.deepEqual(parseSidebarMenuChoice(JSON.stringify({ action: 'editTheme', targetId: '' })), { action: 'editTheme', targetId: '' });
+  assert.deepEqual(parseSidebarMenuChoice(JSON.stringify({ action: 'disableIntegration', targetId: 'gmail' })), { action: 'disableIntegration', targetId: 'gmail' });
+  assert.throws(() => parseSidebarMenuChoice(JSON.stringify({ action: 'enableIntegration', targetId: 'github' })));
   for (const choice of [null, { action: 'eval', targetId: '' }, { action: 'rename', targetId: 'unexpected' },
     { action: 'editTheme', targetId: tab }, { action: 'folder', targetId: '' }, { action: 'folder', targetId: '-'.repeat(36) }, { action: 'cancel', targetId: '', extra: true }, { action: 'close' }])
     assert.throws(() => parseSidebarMenuChoice(JSON.stringify(choice)));

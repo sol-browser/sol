@@ -94,7 +94,7 @@ class PopupPresentation {
   }
   // |composable|: false when the window opens over another owned popup; the composed proxy is drawn
   // in the browser window's tree, below that popup, so such a window fades in on its own instead.
-  void Reveal(bool reduced_motion, bool bottom, float origin_x = .5f, bool composable = true) {
+  void Reveal(bool reduced_motion, bool bottom, float origin_x = .5f, bool composable = true, float origin_y = -1.f) {
     if (!motion_ || !motion_->window) return;
     auto& m = *motion_; const auto generation = ++m.generation;
     SetOwner(m, true);
@@ -110,7 +110,7 @@ class PopupPresentation {
     const BOOL cloak = TRUE;
     if (composable && state && state->embedded && SUCCEEDED(DwmSetWindowAttribute(m.handle, DWMWA_CLOAK, &cloak, sizeof(cloak)))) {
       m.cloaked = true; SetLayeredWindowAttributes(m.handle, 0, 255, LWA_ALPHA);
-      if (state->embedded->BeginPopupAnimation(m.handle, bottom, origin_x)) {
+      if (state->embedded->BeginPopupAnimation(m.handle, bottom, origin_x, false, 1.f, origin_y)) {
         m.composed = true;
         CefPostDelayedTask(TID_UI, base::BindOnce(&PopupPresentation::FinishProxy,
             std::weak_ptr<Motion>(motion_), generation), kPopupOpeningMs + 16);
@@ -223,13 +223,14 @@ inline bool PopupOwnerIsForeground(CefRefPtr<CefWindow> owner) {
   return false;
 }
 inline std::string PopupViewport(CefRefPtr<CefWindow> window, int request, bool composed = false,
-                                 float origin_x = .5f, bool bottom = false) {
+                                 float origin_x = .5f, bool bottom = false, bool animate = true, float origin_y = -1.f) {
   const auto bounds = window->GetClientAreaBoundsInScreen();
   auto data = CefDictionaryValue::Create(); data->SetInt("request", request);
   data->SetInt("width", bounds.width); data->SetInt("height", bounds.height);
   data->SetBool("composed", composed);
-  data->SetBool("motion", NativeMotionEnabled());
+  data->SetBool("motion", animate && NativeMotionEnabled());
   data->SetDouble("originX", origin_x); data->SetBool("bottom", bottom);
+  if (origin_y >= 0.f) data->SetDouble("originY", origin_y);
   auto value = CefValue::Create(); value->SetDictionary(data);
   return CefWriteJSON(value, JSON_WRITER_DEFAULT);
 }

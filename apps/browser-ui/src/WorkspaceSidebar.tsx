@@ -1,6 +1,7 @@
 import type { Command, Snapshot, TreeMutation } from '../../../packages/browser-contracts/src';
 import { StableSidebar, type SidebarProps } from './Sidebar';
 import { sidebarPresentation, type SidebarSurface } from './sidebar-presentation';
+import { request } from './bridge';
 type Props = {
   snapshot: Snapshot; surface: SidebarSurface;
   command: (command: Command) => void;
@@ -11,7 +12,13 @@ type Props = {
 export function WorkspaceSidebar({ snapshot, surface, command, mutate, panel }: Props) {
   const props = {
     ...sidebarPresentation(snapshot, surface),
+    integrations: snapshot.integrations,
     openNewTab: () => command({ method: 'browser.shortcut', action: 'newTab' }),
+    previewIntegration: (id: string, anchor: HTMLElement) => {
+      if (snapshot.privateWindow) return;
+      const r = anchor.getBoundingClientRect();
+      void request({ method: 'integration.preview', id, x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }).catch(() => {});
+    },
     action: mutate,
     openArchive: (anchor: HTMLElement) => panel('archive', anchor),
     tabCommand: command,

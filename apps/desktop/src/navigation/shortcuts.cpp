@@ -15,6 +15,7 @@ namespace red {
 bool ExecuteShortcut(const std::shared_ptr<State>& state, Shortcut action) {
   if (!state->workspace) return false;
   if (state->workspace->WindowClosing()) return true;
+  if (state->panel_popup && action != Shortcut::Suppressed) state->panel_popup->DismissIntegration();
   auto page = state->content;
   switch (action) {
     case Shortcut::Suppressed: return true;

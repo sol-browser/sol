@@ -49,6 +49,16 @@ int WorkspaceController::SetPinnedPage(const std::string& id, std::string url, c
   return 0;
 }
 
+void WorkspaceController::SetXBadgeHidden(const std::string& id, bool hidden, Reply done) {
+  if (!ready_ || stopped_ || shutting_down_ || !worker_ || closing_.contains(id)) {
+    done(409, "Tab is unavailable", nullptr); return;
+  }
+  TreeCommand command{TreeAction::SetXBadgeHidden};
+  command.id = id;
+  command.value = hidden;
+  Dispatch(std::move(command), std::move(done), true);
+}
+
 int WorkspaceController::ArchiveTodayTabs(const std::string& id, bool below, std::string& error, bool all) {
   const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
   if (node == tree_.nodes.end() || node->folder || node->archived || node->pinned || node->favorite || !node->parent.empty()) {

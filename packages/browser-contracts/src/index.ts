@@ -1,8 +1,13 @@
+import { validSiteSearches, type SiteSearch, type SiteSearchActivation } from './site-search.ts';
+import { isIntegrationId, validIntegrationSettings, type IntegrationId, type IntegrationSettings } from './integration-settings.ts';
+export { integrationSettingsCatalog, integrationEnabled, unlistedIntegrations, type IntegrationId, type IntegrationSettings } from './integration-settings.ts';
+export { defaultSiteSearches, validSiteSearch, validSiteSearches, type SiteSearch, type SiteSearchActivation } from './site-search.ts';
 export type TreeNode = { id: string; parentId: string; kind: 'folder' | 'tab'; title: string;
   url: string; position: number; pinned: boolean; expanded: boolean; live: boolean;
   favorite: boolean; archived: boolean; currentUrl: string; closing: boolean; crashed?: boolean;
   pageTitle?: string; customTitle?: boolean; favicon?: string; archivedAt?: number;
   mediaCamera?: boolean; mediaMicrophone?: boolean; muted?: boolean; audible?: boolean;
+  xBadgeHidden?: boolean;
   splitAnchor?: string; splitOther?: string; splitTitle?: string; splitHidden?: boolean; splitReversed?: boolean;
   /** Space of a top-level Pinned/Today/archived entry; empty for Favorites and nested entries. */
   space?: string;
@@ -30,6 +35,7 @@ export function validSpaceIcon(value:unknown):value is string {
 }
 export type DockBounds = { x: number; y: number; width: number; height: number };
 export type MediaInfo = { id: string; title: string; artist: string; playing: boolean; video: boolean; muted: boolean; time: number; duration: number;
+  pipAvailable?: boolean;
   /** The page handles previous/next track (its Media Session). */ previous?: boolean; next?: boolean;
   /** The session's artwork as a PNG data URL. */ artwork?: string };
 export type LinkPeekInfo = { id: string; url: string; title: string; bounds: DockBounds; area: DockBounds;
@@ -47,7 +53,8 @@ export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boo
   zoom?: number;
   /** A downloaded Sol version waiting for "Restart to update". */
   updateReady?: string;
-  searchEngine?: SearchEngine; searchSuggestions?: boolean; shortcutLabels?: Record<string, string>;
+  integrations?: IntegrationSettings;
+  searchEngine?: SearchEngine; searchSuggestions?: boolean; siteSearches?: SiteSearch[]; siteSearchActivation?: SiteSearchActivation; shortcutLabels?: Record<string, string>;
   splitView?: SplitViewInfo;
   linkPeek?: LinkPeekInfo;
   /** Sidebar players (newest first, at most 3): tabs that played sound and are not on screen. */
@@ -81,12 +88,16 @@ export type Backdrop = 'none' | 'mica' | 'acrylic';
 /** Times on History and Downloads: the Windows short time format, or a fixed clock. */
 export type Clock = 'system' | '12' | '24';
 export type KeyBinding = { key: number; ctrl: boolean; shift: boolean; alt: boolean };
-export type BrowserPreferences = { schema: 1; searchEngine: SearchEngine; searchSuggestions?: boolean; autoArchiveHours?: number; autoPictureInPicture?: boolean; autoPipSites?: Record<string, boolean>; pipButton?: boolean; unloadMinutes?: number; clock?: Clock; backdrop?: Backdrop; downloadDirectory: string; askDownload: boolean;
-  startup: 'restore' | 'newTab' | 'homepage'; homepage: string; shortcuts: Record<string, KeyBinding> };
+export type BrowserPreferences = { schema: 1; searchEngine: SearchEngine; searchSuggestions?: boolean; siteSearches?: SiteSearch[]; siteSearchActivation?: SiteSearchActivation; autoArchiveHours?: number; autoPictureInPicture?: boolean; autoPipSites?: Record<string, boolean>; pipButton?: boolean; unloadMinutes?: number; clock?: Clock; backdrop?: Backdrop; downloadDirectory: string; askDownload: boolean;
+  notesProvider?: 'googleDocs' | 'word'; integrations?: IntegrationSettings; startup: 'restore' | 'newTab' | 'homepage'; homepage: string; shortcuts: Record<string, KeyBinding> };
 export type KeyboardSetting = { action: string; title: string; label: string; defaultLabel: string; custom: boolean; editable: boolean };
 export type SettingsCommand = { method: 'settings.get' | 'settings.ready' | 'settings.makeDefault' | 'settings.extensions'
     | 'settings.chooseDownloadFolder' | 'settings.resetDownloadFolder' | 'settings.resetShortcuts' }
   | { method: 'settings.set'; key: 'searchEngine' | 'startup' | 'homepage'; value: string }
+  | { method: 'settings.set'; key: 'notesProvider'; value: 'googleDocs' | 'word' }
+  | { method: 'settings.setIntegration'; provider: IntegrationId; enabled: boolean }
+  | { method: 'settings.set'; key: 'siteSearches'; value: SiteSearch[] }
+  | { method: 'settings.set'; key: 'siteSearchActivation'; value: SiteSearchActivation }
   | { method: 'settings.set'; key: 'backdrop'; value: Backdrop }
   | { method: 'settings.set'; key: 'clock'; value: Clock }
   | { method: 'settings.set'; key: 'askDownload' | 'searchSuggestions' | 'autoPictureInPicture' | 'pipButton'; value: boolean }
@@ -133,7 +144,11 @@ export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
     value.preferencesError = 'Restart Sol to enable these settings.'; value.keyboard = [];
   }
   const prefs = value.preferences;
+  if (object(prefs) && prefs.siteSearches !== undefined && !validSiteSearches(prefs.siteSearches)) throw new Error('Invalid site searches');
+  if (object(prefs) && prefs.siteSearchActivation !== undefined && (typeof prefs.siteSearchActivation !== 'string' || !['spaceOrTab','tab'].includes(prefs.siteSearchActivation))) throw new Error('Invalid site search activation');
   if (object(prefs) && prefs.searchSuggestions !== undefined && typeof prefs.searchSuggestions !== 'boolean') throw new Error('Invalid suggestion preference');
+  if (object(prefs) && prefs.notesProvider !== undefined && (typeof prefs.notesProvider !== 'string' || !['googleDocs', 'word'].includes(prefs.notesProvider))) throw new Error('Invalid Notes provider');
+  if (object(prefs) && prefs.integrations !== undefined && !validIntegrationSettings(prefs.integrations)) throw new Error('Invalid integrations');
   if (object(prefs) && prefs.unloadMinutes !== undefined && (typeof prefs.unloadMinutes !== 'number' || ![0,15,30,60,120,360].includes(prefs.unloadMinutes))) throw new Error('Invalid unload preference');
   if (object(prefs) && prefs.clock !== undefined && !['system', '12', '24'].includes(String(prefs.clock))) throw new Error('Invalid clock preference');
   if (value.systemHour12 !== undefined && typeof value.systemHour12 !== 'boolean') throw new Error('Invalid system clock');
@@ -234,7 +249,10 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'tab.dragCancel'; id: string }
   | { method: 'tab.setHome'; id: string; url: string; title: string }
   | { method: 'tab.mute'; id: string; muted: boolean }
+  | { method: 'tab.setXBadgeHidden'; id: string; hidden: boolean }
+  | { method: 'tab.setIntegration'; id: string; provider: IntegrationId; enabled: boolean }
   | { method: 'panel.open'; kind: 'archive' | 'downloads' | 'site' | 'history' | 'space' | 'newSpace'; x: number; y: number; width: number; height: number }
+  | { method: 'integration.preview'; id: string; x: number; y: number; width: number; height: number }
   | { method: 'navigation.load'; url: string }
   | { method: 'probe.commandInput'; url: string }
   | { method: 'probe.commandCancel' }
@@ -243,12 +261,13 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
 
 const object = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 export const sidebarMenuActions = ['cancel', 'activate', 'expand', 'rename', 'automaticTitle', 'newFolder', 'newTab', 'showArchive', 'restore', 'reset', 'favorites', 'pinned', 'today', 'folder', 'up', 'down', 'close', 'archive', 'removeFolder', 'duplicate', 'detach', 'mute', 'unmute', 'space', 'newSpace', 'split', 'unsplit', 'swapSplit', 'renamePane',
-  'copyLink', 'setHome', 'editPinned', 'archiveOthers', 'archiveBelow', 'newSpaceWith', 'editTheme', 'setProfile', 'newProfile', 'exportSpace', 'deleteSpace'] as const;
+  'copyLink', 'setHome', 'editPinned', 'archiveOthers', 'archiveBelow', 'newSpaceWith', 'editTheme', 'setProfile', 'newProfile', 'exportSpace', 'deleteSpace', 'showXBadge', 'hideXBadge', 'enableIntegration', 'disableIntegration'] as const;
 export type SidebarMenuChoice = { action: typeof sidebarMenuActions[number]; targetId: string };
 export function parseSidebarMenuChoice(raw: string): SidebarMenuChoice {
   const choice: unknown = JSON.parse(raw);
   if (!object(choice) || Object.keys(choice).length !== 2 || !sidebarMenuActions.includes(choice.action as SidebarMenuChoice['action']) ||
-      typeof choice.targetId !== 'string' || (choice.action === 'setProfile' ? !validProfileId(choice.targetId) : choice.action === 'exportSpace' ? !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(choice.targetId) : (choice.action === 'folder' || choice.action === 'space' || choice.action === 'split' || choice.action === 'renamePane' ? !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(choice.targetId) : choice.targetId !== '')))
+      typeof choice.targetId !== 'string' || (choice.action === 'enableIntegration' || choice.action === 'disableIntegration' ? !isIntegrationId(choice.targetId) :
+        choice.action === 'setProfile' ? !validProfileId(choice.targetId) : choice.action === 'exportSpace' ? !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(choice.targetId) : (choice.action === 'folder' || choice.action === 'space' || choice.action === 'split' || choice.action === 'renamePane' ? !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(choice.targetId) : choice.targetId !== '')))
     throw new Error('Invalid sidebar menu choice');
   return choice as SidebarMenuChoice;
 }
@@ -293,8 +312,11 @@ export function parseSnapshot(raw: string): Snapshot {
   if (!object(s) || !integer(s.revision) || typeof s.canGoBack !== 'boolean' || typeof s.canGoForward !== 'boolean'
     || typeof s.probeMode !== 'boolean') throw new Error('Invalid native snapshot');
   if (s.workspaceEnabled === true) {
+    if (s.integrations !== undefined && !validIntegrationSettings(s.integrations)) throw new Error('Invalid integrations');
     if (s.searchEngine !== undefined && !['google','duckduckgo','bing','brave'].includes(String(s.searchEngine))) throw new Error('Invalid search engine');
     if (s.searchSuggestions !== undefined && typeof s.searchSuggestions !== 'boolean') throw new Error('Invalid suggestion preference');
+    if (s.siteSearches !== undefined && !validSiteSearches(s.siteSearches)) throw new Error('Invalid site searches');
+    if (s.siteSearchActivation !== undefined && (typeof s.siteSearchActivation !== 'string' || !['spaceOrTab','tab'].includes(s.siteSearchActivation))) throw new Error('Invalid site search activation');
     if (s.updateReady !== undefined && (typeof s.updateReady !== 'string' || s.updateReady.length > 40 || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(s.updateReady))) throw new Error('Invalid update version');
     if (s.browserFullscreen !== undefined && typeof s.browserFullscreen!=='boolean') throw new Error('Invalid fullscreen state');
     if (s.zoom !== undefined && (!integer(s.zoom) || (s.zoom as number) < 1 || (s.zoom as number) > 1000)) throw new Error('Invalid zoom');
@@ -312,7 +334,7 @@ export function parseSnapshot(raw: string): Snapshot {
           typeof m.artist !== 'string' || m.artist.length > 240 || !['playing','video','muted'].every(k => typeof m[k] === 'boolean') ||
           !['time','duration'].every(k => typeof m[k] === 'number' && Number.isFinite(m[k]) && (m[k] as number) >= 0 && (m[k] as number) <= 1e7))
         throw new Error('Invalid media player state');
-      if (['previous', 'next'].some(k => m[k] !== undefined && typeof m[k] !== 'boolean') ||
+      if (['previous', 'next', 'pipAvailable'].some(k => m[k] !== undefined && typeof m[k] !== 'boolean') ||
           (m.artwork !== undefined && (typeof m.artwork !== 'string' || !m.artwork.startsWith('data:image/png;base64,') || m.artwork.length > 140000)))
         throw new Error('Invalid media session');
     }
@@ -407,7 +429,8 @@ export function parseSnapshot(raw: string): Snapshot {
         || typeof n.title !== 'string' || typeof n.url !== 'string' || !integer(n.position)
         || typeof n.pinned !== 'boolean' || typeof n.expanded !== 'boolean' || typeof n.live !== 'boolean'
         || typeof n.favorite !== 'boolean' || typeof n.archived !== 'boolean' || typeof n.currentUrl !== 'string'
-        || typeof n.closing !== 'boolean' || (n.kind === 'folder' && (!n.pinned || n.favorite || n.archived))
+        || typeof n.closing !== 'boolean' || (n.xBadgeHidden !== undefined && typeof n.xBadgeHidden !== 'boolean')
+        || (n.kind === 'folder' && (!n.pinned || n.favorite || n.archived))
         || (n.parentId && (!n.pinned || n.favorite || n.archived))
         || (n.favorite && (!n.pinned || n.archived)) || (n.archived && (n.pinned || n.favorite))) throw new Error('Invalid tree node');
       ids.set(n.id, n);

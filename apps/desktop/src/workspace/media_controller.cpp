@@ -1,4 +1,5 @@
 #include "workspace/controller.h"
+#include "app/session.h"
 #include "windows/auto_pip.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_parser.h"
@@ -94,9 +95,17 @@ void WorkspaceController::OnMediaArtwork(int browser, const std::string& url, co
 void WorkspaceController::UpdateMedia() {
   const auto state = state_.lock(); if (!state || shutting_down_) return;
   const auto now = GetTickCount64();
+  const bool spotify = BrowserIntegrationEnabled(state, "spotify");
+  const auto allowed = [&](const std::string& id) {
+    if (spotify) return true;
+    const auto page = LiveBrowser(id);
+    const auto frame = page ? page->GetMainFrame() : nullptr;
+    return !frame || IntegrationForUrl(frame->GetURL().ToString()) != "spotify";
+  };
   std::set<std::string> audible;
   for (const auto& [browser, frames] : state->audible_frames)
     if (const auto node = browser_nodes_.find(browser); node != browser_nodes_.end()) {
+      if (!allowed(node->second)) continue;
       audible.insert(node->second);
       // A dismissed player returns only when its tab starts playing again
       // after silence (it is still audible for a moment after dismissing).
@@ -110,7 +119,7 @@ void WorkspaceController::UpdateMedia() {
     }
   media_audible_ = std::move(audible);
   std::erase_if(media_heard_, [&](const auto& entry) {
-    return !sessions_.contains(entry.first) || IsPeekPage(entry.first) || media_dismissed_.contains(entry.first);
+    return !sessions_.contains(entry.first) || IsPeekPage(entry.first) || media_dismissed_.contains(entry.first) || !allowed(entry.first);
   });
   std::erase_if(media_started_, [&](const auto& entry) { return !media_heard_.contains(entry.first); });
   std::erase_if(media_, [&](const auto& entry) {
@@ -187,6 +196,7 @@ CefRefPtr<CefListValue> WorkspaceController::DescribeMedia() const {
     result->SetString("title", !media.title.empty() ? media.title : title != page_titles_.end() ? title->second.text : "");
     result->SetString("artist", media.artist);
     result->SetBool("playing", !media.paused); result->SetBool("video", media.video);
+    if (media.video && !SitePipIntegrationEnabled(state, browser)) result->SetBool("pipAvailable", false);
     result->SetBool("muted", browser->GetHost()->IsAudioMuted());
     result->SetDouble("time", media.time); result->SetDouble("duration", media.duration);
     if (const auto session = media_sessions_.find(browser->GetIdentifier()); session != media_sessions_.end()) {
@@ -219,7 +229,10 @@ bool WorkspaceController::HandleMedia(CefRefPtr<CefDictionaryValue> request, Rep
     run("m.currentTime=" + std::to_string(to) + ";", false);
   } else if (action == "mute") browser->GetHost()->SetAudioMuted(!browser->GetHost()->IsAudioMuted());
   else if (action == "dismiss") { run("m.pause();", false); media_dismissed_.insert(id); }
-  else if (action == "pip") TogglePictureInPicture(browser);
+  else if (action == "pip") {
+    if (!SitePipIntegrationEnabled(state_.lock(), browser)) { done(409, "Picture-in-picture integration is disabled", nullptr); return true; }
+    TogglePictureInPicture(browser);
+  }
 #if CEF_API_ADDED(CEF_EXPERIMENTAL)
   // The page's own previous/next handlers, as Chrome's media controls press them (engine patch 09).
   else if (action == "previous" || action == "next") browser->GetHost()->MediaSessionAction(action == "previous" ? "previoustrack" : "nexttrack");

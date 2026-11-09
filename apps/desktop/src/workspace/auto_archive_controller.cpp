@@ -3,6 +3,7 @@
 #include "app/session.h"
 #include "app/auto_archive.h"
 #include "windows/embedded_content.h"
+#include "integrations/providers.h"
 namespace red {
 void WorkspaceController::TouchAudibleActivity(int browser) {
   const auto found=browser_nodes_.find(browser);
@@ -22,6 +23,14 @@ bool WorkspaceController::AutoArchiveProtected(const std::string& id) const {
     if (browser && state->embedded && state->embedded->IsSplitPage(browser->GetIdentifier()) && IsWindowVisible(browser->GetHost()->GetWindowHandle())) return true;
   }
   if (browser) {
+    if (startup_badge_tabs_.contains(id)) {
+      const auto pin = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
+      if (pin != tree_.nodes.end() && pin->pinned) {
+        const auto site = StartupBadgeFor(pin->url, pin->x_badge_hidden);
+        if (site && BrowserIntegrationEnabled(state, StartupBadgeId(*site)) &&
+            StartupBadgeFor(browser->GetMainFrame()->GetURL().ToString(), false) == site) return true;
+      }
+    }
     const auto bid=browser->GetIdentifier();
     if (auto_archive_media_.contains(bid) || state->audible_frames.contains(bid) || browser->GetHost()->IsAudioMuted()) return true;
     if (const auto media=state->media_access.find(bid); media!=state->media_access.end() && (media->second.first || media->second.second)) return true;

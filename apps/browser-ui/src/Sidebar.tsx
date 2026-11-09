@@ -12,9 +12,13 @@ import { useSidebarMotion } from './useSidebarMotion';
 import { SpaceTransition } from './SpaceTransition';
 import { SpaceHeader } from './SpaceHeader';
 import { useAudioIndicator } from './useAudioIndicator';
+import { pinnedIntegration, integrationUnread } from './integrations';
+import { integrationEnabled, isIntegrationId, type IntegrationSettings } from '../../../packages/browser-contracts/src/integration-settings';
 
 export type SidebarProps = { nodes: TreeNode[]; treeRevision: number; activeId: string; busy: boolean; openNewTab: () => void; hidden: boolean; activeSurface?: boolean; standalone?: boolean;
   newTabShortcut?: string;
+  previewIntegration: (id: string, anchor: HTMLElement) => void;
+  integrations?: IntegrationSettings;
   /** Arc-style spaces: the switcher, header and which entries show. */
   spaces: SpaceInfo[]; activeSpace: string;
   /** Sidebar players (newest first) for tabs that played sound and are not on screen. */
@@ -39,8 +43,15 @@ export type TabCommand = { method: 'split.focus'; id: string }
   | { method:'settings.openProfiles' }
   | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
   | { method: 'tab.setHome'; id: string; url: string; title: string } | { method: 'tab.mute'; id: string; muted: boolean }
-  | Extract<Command, { method: 'media.control' }>;
-export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, activeSurface = true, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, newSpace, request, media, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate }: Props) {
+  | Extract<Command, { method: 'media.control' | 'tab.setXBadgeHidden' | 'tab.setIntegration' }>;
+function UnreadBadge({ node, settings }: { node: TreeNode; settings?: IntegrationSettings }) {
+  if (!node.pinned || !node.live || node.closing) return null;
+  const unread = integrationUnread(node.currentUrl || node.url, node.pageTitle || '', node.url, node.xBadgeHidden);
+  if (!unread || !integrationEnabled(settings, unread === 'x' ? 'twitter' : unread)) return null;
+  return <span className="integration-unread" data-favorite={node.favorite} data-provider={unread} role="img"
+    aria-label={unread === 'x' ? 'Unread X notifications' : 'Unread messages'} />;
+}
+export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, activeSurface = true, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, newSpace, request, media, previewIntegration, integrations, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate }: Props) {
   // Favorite tiles are tinted with their icon's color, read once per icon.
   const [, retint] = useReducer((n: number) => n + 1, 0);
   // A closing Today tab leaves the list as soon as native close starts, so the
@@ -69,6 +80,9 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   const [draft, setDraft] = useState('');
   const archiveButton = useRef<HTMLButtonElement>(null);
   const [dragId, setDragId] = useState<string>();
+  const integrationTimer = useRef<number | undefined>(undefined);
+  const cancelIntegration = () => { clearTimeout(integrationTimer.current); integrationTimer.current = undefined; };
+  useEffect(() => { cancelIntegration(); return cancelIntegration; }, [hidden, activeSurface, activeSpace, busy, dragId, renaming, editing?.id]);
   const visible = useMemo(() => nodes.filter(n => inSpace(n, activeSpace)), [nodes, activeSpace]);
   const favorites = useMemo(() => visible.filter(n => n.favorite), [visible]);
   const spaceNodes = useMemo(() => visible.filter(n => !n.favorite), [visible]);
@@ -344,6 +358,10 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
         case 'duplicate': tabCommand({ method: 'tab.duplicate', id }); break;
         case 'detach': tabCommand({ method: 'tab.detach', id }); break;
         case 'mute': case 'unmute': tabCommand({ method: 'tab.mute', id, muted: choice.action === 'mute' }); break;
+        case 'showXBadge': case 'hideXBadge': tabCommand({ method: 'tab.setXBadgeHidden', id, hidden: choice.action === 'hideXBadge' }); break;
+        case 'enableIntegration': case 'disableIntegration':
+          if (isIntegrationId(choice.targetId)) tabCommand({ method: 'tab.setIntegration', id, provider: choice.targetId, enabled: choice.action === 'enableIntegration' });
+          break;
         case 'copyLink': tabCommand({ method: 'tab.copyLink', id }); break;
         case 'setHome': tabCommand({ method: 'tab.setHome', id }); break;
         case 'editPinned': setEditing({ id, title: displayTitle(node), url: node.url }); break;
@@ -369,6 +387,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       tabCommand({ method:'split.focus',id });
     }
     const tint = node.favorite ? faviconColor(node.favicon, retint) : undefined;
+    const preview = node.pinned && !folder ? pinnedIntegration(node.url, node.currentUrl, integrations) : undefined;
     // A tab switches on press (Chrome, Arc); the click after it is then ignored.
     const press = (e: React.PointerEvent<HTMLElement>) => {
       pressActivated.current = null;
@@ -393,7 +412,13 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     };
     return <li className={`tree-node ${peek ? 'active-peek' : ''}`} key={peek ? `peek-${node.id}` : node.id} data-node-id={node.id} data-drag-source={dragId === node.id}>
       <div className="tree-row" data-tinted={tint !== undefined} style={tint ? { '--favorite-tint': tint } as CSSProperties : undefined} data-kind={node.kind} data-split={group} data-drop-inside={folder && drop?.targetId === node.id && drop.mode === 'inside'} data-motion-key={peek ? `peek-${node.id}` : node.id} data-favorite={node.favorite === true} data-live={node.live === true} data-peek={node.peek === true}
-        title={away ? `${node.title}\n${node.currentUrl}` : node.favorite ? displayTitle(node) : node.pageTitle && node.pageTitle !== node.title ? node.pageTitle : undefined} data-active={selected} data-pinned-away={away} data-expanded={folder ? node.expanded : undefined}
+        onPointerEnter={event => {
+          cancelIntegration();
+          if (event.pointerType === 'touch' || !preview || busy || hidden || !activeSurface || dragId || renaming || editing) return;
+          const element = event.currentTarget;
+          integrationTimer.current = window.setTimeout(() => { if (element.isConnected) previewIntegration(node.id, element); }, 400);
+        }} onPointerLeave={cancelIntegration}
+        title={preview ? undefined : away ? `${node.title}\n${node.currentUrl}` : node.favorite ? displayTitle(node) : node.pageTitle && node.pageTitle !== node.title ? node.pageTitle : undefined} data-active={selected} data-pinned-away={away} data-expanded={folder ? node.expanded : undefined}
         draggable={folder && !busy && !renaming && !node.closing} onDragStart={e => { if (folder) drag(e, node.id); else e.preventDefault(); }} onDragEnd={event => {
           // Handle the drop before clearing the source: the window's bubbling
           // dragend listener runs after this row and used to see no drag ID.
@@ -403,7 +428,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
         }}
         // The whole highlighted row is the tab: its padding and edges (outside the
         // name and icon buttons) press and click like the name.
-        onPointerDownCapture={event => pointerDown(event, node)}
+        onPointerDownCapture={event => { cancelIntegration(); pointerDown(event, node); }}
         onPointerDown={event => {
           const member = memberAt(event);
           if (member) {
@@ -481,6 +506,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
                 <SiteMark node={member} /><span className="split-row-label">{displayTitle(member)}</span>
                 {(member.mediaCamera || member.mediaMicrophone) && <span className="tab-media" role="img" aria-label={member.mediaCamera ? 'Using camera' : 'Using microphone'}><Icon name={member.mediaCamera ? 'camera' : 'mic'} /></span>}
               </button>}
+              {!member.favorite && <UnreadBadge node={member} settings={integrations} />}
               {member.live && (member.muted || member.audible || audioIndicators.has(member.id)) && <button className="row-action tab-audio" data-muted={member.muted === true}
                 aria-label={`${member.muted ? 'Unmute' : 'Mute'} ${displayTitle(member)}`} title={member.muted ? 'Unmute tab' : 'Mute tab'}
                 onClick={() => tabCommand({ method:'tab.mute',id:member.id,muted:!member.muted })}><Icon name={member.muted ? 'muted' : 'speaker'} /></button>}
@@ -502,6 +528,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
         </>}
         {/* After the close button: the row ends with the preview's icon; on a tile it sits in the top-right corner. */}
         {!folder && !group && node.peek && <PeekMark node={node} />}
+        {(!group || node.favorite) && <UnreadBadge node={node} settings={integrations} />}
         {node.favorite && (node.mediaCamera || node.mediaMicrophone || showAudio) &&
           <span className="favorite-status">
             {(node.mediaCamera || node.mediaMicrophone) && <span role="img" aria-label={[node.mediaCamera && 'Using camera', node.mediaMicrophone && 'Using microphone'].filter(Boolean).join(', ')}>

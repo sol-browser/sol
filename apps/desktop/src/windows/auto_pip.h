@@ -20,4 +20,6 @@ void OnPageSwitched(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> l
 // Firefox-style button over videos on websites (video_pip_button.cpp):
 // installed in an isolated world of each new website page when enabled.
 void InstallVideoPipButton(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page);
+void RefreshPipIntegrations(const std::shared_ptr<State>& state);
+bool SitePipIntegrationEnabled(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page);
 }  // namespace red

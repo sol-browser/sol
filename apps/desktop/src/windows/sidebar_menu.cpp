@@ -3,6 +3,7 @@
 #include "workspace/controller.h"
 #include "windows/workspace_layout.h"
 #include "windows/focus.h"
+#include "app/session.h"
 #include "include/base/cef_callback.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "include/cef_parser.h"
@@ -28,7 +29,8 @@ std::string IconFor(const std::string& action) {
     {"restore", "undo"}, {"pinned", "pin"}, {"today", "pinOff"}, {"favorites", "star"}, {"split", "columns"}, {"swapSplit", "swap"},
     {"unsplit", "columns"}, {"archive", "archive"}, {"archiveOthers", "archive"}, {"archiveBelow", "archive"}, {"copyLink", "link"},
     {"up", "arrowUp"}, {"down", "arrowDown"}, {"expand", "folder"}, {"removeFolder", "trash"}, {"setHome", "home"}, {"reset", "undo"},
-    {"automaticTitle", "text"}, {"editPinned", "pencil"}, {"newSpaceWith", "spaces"}, {"editTheme", "palette"}};
+    {"automaticTitle", "text"}, {"editPinned", "pencil"}, {"newSpaceWith", "spaces"}, {"editTheme", "palette"},
+    {"showXBadge", "bell"}, {"hideXBadge", "bell"}, {"enableIntegration", "settings"}, {"disableIntegration", "settings"}};
   const auto found = icons.find(action);
   return found == icons.end() ? "" : found->second;
 }
@@ -59,7 +61,7 @@ void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRe
     const auto row = rows->GetDictionary(i);
     nodes.push_back({row->GetString("id"), row->GetString("parentId"), row->GetString("title"), row->GetString("url"), row->GetString("currentUrl"), row->GetString("kind") == "folder",
       row->GetBool("pinned"), row->GetBool("favorite"), row->GetBool("archived"), row->GetBool("live"), row->GetBool("closing"), row->GetBool("expanded"), row->GetInt("position"), row->GetBool("customTitle"), row->GetBool("muted"),
-      row->GetString("space")});
+      row->GetString("space"), row->GetBool("xBadgeHidden")});
   }
   std::vector<MenuSpace> spaces; const auto space_rows = snapshot->GetList("spaces");
   for (size_t i = 0; space_rows && i < space_rows->GetSize(); ++i)
@@ -78,6 +80,8 @@ void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRe
   }
   if (entry && entry->GetString("splitAnchor") == id) {
     std::optional<SidebarMenuItem> movement;
+    std::optional<SidebarMenuItem> badge;
+    for (const auto& item : items) if (item.action == "showXBadge" || item.action == "hideXBadge") badge = item;
     for (auto item : items) if (item.label == "Move to") {
       std::erase_if(item.children,[](const auto& child) { return child.action == "favorites"; });
       if (!item.children.empty()) movement = std::move(item);
@@ -88,6 +92,7 @@ void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRe
       {entry->GetBool("pinned") ? "Unpin split view" : "Pin split view",entry->GetBool("pinned") ? "today" : "pinned","",true,{}},
       {"Swap panes","swapSplit","",true,{}},{"Separate tabs","unsplit","",true,{}}};
     if (movement) items.push_back(std::move(*movement));
+    if (badge) items.push_back(std::move(*badge));
   } else if (entry && active && entry->GetString("kind") == "tab" && !entry->GetBool("archived") && !entry->GetBool("closing") &&
       entry->GetString("id") != active->GetString("id") && !entry->HasKey("splitAnchor") && !active->HasKey("splitAnchor") &&
       !(entry->GetBool("favorite") && active->GetBool("favorite"))) {
@@ -95,6 +100,15 @@ void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRe
   }
   // Without another tab to pair with, the split item is unavailable.
   for (auto& item : items) if (item.action == "split" && item.target.empty()) item.enabled = false;
+  if (!space_menu && entry && !state->private_window && !state->standalone_window && !entry->GetBool("closing") &&
+      !entry->GetBool("archived") && entry->GetBool("pinned") && entry->GetString("kind") == "tab") {
+    if (const auto* provider = FindIntegrationSetting(IntegrationForUrl(entry->GetString("url").ToString()))) {
+      const bool enabled = BrowserIntegrationEnabled(state, provider->id);
+      items.push_back({"", "", "", false, {}});
+      items.push_back({std::string(enabled ? "Disable " : "Enable ") + std::string(provider->name) + " Integration (All Tabs)",
+                       enabled ? "disableIntegration" : "enableIntegration", std::string(provider->id), true, {}});
+    }
+  }
   if (items.empty()) { callback->Failure(404, "Entry is unavailable"); return; }
   Cancel(); actions_.clear();
   MenuPopup::Builder menu; Fill(menu, items);  // Rows carry generation_ + 1, the opening below.

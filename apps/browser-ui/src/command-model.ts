@@ -3,10 +3,12 @@ import { resolveNavigationInput, searchEngines } from './navigation-input.ts';
 import { normalizeInput, predictSites, predictionToken, websiteAddress } from './navigation-prediction.ts';
 import { displayTitle } from './sidebar-model.ts';
 import { internalPage } from './internal-pages.ts';
+import { commandActions, commandActionAvailable, type CommandActionId } from './command-actions.ts';
+import type { IconName } from './Icon';
 
-export type CommandRow = { key: string; title: string; detail: string; icon?: string;
-  action: { method: 'command.submit'; url: string } | { method: 'command.activate'; id: string };
-  kind: 'search' | 'visit' | 'tab' | 'current' | 'history'; live?: boolean };
+export type CommandRow = { key: string; title: string; detail: string; icon?: string; actionIcon?: IconName;
+  action: { method: 'command.submit'; url: string } | { method: 'command.activate'; id: string } | { method: 'command.action'; action: CommandActionId };
+  kind: 'search' | 'visit' | 'tab' | 'current' | 'history' | 'action'; live?: boolean; shortcut?: string };
 export type HistoryEntry = { url: string; title: string };
 
 // Native history replies are page-influenced (titles): validate before use.
@@ -26,8 +28,19 @@ export function siteLabel(url: string): string {
   const page = internalPage(url); if (page) return page.title;
   try { return new URL(url).host.replace(/^www\./u, ''); } catch { return url; }
 }
-export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'navigate', sourceUrl: string, history: HistoryEntry[] = [], completions: string[] = []): CommandRow[] {
+export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'navigate', sourceUrl: string, history: HistoryEntry[] = [], completions: string[] = [], { actionsOnly = false, includeActions = true }: { actionsOnly?: boolean; includeActions?: boolean } = {}): CommandRow[] {
   const text = input.trim();
+  const query = normalizeInput(text);
+  const actionWords = query.split(/\s+/u).filter(Boolean);
+  const actions = (includeActions ? commandActions : []).filter(action => commandActionAvailable(snapshot, action)).map(action => {
+    const unpin = action.id === 'pin' && snapshot.nodes?.find(node => node.id === snapshot.activeId)?.pinned;
+    const title = unpin ? 'Unpin Tab' : action.title;
+    const labels = [title, ...action.aliases].map(normalizeInput);
+    return { row: { key: `action:${action.id}`, title, detail: '', kind: 'action', actionIcon: unpin ? 'unpin' : action.icon,
+      shortcut: snapshot.shortcutLabels?.[action.id], action: { method: 'command.action', action: action.id } } as CommandRow,
+      exact: !!query && labels.includes(query), matches: labels.some(label => actionWords.every(word => label.includes(word))) };
+  }).filter(action => action.matches).sort((a,b) => Number(b.exact) - Number(a.exact));
+  if (actionsOnly) return actions.slice(0,6).map(action => action.row);
   // A trailing space explicitly opts out of a guessed site, while preserving
   // the suggestion below the search row. Do not erase that intent with trim().
   const searchRequested = /\s$/u.test(input);
@@ -92,8 +105,15 @@ export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'na
   const local = primary?.kind === 'search' && confident
     ? [first.row, primary, ...ranked.slice(1).map(m => m.row)]
     : [...(primary ? [primary] : []), ...ranked.map(m => m.row)];
+  // Complete command names execute directly; partial names retain web search.
+  // A trailing space continues to explicitly request a search.
+  const actionRows = primary?.kind === 'search' ? actions.map(action => action.row) : [];
+  const exactAction = !searchRequested && actions[0]?.exact && primary?.kind === 'search';
+  const lead = primary?.kind === 'search' && confident ? 2 : 1;
+  const withActions = exactAction ? [actionRows[0], ...local.slice(0,lead), ...actionRows.slice(1), ...local.slice(lead)]
+    : [...local.slice(0,lead), ...actionRows.slice(0,2), ...local.slice(lead)];
   if (primary?.kind !== 'search' || snapshot.searchEngine && snapshot.searchEngine !== 'google' || snapshot.searchSuggestions === false)
-    return local.slice(0,6);
+    return withActions.slice(0,6);
   const seen = new Set([normalizeInput(text)]);
   const remote: CommandRow[] = [];
   for (const title of completions) {
@@ -103,8 +123,15 @@ export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'na
     remote.push({ key: `suggest:${normalized}`, title, detail: '', kind: 'search',
       action: { method: 'command.submit', url: searchEngines.google.url + encodeURIComponent(title) } });
   }
-  const lead = confident ? 2 : 1;
-  return [...local.slice(0,lead), ...remote.slice(0,3), ...local.slice(lead)].slice(0,6);
+  // Reserve local rows before remote completions: typing must still find tabs
+  // when network results arrive. Remote suggestions use only remaining slots.
+  const reserved = withActions.slice(0,4);
+  return [...reserved, ...remote.slice(0,Math.min(3,6-reserved.length)), ...withActions.slice(4)].slice(0,6);
+}
+
+/** An explicitly chosen result disappearing must not silently select another. */
+export function commandSelectionIndex(rows: CommandRow[], key: string | undefined): number {
+  return key === undefined ? (rows.length ? 0 : -1) : rows.findIndex(row => row.key === key);
 }
 
 /** Complete only a literal prefix of the best safe website, never a title,

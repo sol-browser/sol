@@ -7,6 +7,7 @@
 #include <map>
 #include <set>
 #include <sqlite3.h>
+#include "integrations/providers.h"
 #include "trust_policy.h"
 #include "workspace/tab_order.h"
 
@@ -37,6 +38,7 @@ bool SafeUrl(const std::string& url) {
 }
 void SetDestination(TreeNode& node, const TreeCommand& command) {
   if (node.url != command.url) node.page_title.clear();
+  if (!XNotificationSite(command.url)) node.x_badge_hidden = false;
   node.url = command.url;
   if (command.page_title) node.page_title = *command.page_title;
 }
@@ -221,7 +223,7 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
     return Error(500, "Cannot inspect workspace schema");
   const int schema = sqlite3_column_int(version.value, 0), application = sqlite3_column_int(app.value, 0);
   version.Finish(); app.Finish();
-  if (schema > 12 ||(application != 0 && application != kApplicationId)) return Error(500, "Unsupported workspace schema");
+  if (schema > 13 ||(application != 0 && application != kApplicationId)) return Error(500, "Unsupported workspace schema");
   if (schema == 0) {
     Statement tables(db_, "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'");
     if (!tables.value || sqlite3_step(tables.value) != SQLITE_ROW || sqlite3_column_int(tables.value, 0) != 0)
@@ -318,6 +320,8 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
       "ALTER TABLE spaces ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';"
       "ALTER TABLE nodes ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';"
       "PRAGMA user_version=12; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"Browsing profile migration failed"); }
+  if (schema < 13 && !Exec("BEGIN IMMEDIATE; ALTER TABLE nodes ADD COLUMN x_badge_hidden INTEGER NOT NULL DEFAULT 0 CHECK(x_badge_hidden IN(0,1));"
+      "PRAGMA user_version=13; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"X badge preference migration failed"); }
   if (!Exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")) return Error(500, "Cannot configure workspace journal");
   Statement check(db_, "PRAGMA quick_check(1)");
   if (!check.value || sqlite3_step(check.value) != SQLITE_ROW || Text(check.value, 0) != "ok")
@@ -348,7 +352,7 @@ TreeResult TreeStore::Load() {
     space.profile = Text(spaces.value,10);
     result.snapshot.spaces.push_back(std::move(space));
   }
-  Statement nodes(db_, "SELECT id,coalesce(parent_id,''),kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id FROM nodes ORDER BY coalesce(parent_id,''),position");
+  Statement nodes(db_, "SELECT id,coalesce(parent_id,''),kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id,x_badge_hidden FROM nodes ORDER BY coalesce(parent_id,''),position");
   if (!nodes.value) return Error(500, "Workspace nodes unavailable");
   int code;
   while ((code = sqlite3_step(nodes.value)) == SQLITE_ROW) {
@@ -362,6 +366,7 @@ TreeResult TreeStore::Load() {
     node.archived_at = sqlite3_column_int64(nodes.value, 12);
     node.space = Text(nodes.value, 13);
     node.last_active_at = sqlite3_column_int64(nodes.value,14);
+    node.x_badge_hidden = sqlite3_column_int(nodes.value, 16) != 0;
     result.snapshot.nodes.push_back(std::move(node));
   }
   if (code != SQLITE_DONE) return Error(500,"Invalid workspace tree");
@@ -605,6 +610,12 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
       case TreeAction::AutomaticTitle:
         if (node->folder) return rollback(400, "Only pages have automatic titles");
         node->custom_title = false; break;
+      case TreeAction::SetXBadgeHidden:
+        if (node->folder || node->archived || !node->pinned || !XNotificationSite(node->url))
+          return rollback(400, "Notification badges require an X pin");
+        if (window && ((node->favorite && node->profile != BrowsingProfileId(tree)) ||
+            (!node->favorite && node_space != tree.active_space))) return rollback(404, "Pin is outside this sidebar");
+        node->x_badge_hidden = command.value; break;
       case TreeAction::Pin: {
         const bool was_pinned = node->pinned;
         if (node->archived || (node->folder && !command.value)) return rollback(400, "Folders belong to Pinned");
@@ -787,8 +798,8 @@ TreeResult TreeStore::Save(TreeResult result, const TreeSnapshot& before) {
       if (sqlite3_step(put.value)!=SQLITE_DONE) return rollback(500,"Cannot save archived split"); sqlite3_reset(put.value);
     }
   }
-  Statement write(db_, "INSERT INTO nodes(id,parent_id,kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id) VALUES(?,NULLIF(?,''),?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
-      "ON CONFLICT(id) DO UPDATE SET parent_id=excluded.parent_id,title=excluded.title,url=excluded.url,position=excluded.position,pinned=excluded.pinned,expanded=excluded.expanded,favorite=excluded.favorite,archived=excluded.archived,page_title=excluded.page_title,custom_title=excluded.custom_title,archived_at=excluded.archived_at,space_id=excluded.space_id,last_active_at=excluded.last_active_at,profile_id=excluded.profile_id");
+  Statement write(db_, "INSERT INTO nodes(id,parent_id,kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id,x_badge_hidden) VALUES(?,NULLIF(?,''),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+      "ON CONFLICT(id) DO UPDATE SET parent_id=excluded.parent_id,title=excluded.title,url=excluded.url,position=excluded.position,pinned=excluded.pinned,expanded=excluded.expanded,favorite=excluded.favorite,archived=excluded.archived,page_title=excluded.page_title,custom_title=excluded.custom_title,archived_at=excluded.archived_at,space_id=excluded.space_id,last_active_at=excluded.last_active_at,profile_id=excluded.profile_id,x_badge_hidden=excluded.x_badge_hidden");
   Statement erase(db_, "DELETE FROM nodes WHERE id=?");
   if (!write.value || !erase.value) return rollback(500, "Cannot prepare workspace update");
   for (const auto& old : before.nodes) {
@@ -804,6 +815,7 @@ TreeResult TreeStore::Save(TreeResult result, const TreeSnapshot& before) {
     write.Text(11, n.page_title); sqlite3_bind_int(write.value, 12, n.custom_title); write.Text(16,n.profile);
     sqlite3_bind_int64(write.value, 13, n.archived_at); write.Text(14, n.space);
     sqlite3_bind_int64(write.value,15,n.last_active_at);
+    sqlite3_bind_int(write.value, 17, n.x_badge_hidden);
     if (sqlite3_step(write.value) != SQLITE_DONE) return rollback(500, "Workspace write failed");
     sqlite3_reset(write.value);
   }

@@ -59,7 +59,8 @@ int wmain(int argc, wchar_t** argv) {
     sqlite3_open16(legacy_path.c_str(), &db);
     Check(sqlite3_exec(db, "UPDATE nodes SET page_title='Away title' WHERE pinned=1 AND kind=0;"
         "UPDATE nodes SET page_title='History title' WHERE pinned=0 AND kind=0;"
-        "DROP TABLE browsing_profiles; ALTER TABLE nodes DROP COLUMN profile_id; ALTER TABLE spaces DROP COLUMN profile_id; PRAGMA user_version=10;",
+        "DROP TABLE browsing_profiles; ALTER TABLE nodes DROP COLUMN profile_id; ALTER TABLE spaces DROP COLUMN profile_id;"
+        "ALTER TABLE nodes DROP COLUMN x_badge_hidden; PRAGMA user_version=10;",
         nullptr, nullptr, nullptr) == SQLITE_OK, "seed legacy titles before v11 migration");
     sqlite3_close(db);
     {
@@ -70,6 +71,37 @@ int wmain(int argc, wchar_t** argv) {
           "migration discards unverified pin metadata and preserves saved labels and Today titles");
     }
     for (const auto& suffix : {L"", L"-wal", L"-shm"}) { std::error_code error; std::filesystem::remove(legacy_path + suffix, error); }
+  }
+  {
+    const auto badge_path = path.wstring() + L"-x-badge";
+    std::string id;
+    {
+      red::TreeStore store;
+      const auto opened = store.Open(badge_path);
+      red::TreeCommand create{red::TreeAction::CreateTab}; create.title = "X"; create.url = "https://x.com/home";
+      create.expected_revision = opened.snapshot.revision;
+      const auto created = store.Apply(create); id = created.created_id;
+      red::TreeCommand hide{red::TreeAction::SetXBadgeHidden}; hide.id = id; hide.value = true;
+      hide.expected_revision = created.snapshot.revision;
+      Check(store.Apply(hide).code == 400, "X badge setting requires a pin");
+      red::TreeCommand place{red::TreeAction::Place}; place.id = id; place.section = "favorites";
+      place.expected_revision = created.snapshot.revision;
+      const auto placed = store.Apply(place);
+      hide.expected_revision = placed.snapshot.revision;
+      const auto hidden = store.Apply(hide);
+      Check(placed && !Find(placed.snapshot, id).x_badge_hidden && hidden && Find(hidden.snapshot, id).x_badge_hidden,
+          "X badge is visible by default and can be hidden per pin");
+    }
+    {
+      red::TreeStore store;
+      const auto reopened = store.Open(badge_path);
+      Check(reopened && Find(reopened.snapshot, id).x_badge_hidden, "Hidden X badge survives reopening the workspace");
+      red::TreeCommand edit{red::TreeAction::SetUrl}; edit.id = id; edit.section = "home";
+      edit.url = "https://example.test/"; edit.expected_revision = reopened.snapshot.revision;
+      const auto edited = store.Apply(edit);
+      Check(edited && !Find(edited.snapshot, id).x_badge_hidden, "An unrelated saved URL clears the X badge preference");
+    }
+    for (const auto* suffix : {L"", L"-wal", L"-shm"}) { std::error_code error; std::filesystem::remove(badge_path + suffix, error); }
   }
   red::TreeSnapshot expected;
   {

@@ -1,7 +1,7 @@
 import { request, type Snapshot } from './bridge';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-async function waitFor(test: (s: Snapshot) => boolean) {
-  for (let i = 0; i < 120; ++i) { const s = await request({ method: 'browser.getSnapshot' }); if (test(s)) return s; await delay(40); }
+async function waitFor(test: (s: Snapshot) => boolean, attempts = 120) {
+  for (let i = 0; i < attempts; ++i) { const s = await request({ method: 'browser.getSnapshot' }); if (test(s)) return s; await delay(40); }
   throw new Error('Browsing acceptance timed out');
 }
 export async function browsingProbe() {
@@ -66,7 +66,9 @@ export async function browsingProbe() {
   address.click();
   await waitFor(s => (s.addressRequest ?? 0) > (snapshotBeforeAddress.addressRequest ?? 0));
   await request({ method: 'probe.commandInput', url: `${new URL(origin).host}/typed` });
-  await waitFor(s => s.url === `${origin}/typed` && !s.isLoading);
+  // This fixture also edits/persists Site Search settings and returns from the
+  // owned utility before exercising the command bar and typed navigation.
+  await waitFor(s => s.url === `${origin}/typed` && !s.isLoading, 360);
   const copy = document.querySelector<HTMLButtonElement>('[data-action="copy-link"]')!;
   const copyStatus = copy?.nextElementSibling;
   if (!copy || copy.disabled || copyStatus?.getAttribute('role') !== 'status' ||

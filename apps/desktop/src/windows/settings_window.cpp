@@ -15,6 +15,7 @@
 #include "navigation/shortcut_settings.h"
 #include "workspace/controller.h"
 #include "experiments/profile_settings_probe.h"
+#include "experiments/site_search_probe.h"
 #include "import/browser_import.h"
 #include "trust_policy.h"
 #include "include/cef_app.h"
@@ -44,6 +45,7 @@ class SettingsClient final : public UtilityWindowClient, public CefLifeSpanHandl
   bool OnConsoleMessage(CefRefPtr<CefBrowser> browser,cef_log_severity_t,const CefString& message,const CefString&,int) override {
     if (const auto owner=owner_.lock()) if (const auto window=owner->parent()) {
       ObserveProfileSettingsProbe(browser,message.ToString());
+      ObserveSiteSearchProbe(browser,message.ToString());
     }
     return false;
   }
@@ -138,6 +140,8 @@ void SettingsWindow::ShowSection(const std::string& section) {
   section_.clear();
   // Fixed identifiers only; never page-controlled text.
   if (requested == "import") browser_->GetMainFrame()->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'import'}))", std::string(kSettingsUrl), 0);
+  if (requested == "search") browser_->GetMainFrame()->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'search'}))", std::string(kSettingsUrl), 0);
+  if (requested == "siteSearch") browser_->GetMainFrame()->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'siteSearch'}))", std::string(kSettingsUrl), 0);
   if (requested == "profiles" || requested == "newProfile") {
     const auto script=requested=="profiles" ? "window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'profiles'}))" :
       "window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'newProfile'}))";
@@ -245,12 +249,15 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
   if (!state || !IsSettingsUi(browser->GetIdentifier(), state->settings_id, frame->IsMain(), frame->GetURL().ToString())) {
     callback->Failure(403, "Untrusted settings document"); return true;
   }
-  if (persistent || raw.length() > 8192) { callback->Failure(400, "Invalid settings request"); return true; }
+  if (persistent || raw.length() > 65536) { callback->Failure(400, "Invalid settings request"); return true; }
   const auto value = CefParseJSON(raw, JSON_PARSER_RFC);
   if (!value || value->GetType() != VTYPE_DICTIONARY || value->GetDictionary()->GetType("method") != VTYPE_STRING) {
     callback->Failure(400, "Invalid settings request"); return true;
   }
   const auto data = value->GetDictionary(); const auto method = data->GetString("method").ToString();
+  if (raw.length() > 8192 && !(method == "settings.set" && data->GetType("key") == VTYPE_STRING && data->GetString("key") == "siteSearches")) {
+    callback->Failure(400, "Settings request is too large"); return true;
+  }
   if (HandleUiFocus(state, browser, method, data->GetSize(), persistent, callback)) return true;
   if (!state->workspace || state->workspace->WindowClosing()) { callback->Failure(409, "Browser is closing"); return true; }
   if (method == "settings.passwords" && data->GetSize() == 3 && data->GetType("profile") == VTYPE_STRING && data->GetType("settings") == VTYPE_BOOL) {
@@ -259,6 +266,19 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
     return true;
   }
   if (method == "settings.get" && data->GetSize() == 1) { callback->Success(Response(true)); return true; }
+  if (method == "settings.setIntegration") {
+    const auto id = data->GetString("provider").ToString();
+    if (data->GetSize() != 3 || data->GetType("provider") != VTYPE_STRING || !FindIntegrationSetting(id) || data->GetType("enabled") != VTYPE_BOOL) {
+      callback->Failure(400, "Invalid integration setting"); return true;
+    }
+    SaveIntegrationPreference(state, id, data->GetBool("enabled"), [weak = weak_from_this(), callback](const std::string& error) {
+      const auto owner = weak.lock();
+      if (!owner) callback->Failure(410, "Settings closed");
+      else if (!error.empty()) callback->Failure(409, error);
+      else callback->Success(owner->Response());
+    });
+    return true;
+  }
   if (method == "settings.set" && data->GetSize() == 3 && data->GetType("key") == VTYPE_STRING && state->session && state->session->preferences) {
     auto next = state->session->preferences->Get();
     const auto key = data->GetString("key").ToString();
@@ -269,6 +289,13 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
       next.ask_download = data->GetBool("value"); valid = true;
     } else if (key == "searchSuggestions" && data->GetType("value") == VTYPE_BOOL) {
       next.search_suggestions = data->GetBool("value"); valid = true;
+    } else if (key == "siteSearches" && data->GetType("value") == VTYPE_LIST) {
+      valid = ReadSiteSearches(data->GetList("value"), next.site_searches);
+    } else if (key == "siteSearchActivation" && data->GetType("value") == VTYPE_STRING && ValidSiteSearchActivation(data->GetString("value"))) {
+      next.site_search_activation = data->GetString("value"); valid = true;
+      } else if (key == "notesProvider" && data->GetType("value") == VTYPE_STRING &&
+          (data->GetString("value") == "googleDocs" || data->GetString("value") == "word")) {
+        next.notes_provider = data->GetString("value"); valid = true;
     } else if (key == "unloadMinutes" && data->GetType("value") == VTYPE_INT && ValidUnloadMinutes(data->GetInt("value"))) {
       next.unload_minutes = data->GetInt("value"); valid = true;
     } else if (key == "pipButton" && data->GetType("value") == VTYPE_BOOL) {

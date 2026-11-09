@@ -13,9 +13,13 @@ namespace {
 // button in a closed shadow root appears at the right edge of a video under
 // the pointer (Firefox-style) and toggles Picture-in-Picture; the click is a
 // real user gesture. Nothing is read from or sent to the page or to Red.
-constexpr char kButton[] = R"JS((()=>{
-if (window.top !== window || window.__redPip) return; window.__redPip = true;
+constexpr char kButton[] = R"JS((allowed=>{
+if (window.top !== window) return;
+if (window.__redPip) { window.__redPip(allowed); return; }
+if (!allowed) return;
 const host = document.createElement('red-pip-button');
+let enabled = true;
+window.__redPip = value => { enabled = value; host.style.display = value ? '' : 'none'; hide(); };
 const root = host.attachShadow({mode:'closed'});
 // Built with DOM calls, not innerHTML: sites enforcing Trusted Types
 // (YouTube) reject HTML strings, which stopped the script before.
@@ -42,6 +46,7 @@ const place = v => { const r = v.getBoundingClientRect();
   button.style.left = Math.round(Math.min(r.right, innerWidth) - 44) + 'px';
   button.style.top = Math.round(Math.max(r.top, 0) + Math.min(r.height, innerHeight) / 2 - 16) + 'px'; };
 addEventListener('pointermove', e => {
+  if (!enabled) return;
   if (document.fullscreenElement) return hide();
   if (e.composedPath().includes(button)) { clearTimeout(timer); return; }
   const v = [...document.querySelectorAll('video')].find(v => { const r = v.getBoundingClientRect();
@@ -55,7 +60,7 @@ button.addEventListener('click', e => { e.stopPropagation(); e.preventDefault();
   else if (v) v.requestPictureInPicture().catch(() => {}); }, true);
 const attach = () => document.documentElement && !host.isConnected && document.documentElement.append(host);
 attach(); new MutationObserver(attach).observe(document, {childList:true});
-})())JS";
+}))JS";
 // Remembers the script's DevTools identifier, so a later registration can
 // replace it instead of piling up.
 class Observer final : public CefDevToolsMessageObserver {
@@ -90,7 +95,10 @@ void InstallVideoPipButton(const std::shared_ptr<State>& state, CefRefPtr<CefBro
     entry.identifier.clear();
   }
   auto params = CefDictionaryValue::Create();
-  params->SetString("source", kButton); params->SetString("worldName", "red-pip"); params->SetBool("runImmediately", true);
+  const std::string source = std::string(kButton) + "(location.protocol !== 'https:' || location.port !== '' || (" +
+      (BrowserIntegrationEnabled(state, "youtube") ? "true" : "!['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com','youtu.be'].includes(location.hostname)") +
+      ") && (" + (BrowserIntegrationEnabled(state, "googleMeet") ? "true" : "location.hostname !== 'meet.google.com'") + "));";
+  params->SetString("source", source); params->SetString("worldName", "red-pip"); params->SetBool("runImmediately", true);
   entry.pending = page->GetHost()->ExecuteDevToolsMethod(0, "Page.addScriptToEvaluateOnNewDocument", params);
 }
 }  // namespace red

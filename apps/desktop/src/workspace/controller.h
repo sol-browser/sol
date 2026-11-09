@@ -9,6 +9,7 @@
 #include "include/cef_thread.h"
 
 namespace red {
+class IntegrationPreviews;
 class WorkspaceController : public std::enable_shared_from_this<WorkspaceController> {
  public:
   using Reply = std::function<void(int, const std::string&, CefRefPtr<CefDictionaryValue>)>;
@@ -31,6 +32,9 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   bool MoveToNewWindow(const std::string& id);
   void DetachedReady(const std::string& id);
   std::optional<TreeNode> DetachedSeed(const std::string& id) const;
+  std::optional<std::string> SavedPreview(const std::string& id) const;
+  std::shared_ptr<IntegrationPreviews> integration_previews() const { return integration_previews_; }
+  const std::string& ActiveNode() const { return tree_.active_id; }
   void HandleTabDrag(CefRefPtr<CefDictionaryValue> request, Reply done);
   struct SplitDrop { TreeCommand command; CefRect preview; };
   std::optional<SplitDrop> SplitDropAt(const std::string& id, POINT screen);
@@ -102,6 +106,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   // Sidebar tab menu actions (tab_menu_actions.cpp).
   int CopyTabLink(const std::string& id, std::string& error);
   int SetPinnedPage(const std::string& id, std::string url, const std::string& title, std::string& error);  // Empty url: current page.
+  void SetXBadgeHidden(const std::string& id, bool hidden, Reply done);
   // Archives the Today tabs of |id|'s space: the others, those below it, or (|all|, the divider's Clear) every one.
   int ArchiveTodayTabs(const std::string& id, bool below, std::string& error, bool all = false);
   int MoveToNewSpace(const std::string& id, std::string& error);
@@ -122,6 +127,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   static bool ParseThemeCommand(CefRefPtr<CefDictionaryValue> d, Theme& theme, bool& save);
   void TogglePin();
   void Navigate(const std::string& url, Reply done);
+  void NavigatePinned(const std::string& id, const std::string& url, Reply done);
   void Close(const std::string& id, bool archive, Reply done = {});
   void CancelClose(int browser_id);
   bool PrepareShutdown(std::function<void(bool)> done);
@@ -146,6 +152,8 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void Refresh() { Publish(); }
   void ImportZen(const TreeSnapshot& incoming, Reply done);
  private:
+  void UpdateIntegrationPreviews();
+  std::shared_ptr<IntegrationPreviews> integration_previews_;
   void ApplyStartup();
   bool HandleLinkPeek(CefRefPtr<CefDictionaryValue> request,Reply done);
   CefRefPtr<CefDictionaryValue> DescribeLinkPeek() const;
@@ -176,6 +184,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void UnloadForMove(const std::string& id);
   void RemoveDetachedToday(const std::string& id);
   void EnsureActive();
+  void WarmStartupBadgePins();
   void DrainExternalUrls();
   // Gives the page the space beside a docked sidebar of |width|.
   void LayoutSidebar(double width, bool final);
@@ -272,6 +281,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   int split_resize_initial_ = 5000;
   bool ready_ = false, stopped_ = false;
   bool startup_applied_ = false;
+  std::set<std::string> startup_badge_tabs_;  // One startup pin per badge provider.
   bool shutting_down_ = false;
   int closing_commits_ = 0;
   int pending_commands_ = 0;

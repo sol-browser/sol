@@ -3,6 +3,7 @@
 #include <sqlite3.h>
 #include <windows.h>
 #include <algorithm>
+#include <set>
 #include "include/cef_app.h"
 #include "include/cef_parser.h"
 #include "include/base/cef_callback.h"
@@ -43,6 +44,23 @@ bool Decode(const std::string& json, Preferences& value) {
       data->GetType("askDownload") != VTYPE_BOOL || data->GetType("startup") != VTYPE_STRING ||
       data->GetType("homepage") != VTYPE_STRING || data->GetString("homepage").length() > 4096 || data->GetType("shortcuts") != VTYPE_DICTIONARY) return false;
   value.search_engine = data->GetString("searchEngine"); value.download_directory = data->GetString("downloadDirectory").ToWString();
+  if (data->HasKey("integrations")) {
+    if (data->GetType("integrations") != VTYPE_DICTIONARY) return false;
+    const auto integrations = data->GetDictionary("integrations");
+    CefDictionaryValue::KeyList keys; integrations->GetKeys(keys);
+    if (keys.size() > std::size(kIntegrationSettings)) return false;
+    for (const auto& key : keys) {
+      const auto id = key.ToString();
+      const auto* provider = FindStoredIntegrationSetting(id);
+      if (!provider || integrations->GetType(key) != VTYPE_BOOL) return false;
+      if (provider->available) value.integrations[id] = integrations->GetBool(key);
+    }
+  }
+  if (data->HasKey("notesProvider")) {
+    if (data->GetType("notesProvider") != VTYPE_STRING ||
+        (data->GetString("notesProvider") != "googleDocs" && data->GetString("notesProvider") != "word")) return false;
+    value.notes_provider = data->GetString("notesProvider");
+  }
   value.ask_download = data->GetBool("askDownload"); value.startup = data->GetString("startup"); value.homepage = data->GetString("homepage");
   if ((!value.download_directory.empty() && !value.download_directory.is_absolute()) ||
       (value.startup != "restore" && value.startup != "newTab" && value.startup != "homepage")) return false;
@@ -50,6 +68,12 @@ bool Decode(const std::string& json, Preferences& value) {
   if (data->HasKey("searchSuggestions")) {
     if (data->GetType("searchSuggestions") != VTYPE_BOOL) return false;
     value.search_suggestions = data->GetBool("searchSuggestions");
+  }
+  if (data->HasKey("siteSearches") && (data->GetType("siteSearches") != VTYPE_LIST ||
+      !ReadSiteSearches(data->GetList("siteSearches"), value.site_searches))) return false;
+  if (data->HasKey("siteSearchActivation")) {
+    if (data->GetType("siteSearchActivation") != VTYPE_STRING || !ValidSiteSearchActivation(data->GetString("siteSearchActivation"))) return false;
+    value.site_search_activation = data->GetString("siteSearchActivation");
   }
   if (data->HasKey("unloadMinutes")) {
     if (data->GetType("unloadMinutes") != VTYPE_INT || !ValidUnloadMinutes(data->GetInt("unloadMinutes"))) return false;
@@ -110,7 +134,45 @@ std::string Write(const std::filesystem::path& path, const std::string& json) {
   return {};
 }
 }
+CefRefPtr<CefDictionaryValue> IntegrationSettingsDictionary(const IntegrationSettings& settings) {
+  auto result = CefDictionaryValue::Create();
+  for (const auto& [id, enabled] : settings) result->SetBool(id, enabled);
+  return result;
+}
 bool ValidSearchEngine(const std::string& engine) { return engine == "google" || engine == "duckduckgo" || engine == "bing" || engine == "brave"; }
+bool ReadSiteSearches(CefRefPtr<CefListValue> list, std::vector<SiteSearch>& sites) {
+  if (!list || list->GetSize() > 24) return false;
+  std::vector<SiteSearch> result; std::set<std::string> keywords;
+  for (size_t i = 0; i < list->GetSize(); ++i) {
+    if (list->GetType(i) != VTYPE_DICTIONARY) return false;
+    const auto row = list->GetDictionary(i);
+    if (row->GetSize() != (row->HasKey("enabled") ? 4u : 3u) || row->GetType("name") != VTYPE_STRING || row->GetType("keyword") != VTYPE_STRING || row->GetType("url") != VTYPE_STRING ||
+        (row->HasKey("enabled") && row->GetType("enabled") != VTYPE_BOOL)) return false;
+    SiteSearch site{row->GetString("name"), row->GetString("keyword"), row->GetString("url")};
+    if (row->HasKey("enabled")) site.enabled = row->GetBool("enabled");
+    if (!ValidSiteSearchFields(site) || !keywords.insert(site.keyword).second) return false;
+    const auto name = CefString(site.name).ToWString();
+    if (std::none_of(name.begin(), name.end(), [](wchar_t c) {
+      return c != L' ' && c != 0x00a0 && c != 0x1680 && !(c >= 0x2000 && c <= 0x200a) &&
+          c != 0x2028 && c != 0x2029 && c != 0x202f && c != 0x205f && c != 0x3000 && c != 0xfeff;
+    })) return false;
+    auto address = site.url; address.replace(address.find("%s"), 2, "sol-query");
+    CefURLParts parsed;
+    if (!ValidHomepage(address) || !CefParseURL(address, parsed) || CefString(&parsed.host).ToString().find("..") != std::string::npos) return false;
+    result.push_back(std::move(site));
+  }
+  sites = std::move(result); return true;
+}
+CefRefPtr<CefListValue> SiteSearchList(const std::vector<SiteSearch>& sites) {
+  auto list = CefListValue::Create();
+  for (const auto& site : sites) {
+    auto row = CefDictionaryValue::Create(); row->SetString("name", site.name);
+    row->SetString("keyword", site.keyword); row->SetString("url", site.url);
+    row->SetBool("enabled", site.enabled);
+    list->SetDictionary(list->GetSize(), row);
+  }
+  return list;
+}
 bool ValidUnloadMinutes(int minutes) { return minutes==0 || minutes==15 || minutes==30 || minutes==60 || minutes==120 || minutes==360; }
 bool ValidBackdrop(const std::string& backdrop) { return backdrop == "none" || backdrop == "mica" || backdrop == "acrylic"; }
 bool ValidClock(const std::string& clock) { return clock == "system" || clock == "12" || clock == "24"; }
@@ -162,6 +224,10 @@ CefRefPtr<CefDictionaryValue> BrowserPreferences::ToDictionary(const Preferences
   auto data = CefDictionaryValue::Create(); data->SetInt("schema", 1); data->SetString("searchEngine", value.search_engine);
   data->SetString("downloadDirectory", value.download_directory.wstring()); data->SetBool("askDownload", value.ask_download);
   data->SetBool("searchSuggestions", value.search_suggestions);
+  data->SetString("notesProvider", value.notes_provider);
+  data->SetDictionary("integrations", IntegrationSettingsDictionary(value.integrations));
+  data->SetList("siteSearches", SiteSearchList(value.site_searches));
+  data->SetString("siteSearchActivation", value.site_search_activation);
   data->SetInt("autoArchiveHours",value.auto_archive_hours);
   data->SetBool("autoPictureInPicture", value.auto_pip);
   auto sites = CefDictionaryValue::Create();

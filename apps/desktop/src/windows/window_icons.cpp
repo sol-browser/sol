@@ -51,7 +51,8 @@ void JoinSolGroup(HWND window) {
 void CALLBACK OnShow(HWINEVENTHOOK, DWORD, HWND window, LONG object, LONG child, DWORD, DWORD) {
   if (object != OBJID_WINDOW || child != CHILDID_SELF || !window || GetAncestor(window, GA_ROOT) != window) return;
   wchar_t name[64]{};
-  if (!GetClassNameW(window, name, 64) || wcsncmp(name, L"Chrome_WidgetWin_", 17) != 0) return;
+  if (!GetClassNameW(window, name, 64) ||
+      (wcsncmp(name, L"Chrome_WidgetWin_", 17) != 0 && wcscmp(name, L"SolWebsitePopup") != 0)) return;
   JoinSolGroup(window);
   if (reinterpret_cast<HICON>(SendMessageW(window, WM_GETICON, ICON_BIG, 0)) == big_icon) return;
   SendMessageW(window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(big_icon));

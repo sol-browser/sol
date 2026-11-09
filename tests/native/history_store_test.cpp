@@ -1,4 +1,5 @@
 #include "storage/history_store.h"
+#include "history/title_target.h"
 #include <windows.h>
 #include <cstdio>
 #include <sqlite3.h>
@@ -9,6 +10,21 @@ void Check(bool test, const char* name) { if (!test) { ++failures; std::fprintf(
 constexpr int64_t kMinute = 60 * 1000;
 }
 int wmain() {
+  {
+    using red::TitleBelongsToVisit;
+    // Figma: the visit is recorded before Figma adds the file name and node to the address.
+    Check(TitleBelongsToVisit("https://www.figma.com/design/KEY?fuid=1", "https://www.figma.com/design/KEY/Abyss-Cup?node-id=0-1") &&
+          TitleBelongsToVisit("https://www.figma.com/design/KEY/Untitled?t=a", "https://www.figma.com/design/KEY/Untitled?node-id=0-1&t=a") &&
+          TitleBelongsToVisit("https://mail.google.com/mail/u/0/", "https://mail.google.com/mail/u/0/#inbox/abc"),
+          "in-place address change keeps the title on the page's visit");
+    Check(!TitleBelongsToVisit("https://www.youtube.com/watch?v=A", "https://www.youtube.com/watch?v=B") &&
+          !TitleBelongsToVisit("https://www.figma.com/design/KEY", "https://www.figma.com/design/KEY2/Other") &&
+          !TitleBelongsToVisit("https://www.figma.com/design/KEY", "https://figma.com/design/KEY/Abyss") &&
+          !TitleBelongsToVisit("https://x.com/home", "https://x.com/home/status/1") &&
+          !TitleBelongsToVisit("", "https://www.figma.com/design/KEY") &&
+          !TitleBelongsToVisit("https://www.figma.com/design/KEY", "https://www.figma.com/design/KEY"),
+          "other pages, origins and one-segment paths keep their own titles");
+  }
   const auto base = std::filesystem::temp_directory_path() / (L"red-history-" + std::to_wstring(GetCurrentProcessId()));
   const auto path = base.wstring() + L".sqlite3", foreign = base.wstring() + L"-foreign.sqlite3";
   {

@@ -4,8 +4,8 @@ import type { BrowserPreferences, KeyboardSetting, SettingsCommand } from '../..
 import { resolveNavigationInput, searchEngines } from './navigation-input';
 
 type Props = { section: 'search' | 'downloads' | 'startup' | 'keyboard' | 'tabs'; preferences?: BrowserPreferences;
-  keyboard: KeyboardSetting[]; disabled: boolean; save: (command: SettingsCommand) => Promise<void>; onError: (error: string) => void };
-export function PreferencesSettings({ section, preferences: prefs, keyboard, disabled, save, onError }: Props) {
+  keyboard: KeyboardSetting[]; disabled: boolean; save: (command: SettingsCommand) => Promise<void>; onError: (error: string) => void; manageSiteSearch: () => void };
+export function PreferencesSettings({ section, preferences: prefs, keyboard, disabled, save, onError, manageSiteSearch }: Props) {
   const [homepage, setHomepage] = useState(prefs?.homepage ?? '');
   const [recording, setRecording] = useState<string>();
   useEffect(() => setHomepage(prefs?.homepage ?? ''), [prefs?.homepage]);
@@ -52,7 +52,7 @@ export function PreferencesSettings({ section, preferences: prefs, keyboard, dis
         onClick={() => void save({ method: 'settings.set', key: 'pipButton', value: !(prefs?.pipButton ?? true) })}><span /></button>
     </div>
   </section>;
-  if (section === 'search') return <section className="settings-card">
+  if (section === 'search') return <><section className="settings-card">
     <span className="settings-category">SEARCH ENGINE</span><h2>Search from the address bar</h2>
     <p>Choose where search queries go. Website addresses and saved-tab suggestions keep working as usual.</p>
     <label className="settings-field" htmlFor="search-engine"><span>Default search engine</span>
@@ -67,7 +67,8 @@ export function PreferencesSettings({ section, preferences: prefs, keyboard, dis
         aria-checked={prefs?.searchSuggestions ?? true} disabled={disabled}
         onClick={() => void save({ method: 'settings.set', key: 'searchSuggestions', value: !(prefs?.searchSuggestions ?? true) })}><span /></button>
     </div>
-  </section>;
+  </section><section className="settings-card settings-option-row"><div><h2>Manage search engines and site search</h2>
+    <p>Set site shortcuts and choose how to activate them.</p></div><button type="button" className="settings-secondary" disabled={disabled} onClick={manageSiteSearch}>Manage</button></section></>;
   if (section === 'downloads') return <>
     <section className="settings-card"><span className="settings-category">LOCATION</span><h2>Save downloads to</h2>
       <p>New downloads use this folder. Files you already downloaded stay where they are.</p>

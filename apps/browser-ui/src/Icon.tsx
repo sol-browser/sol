@@ -1,6 +1,7 @@
 import { Plus, Ellipsis, ChevronRight, Archive, Globe, Check, Pause, Play, FolderOpen,
   Video, Mic, MapPin, Bell, Clipboard, AppWindow, LockKeyhole,
-  History, VolumeX, Volume2, Trash2, Search, CornerDownLeft, ArrowDown, type LucideIcon } from 'lucide-react';
+  History, VolumeX, Volume2, Trash2, Search, CornerDownLeft, ArrowDown,
+  Settings, ListFilter, Undo2, VenetianMask, Zap, Pin, PinOff, SquareTerminal, Printer, Maximize, FilePlus, FileText, NotebookPen, Mail, CalendarDays, Palette, type LucideIcon } from 'lucide-react';
 import sidebar from '../../../icons/sidebar.svg?inline';
 import back from '../../../icons/back.svg?inline';
 import forward from '../../../icons/forward.svg?inline';
@@ -23,6 +24,12 @@ const icons = {
   check: Check, pause: Pause, play: Play, reveal: FolderOpen, camera: Video, mic: Mic,
   location: MapPin, bell: Bell, clipboard: Clipboard, popup: AppWindow, lock: LockKeyhole,
   history: History, muted: VolumeX, speaker: Volume2, trash: Trash2, search: Search, enter: CornerDownLeft, arrowDown: ArrowDown,
+  gear: Settings, listFilter: ListFilter, undo: Undo2, private: VenetianMask, bolt: Zap,
+  pin: Pin, unpin: PinOff, terminal: SquareTerminal, print: Printer, maximize: Maximize,
+  filePlus: FilePlus, fileText: FileText,
+  note: NotebookPen,
+  mail: Mail, calendar: CalendarDays,
+  palette: Palette,
 } satisfies Record<string, LucideIcon>;
 export type IconName = keyof typeof icons | keyof typeof authoredIcons;
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {

@@ -49,6 +49,11 @@ int main() {
   check(Find(menu, "close") && Find(menu, "close")->label == "Unload Tab" && Find(menu, "close")->enabled, "loaded favorite can unload");
   with_favorite.back().live = false;
   check(!Find(red::SidebarMenuItems(with_favorite, "fav"), "close")->enabled, "unloaded favorite: unload is disabled");
+  check(!Find(red::SidebarMenuItems(with_favorite, "fav"), "hideXBadge"), "Only X pins have a notification toggle");
+  with_favorite.back().url = "https://x.com/home";
+  check(Find(red::SidebarMenuItems(with_favorite, "fav"), "hideXBadge"), "X Favorite can hide its badge while unloaded");
+  with_favorite.back().x_badge_hidden = true;
+  check(Find(red::SidebarMenuItems(with_favorite, "fav"), "showXBadge"), "Muted X badge can be shown again");
   menu = red::SidebarMenuItems(nodes, "folder");
   check(Find(menu, "newFolder") && Find(menu, "expand") && !Find(menu, "close"), "folder actions");
   check(!Find(menu, "folder", "folder") && !Find(menu, "folder", "nested"), "cannot nest folder inside self or descendant");

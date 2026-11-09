@@ -9,7 +9,7 @@ namespace red {
 class PopupAnimationHost {
  public:
   ~PopupAnimationHost();
-  bool Begin(HWND owner, HWND popup, bool bottom, float origin_x, bool closing, float from_scale);
+  bool Begin(HWND owner, HWND popup, bool bottom, float origin_x, bool closing, float from_scale, float origin_y);
   bool Active(HWND popup) const { return popup && source_ == popup; }
   bool FadeShadow(HWND popup, int duration_ms);
   void End(HWND popup = nullptr);
