@@ -10,6 +10,8 @@
 
 namespace red {
 class IntegrationPreviews;
+class XUnread;
+class WhatsAppUnread;
 class WorkspaceController : public std::enable_shared_from_this<WorkspaceController> {
  public:
   using Reply = std::function<void(int, const std::string&, CefRefPtr<CefDictionaryValue>)>;
@@ -18,6 +20,14 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void Stop();
   void Handle(CefRefPtr<CefDictionaryValue> request, Reply done);
   CefRefPtr<CefDictionaryValue> Snapshot() const;
+  // The revision the next Snapshot() carries (a snapshot stores it as a double).
+  double revision() const { return revision_; }
+  int sidebar_request() const { return sidebar_request_; }  // Last browser-menu sidebar request (snapshot sidebarRequest.id).
+  // Archived tabs of every Space (not in Snapshot()), newest order left to the UI.
+  CefRefPtr<CefListValue> ArchiveSnapshot() const;
+  bool IsArchived(const std::string& id) const;
+  int ArchivedCount() const;
+  double tree_revision() const { return static_cast<double>(tree_.revision); }
   CefRefPtr<CefDictionaryValue> ThemeSnapshot() const;
   // Layout only (live sidebar/DevTools divider drags): sidebar width and the
   // DevTools dock, no tree. The renderer merges it into its last snapshot.
@@ -34,6 +44,8 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   std::optional<TreeNode> DetachedSeed(const std::string& id) const;
   std::optional<std::string> SavedPreview(const std::string& id) const;
   std::shared_ptr<IntegrationPreviews> integration_previews() const { return integration_previews_; }
+  std::shared_ptr<XUnread> x_unread() const { return x_unread_; }
+  std::shared_ptr<WhatsAppUnread> whatsapp_unread() const { return whatsapp_unread_; }
   const std::string& ActiveNode() const { return tree_.active_id; }
   void HandleTabDrag(CefRefPtr<CefDictionaryValue> request, Reply done);
   struct SplitDrop { TreeCommand command; CefRect preview; };
@@ -46,7 +58,8 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   // live right now (loading/closing, Link Peek, split); callers then reload.
   CefRefPtr<CefBrowser> ReleaseForTransfer(const std::string& id, bool remove_entry);
   bool CanTransfer(const std::string& id) const;
-  bool AdoptPage(CefRefPtr<CefBrowser> browser, const std::string& node_id);
+  bool AdoptPage(CefRefPtr<CefBrowser> browser, const std::string& node_id, bool foreground = true);
+  void RegisterNamedTab(CefRefPtr<CefBrowser> browser, const std::string& url, int opener_id, bool foreground);
   // A tab's Link Peek moves with it: the source parks an open preview and
   // lets go of its page (false: it has one that cannot move now); the
   // destination keeps it parked for the tab, so it reopens when shown.
@@ -59,6 +72,8 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void OnClosed(int browser_id, const std::string& last_url);
   void OnPageChanged(CefRefPtr<CefBrowser> browser);
   void OnPageFocused(CefRefPtr<CefBrowser> browser);
+  void OnPageActivationRequested(int browser_id);
+  bool NativePageActivationPending() const { return native_page_activation_pending_; }
   bool RouteLinkPeek(CefRefPtr<CefBrowser> source,const std::string& url,bool force);
   bool IsLinkPeekBrowser(int browser) const;
   bool HasLinkPeek() const { return !link_peek_id_.empty(); }
@@ -105,7 +120,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   int Duplicate(const std::string& id, std::string& error);
   // Sidebar tab menu actions (tab_menu_actions.cpp).
   int CopyTabLink(const std::string& id, std::string& error);
-  int SetPinnedPage(const std::string& id, std::string url, const std::string& title, std::string& error);  // Empty url: current page.
+  int SetPinnedPage(const std::string& id, std::string url, const std::string& title, std::string& error, Reply done = {});  // Empty url: current page.
   void SetXBadgeHidden(const std::string& id, bool hidden, Reply done);
   // Archives the Today tabs of |id|'s space: the others, those below it, or (|all|, the divider's Clear) every one.
   int ArchiveTodayTabs(const std::string& id, bool below, std::string& error, bool all = false);
@@ -154,6 +169,8 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
  private:
   void UpdateIntegrationPreviews();
   std::shared_ptr<IntegrationPreviews> integration_previews_;
+  std::shared_ptr<XUnread> x_unread_;  // X's unread count without a loaded X tab.
+  std::shared_ptr<WhatsAppUnread> whatsapp_unread_;  // Periodic hidden WhatsApp checks.
   void ApplyStartup();
   bool HandleLinkPeek(CefRefPtr<CefDictionaryValue> request,Reply done);
   CefRefPtr<CefDictionaryValue> DescribeLinkPeek() const;
@@ -178,19 +195,21 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   bool HandleSplit(CefRefPtr<CefDictionaryValue> request, Reply done);
   CefRefPtr<CefDictionaryValue> DescribeSplitView() const;
   void ResizeSplitTick(unsigned generation);
-  void Dispatch(TreeCommand command, Reply done, bool internal = false);
+  void Dispatch(TreeCommand command, Reply done, bool internal = false, bool exact_activation = false);
   void Complete(TreeResult result, Reply done, bool shared = false);
   void CompleteMetadata(TreeResult result, Reply done);
   void UnloadForMove(const std::string& id);
   void RemoveDetachedToday(const std::string& id);
   void EnsureActive();
-  void WarmStartupBadgePins();
   void DrainExternalUrls();
   // Gives the page the space beside a docked sidebar of |width|.
   void LayoutSidebar(double width, bool final);
   // Probe only: sidebar layout evidence once no page is being revealed.
   static void RecordSidebarLayout(std::weak_ptr<State> weak, int attempts);
   void Publish();
+  void FlushPublish();
+  Reply Ordered(Reply done);
+  bool publish_pending_ = false;
   void PublishTheme();
   void PublishLayout();
   void SavePageTitle(const std::string& id);
@@ -198,6 +217,10 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void FinishClose(const std::string& id, bool archive, Reply done, const std::string& last_url = "");
   void RemoveFolder(TreeCommand command, Reply done);
   void ChangeProfile(TreeCommand command, Reply done);
+  // Unloads the live pages |selected| picks (every window of this workspace),
+  // each through its own close dialogs, then dispatches |command|.
+  void UnloadThenDispatch(std::function<bool(WorkspaceController&, const TreeNode&)> selected, TreeCommand command, Reply done,
+                          const std::string& peek_error, const std::string& cancelled_error);
   void CancelFolderRemoval();
   struct FolderRemoval;
   std::shared_ptr<FolderRemoval> folder_removal_;
@@ -280,8 +303,8 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   std::string split_resize_anchor_;
   int split_resize_initial_ = 5000;
   bool ready_ = false, stopped_ = false;
+  bool native_page_activation_pending_ = false;
   bool startup_applied_ = false;
-  std::set<std::string> startup_badge_tabs_;  // One startup pin per badge provider.
   bool shutting_down_ = false;
   int closing_commits_ = 0;
   int pending_commands_ = 0;

@@ -10,6 +10,7 @@
 #include "integrations/providers.h"
 #include "trust_policy.h"
 #include "workspace/tab_order.h"
+#include "windows/workspace_layout.h"
 
 namespace red {
 namespace {
@@ -96,7 +97,7 @@ bool ValidIcon(const std::string& icon) {
   return std::count_if(icon.begin(),icon.end(),[](unsigned char c){return (c&0xc0)!=0x80;})<=16;
 }
 bool Valid(const TreeSnapshot& tree) {
-  if (tree.nodes.size() > 10000 || tree.revision < 0 || tree.sidebar_width < 200 || tree.sidebar_width > 480) return false;
+  if (tree.nodes.size() > 10000 || tree.revision < 0 || tree.sidebar_width < kSidebarMinWidth || tree.sidebar_width > kSidebarMaxWidth) return false;
   if (tree.spaces.empty() || tree.spaces.size() > kMaxSpaces) return false;
   std::set<std::string> space_ids; std::set<int> space_positions;
   std::set<std::string> profiles;
@@ -223,7 +224,7 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
     return Error(500, "Cannot inspect workspace schema");
   const int schema = sqlite3_column_int(version.value, 0), application = sqlite3_column_int(app.value, 0);
   version.Finish(); app.Finish();
-  if (schema > 13 ||(application != 0 && application != kApplicationId)) return Error(500, "Unsupported workspace schema");
+  if (schema > 14 ||(application != 0 && application != kApplicationId)) return Error(500, "Unsupported workspace schema");
   if (schema == 0) {
     Statement tables(db_, "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'");
     if (!tables.value || sqlite3_step(tables.value) != SQLITE_ROW || sqlite3_column_int(tables.value, 0) != 0)
@@ -322,6 +323,23 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
       "PRAGMA user_version=12; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"Browsing profile migration failed"); }
   if (schema < 13 && !Exec("BEGIN IMMEDIATE; ALTER TABLE nodes ADD COLUMN x_badge_hidden INTEGER NOT NULL DEFAULT 0 CHECK(x_badge_hidden IN(0,1));"
       "PRAGMA user_version=13; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"X badge preference migration failed"); }
+  // v14: the sidebar may be narrower (150 DIP). SQLite cannot change a column
+  // CHECK in place, so the one-row state table is rebuilt with every value
+  // copied, inside one transaction (foreign keys are deferred until COMMIT).
+  static_assert(kSidebarMinWidth == 150 && kSidebarMaxWidth == 480, "schema v14 stores the sidebar width range");
+  if (schema < 14 && !Exec("BEGIN IMMEDIATE;"
+      "CREATE TABLE state_v14(singleton INTEGER PRIMARY KEY CHECK(singleton=1),revision INTEGER NOT NULL,"
+      "active_id TEXT REFERENCES nodes(id) DEFERRABLE INITIALLY DEFERRED,"
+      "sidebar_width INTEGER NOT NULL DEFAULT 256 CHECK(sidebar_width BETWEEN 150 AND 480),"
+      "theme_hue INTEGER NOT NULL DEFAULT 307 CHECK(theme_hue BETWEEN 0 AND 359),"
+      "theme_intensity INTEGER NOT NULL DEFAULT 100 CHECK(theme_intensity BETWEEN 0 AND 160),"
+      "theme_mode INTEGER NOT NULL DEFAULT 0 CHECK(theme_mode IN(0,1,2)),"
+      "theme_noise INTEGER NOT NULL DEFAULT 0 CHECK(theme_noise BETWEEN 0 AND 100),"
+      "active_space TEXT NOT NULL DEFAULT '');"
+      "INSERT INTO state_v14(singleton,revision,active_id,sidebar_width,theme_hue,theme_intensity,theme_mode,theme_noise,active_space)"
+      " SELECT singleton,revision,active_id,sidebar_width,theme_hue,theme_intensity,theme_mode,theme_noise,active_space FROM state;"
+      "DROP TABLE state; ALTER TABLE state_v14 RENAME TO state;"
+      "PRAGMA user_version=14; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"Sidebar width migration failed"); }
   if (!Exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")) return Error(500, "Cannot configure workspace journal");
   Statement check(db_, "PRAGMA quick_check(1)");
   if (!check.value || sqlite3_step(check.value) != SQLITE_ROW || Text(check.value, 0) != "ok")
@@ -632,6 +650,11 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         node->expanded = command.value; break;
       case TreeAction::Activate:
         if (node->folder || node->archived) return rollback(400, "Entry is not an available page");
+        if (node->favorite && !command.space.empty()) {
+          const auto* space = FindSpace(tree, command.space);
+          if (!space || space->profile != node->profile) return rollback(400, "Favorite belongs to another profile");
+          tree.active_space = space->id;
+        }
         if (node->favorite && node->profile != BrowsingProfileId(tree)) return rollback(400,"Favorite belongs to another profile");
         // Showing a page of another space (e.g. from history) enters that space.
         if (!node_space.empty()) tree.active_space = node_space;
@@ -657,6 +680,13 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         // "Edit Pinned Page", section "home"), never through navigation.
         if (node->folder || node->archived || !SafeUrl(command.url) || ((node->pinned || node->favorite) && command.section != "home"))
           return rollback(400, "Cannot replace a persistent home URL through navigation");
+        if (command.section == "home" && !node->pinned && !node->favorite)
+          return rollback(409, "Page is no longer pinned");
+        if (command.section == "home" && !command.title.empty()) {
+          if (!SafeText(command.title, 240)) return rollback(400, "Invalid title");
+          node->title = command.title;
+          node->custom_title = true;
+        }
         SetDestination(*node, command); break;
       case TreeAction::Place:
       case TreeAction::Move: {
@@ -904,7 +934,7 @@ TreeResult TreeStore::SetPageTitle(const std::string& id, const std::string& url
   return Read();
 }
 TreeResult TreeStore::SetSidebarWidth(int width) {
-  if (!db_ || width < 200 || width > 480) return Error(400, "Invalid sidebar width");
+  if (!db_ || width < kSidebarMinWidth || width > kSidebarMaxWidth) return Error(400, "Invalid sidebar width");
   Statement update(db_, "UPDATE state SET sidebar_width=? WHERE singleton=1");
   if (!update.value) return Error(500, "Cannot prepare sidebar preference");
   sqlite3_bind_int(update.value, 1, width);

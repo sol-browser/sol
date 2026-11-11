@@ -6,7 +6,7 @@ import { shownAddress } from './internal-pages';
 import { applyTheme } from './theme-apply';
 import { usePopupPresentation } from './usePopupPresentation';
 import { resolveNavigationInput } from './navigation-input';
-import { matchingSiteSearch, siteSearchKey, siteSearchUrl } from './site-search';
+import { matchingSiteSearch, siteSearchKey, siteSearchTemplate, siteSearchUrl } from './site-search';
 import './command-bar.css';
 
 type CommandState = { request: number; open: boolean; mode: 'new' | 'navigate'; sourceUrl: string; snapshot: Snapshot };
@@ -94,7 +94,7 @@ export function CommandBar() {
   const rows: CommandRow[] = siteKeyword ? (() => {
     if (!site) { siteError = 'That site search is unavailable. Press Escape to leave it.'; return []; }
     if (!text.trim()) return [];
-    try { return [{ key: `site:${site.keyword}`, title: `Search ${site.name} for ${text.trim()}`, detail: new URL(site.url).host,
+    try { return [{ key: `site:${site.keyword}`, title: `Search ${site.name} for ${text.trim()}`, detail: new URL(siteSearchTemplate(site, text)).host,
       kind: 'visit', action: { method: 'command.submit', url: siteSearchUrl(site, text) } }]; }
     catch (error) { siteError = String(error instanceof Error ? error.message : error); return []; }
   })() : state ? commandRows(state.snapshot, text, state.mode, state.sourceUrl, history.visits, completions, { actionsOnly }) : [];

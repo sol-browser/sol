@@ -7,12 +7,15 @@
 #include <string_view>
 
 namespace red {
-struct IntegrationSetting { std::string_view id, name; bool available = true; };
+// |listed|: offered as a switch (Settings, pinned-tab menu). Unlisted providers stay readable in saved
+// preferences but cannot be turned on or off: Spotify (its licence server refuses Sol, docs/codecs.md)
+// and YouTube (Picture-in-Picture works the same on every site; no YouTube-specific feature).
+struct IntegrationSetting { std::string_view id, name; bool available = true, listed = true; };
 inline constexpr IntegrationSetting kIntegrationSettings[] = {
     {"gmail","Gmail"}, {"outlookMail","Outlook Mail"}, {"googleCalendar","Google Calendar"}, {"figma","Figma"},
     {"notion","Notion",false}, {"linear","Linear",false}, {"confluence","Confluence",false},
-    {"whatsapp","WhatsApp"}, {"twitter","X"}, {"spotify","Spotify"}, {"youtube","YouTube"}, {"googleMeet","Google Meet"},
-    {"googleDocs","Google Docs"}, {"word","Word"}};
+    {"whatsapp","WhatsApp"}, {"twitter","X"}, {"spotify","Spotify",true,false}, {"youtube","YouTube",true,false},
+    {"googleMeet","Google Meet"}, {"googleDocs","Google Docs"}, {"word","Word"}};
 using IntegrationSettings = std::map<std::string, bool, std::less<>>;
 // The stored catalog includes paused providers so old preferences can be read.
 inline const IntegrationSetting* FindStoredIntegrationSetting(std::string_view id) {
@@ -121,10 +124,14 @@ inline bool IsOutlookSignIn(std::string_view target, std::string_view destinatio
   return provider && provider->id == "outlookMail" && address &&
       (address->host == "login.live.com" || address->host == "login.microsoftonline.com");
 }
+// The Gmail card lists unread inbox mail from the last week only: years-old unread mail that was
+// never cleared out would otherwise fill the card (user request, 2026-11-09). Gmail search
+// operators: https://support.google.com/mail/answer/7190. live_script.h compares the same text.
+inline constexpr std::string_view kGmailUnreadQuery = "in:inbox is:unread newer_than:7d";
 inline std::string GmailInboxSearch(std::string_view target, bool unread) {
   const auto provider = GoogleIntegration(target);
   if (!provider || provider->id != "gmail") return {};
-  return provider->base + (unread ? "#search/in%3Ainbox+is%3Aunread" : "#search/in%3Ainbox");
+  return provider->base + (unread ? "#search/in%3Ainbox+is%3Aunread+newer_than%3A7d" : "#search/in%3Ainbox");
 }
 inline bool IsGmailInboxSearch(std::string_view target, std::string_view source, bool unread) {
   if (GmailInboxSearch(target,unread).empty() || MailboxTarget(source) != target) return false;
@@ -132,7 +139,7 @@ inline bool IsGmailInboxSearch(std::string_view target, std::string_view source,
   if (hash == source.npos || !source.substr(hash).starts_with("#search/")) return false;
   const auto query = source.substr(hash + 8);
   std::string decoded;
-  for (size_t i=0;i<query.size() && decoded.size()<25;++i) {
+  for (size_t i=0;i<query.size() && decoded.size()<48;++i) {
     if (query[i]=='%' && i+2<query.size()) {
       const auto escape = query.substr(i+1,2);
       if (escape=="3A" || escape=="3a") decoded+=':';
@@ -144,7 +151,7 @@ inline bool IsGmailInboxSearch(std::string_view target, std::string_view source,
     }
   }
   const auto page=IntegrationUrl(source), inbox=IntegrationUrl(target);
-  return page && inbox && page->path==inbox->path && decoded==(unread?"in:inbox is:unread":"in:inbox");
+  return page && inbox && page->path==inbox->path && decoded==(unread?kGmailUnreadQuery:std::string_view("in:inbox"));
 }
 inline std::optional<std::string> PreviewTarget(std::string_view saved) {
   if (auto mailbox = MailboxTarget(saved)) return mailbox;

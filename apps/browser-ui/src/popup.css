@@ -17,6 +17,29 @@ body:has(.panel-root), :root[data-ui="menu"] body { background: linear-gradient(
 
 /* Shared popover chrome. */
 .panel-root { padding: 8px; color: var(--pop-ink); }
+.pin-editor { padding: 12px; }
+.pin-editor h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+.pin-editor form { display: grid; gap: 12px; }
+.pin-editor label { display: grid; gap: 5px; min-width: 0; color: var(--pop-muted); font-size: 12px; }
+.pin-editor input {
+  width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--pop-line); border-radius: 8px;
+  background: var(--pop-well); box-shadow: var(--pop-well-shadow); color: var(--pop-ink); font: inherit; font-size: 13px;
+}
+.pin-editor .popover-error { margin: 0; overflow-wrap: anywhere; }
+.move-confirm h2 { margin-bottom: 8px; line-height: 1.3; overflow-wrap: anywhere; }
+.move-confirm > p:not(.popover-error) { margin: 0 0 16px; color: var(--pop-muted); font-size: 12px; line-height: 1.45; }
+.move-confirm .popover-error { margin: 0 0 12px; }
+.pin-editor footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.pin-editor button {
+  padding: 7px 14px; border-radius: 8px; background: var(--pop-raised); box-shadow: var(--pop-raised-shadow);
+  transition: scale 140ms ease-out, filter 140ms ease-out;
+}
+.pin-editor button[type="submit"] { background: var(--pop-primary); color: var(--pop-primary-ink); font-weight: 600; }
+.pin-editor button:enabled:active { scale: .94; filter: brightness(.86); transition-duration: 60ms; }
+.pin-editor button:disabled { opacity: .55; }
+@media (prefers-reduced-motion: reduce) {
+  .pin-editor button, .pin-editor button:enabled:active { scale: none; transition: none; }
+}
 .popover header { padding: 4px 6px 10px; }
 .popover h2 { font-size: 13px; font-weight: 600; letter-spacing: -.1px; color: var(--pop-ink); }
 .popover-subtitle, .popover-empty, .history-shortcut { color: var(--pop-faint); }

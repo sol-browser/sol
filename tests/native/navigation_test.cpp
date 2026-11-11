@@ -4,6 +4,9 @@
 #include "workspace/tab_order.h"
 #include "navigation/file_url.h"
 #include "integrations/providers.h"
+#include "app/memory_report.h"
+#include "integrations/gmail_feed.h"
+#include "integrations/whatsapp_title.h"
 #include <cstdio>
 int main() {
   int failures = 0;
@@ -47,10 +50,13 @@ int main() {
   const std::string gmail_inbox="https://mail.google.com/mail/u/2/#inbox";
   check(red::IsGmailInboxSearch(gmail_inbox,red::GmailInboxSearch(gmail_inbox,true),true)&&
         red::IsGmailInboxSearch(gmail_inbox,red::GmailInboxSearch(gmail_inbox,false),false)&&
-        red::IsGmailInboxSearch(gmail_inbox,"https://mail.google.com/mail/u/2/#search/in%3Ainbox%20is%3Aunread",true)&&
-        !red::IsGmailInboxSearch(gmail_inbox,"https://mail.google.com/mail/u/1/#search/in%3Ainbox+is%3Aunread",true)&&
+        red::IsGmailInboxSearch(gmail_inbox,"https://mail.google.com/mail/u/2/#search/in%3Ainbox%20is%3Aunread%20newer_than%3A7d",true)&&
+        !red::IsGmailInboxSearch(gmail_inbox,"https://mail.google.com/mail/u/1/#search/in%3Ainbox+is%3Aunread+newer_than%3A7d",true)&&
         !red::IsGmailInboxSearch(gmail_inbox,"https://mail.google.com/mail/u/2/#search/is%3Aunread",true),
         "Gmail background uses a fixed unread-inbox query in the saved account");
+  check(red::GmailInboxSearch(gmail_inbox,true).ends_with("#search/in%3Ainbox+is%3Aunread+newer_than%3A7d") &&
+        !red::IsGmailInboxSearch(gmail_inbox,"https://mail.google.com/mail/u/2/#search/in%3Ainbox+is%3Aunread",true),
+        "Gmail unread search covers the last week only; the old unbounded query is not accepted");
   check(outlook&&outlook->id=="outlookMail"&&outlook->IsMail()&&
         red::IntegrationRowToken(*outlook,"AAMk/Owned+Row==")&&!red::IntegrationRowToken(*outlook,"with spaces")&&
         !red::IntegrationRowToken(*outlook,std::string(1025,'a')),"Outlook accepts bounded opaque conversation IDs");
@@ -67,6 +73,39 @@ int main() {
   check(red::EnabledDocumentUrl("newNote", "googleDocs", preferences)=="https://word.new/" &&
       red::EnabledDocumentUrl("newFigmaDesign", "googleDocs", preferences).empty() &&
       red::EnabledDocumentUrl("newNote", "googleDocs", {{"googleDocs", false}, {"word", false}}).empty(), "Document actions honor provider switches");
+  {
+    const std::string xml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><feed version=\"0.3\" xmlns=\"http://purl.org/atom/ns#\"><title>Gmail - Inbox</title>"
+        "<fullcount>6431</fullcount><entry><title>Black Friday &amp; more: $29 &#x2014; &#8220;deal&#8221;</title>"
+        "<summary>preview</summary><link rel=\"alternate\" href=\"https://mail.google.com/mail/u/0?account_id=a@b.c&amp;message_id=1a1c247f453e3a79&amp;view=conv&amp;extsrc=atom\" type=\"text/html\"/>"
+        "<modified>2026-11-09T21:47:38Z</modified><issued>2026-11-09T21:47:38Z</issued><author><name>Windscribe</name><email>n@w.com</email></author></entry>"
+        "<entry><title>No id</title><issued>2026-11-09T21:47:38Z</issued><author><name>X</name></author></entry>"
+        "<entry><title>Bad date</title><link href=\"x?message_id=1a196d6a8ab8833e&amp;v\"/><issued>yesterday</issued><author><name>X</name></author></entry>"
+        "<entry><title>\xD0\x9E\xD0\xBD\xD0\xBE\xD0\xB2\xD0\xBB\xD0\xB5\xD0\xBD\xD0\xBD\xD1\x8F</title><link href=\"x?message_id=1a19444f8613e81e&amp;v\"/>"
+        "<issued>2026-10-31T23:21:50Z</issued><author><name>Binance</name></author></entry></feed>";
+    const auto feed = red::ParseGmailFeed(xml);
+    check(feed && feed->unread == 6431 && feed->entries.size() == 2, "Gmail feed: count and entries with an ID and a date");
+    check(feed && feed->entries[0].title == "Black Friday & more: $29 \xE2\x80\x94 \xE2\x80\x9C" "deal\xE2\x80\x9D" &&
+          feed->entries[0].sender == "Windscribe" && feed->entries[0].message_id == "1a1c247f453e3a79" &&
+          feed->entries[0].issued_ms == 1794260858000LL, "Gmail feed: entities, sender, message ID and UTC time");
+    check(feed && feed->entries[1].title == "\xD0\x9E\xD0\xBD\xD0\xBE\xD0\xB2\xD0\xBB\xD0\xB5\xD0\xBD\xD0\xBD\xD1\x8F", "Gmail feed: UTF-8 titles");
+    check(!red::ParseGmailFeed("<!doctype html><title>Sign in - Google Accounts</title>") &&
+          !red::ParseGmailFeed("<feed><fullcount>12x</fullcount></feed>"), "Gmail feed: a sign-in page or bad count is not a feed");
+    check(red::gmail_feed_detail::IsoUtc("1970-01-01T00:00:00Z") == 0 && red::gmail_feed_detail::IsoUtc("2000-03-01T00:00:01Z") == 951868801000LL &&
+          !red::gmail_feed_detail::IsoUtc("2026-11-09 21:47:38"), "Gmail feed: ISO dates");
+  }
+  check(red::WhatsAppTitleCount("(3) WhatsApp") == 3 && red::WhatsAppTitleCount("(128) WhatsApp") == 128 &&
+        red::WhatsAppTitleCount("WhatsApp") == 0, "WhatsApp title counts");
+  check(!red::WhatsAppTitleCount("") && !red::WhatsAppTitleCount("web.whatsapp.com") && !red::WhatsAppTitleCount("(3) WhatsApp Web") &&
+        !red::WhatsAppTitleCount("(x) WhatsApp") && !red::WhatsAppTitleCount("() WhatsApp") && !red::WhatsAppTitleCount("(3)WhatsApp"),
+        "Other WhatsApp titles are not counts");
+  // CEF frame identifiers are "<renderer host ID in hex>-<frame token>" (cef/libcef/common/frame_util.cc).
+  check(red::RendererHostId("1A-0123456789ABCDEF0123456789ABCDEF") == 26 && red::RendererHostId("7-AB") == 7 &&
+        red::RendererHostId("") == -1 && red::RendererHostId("-AB") == -1 && red::RendererHostId("1G-AB") == -1 &&
+        red::RendererHostId("123456789-AB") == -1, "renderer host IDs");
+  for (const auto* id : {"spotify", "youtube"})
+    check(red::FindIntegrationSetting(id) && !red::FindIntegrationSetting(id)->listed, "Spotify and YouTube are readable but not offered as switches");
+  check(red::FindIntegrationSetting("googleMeet") && red::FindIntegrationSetting("googleMeet")->listed, "Google Meet keeps its switch");
   check(!red::IntegrationEnabled({}, "linear") && !red::IntegrationEnabled(preferences, "linear") &&
       !red::IntegrationEnabled({}, "github"), "Saved overrides cannot enable paused or unimplemented providers");
   check(red::IntegrationForUrl("https://linear.app/team/issue/ID-1").empty() && red::IntegrationForUrl("https://x.com/home") == "twitter" &&
@@ -164,9 +203,38 @@ int main() {
         "closing a collapsed peek excludes all descendants from its fallback");
   check(red::OrderedTabs({nodes[1], nodes[2], nodes[3]}, "work", "folder").empty(),
         "a collapsed folder by itself offers no replacement page");
+  check(red::OrderedTabs(nodes, "work", {}, "default", true) == std::vector<std::string>{"favorite", "today"},
+        "closing a page elsewhere skips pages hidden in collapsed folders");
+  nodes[1].expanded = true;
+  check(red::OrderedTabs(nodes, "work", {}, "default", true) == std::vector<std::string>{"favorite", "today"},
+        "a collapsed folder inside an expanded one still hides its pages");
+  nodes[2].expanded = true;
+  check(red::OrderedTabs(nodes, "work", {}, "default", true) == std::vector<std::string>{"favorite", "nested-tab", "today"},
+        "pages in expanded folders remain candidates");
+  nodes[1].expanded = nodes[2].expanded = false;
   nodes[1].expanded = true;
   check(red::CollapsedFolderContaining(nodes, "nested-tab") == "nested", "an expanded outer folder leaves the inner peek independent");
   nodes[2].expanded = true;
   check(red::CollapsedFolderContaining(nodes, "nested-tab").empty(), "an expanded path uses the regular close order");
+  {
+    // Today archive targets: Close Others / Close Below / Clear.
+    red::TreeSnapshot tree;
+    auto tab = [&](const char* id, int position, bool pinned = false, const char* space = "work") {
+      red::TreeNode n; n.id = id; n.position = position; n.pinned = pinned; n.space = space; tree.nodes.push_back(n);
+    };
+    tab("t0", 0); tab("t1", 1); tab("t2", 2); tab("t3", 3); tab("pin", 4, true); tab("away", 0, false, "home");
+    using V = std::vector<std::string>;
+    check(red::TodayArchiveTargets(tree, "t1", false, false, "t1") == V{"t0", "t2", "t3"}, "close others keeps only the chosen tab");
+    check(red::TodayArchiveTargets(tree, "t1", true, false, "t1") == V{"t2", "t3"}, "close below archives later Today tabs");
+    check(red::TodayArchiveTargets(tree, "t0", false, true, "t2") == V{"t0", "t1", "t3"}, "Clear keeps the active Today tab");
+    check(red::TodayArchiveTargets(tree, "t0", false, true, "pin") == V{"t0", "t1", "t2", "t3"}, "Clear archives every Today tab when a pinned page is active");
+    check(red::TodayArchiveTargets(tree, "t0", false, true, "") == V{"t0", "t1", "t2", "t3"}, "Clear without an active page archives all");
+    tree.splits.push_back({"t1", "t3"});
+    check(red::TodayArchiveTargets(tree, "t0", false, true, "t3") == V{"t0", "t2"}, "Clear keeps both panes of the active split");
+    check(red::TodayArchiveTargets(tree, "t2", false, true, "t2") == V{"t0", "t1", "t3"}, "an inactive split is cleared");
+    check(red::TodayArchiveTargets(tree, "pin", false, true, "t2").empty(), "a pinned tab is not a Today target");
+    tree.nodes.resize(1);
+    check(red::TodayArchiveTargets(tree, "t0", false, true, "t0").empty(), "nothing to clear beside the active tab");
+  }
   return failures ? 1 : 0;
 }

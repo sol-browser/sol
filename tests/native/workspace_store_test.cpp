@@ -36,6 +36,34 @@ int wmain(int argc, wchar_t** argv) {
     sqlite3_close(db);
     std::error_code error; std::filesystem::remove(foreign_path, error);
   }
+  {
+    // v13 stored the sidebar width with CHECK(200..480); v14 rebuilds the
+    // state row so 150 fits, keeping every saved value.
+    const auto v13_path = path.wstring() + L"-v13";
+    { red::TreeStore store; Check(static_cast<bool>(store.Open(v13_path)) && store.SetSidebarWidth(336), "create current schema for the v13 fixture"); }
+    sqlite3* db = nullptr; sqlite3_open16(v13_path.c_str(), &db);
+    Check(sqlite3_exec(db, "PRAGMA journal_mode=DELETE; BEGIN;"
+        "CREATE TABLE state_old(singleton INTEGER PRIMARY KEY CHECK(singleton=1),revision INTEGER NOT NULL,active_id TEXT REFERENCES nodes(id) DEFERRABLE INITIALLY DEFERRED,"
+        " sidebar_width INTEGER NOT NULL DEFAULT 256 CHECK(sidebar_width BETWEEN 200 AND 480), theme_hue INTEGER NOT NULL DEFAULT 307 CHECK(theme_hue BETWEEN 0 AND 359),"
+        " theme_intensity INTEGER NOT NULL DEFAULT 100 CHECK(theme_intensity BETWEEN 0 AND 160), theme_mode INTEGER NOT NULL DEFAULT 0 CHECK(theme_mode IN(0,1,2)),"
+        " theme_noise INTEGER NOT NULL DEFAULT 0 CHECK(theme_noise BETWEEN 0 AND 100), active_space TEXT NOT NULL DEFAULT '');"
+        "INSERT INTO state_old SELECT * FROM state; DROP TABLE state; ALTER TABLE state_old RENAME TO state; PRAGMA user_version=13; COMMIT;",
+        nullptr, nullptr, nullptr) == SQLITE_OK, "downgrade fixture to the v13 state table");
+    Check(sqlite3_exec(db, "UPDATE state SET sidebar_width=150", nullptr, nullptr, nullptr) != SQLITE_OK, "v13 fixture rejects 150");
+    sqlite3_close(db);
+    {
+      red::TreeStore store; const auto r = store.Open(v13_path);
+      Check(r && r.snapshot.sidebar_width == 336 && r.snapshot.ActiveSpace(), "v14 migration keeps the saved width and active space");
+      Check(store.SetSidebarWidth(150) && store.Read().snapshot.sidebar_width == 150 && store.SetSidebarWidth(149).code == 400,
+            "v14 stores the narrower minimum and still rejects less");
+    }
+    sqlite3_open16(v13_path.c_str(), &db);
+    sqlite3_stmt* version = nullptr; sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &version, nullptr);
+    Check(sqlite3_step(version) == SQLITE_ROW && sqlite3_column_int(version, 0) == 14, "schema version 14");
+    sqlite3_finalize(version); sqlite3_close(db);
+    std::error_code error;
+    for (const auto* suffix : {L"", L"-wal", L"-shm"}) std::filesystem::remove(v13_path + suffix, error);
+  }
   std::string folder, nested, tab, other;
   {
     const auto legacy_path = path.wstring() + L"-v1";
@@ -98,8 +126,16 @@ int wmain(int argc, wchar_t** argv) {
       Check(reopened && Find(reopened.snapshot, id).x_badge_hidden, "Hidden X badge survives reopening the workspace");
       red::TreeCommand edit{red::TreeAction::SetUrl}; edit.id = id; edit.section = "home";
       edit.url = "https://example.test/"; edit.expected_revision = reopened.snapshot.revision;
+      edit.title = "Invalid\ntitle";
+      const auto rejected = store.Apply(edit);
+      const auto unchanged = store.Read();
+      Check(!rejected && Find(unchanged.snapshot, id).url == "https://x.com/home" && Find(unchanged.snapshot, id).title == "X",
+          "Invalid pinned title leaves the saved URL and title unchanged");
+      edit.title = "Edited pin";
       const auto edited = store.Apply(edit);
       Check(edited && !Find(edited.snapshot, id).x_badge_hidden, "An unrelated saved URL clears the X badge preference");
+      Check(edited && Find(edited.snapshot, id).url == edit.url && Find(edited.snapshot, id).title == edit.title &&
+          Find(edited.snapshot, id).custom_title, "Pinned title and URL are saved together");
     }
     for (const auto* suffix : {L"", L"-wal", L"-shm"}) { std::error_code error; std::filesystem::remove(badge_path + suffix, error); }
   }
@@ -131,7 +167,7 @@ int wmain(int argc, wchar_t** argv) {
     metadata = store.SetSidebarWidth(336);
     Check(metadata && metadata.snapshot.sidebar_width == 336 && metadata.snapshot.revision == metadata_revision,
           "saved sidebar preference does not conflict with tree edits");
-    Check(store.SetSidebarWidth(199).code == 400 && store.SetSidebarWidth(481).code == 400 &&
+    Check(store.SetSidebarWidth(150) && store.SetSidebarWidth(336) && store.SetSidebarWidth(149).code == 400 && store.SetSidebarWidth(481).code == 400 &&
           store.SetPageTitle(tab, home, std::string("bad\0title", 9)).code == 400, "invalid preferences and metadata rejected");
     const auto fresh = store.Read().snapshot;
     Check(fresh.spaces.size() == 1 && fresh.spaces[0].name == "Personal" && fresh.ActiveSpace() &&
@@ -520,6 +556,13 @@ int wmain(int argc, wchar_t** argv) {
     Check(result && result.snapshot.ActiveSpace()->profile==work && red::OrderedTabsForSpace(result.snapshot,work_space).empty(), "different profile hides personal Favorites");
     command={red::TreeAction::Activate}; command.id=personal_favorite;
     Check(apply(command).code==400, "cannot activate another profile's Favorite");
+    command.space=work_space;
+    Check(apply(command).code==400, "explicit Space must belong to the Favorite's profile");
+    command.space=personal; result=apply(command);
+    Check(result && result.snapshot.active_space==personal && result.snapshot.active_id==personal_favorite,
+      "native activation selects the Favorite and its Space in one transaction");
+    command={red::TreeAction::SwitchSpace}; command.id=work_space; result=apply(command);
+    Check(result && result.snapshot.active_space==work_space, "return to Work after native activation");
     command={red::TreeAction::CreateTab}; command.title="Office"; command.url="https://example.com/office"; result=apply(command); work_favorite=result.created_id;
     command={red::TreeAction::Place}; command.id=work_favorite; command.section="favorites"; result=apply(command);
     Check(result && Find(result.snapshot,work_favorite).profile==work && red::OrderedTabsForSpace(result.snapshot,work_space)==std::vector<std::string>{work_favorite},

@@ -2,7 +2,9 @@
 #include <algorithm>
 namespace red {
 inline constexpr int kSidebarWidth = 256;
-inline constexpr int kSidebarMinWidth = 200, kSidebarMaxWidth = 480;
+// 150 DIP still fits four space buttons (compact bottom bar) and two columns
+// of Favorites; schema v14 stores this range.
+inline constexpr int kSidebarMinWidth = 150, kSidebarMaxWidth = 480;
 inline int SidebarWidth(int preferred, int window_width) {
   return std::clamp(preferred, kSidebarMinWidth,
       std::clamp(window_width - 400, kSidebarMinWidth, kSidebarMaxWidth));

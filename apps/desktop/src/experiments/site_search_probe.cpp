@@ -1,4 +1,5 @@
 #include "experiments/site_search_probe.h"
+#include "workspace/controller.h"
 #include "experiments/shell_capture.h"
 #include "app/session.h"
 #include "windows/settings_window.h"
@@ -71,7 +72,13 @@ void Drive(std::weak_ptr<State> weak, std::string url, int attempts) {
       const saved=await call({method:'settings.get'});
       if(saved.preferences.siteSearches.length!==base.length+1||!saved.preferences.siteSearches.some(s=>s.keyword==='owned.test'&&s.name==='Owned search'&&s.enabled!==false)||saved.preferences.siteSearchActivation!=='spaceOrTab')throw Error('Settings did not retain search');
       root.scrollIntoView({block:'start'});await pause(80);
-      console.info('RED_SITE_SEARCH_SETTINGS:'+JSON.stringify({passed:true,nativeRejected:8,dialog:true,activation:true}));
+      // What's new is a link to the website's notes for this version (no bundled history).
+      [...document.querySelectorAll('.settings-nav button')].find(b=>b.textContent.trim()==='What’s new').click();
+      const notesButton=()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Open release notes')&&!b.disabled);
+      await until(notesButton);const notes=notesButton();
+      const bundledHistory=!!document.querySelector('.settings-release, .settings-releases');
+      notes.click();await pause(400);
+      console.info('RED_SITE_SEARCH_SETTINGS:'+JSON.stringify({passed:!bundledHistory,nativeRejected:8,dialog:true,activation:true,whatsNewClicked:true,bundledHistory}));
     }catch(error){console.info('RED_SITE_SEARCH_SETTINGS:'+JSON.stringify({passed:false,error:String(error)}));}
   })())JS", std::string(kSettingsUrl), 0);
 }
@@ -97,7 +104,13 @@ void ObserveSiteSearchProbe(CefRefPtr<CefBrowser> browser, const std::string& me
   const bool persisted = loaded->error().empty() && std::any_of(sites.begin(), sites.end(), [](const SiteSearch& site) {
     return site.keyword == "owned.test" && site.name == "Owned search" && site.enabled;
   }) && loaded->Get().site_search_activation == "spaceOrTab";
-  const bool passed = details->GetBool("passed") && persisted;
+  // The What's new button opened this version's notes on the website as a tab.
+  bool release_notes = false;
+  if (state->workspace) if (const auto snapshot = state->workspace->Snapshot()) if (const auto nodes = snapshot->GetList("nodes"))
+    for (size_t i = 0; i < nodes->GetSize(); ++i)
+      if (nodes->GetDictionary(i)->GetString("url").ToString().starts_with("https://sol-browser.app/changelog/#v")) release_notes = true;
+  details->SetBool("releaseNotesTab", release_notes);
+  const bool passed = details->GetBool("passed") && persisted && release_notes;
   loaded->Stop(); details->SetBool("persisted", persisted); state->Record("site_search_settings_probe", details);
   capture = CaptureShell(browser, state->evidence_directory / "site-search-settings.png");
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::shared_ptr<State> owner, bool passed) {

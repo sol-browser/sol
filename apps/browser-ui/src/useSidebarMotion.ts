@@ -1,5 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { TreeNode } from './bridge';
+import { renderCounts } from './render-counters';
+import { sidebarLayoutKey } from './sidebar-model';
 
 type Box = { x: number; y: number; width: number; height: number };
 type Row = { element: HTMLElement; box: Box; favorite: boolean; active: boolean; structural: boolean;
@@ -53,7 +55,12 @@ function flightFrame({ y, opacity, clipPath }: FlightPose): Keyframe {
 
 /** Animate presentation after native commits. Removed rows are inert pictures;
  * they never retain actions, delay a close, or participate in tree placement. */
-export function useSidebarMotion(nodes: TreeNode[], hidden: boolean, dragging: boolean, scope = '') {
+/** |active|: what the active tab changes in this list: the tab itself for
+ * Favorites (the icon pop), the row shown inside a collapsed folder for the
+ * tree. Snapshots keep unchanged rows' identity (snapshot-sharing.ts), so a
+ * switch alone does not change |nodes|. */
+export function useSidebarMotion(nodes: TreeNode[], hidden: boolean, dragging: boolean, scope = '', active?: string) {
+  const layout = useMemo(() => sidebarLayoutKey(nodes), [nodes]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
   const previous = useRef<Map<string, Row> | undefined>(undefined);
@@ -74,6 +81,23 @@ export function useSidebarMotion(nodes: TreeNode[], hidden: boolean, dragging: b
     animations.current.clear();
     folderGhosts.current.clear();
   }, []);
+  // A new sidebar width moves rows (Favorites reflow) without changing the
+  // list. Once the resize settles, read the layout again without animating, so
+  // the next real change starts from where the rows are now.
+  const [settled, setSettled] = useState(0);
+  const quiet = useRef(false);
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    let timer = 0, width = scroll.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (scroll.clientWidth === width) return;
+      width = scroll.clientWidth; clearTimeout(timer);
+      timer = window.setTimeout(() => { quiet.current = true; setSettled(value => value + 1); }, 200);
+    });
+    observer.observe(scroll);
+    return () => { observer.disconnect(); clearTimeout(timer); };
+  }, []);
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current, layer = layerRef.current;
@@ -86,6 +110,7 @@ export function useSidebarMotion(nodes: TreeNode[], hidden: boolean, dragging: b
       scroll.scrollTop = 0;
     }
     if (hidden || reduced || dragging) {
+      quiet.current = false;
       for (const animation of animations.current) animation.cancel();
       animations.current.clear(); folderGhosts.current.clear(); layer.replaceChildren(); previous.current = undefined;
       return;
@@ -109,9 +134,12 @@ export function useSidebarMotion(nodes: TreeNode[], hidden: boolean, dragging: b
         folder: element.closest<HTMLElement>('[data-folder-children]')?.dataset.folderChildren,
         expanded: element.hasAttribute('data-expanded') ? element.dataset.expanded === 'true' : undefined });
     }
+    ++renderCounts.motionMeasures; renderCounts.motionRows += next.size;
     const before = previous.current;
     previous.current = next;
     // Restore/reveal starts quiet; don't animate the entire saved workspace.
+    // Neither does a settled resize.
+    if (quiet.current) { quiet.current = false; return; }
     if (!before) return;
     function play(element: HTMLElement, frames: Keyframe[], options: KeyframeAnimationOptions, done?: () => void) {
       const animation = element.animate(frames, options);
@@ -222,7 +250,7 @@ export function useSidebarMotion(nodes: TreeNode[], hidden: boolean, dragging: b
         { opacity: 0, transform: old.favorite ? 'scale(.78)' : 'translateX(14px) scale(.95)' }],
       { duration: 170, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards' }, () => ghost.remove());
     }
-  }, [nodes, hidden, dragging, reduced, scope]);
+  }, [layout, hidden, dragging, reduced, scope, active, settled]);
 
   return { scrollRef, layerRef };
 }

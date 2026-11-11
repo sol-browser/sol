@@ -76,6 +76,13 @@ std::optional<int> CompareVersions(std::string_view a, std::string_view b) {
   return 0;
 }
 
+bool UpdateReplacesWaiting(std::string_view latest, std::string_view waiting) {
+  if (waiting.empty()) return true;
+  if (latest == waiting) return false;
+  const auto order = CompareVersions(latest, waiting);
+  return !order || *order > 0;
+}
+
 std::optional<std::string> ReleaseNotesAfterUpdate(const std::filesystem::path& browser_data,
                                                    std::string_view current_version, bool fresh_profile) {
   if (!Parts(current_version)) return std::nullopt;  // Development label: leave the marker alone.

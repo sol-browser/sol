@@ -38,6 +38,57 @@ void Command(const std::shared_ptr<State>& state, const char* method, std::funct
     if (auto state = weak.lock()) next(state, code, snapshot);
   });
 }
+// Where an archived (or restored) tab is: the shared archive, the snapshot, its Space.
+void ArchiveStep(const std::shared_ptr<State>& state, const char* name, const std::string& id) {
+  const auto snapshot = state->workspace->Snapshot();
+  auto data = CefDictionaryValue::Create(); data->SetString("step", name);
+  data->SetString("active_space", snapshot->GetString("activeSpace"));
+  data->SetBool("active", snapshot->GetString("activeId") == id);
+  const auto archive = state->workspace->ArchiveSnapshot();
+  data->SetInt("archive_rows", static_cast<int>(archive->GetSize()));
+  for (size_t i = 0; i < archive->GetSize(); ++i) if (const auto row = archive->GetDictionary(i); row->GetString("id") == id) {
+    data->SetBool("archived", true); data->SetString("archived_space", row->GetString("space"));
+  }
+  const auto nodes = snapshot->GetList("nodes");
+  for (size_t i = 0; i < nodes->GetSize(); ++i) if (const auto node = nodes->GetDictionary(i); node->GetString("id") == id) {
+    data->SetBool("in_snapshot", true); data->SetString("space", node->GetString("space")); data->SetBool("live", node->GetBool("live"));
+  }
+  state->Record("spaces_probe_archive", data);
+}
+void SharedArchive(const std::shared_ptr<State>& state) {
+  const auto closed = state->workspace->Snapshot()->GetString("activeId").ToString();
+  Command(state, "tree.close", [closed](auto c) { c->SetString("id", closed); },
+    [closed](const std::shared_ptr<State>& s, int, CefRefPtr<CefDictionaryValue>) {
+      Later(s, 900, [closed](const std::shared_ptr<State>& s) {
+        ArchiveStep(s, "closed_at_home", closed);
+        Command(s, "space.create", [](auto c) { c->SetString("title", "Else"); c->SetString("icon", ""); },
+          [closed](const std::shared_ptr<State>& s, int, CefRefPtr<CefDictionaryValue>) {
+            Later(s, 900, [closed](const std::shared_ptr<State>& s) {
+              ArchiveStep(s, "listed_elsewhere", closed);
+              if (s->panel_popup) s->panel_popup->Toggle("archive", CefRect(14, 400, 28, 28));
+              Later(s, 1500, [closed](const std::shared_ptr<State>& s) {
+                // The real Archive panel row. A background run can lose the panel
+                // to the foreground policy: then restore by command and say so.
+                const auto panel = s->panel_popup && s->panel_popup->is_open() ? s->panel_popup->browser() : nullptr;
+                auto via = CefDictionaryValue::Create(); via->SetBool("panel", panel != nullptr); s->Record("spaces_probe_archive_restore", via);
+                if (panel) panel->GetMainFrame()->ExecuteJavaScript("document.querySelector('.archive-row')?.click()", panel->GetMainFrame()->GetURL(), 0);
+                else Command(s, "tree.restore", [closed](auto c) { c->SetString("id", closed); },
+                             [](const std::shared_ptr<State>&, int, CefRefPtr<CefDictionaryValue>) {});
+                Later(s, 1300, [closed](const std::shared_ptr<State>& s) {
+                  ArchiveStep(s, "restored_elsewhere", closed);
+                  if (s->panel_popup) s->panel_popup->Hide(false);
+                  const auto other = s->workspace->Snapshot()->GetString("activeSpace").ToString();
+                  Command(s, "space.delete", [other](auto c) { c->SetString("id", other); },
+                    [](const std::shared_ptr<State>& s, int, CefRefPtr<CefDictionaryValue>) {
+                      Later(s, 700, [](const std::shared_ptr<State>& s) { s->spaces_done = true; });
+                    });
+                });
+              });
+            });
+          });
+      });
+    });
+}
 }  // namespace
 void OnSpacesProbeLoad(const std::shared_ptr<State>& state, const std::string& url) {
   if (!state->spaces_probe || !url.starts_with("http")) return;
@@ -109,7 +160,9 @@ void OnSpacesProbeLoad(const std::shared_ptr<State>& state, const std::string& u
                   Later(s, 6200, [](const std::shared_ptr<State>& s) { Step(s, "brief_deleted_open"); s->sidebar_peek_probe = false; });
                   Later(s, 7600, [](const std::shared_ptr<State>& s) {
                     Step(s, "brief_deleted");
-                    s->workspace->SetSidebarVisible(true); s->spaces_done = true;
+                    s->workspace->SetSidebarVisible(true);
+                    // One archive for every Space: close a tab here, restore it from another Space.
+                    s->spaces_phase = 4; s->workspace->OpenLink(s->spaces_base + "/closed", true);
                   });
                 });
               });
@@ -118,6 +171,9 @@ void OnSpacesProbeLoad(const std::shared_ptr<State>& state, const std::string& u
         });
       });
     });
+  } else if (state->spaces_phase == 4 && url.ends_with("/closed")) {
+    state->spaces_phase = 5;
+    Later(state, 700, [](const std::shared_ptr<State>& s) { SharedArchive(s); });
   }
 }
 }  // namespace red

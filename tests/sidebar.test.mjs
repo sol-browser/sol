@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { placement, descendant, ordered, displayTitle, sidebarWidth, archiveOrder, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary } from '../apps/browser-ui/src/sidebar-model.ts';
+import { placement, descendant, ordered, displayTitle, sidebarWidth, favoriteColumns, favoriteColumnLimit, archiveOrder, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, sidebarLayoutKey, sameRowNode } from '../apps/browser-ui/src/sidebar-model.ts';
 import { sidebarPresentation } from '../apps/browser-ui/src/sidebar-presentation.ts';
 
 const n = (id, parentId, position, kind = 'tab', pinned = false) => ({ id, parentId, position, kind, pinned, archived: false, favorite: false });
@@ -51,7 +51,7 @@ test('automatic titles apply to Today, pins, Favorites and unloaded entries; man
 });
 test('sidebar limits round DIP sizes and reserve room for the website', () => {
   assert.equal(sidebarWidth(336.4, 1200), 336); assert.equal(sidebarWidth(999, 1200), 480);
-  assert.equal(sidebarWidth(-30, 1200), 200); assert.equal(sidebarWidth(480, 700), 300);
+  assert.equal(sidebarWidth(-30, 1200), 150); assert.equal(sidebarWidth(480, 700), 300); assert.equal(sidebarWidth(480, 500), 150);
 });
 test('dropping a Today page into a folder promotes it atomically', () => assert.deepEqual(placement(nodes(), 'today', 'nested', 'inside', 'today'), { method: 'tree.place', id: 'today', parentId: 'nested', position: -1, section: 'pinned' }));
 test('dropping a pinned tab in Today clears its parent', () => assert.deepEqual(placement(nodes(), 'child', null, 'inside', 'today'), { method: 'tree.place', id: 'child', parentId: '', position: -1, section: 'today' }));
@@ -150,4 +150,67 @@ test('closing, standalone and empty sidebar states have identical semantics in b
     const closing=sidebarPresentation({ready:true,windowClosing:true,windowKind:'standalone'},surface);
     assert.equal(closing.busy,true);assert.equal(closing.standalone,true);
   }
+});
+
+test('favorites rearrange into fewer columns as the sidebar narrows', () => {
+  // Grid width = sidebar width - 20 px padding - 8 px zone margins.
+  assert.equal(favoriteColumnLimit(256 - 28), 4); assert.equal(favoriteColumnLimit(200 - 28), 3);
+  assert.equal(favoriteColumnLimit(170 - 28), 2); assert.equal(favoriteColumnLimit(150 - 20), 2); assert.equal(favoriteColumnLimit(10), 2);
+  assert.deepEqual([1, 2, 4, 5, 6, 8, 12].map(n => favoriteColumns(n)), [1, 2, 4, 3, 3, 4, 4]);
+  assert.deepEqual([1, 2, 4, 5, 6, 8, 12].map(n => favoriteColumns(n, 2)), [1, 2, 2, 2, 2, 2, 2]);
+  assert.deepEqual([4, 5, 6, 9].map(n => favoriteColumns(n, 3)), [2, 3, 3, 3]);
+});
+
+test('moving a live tab to a Space of another profile asks first', async () => {
+  const { crossProfileLiveMove } = await import('../apps/browser-ui/src/sidebar-model.ts');
+  const spaces = [{ id: 'a', profileId: 'default' }, { id: 'b', profileId: 'default' }, { id: 'w', profileId: 'work' }];
+  const node = (id, extra = {}) => ({ id, parentId: '', kind: 'tab', title: id, url: '', position: 0, pinned: false, expanded: true,
+    live: false, favorite: false, archived: false, currentUrl: '', closing: false, space: 'a', ...extra });
+  const nodes = [node('live', { live: true }), node('cold'), node('folder', { kind: 'folder', pinned: true }),
+    node('inside', { parentId: 'folder', pinned: true, live: true, space: undefined }), node('split', { splitOther: 'partner' }),
+    node('partner', { splitAnchor: 'split', live: true }), node('peeked', { peek: true })];
+  assert.equal(crossProfileLiveMove(nodes, spaces, 'live', 'w'), true);
+  assert.equal(crossProfileLiveMove(nodes, spaces, 'live', 'b'), false, 'same profile moves directly');
+  assert.equal(crossProfileLiveMove(nodes, spaces, 'cold', 'w'), false, 'cold tabs move directly');
+  assert.equal(crossProfileLiveMove(nodes, spaces, 'folder', 'w'), true, 'a live page inside the folder');
+  assert.equal(crossProfileLiveMove(nodes, spaces, 'split', 'w'), true, 'the live other pane of a split');
+  assert.equal(crossProfileLiveMove(nodes, spaces, 'peeked', 'w'), true, 'a Link Peek');
+  assert.equal(crossProfileLiveMove(nodes, spaces, 'missing', 'w'), false);
+});
+
+test('the layout key changes only when rows can move', () => {
+  const row = (id, extra = {}) => ({ id, parentId: '', kind: 'tab', title: 'A', url: 'https://a/', position: 0, pinned: false, expanded: true,
+    live: false, favorite: false, archived: false, currentUrl: 'https://a/', closing: false, ...extra });
+  const base = [row('a'), row('b', { position: 1 }), row('f', { kind: 'folder', pinned: true, position: 2 }), row('c', { parentId: 'f', pinned: true })];
+  const key = sidebarLayoutKey(base);
+  // Nothing moves: a title, icon, address, loading, sound or preview change.
+  for (const extra of [{ title: 'B' }, { pageTitle: 'New title' }, { favicon: 'sol://ui/favicon/a/v2' }, { currentUrl: 'https://a/next' },
+    { live: true }, { audible: true }, { muted: true }, { peek: true }, { crashed: true }, { mediaCamera: true }])
+    assert.equal(sidebarLayoutKey([{ ...base[0], ...extra }, ...base.slice(1)]), key);
+  // Rows move: added, removed, reordered, nested, pinned, made a Favorite, folder opened or closed.
+  for (const changed of [[...base, row('d', { position: 3 })], base.slice(1), [base[1], base[0], base[2], base[3]],
+    [{ ...base[0], position: 5 }, ...base.slice(1)], [{ ...base[0], parentId: 'f', pinned: true }, ...base.slice(1)],
+    [{ ...base[0], pinned: true }, ...base.slice(1)], [{ ...base[0], pinned: true, favorite: true }, ...base.slice(1)],
+    [base[0], base[1], { ...base[2], expanded: false }, base[3]]])
+    assert.notEqual(sidebarLayoutKey(changed), key);
+  // A tab's own "expanded" flag is not layout.
+  assert.equal(sidebarLayoutKey([{ ...base[0], expanded: false }, ...base.slice(1)]), key);
+});
+
+test('a row is the same when only fields it does not show changed', () => {
+  const node = { id: 'a', parentId: '', kind: 'tab', title: 'A', url: 'https://a/', position: 4, pinned: false, expanded: true, live: true,
+    favorite: false, archived: false, currentUrl: 'https://a/', closing: false, space: 's1', archivedAt: 0, favicon: 'sol://ui/favicon/a/v1' };
+  assert.equal(sameRowNode(node, node), true);
+  assert.equal(sameRowNode(node, { ...node }), true);
+  // Another tab opened above: only the slot moved.
+  assert.equal(sameRowNode(node, { ...node, position: 5 }), true);
+  assert.equal(sameRowNode(node, { ...node, space: 's2', archivedAt: 7 }), true);
+  for (const extra of [{ title: 'B' }, { pageTitle: 'T' }, { favicon: 'sol://ui/favicon/a/v2' }, { live: false }, { closing: true }, { pinned: true },
+    { currentUrl: 'https://a/x' }, { audible: true }, { muted: true }, { peek: true }, { expanded: false }, { parentId: 'f' }, { xBadgeHidden: true }])
+    assert.equal(sameRowNode(node, { ...node, ...extra }), false, JSON.stringify(extra));
+  // A field that disappears or appears is a change, also when the count stays equal.
+  const { favicon, ...without } = node;
+  assert.equal(sameRowNode(node, without), false);
+  assert.equal(sameRowNode(node, { ...without, peekTitle: 'x' }), false);
+  assert.equal(sameRowNode(node, undefined), false); assert.equal(sameRowNode(undefined, undefined), true);
 });

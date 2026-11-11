@@ -127,6 +127,49 @@ bool PageCorners::Paint(int corner, int radius, COLORREF color, COLORREF border,
   return true;
 }
 
+bool PageCorners::ShowModalShade(HWND parent) {
+  RECT client{};
+  if (!GetClientRect(parent, &client) || IsRectEmpty(&client) || !Init(parent)) return false;
+  if (!modal_shade_) {
+    ComPtr<IDCompositionSurface> surface;
+    ComPtr<IDXGISurface> pixels;
+    POINT offset{};
+    if (FAILED(device_->CreateSurface(1, 1, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_ALPHA_MODE_PREMULTIPLIED, &surface)) ||
+        FAILED(surface->BeginDraw(nullptr, __uuidof(IDXGISurface), &pixels, &offset))) return false;
+    const auto properties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+    ComPtr<ID2D1Bitmap1> bitmap;
+    bool painted = SUCCEEDED(d2d_->CreateBitmapFromDxgiSurface(pixels.Get(), &properties, &bitmap));
+    if (painted) {
+      d2d_->SetTarget(bitmap.Get());
+      d2d_->BeginDraw();
+      d2d_->SetTransform(D2D1::Matrix3x2F::Translation(static_cast<float>(offset.x), static_cast<float>(offset.y)));
+      d2d_->PushAxisAlignedClip(D2D1::RectF(0, 0, 1, 1), D2D1_ANTIALIAS_MODE_ALIASED);
+      d2d_->Clear(D2D1::ColorF(0, 0, 0, .4f));
+      d2d_->PopAxisAlignedClip();
+      painted = SUCCEEDED(d2d_->EndDraw());
+      d2d_->SetTarget(nullptr);
+    }
+    if (FAILED(surface->EndDraw()) || !painted) return false;
+    ComPtr<IDCompositionVisual> shade;
+    if (FAILED(device_->CreateVisual(&shade)) || FAILED(shade->SetContent(surface.Get())) ||
+        FAILED(shade->SetBorderMode(DCOMPOSITION_BORDER_MODE_HARD)) ||
+        FAILED(root_->AddVisual(shade.Get(), TRUE, nullptr))) return false;
+    modal_shade_ = std::move(shade);
+  }
+  const auto scale = D2D1::Matrix3x2F::Scale(static_cast<float>(client.right), static_cast<float>(client.bottom));
+  if (SUCCEEDED(modal_shade_->SetTransform(scale)) && SUCCEEDED(device_->Commit())) return true;
+  HideModalShade();
+  return false;
+}
+
+void PageCorners::HideModalShade() {
+  if (!modal_shade_) return;
+  root_->RemoveVisual(modal_shade_.Get());
+  modal_shade_.Reset();
+  device_->Commit();
+}
+
 bool PageCorners::Show(HWND parent, const RECT& rect, int radius) {
   return ShowFrames(parent,std::span<const RECT>(&rect,1),radius);
 }

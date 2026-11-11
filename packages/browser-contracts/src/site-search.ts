@@ -1,8 +1,11 @@
 export type SiteSearch = { name: string; keyword: string; url: string; enabled?: boolean };
 export type SiteSearchActivation = 'spaceOrTab' | 'tab';
+// The built-in Wikipedia shortcut. Searches with this exact template go to the Wikipedia in the
+// query's language (apps/browser-ui/src/site-search.ts); an address the person set stays as is.
+export const defaultWikipediaUrl = 'https://en.wikipedia.org/w/index.php?search=%s';
 export const defaultSiteSearches: readonly SiteSearch[] = [
   { name: 'YouTube', keyword: 'yt', url: 'https://www.youtube.com/results?search_query=%s' },
-  { name: 'Wikipedia', keyword: 'wiki', url: 'https://en.wikipedia.org/w/index.php?search=%s' },
+  { name: 'Wikipedia', keyword: 'wiki', url: defaultWikipediaUrl },
   { name: 'GitHub', keyword: 'gh', url: 'https://github.com/search?q=%s' },
 ];
 export function validSiteSearch(value: unknown): value is SiteSearch {

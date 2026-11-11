@@ -17,7 +17,7 @@ if(expected.service==='gmail'){
   if(expected.action)return expected.action==='compose'&&click(compose);
   let query='';
   try{if(location.hash.startsWith('#search/'))query=decodeURIComponent(location.hash.slice(8).replace(/\+/gu,' '));}catch{}
-  const unreadSearch=query==='in:inbox is:unread', recentSearch=query==='in:inbox';
+  const unreadSearch=query==='in:inbox is:unread newer_than:7d', recentSearch=query==='in:inbox';
   const inboxSearch=unreadSearch||recentSearch;
   if(inboxSearch&&![...document.querySelectorAll('input[name="q"]')].some(e=>e.value.trim()===query))return empty('unsupported');
   const main=[...document.querySelectorAll('[role="main"]')].find(visible);
@@ -234,6 +234,11 @@ if(expected.service==='outlookMail'){
   const counts=new Map();
   for(const row of identified){const token=id(row);counts.set(token,(counts.get(token)||0)+1);}
   const items=[],recent=[];
+  // Outlook labels recent mail with a clock time or a word ("10:32", "Mon 10:32", "Yesterday")
+  // and older mail with a date ("Sun 10/26", "02.11.2025", "Oct 26"). The card lists only the
+  // recent unread: a date, a year, or a day number without a clock time marks a row as old.
+  // A row without a time stays, so an unfamiliar format never empties the card.
+  const thisWeek=t=>!t||!(/\d{1,2}\s*[./-]\s*\d{1,2}/u.test(t)||/\d{4}/u.test(t)||(/\d/u.test(t)&&!/\d{1,2}:\d{2}/u.test(t)));
   for(const row of identified){
     const token=id(row);
     const isUnread=unread(row);
@@ -242,7 +247,7 @@ if(expected.service==='outlookMail'){
     const item={title:fields.title||(isUnread?'Unread conversation':'Conversation'),token,detail:fields.detail,
       ...(fields.displayTime?{displayTime:fields.displayTime}:{})};
     if(recent.length<8)recent.push(item);
-    if(isUnread)items.push(item);
+    if(isUnread&&thisWeek(fields.displayTime))items.push(item);
     if(items.length===8)break;
   }
   if(!recent.length)return empty('unsupported');

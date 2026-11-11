@@ -1,4 +1,5 @@
 import { request, type Command, type Snapshot, type TreeMutation } from './bridge';
+import { waitArchived } from './archive-probe';
 import { folderRemovalProbe } from './folder-removal-probe';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 // Which wait (in source order) timed out, so a failure names its step.
@@ -100,6 +101,14 @@ export async function organizationProbe() {
       try { await mutate(command); } catch (error) { rejected = String(error).includes('Unload'); }
       if (!rejected) throw new Error('Live cross-profile change was not rejected');
     }
+    // Confirmed in the sidebar ("Move tab"): the live page unloads, then moves.
+    await mutate({ method: 'tree.moveToSpace', id: activePage.id, space: otherSpace.id, unload: true });
+    await waitFor(s => { const n = s.nodes!.find(node => node.id === activePage.id); return !!n && n.space === otherSpace.id && !n.live; });
+    // Cold now: it moves back without confirmation and reopens in its own profile.
+    await mutate({ method: 'tree.moveToSpace', id: activePage.id, space: sharedSpace.id });
+    await waitFor(s => s.nodes!.find(node => node.id === activePage.id)?.space === sharedSpace.id);
+    await mutate({ method: 'tree.activate', id: activePage.id });
+    await waitFor(s => !s.isLoading && s.activeProfile === sharedSpace.profileId && !!s.nodes!.find(node => node.id === activePage.id)?.live);
     await mutate({method:'tree.pin',id:activePage.id,value:true});
     await mutate({method:'tree.close',id:activePage.id});
     await waitFor(s => !s.nodes!.find(node => node.id === activePage.id)?.live);
@@ -249,7 +258,7 @@ export async function organizationProbe() {
   await drop(tab.id, '[data-section="today"]');
   await waitFor(s => s.nodes!.some(n => n.id === tab.id && !n.pinned));
   (await dom<HTMLButtonElement>(`${row(tab.id)} .close-page`)).click();
-  await waitFor(s => s.nodes!.some(n => n.id === tab.id && n.archived && !n.live));
+  await waitArchived(tab.id);
   // The Archive is a native popover window: open it from the real button, then
   // click the row inside that window through the probe-only driver.
   (await dom<HTMLButtonElement>('[data-action="archive"]')).click();
@@ -269,7 +278,11 @@ export async function organizationProbe() {
   if (!cancelled || snapshot.treeRevision !== revision || snapshot.activeId !== protectedTab ||
       !snapshot.nodes!.some(n => n.id === protectedTab && n.live && !n.archived)) throw new Error('Cancelled beforeunload changed page/model');
   await mutate({ method: 'tree.close', id: protectedTab });
-  snapshot = await waitFor(s => s.nodes!.some(n => n.id === protectedTab && n.archived && !n.live));
+  snapshot = await waitArchived(protectedTab);
+  // Closing a page outside a collapsed folder never activates a page hidden
+  // inside it (|tab| is live in the collapsed folder and was shown just before).
+  if (snapshot.nodes!.find(n => n.id === folder.id)?.expanded === false && snapshot.activeId === tab.id)
+    throw new Error('Closing a Today tab activated a page hidden in a collapsed folder');
   if (snapshot.organizationUnloadDecisions !== 2) throw new Error('Missing real beforeunload decisions');
   const favorite = (await mutate({ method: 'tree.createTab', parentId: '', title: 'Mail', url: base + '?favorite' })).createdId!;
   await loaded(favorite); await drop(favorite, '[data-section="favorites"]');

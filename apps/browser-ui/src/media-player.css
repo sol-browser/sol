@@ -9,6 +9,15 @@
   background: rgb(20 20 24 / 86%); backdrop-filter: blur(14px) saturate(1.2);
   box-shadow: 0 6px 18px rgb(0 0 0 / 22%), 0 1px 2px rgb(0 0 0 / 20%), inset 0 0 0 1px rgb(255 255 255 / 6%); overflow: hidden;
   transform-origin: 50% 0; transition: margin 320ms var(--ease), transform 320ms var(--ease), opacity 240ms ease, filter 240ms ease; }
+/* The tab list gives up the room the collapsed stack covers (32 px bar, 6 px
+   per peeking card, the 6 px gap above the footer and 2 px for the shadow), so
+   no tab hides under it. It eases with the player's own entrance; the hover
+   expansion still grows over the tabs. SpaceTransition keeps a list that was
+   scrolled to its end pinned there while it shrinks. */
+.sidebar-list { --media-reserve: 0px; margin-bottom: var(--media-reserve); transition: margin-bottom 320ms cubic-bezier(.22,1,.36,1); }
+.sidebar-list:has(~ .sidebar-footer .media-stack) { --media-reserve: 40px; }
+.sidebar-list:has(~ .sidebar-footer .media-stack[data-count="2"]) { --media-reserve: 46px; }
+.sidebar-list:has(~ .sidebar-footer .media-stack[data-count="3"]) { --media-reserve: 52px; }
 /* Collapsed stack: each older card tucks under the newer one below it. */
 .media-player[data-depth="1"], .media-player[data-depth="2"] { margin-bottom: -26px; transform: scale(calc(1 - var(--depth) * .05)); filter: brightness(.82); }
 .media-player[data-depth="2"] { opacity: .85; }
@@ -50,7 +59,7 @@
   .media-player { animation: media-player-in 320ms var(--ease); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .media-player, .media-details, .media-details-inner, .media-bar { transition: none; }
+  .media-player, .media-details, .media-details-inner, .media-bar, .sidebar-list { transition: none; }
 }
 @keyframes media-note { 0%, 100% { transform: translateY(0); opacity: .8; } 50% { transform: translateY(-2px); opacity: 1; } }
 @keyframes media-player-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }

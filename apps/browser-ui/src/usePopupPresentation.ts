@@ -67,7 +67,19 @@ export function usePopupPresentation(root: RefObject<HTMLElement | null>, reques
           if (fits()) void reveal().catch(() => {});
           else frame = requestAnimationFrame(painted);
         };
+        // A hidden window (a modal before it is shown) gets no animation frames,
+        // and its timers wait for the next whole second: the pinned-page editor
+        // opened 0-1 s late (docs/performance-audit.md). Message tasks are not
+        // throttled; the new viewport arrives with an IPC task, not a frame.
+        const settle = (until: number) => {
+          if (disposed || mine !== sequence) return;
+          if (fits() || performance.now() > until) { void reveal(!fits()).catch(() => {}); return; }
+          const channel = new MessageChannel();
+          channel.port1.onmessage = () => { channel.port1.close(); settle(until); };
+          channel.port2.postMessage(0);
+        };
         if (fits()) void reveal().catch(() => {});
+        else if (document.visibilityState === 'hidden') settle(performance.now() + 100);
         else {
           frame = requestAnimationFrame(painted);
           timer = window.setTimeout(() => { cancelAnimationFrame(frame); void reveal(true).catch(() => {}); }, 64);

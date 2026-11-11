@@ -4,6 +4,7 @@
 #include "app/session.h"
 #include "experiments/google_integrations_probe.h"
 #include "experiments/integration_live_check.h"
+#include "integrations/gmail_feed.h"
 #include "integrations/live_reader.h"
 #include "windows/panel_popup.h"
 #include "windows/window_close.h"
@@ -104,12 +105,108 @@ class InboxClient final : public CefClient, public CefRenderHandler, public CefL
   const std::string target_;
   IMPLEMENT_REFCOUNTING(InboxClient);
 };
+// Collects the Gmail feed response (at most 1 MB) and hands it to the owner on the UI thread.
+class GmailFeedClient final : public CefURLRequestClient {
+ public:
+  GmailFeedClient(std::weak_ptr<IntegrationPreviews> owner, std::string target) : owner_(std::move(owner)), target_(std::move(target)) {}
+  void OnRequestComplete(CefRefPtr<CefURLRequest> request) override {
+    const auto response = request->GetResponse();
+    const int status = request->GetRequestStatus() == UR_SUCCESS && response ? response->GetStatus() : 0;
+    CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<IntegrationPreviews> weak, std::string target, int code, std::string data) {
+      if (const auto owner = weak.lock()) owner->OnGmailFeed(target, code, data);
+    }, owner_, target_, status, body_));
+  }
+  void OnDownloadData(CefRefPtr<CefURLRequest>, const void* data, size_t length) override {
+    if (body_.size() + length <= (1u << 20)) body_.append(static_cast<const char*>(data), length);
+  }
+  void OnUploadProgress(CefRefPtr<CefURLRequest>, int64_t, int64_t) override {}
+  void OnDownloadProgress(CefRefPtr<CefURLRequest>, int64_t, int64_t) override {}
+  bool GetAuthCredentials(bool, const CefString&, int, const CefString&, const CefString&,
+                          CefRefPtr<CefAuthCallback>) override { return false; }
+ private:
+  std::weak_ptr<IntegrationPreviews> owner_;
+  const std::string target_;
+  std::string body_;
+  IMPLEMENT_REFCOUNTING(GmailFeedClient);
+};
+
+// The message time as the card shows it, in the user's Windows format: the time for today's
+// mail, the short weekday and time otherwise (the card only lists the last week).
+std::string MailTime(int64_t utc_ms) {
+  ULARGE_INTEGER t{}; t.QuadPart = static_cast<ULONGLONG>(utc_ms) * 10000ULL + 116444736000000000ULL;
+  FILETIME utc{}; utc.dwLowDateTime = t.LowPart; utc.dwHighDateTime = t.HighPart;
+  SYSTEMTIME universal{}, local{}, now{};
+  if (!FileTimeToSystemTime(&utc, &universal) || !SystemTimeToTzSpecificLocalTime(nullptr, &universal, &local)) return {};
+  GetLocalTime(&now);
+  wchar_t clock[32]{}, day[16]{};
+  if (!GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, TIME_NOSECONDS, &local, nullptr, clock, 32)) return {};
+  std::wstring text = clock;
+  if ((local.wYear != now.wYear || local.wMonth != now.wMonth || local.wDay != now.wDay) &&
+      GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, 0, &local, L"ddd", day, 16, nullptr)) text = std::wstring(day) + L" " + text;
+  const int size = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+  std::string out(size > 0 ? size : 0, '\0');
+  if (size > 0) WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), out.data(), size, nullptr, nullptr);
+  return out.size() <= 24 ? out : std::string();
+}
 }  // namespace
+
+void IntegrationPreviews::StartGmailFeed(const std::string& target) {
+  const auto s = state_.lock();
+  const auto provider = GoogleIntegration(target);
+  if (!s || !provider || !profile_ || !profile_->context) return;
+  active_ = target;
+  const auto url = provider->base + "feed/atom";
+  if (const auto fixture = GmailFeedFixture(s, url); !fixture.empty()) {
+    CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<IntegrationPreviews> weak, std::string t, std::string body) {
+      if (const auto self = weak.lock()) self->OnGmailFeed(t, 200, body);
+    }, weak_from_this(), target, fixture));
+    feed_request_ = nullptr;
+    return;
+  }
+  auto request = CefRequest::Create();
+  request->SetURL(url);
+  request->SetMethod("GET");
+  // The profile's Google cookies identify the account; nothing else is sent.
+  request->SetFlags(UR_FLAG_ALLOW_STORED_CREDENTIALS | UR_FLAG_SKIP_CACHE);
+  feed_request_ = CefURLRequest::Create(request, new GmailFeedClient(weak_from_this(), target), profile_->context);
+  if (!feed_request_) OnGmailFeed(target, 0, {});
+}
+void IntegrationPreviews::OnGmailFeed(const std::string& target, int status, const std::string& body) {
+  if (target != active_) return;  // Closed or replaced meanwhile.
+  feed_request_ = nullptr;
+  active_.clear();
+  const auto feed = status == 200 ? ParseGmailFeed(body) : std::nullopt;
+  CefRefPtr<CefDictionaryValue> result;
+  if (feed) {
+    result = CefDictionaryValue::Create();
+    result->SetString("status", "ready");
+    result->SetString("mailView", "unreadAll");
+    result->SetBool("composeAvailable", true);
+    auto items = CefListValue::Create();
+    FILETIME now{}; GetSystemTimeAsFileTime(&now);
+    ULARGE_INTEGER t{}; t.LowPart = now.dwLowDateTime; t.HighPart = now.dwHighDateTime;
+    const int64_t now_ms = static_cast<int64_t>((t.QuadPart - 116444736000000000ULL) / 10000ULL);
+    for (const auto& entry : feed->entries) {
+      if (items->GetSize() == 8) break;
+      // The same week as the search used before (kGmailUnreadQuery): older unread mail stays out.
+      if (now_ms - entry.issued_ms > 7LL * 24 * 3600 * 1000) continue;
+      auto row = CefDictionaryValue::Create();
+      row->SetString("title", entry.title.substr(0, 400));
+      row->SetString("detail", entry.sender.substr(0, 400));
+      row->SetString("token", entry.message_id);
+      if (const auto time = MailTime(entry.issued_ms); !time.empty()) row->SetString("displayTime", time);
+      items->SetDictionary(items->GetSize(), row);
+    }
+    result->SetList("items", items);
+  }
+  StoreSnapshot(target, result, false);
+  Queue();
+}
 
 void IntegrationPreviews::Update(std::shared_ptr<BrowsingProfile> profile, const std::vector<std::string>& targets) {
   if (stopped_) return;
   if (profile != profile_) {
-    entries_.clear(); Close(); ClearForeground();
+    entries_.clear(); inbox_titles_.clear(); Close(); ClearForeground();
     profile_ = std::move(profile);
   }
   std::erase_if(entries_, [&](const auto& entry) { return std::find(targets.begin(), targets.end(), entry.first) == targets.end(); });
@@ -139,6 +236,29 @@ void IntegrationPreviews::RefreshAfterMailOpen(const std::string& target) {
   if (active_ == target) Close();
   it->second.due = Clock::now() + 1200ms;
   Queue();
+}
+void IntegrationPreviews::RefreshIfOlder(const std::string& target, std::chrono::seconds age) {
+  const auto it = entries_.find(target);
+  if (stopped_ || it == entries_.end() || target == active_) return;
+  if (it->second.snapshot && Clock::now() - it->second.updated < age) return;
+  it->second.due = std::min(it->second.due, Clock::now());
+  Queue();
+}
+void IntegrationPreviews::ObserveMailTitle(CefRefPtr<CefBrowser> browser, const std::string& title) {
+  if (stopped_ || !profile_ || !profile_->context || !browser || !browser->IsValid() ||
+      !profile_->context->IsSame(browser->GetHost()->GetRequestContext())) return;
+  const auto frame = browser->GetMainFrame();
+  if (!frame) return;
+  const auto source = frame->GetURL().ToString();
+  const auto provider = LiveIntegration(source);
+  const auto target = MailboxTarget(source);
+  // Only the inbox view: an open message or a search has its own title.
+  if (!provider || !provider->IsMail() || !target || !entries_.contains(*target) || !IsMailboxInbox(*target, source)) return;
+  auto& seen = inbox_titles_[*target];
+  const bool first = seen.empty();
+  if (seen == title) return;
+  seen = title;
+  if (!first) RefreshAfterMailOpen(*target);
 }
 void IntegrationPreviews::ObserveOutlookInbox(CefRefPtr<CefBrowser> browser) {
   if (stopped_ || !profile_ || !profile_->context || !browser || !browser->IsValid() ||
@@ -212,10 +332,8 @@ void IntegrationPreviews::Tick() {
           self->read_.reset();
           const bool ready = result && result->GetString("status") == "ready";
           if (ready && result->GetList("items")->GetSize()) self->Finish(result);
-          else if (ready && self->empty_ready_) {
-            if (self->gmail_view_==GmailView::Unread) self->AdvanceGmailSearch();
-            else self->Finish(result);
-          }
+          // Two empty reads in a row: nothing is unread. Mail cards show unread mail only.
+          else if (ready && self->empty_ready_) self->Finish(result);
           else {
             self->empty_ready_ = ready;
             self->next_read_ = Clock::now() + 1250ms;
@@ -223,7 +341,7 @@ void IntegrationPreviews::Tick() {
         }, IntegrationLiveCheckEnabled(s));
       }
     }
-  } else if (!browser_ && !worker_busy && profile_ && profile_->initialized && profile_->context) {
+  } else if (!browser_ && !feed_request_ && active_.empty() && !worker_busy && profile_ && profile_->initialized && profile_->context) {
     const auto next = std::min_element(entries_.begin(), entries_.end(),
         [](const auto& a, const auto& b) { return a.second.due < b.second.due; });
     if (next->second.due <= now) Start(next->first);
@@ -233,6 +351,7 @@ void IntegrationPreviews::Tick() {
 void IntegrationPreviews::Start(const std::string& target) {
   const auto s = state_.lock();
   if (!s || worker_busy) return;
+  if (const auto provider = LiveIntegration(target); provider && provider->id == "gmail") { StartGmailFeed(target); return; }
   active_ = target; worker_busy = true;
   empty_ready_ = false;
   const auto now = Clock::now();
@@ -254,7 +373,8 @@ void IntegrationPreviews::Start(const std::string& target) {
   if (!browser_) { worker_busy = false; Finish(nullptr); }
 }
 void IntegrationPreviews::AdvanceGmailSearch() {
-  gmail_view_ = gmail_view_==GmailView::Unread ? GmailView::Recent : GmailView::Inbox;
+  // The unread search did not load in time: read the ordinary inbox's unread rows instead.
+  gmail_view_ = GmailView::Inbox;
   empty_ready_ = false;
   if (read_) { read_->Cancel(); read_.reset(); }
   const auto frame = browser_ ? browser_->GetMainFrame() : nullptr;
@@ -262,9 +382,8 @@ void IntegrationPreviews::AdvanceGmailSearch() {
   const auto now = Clock::now();
   next_read_ = now + 900ms;
   search_deadline_ = now + 5s;
-  const auto url = gmail_view_==GmailView::Recent ? GmailInboxSearch(active_,false) : active_;
-  const auto fixture = PreviewFixtureUrl(state_.lock(),url);
-  frame->LoadURL(fixture.empty() ? url : fixture);
+  const auto fixture = PreviewFixtureUrl(state_.lock(),active_);
+  frame->LoadURL(fixture.empty() ? active_ : fixture);
 }
 void IntegrationPreviews::Finish(CefRefPtr<CefDictionaryValue> result) {
   StoreSnapshot(active_,result,false);
@@ -279,6 +398,15 @@ void IntegrationPreviews::StoreSnapshot(const std::string& target, CefRefPtr<Cef
     if (!result) {
       value->SetString("status","unsupported"); value->SetBool("composeAvailable",false);
       value->SetList("items",CefListValue::Create());
+    }
+    // Mail cards list unread mail only (the user's choice, 2026-11-09): rows a reader found while
+    // nothing was unread ("recent", "recentAll") are read mail, which looked like a stale card.
+    if (value->GetType("mailView") == VTYPE_STRING) {
+      const auto view = value->GetString("mailView").ToString();
+      if (view == "recent" || view == "recentAll") {
+        value->SetList("items",CefListValue::Create());
+        value->SetString("mailView", view == "recentAll" ? "unreadAll" : "unread");
+      }
     }
     // A transient failed Outlook refresh can leave the last authenticated
     // inbox useful until it expires. Explicit sign-in redirects clear it.
@@ -300,6 +428,7 @@ void IntegrationPreviews::StoreSnapshot(const std::string& target, CefRefPtr<Cef
 }
 void IntegrationPreviews::Close() {
   if (read_) { read_->Cancel(); read_.reset(); }
+  if (feed_request_) { feed_request_->Cancel(); feed_request_ = nullptr; }
   active_.clear();
   if (browser_ && !closing_) {
     closing_ = true;

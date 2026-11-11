@@ -17,6 +17,58 @@ One short line that sums up the release. Optional; the website shows it as the h
 New things first, smaller fixes under "### Fixes". Describe the result for the user, not the code.
 -->
 
+## 0.4.0 — 2026-11-11
+
+A big clean-up: lots of fixes, a lighter and faster Sol, and a Chromium update.
+
+- **One Archive:** the Archive now holds the closed tabs of all your Spaces,
+  newest first. A tab closed in another Space shows that Space's name, and
+  restoring it opens it in the Space you are in.
+- **Back to the pinned page:** when a pinned tab has moved away from its saved
+  address, hover its icon and click “Back to pinned url” to return.
+- **Unread mail only:** mail cards show unread mail from the last week and
+  refresh when you hover them or read mail in the tab.
+- **Chromium update:** Sol's engine moves to Chromium 156.0.8078.88 with the
+  security fixes Google released for Chrome 156 since the previous version.
+
+### Fixes
+
+- **Faster sidebar:** with many tabs open, switching, opening and closing tabs
+  redraws only what changed, and Sol sends the sidebar far less data.
+- **Lighter integrations:** the Gmail card reads Gmail's feed instead of loading
+  Gmail in the background, and the X and WhatsApp badges no longer keep those
+  sites open all the time. With pinned WhatsApp and X tabs, Sol used about
+  500 MB less memory in our tests.
+- **Narrow sidebar:** the sidebar can be as narrow as 150 px. Favorites
+  rearrange into three or two columns and the bottom bar gets compact, so your
+  Spaces stay in view.
+- **Edit pinned tabs:** Edit… on a pinned tab opens right away in the middle of
+  the browser, where you change its name and saved address.
+- **Developer tools in their own window:** a separate DevTools window has Sol's
+  controls at the top, so you can dock it again or close it right there, and
+  the browser window no longer keeps a strip for it.
+- **Volume in picture in picture:** the video window has its own volume
+  slider, and YouTube's player follows it.
+- **Wikipedia in your language:** the wiki Site Search opens the Wikipedia that
+  matches the alphabet you type in.
+- **Duplicate tabs:** Chrome's own session restore could add copies of a page
+  to Today after a restart. Sol now turns it off.
+- **Updates:** when a newer version comes out while an update is waiting, Sol
+  downloads the newer one and installs it in one step.
+- **Links that open a new tab:** links with a named target open in a tab
+  instead of a small popup window.
+- **Picture in picture:** the video window's Back to tab button returns to the
+  tab the video came from.
+- **Sidebar player:** the player no longer covers the last tab, and muted video
+  previews on hover no longer bring it up.
+- **Moving tabs to another profile:** the confirmation now appears in the middle
+  of the window.
+- **What's new:** Settings now links to the release notes on sol-browser.app
+  instead of keeping its own copy.
+- **Removed:** the Spotify mini-player and the YouTube picture-in-picture switch.
+  Spotify does not play in Sol, and picture in picture works the same on every
+  site.
+
 ## 0.3.0 — 2026-11-09
 
 Integrations and Site Search.

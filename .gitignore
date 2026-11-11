@@ -21,6 +21,7 @@
 /.vscode/
 /.idea/
 /.claude/
+/.codex-attachments/
 *.tmp
 *.bak
 Thumbs.db

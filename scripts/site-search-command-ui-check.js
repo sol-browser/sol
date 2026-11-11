@@ -33,7 +33,7 @@ async () => {
   const mark=fixture.requests.length;await type('кот & =?/#');await pause(240);
   check(!fixture.requests.slice(mark).some(r=>['command.history','command.suggest'].includes(r.method)),'scoped queries request no ordinary completions');
   input.form.requestSubmit();await until(()=>fixture.requests.some(r=>r.method==='command.submit')&&!fixture.state.open,'scoped submit');
-  const url=new URL(fixture.requests.filter(r=>r.method==='command.submit').at(-1).url);check(url.host==='en.wikipedia.org'&&url.searchParams.get('search')==='кот & =?/#','encoded scoped navigation');
+  const url=new URL(fixture.requests.filter(r=>r.method==='command.submit').at(-1).url);check(url.host==='ru.wikipedia.org'&&url.searchParams.get('search')==='кот & =?/#','encoded scoped navigation, in the query\'s Wikipedia');
   fixture.reopen();await pause(80);await type('yt');await key(' ');check(scoped()?.textContent.includes('YouTube'),'Space activation');
   await type('draft query');fixture.state.open=false;fixture.publish();await pause(50);fixture.reopen();await pause(80);
   check(scoped()?.textContent.includes('YouTube')&&input.value==='draft query','scope draft restores after dismissal');

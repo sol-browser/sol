@@ -1,10 +1,12 @@
 #pragma once
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
@@ -157,11 +159,25 @@ struct State {
   bool protocols_done = false;
   bool close_motion_probe = false, close_motion_done = false;
   std::atomic<int> peek_id{-1};
+  // Placement strips of separate DevTools windows (windows/devtools_window.cpp).
+  // Read by the sol://ui handler on the IO thread, hence the lock.
+  mutable std::mutex devtools_window_ids_mutex;
+  std::set<int> devtools_window_ids;
+  bool IsDevToolsWindowUi(int id) const { std::lock_guard lock(devtools_window_ids_mutex); return devtools_window_ids.contains(id); }
   bool sidebar_peek_probe = false, sidebar_peek_done = false;
   bool google_integrations_probe = false, google_integrations_checks = false;
   int google_integrations_phase = 0;
   bool sidebar_perf_probe = false, sidebar_perf_started = false, sidebar_perf_done = false;
   int sidebar_perf_tabs = 80;
+  // How often this window rebuilds and sends workspace snapshots (memory
+  // report and --probe-sidebar-perf; docs/performance-audit.md). UI thread only.
+  struct SnapshotCounters {
+    std::uint64_t publish_requests = 0;  // Publish() calls; |publishes| are the coalesced snapshots sent.
+    std::uint64_t publishes = 0, layout_publishes = 0, theme_publishes = 0;
+    std::uint64_t snapshots = 0, snapshot_microseconds = 0;
+    std::uint64_t shell_messages = 0, shell_bytes = 0, peek_messages = 0, peek_bytes = 0;
+    std::uint64_t last_bytes = 0;
+  } snapshot_counters;
   bool pip_probe = false, pip_done = false;
   bool capture_mute_probe = false, capture_mute_done = false;
   bool theme_probe = false, theme_done = false;
@@ -208,13 +224,18 @@ struct State {
   // Website frames currently playing <video>/<audio> with sound, by page browser ID.
   std::map<int, std::set<std::string>> audible_frames;
   std::set<int> auto_pip_pages;  // Pages whose video Red put into PiP.
-  // Button-over-videos script per website page (video_pip_button.cpp).
-  struct PipButtonScript { CefRefPtr<CefRegistration> observer; int pending = 0; std::string identifier; };
+  // Button-over-videos script per website page (video_pip_button.cpp), and
+  // the YouTube player volume sync registered with it.
+  struct PipButtonScript {
+    CefRefPtr<CefRegistration> observer; int pending = 0; std::string identifier;
+    int volume_pending = 0; std::string volume_identifier;
+  };
   std::map<int, PipButtonScript> pip_buttons;
   std::shared_ptr<HistoryService> history;
   std::shared_ptr<FaviconCache> favicons;  // Site icons by host (UI and IO threads).
   // Browser IDs of internal page tabs (trusted UI profile, page-specific IPC only).
   std::set<int> internal_pages;
+  int x_unread_fixture = -1;  // Sidebar probe only: the X unread count instead of asking x.com.
   CefRefPtr<CefRequestContext> ui_context;
   int organization_browser = -1, organization_unload_decisions = 0;
   std::shared_ptr<WorkspaceController> workspace;

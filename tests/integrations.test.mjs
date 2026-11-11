@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { integrationCatalog, recentIntegration, googleIntegration, hoverIntegration, pinnedIntegration, integrationJoinUrl, parseIntegrationCard, integrationUnread } from '../apps/browser-ui/src/integrations.ts';
+import { integrationCatalog, recentIntegration, googleIntegration, hoverIntegration, pinnedIntegration, integrationJoinUrl, parseIntegrationCard, integrationUnread, xHomePin, xCountUnread, whatsAppHomePin, whatsAppCountUnread } from '../apps/browser-ui/src/integrations.ts';
 import { parseSettingsSnapshot } from '../packages/browser-contracts/src/index.ts';
-import { integrationEnabled, integrationSettingsCatalog, validIntegrationSettings } from '../packages/browser-contracts/src/integration-settings.ts';
+import { integrationEnabled, integrationSettingsCatalog, unlistedIntegrations, validIntegrationSettings } from '../packages/browser-contracts/src/integration-settings.ts';
 test('catalog covers all 17 services with four recent-page providers', () => {
   assert.equal(integrationCatalog.length, 17);
   assert.equal(new Set(integrationCatalog.map(p => p.id)).size, 17);
@@ -23,6 +23,11 @@ test('paused cards are not requested or accepted for existing pins', () => {
     assert.equal(validIntegrationSettings({[service]:true}), false);
     assert.throws(() => parseIntegrationCard({node,service,name:service,loading:false,items:[]}, {[service]:true}));
   }
+});
+test('Spotify and YouTube stay readable but are not offered in Settings', () => {
+  assert.deepEqual([...unlistedIntegrations].sort(), ['spotify', 'youtube']);
+  assert.equal(validIntegrationSettings({youtube:false, spotify:true}), true);
+  assert.equal(integrationSettingsCatalog.filter(p => !unlistedIntegrations.includes(p.id)).length, 9);
 });
 test('available providers can be switched off and on', () => {
   assert.equal(integrationSettingsCatalog.length, 11);
@@ -116,4 +121,27 @@ test('mailbox preview uses the saved pin even if the active page is a different 
   assert.equal(pinnedIntegration('https://mail.google.com.evil.test/mail/u/0/'), undefined);
   assert.equal(pinnedIntegration('https://calendar.google.com/calendar/u/0/r'), 'googleCalendar');
   assert.equal(pinnedIntegration('https://calendar.google.com/calendar/','https://docs.google.com/document/d/owned'), 'googleCalendar');
+});
+
+test('the X counter decides the dot on X home pins, loaded or not', () => {
+  for (const url of ['https://x.com/', 'https://x.com/home', 'https://twitter.com/home/', 'https://www.x.com/'])
+    assert.equal(xHomePin(url), true, url);
+  for (const url of ['https://x.com/notifications', 'https://x.com/home?tab=following', 'https://x.com/#a', 'https://x.com.evil.test/', 'http://x.com/', 'https://x.com:444/'])
+    assert.equal(xHomePin(url), false, url);
+  assert.equal(xCountUnread('https://x.com/home', 3), 'x');
+  assert.equal(xCountUnread('https://x.com/home', 0), undefined);
+  assert.equal(xCountUnread('https://x.com/home', 3, true), null);  // the pin's dot is hidden
+  assert.equal(xCountUnread('https://x.com/home', undefined), null);  // unknown: the title decides
+  assert.equal(xCountUnread('https://x.com/notifications', 3), null);
+});
+
+test('an unloaded WhatsApp home pin shows the hidden check; a loaded one its title', () => {
+  assert.equal(whatsAppHomePin('https://web.whatsapp.com/'), true);
+  for (const url of ['https://web.whatsapp.com/send', 'https://web.whatsapp.com/?phone=1', 'https://web.whatsapp.com.evil.test/', 'http://web.whatsapp.com/'])
+    assert.equal(whatsAppHomePin(url), false, url);
+  assert.equal(whatsAppCountUnread('https://web.whatsapp.com/', 3, false), 'whatsapp');
+  assert.equal(whatsAppCountUnread('https://web.whatsapp.com/', 0, false), undefined);
+  assert.equal(whatsAppCountUnread('https://web.whatsapp.com/', 3, true), null);       // loaded: the title decides
+  assert.equal(whatsAppCountUnread('https://web.whatsapp.com/', undefined, false), null);
+  assert.equal(whatsAppCountUnread('https://web.whatsapp.com/send', 3, false), null);
 });

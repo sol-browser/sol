@@ -1,6 +1,7 @@
 #include "workspace/controller.h"
 #include "windows/clipboard.h"
 #include "windows/embedded_content.h"
+#include "workspace/tab_order.h"
 #include "include/base/cef_callback.h"
 #include "include/wrapper/cef_closure_task.h"
 #include <algorithm>
@@ -32,7 +33,8 @@ int WorkspaceController::CopyTabLink(const std::string& id, std::string& error) 
   return 0;
 }
 
-int WorkspaceController::SetPinnedPage(const std::string& id, std::string url, const std::string& title, std::string& error) {
+int WorkspaceController::SetPinnedPage(const std::string& id, std::string url, const std::string& title, std::string& error, Reply done) {
+  if (!ready_ || stopped_ || shutting_down_ || !worker_ || closing_.contains(id)) { error = "Tab is unavailable"; return 409; }
   const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
   if (node == tree_.nodes.end() || node->folder || node->archived || (!node->pinned && !node->favorite)) { error = "Not a pinned page"; return 404; }
   if (url.empty()) {  // "Replace Pinned URL with Current".
@@ -40,12 +42,10 @@ int WorkspaceController::SetPinnedPage(const std::string& id, std::string url, c
     if (!browser) { error = "Open the page first"; return 409; }
     url = browser->GetMainFrame()->GetURL().ToString();
   }
-  if (!WebAddress(url) || title.size() > 240) { error = "Invalid address"; return 400; }
+  if (!WebAddress(url)) { error = "Invalid address"; return 400; }
   TreeCommand command{TreeAction::SetUrl}; command.id = id; command.url = url; command.section = "home";
-  Dispatch(command, {}, true);
-  if (!title.empty() && title != node->title) {
-    TreeCommand rename{TreeAction::Rename}; rename.id = id; rename.title = title; Dispatch(rename, {}, true);
-  }
+  if (!title.empty() && title != node->title) command.title = title;
+  Dispatch(std::move(command), std::move(done), true);
   return 0;
 }
 
@@ -64,13 +64,8 @@ int WorkspaceController::ArchiveTodayTabs(const std::string& id, bool below, std
   if (node == tree_.nodes.end() || node->folder || node->archived || node->pinned || node->favorite || !node->parent.empty()) {
     error = "Not a Today tab"; return 404;
   }
-  std::vector<const TreeNode*> today;
-  for (const auto& other : tree_.nodes)
-    if (!other.folder && !other.archived && !other.pinned && !other.favorite && other.parent.empty() && other.space == node->space) today.push_back(&other);
-  std::sort(today.begin(), today.end(), [](const auto* a, const auto* b) { return a->position < b->position; });
-  auto ids = std::make_shared<std::vector<std::string>>();
-  for (const auto* other : today)
-    if (all || (other->id != id && (!below || other->position > node->position))) ids->push_back(other->id);
+  // Clear (all) keeps the page on screen: the active tab and its split pane.
+  auto ids = std::make_shared<std::vector<std::string>>(TodayArchiveTargets(tree_, id, below, all, tree_.active_id));
   if (ids->empty()) { error = below ? "No tabs below" : "No other tabs"; return 409; }
   // One at a time (each may ask to confirm unsaved changes); stops if one is kept.
   auto next = std::make_shared<std::function<void()>>();

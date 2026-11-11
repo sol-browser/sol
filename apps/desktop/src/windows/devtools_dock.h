@@ -2,6 +2,7 @@
 #include "app/state.h"
 namespace red {
 struct DeviceConfig;
+class DevToolsWindow;
 enum class DevToolsSide { Right, Bottom, Left, Window };
 
 // Native siblings of the website, created with CEF's child WindowInfo. Never
@@ -20,6 +21,16 @@ class DevToolsDock {
   void ToggleDock(int target);
   CefRefPtr<CefDictionaryValue> Describe() const;
   bool Control(int frontend, const std::string& action);
+  // From the separate window's own strip: acts on that window's page, which
+  // need not be the active one (device preview only works on the active page).
+  bool ControlTarget(int target, const std::string& action);
+  bool IsActive(int target) const { return target == active_; }
+  bool DeviceEnabled(int target) const;
+  // Separate window: false until the window for |target| exists; it then shows
+  // the page's DevTools itself (ShowPageDevTools asks this first).
+  bool ReadyToShow(int target);
+  void RememberWindowBounds(const CefRect& bounds) { window_bounds_ = bounds; }
+  std::shared_ptr<DevToolsWindow> SeparateWindow(int target) const;  // Probes.
   // |live|: a divider drag in progress. Moves only the native windows; the
   // caller replies with LayoutSnapshot and the final (non-live) resize
   // publishes the full workspace once.
@@ -43,6 +54,7 @@ class DevToolsDock {
   int active_ = -1;
   bool fullscreen_ = false;
   bool refresh_queued_ = false;
+  CefRect window_bounds_;  // Last separate-window bounds (DIP screen), reused for the next one.
   bool live_ = false;
 };
 }  // namespace red

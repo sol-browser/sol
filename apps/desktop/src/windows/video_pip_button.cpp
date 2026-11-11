@@ -40,7 +40,13 @@ const rect = document.createElementNS(ns, 'rect');
 for (const [k, v] of [['x','13'],['y','13'],['width','9'],['height','7'],['rx','1.5'],['fill','currentColor']]) rect.setAttribute(k, v);
 icon.append(rect); button.append(icon); root.append(style, button);
 let target = null, timer = 0;
-const usable = v => v.videoWidth > 0 && !v.disablePictureInPicture && document.pictureInPictureEnabled;
+// Muted inline previews are not worth a window: YouTube's hover previews in
+// feeds, and generally a silent video without native controls that is
+// smaller than half the viewport (feed autoplay). Videos with sound, native
+// controls or a large player still get the button.
+const preview = v => !!v.closest('#inline-preview-player,ytd-video-preview,#video-preview,ytd-moving-thumbnail-renderer') ||
+  ((v.muted || v.volume === 0) && !v.controls && v.getBoundingClientRect().width < innerWidth / 2);
+const usable = v => v.videoWidth > 0 && !v.disablePictureInPicture && document.pictureInPictureEnabled && !preview(v);
 const hide = () => { button.classList.remove('on'); target = null; };
 const place = v => { const r = v.getBoundingClientRect();
   button.style.left = Math.round(Math.min(r.right, innerWidth) - 44) + 'px';
@@ -61,6 +67,37 @@ button.addEventListener('click', e => { e.stopPropagation(); e.preventDefault();
 const attach = () => document.documentElement && !host.isConnected && document.documentElement.append(host);
 attach(); new MutationObserver(attach).observe(document, {childList:true});
 }))JS";
+// YouTube keeps its own volume state and ignores changes it did not make
+// itself, so the native PiP window's volume slider and mute button (which set
+// the video element's own volume/muted) would leave YouTube's controls
+// showing the old values. Runs in the page's main world, because it needs
+// YouTube's player API. It notes the values YouTube itself sets on media
+// elements; a volumechange with any other value came from outside and is
+// passed to YouTube's player, scaled by YouTube's loudness normalization
+// (element volume / player volume). Reads and sends nothing else.
+constexpr char kYouTubeVolume[] = R"JS((()=>{
+if (!/(^|\.)youtube\.com$/.test(location.hostname) || window.__solYouTubeVolume) return;
+Object.defineProperty(window, '__solYouTubeVolume', {value: true});
+const proto = HTMLMediaElement.prototype;
+const vd = Object.getOwnPropertyDescriptor(proto, 'volume'), md = Object.getOwnPropertyDescriptor(proto, 'muted');
+if (!vd || !md) return;
+const own = new WeakMap();
+const rec = el => { let r = own.get(el); if (!r) own.set(el, r = {}); return r; };
+Object.defineProperty(proto, 'volume', {...vd, set(v) { rec(this).volume = +v; return vd.set.call(this, v); }});
+Object.defineProperty(proto, 'muted', {...md, set(v) { rec(this).muted = !!v; return md.set.call(this, v); }});
+document.addEventListener('volumechange', e => {
+  const v = e.target, p = document.getElementById('movie_player');
+  if (!(v instanceof HTMLVideoElement) || !p || !p.contains(v) || typeof p.setVolume !== 'function') return;
+  const r = rec(v), volume = vd.get.call(v), muted = md.get.call(v);
+  if (r.volume !== undefined && Math.abs(volume - r.volume) > 0.005) {
+    const player = p.getVolume();
+    const factor = r.volume > 0 && player > 0 ? r.volume / (player / 100) : 1;
+    r.volume = volume;
+    p.setVolume(Math.max(0, Math.min(100, Math.round(volume / factor * 100))));
+  }
+  if (r.muted !== undefined && muted !== r.muted) { r.muted = muted; muted ? p.mute() : p.unMute(); }
+}, true);
+})();)JS";
 // Remembers the script's DevTools identifier, so a later registration can
 // replace it instead of piling up.
 class Observer final : public CefDevToolsMessageObserver {
@@ -71,9 +108,11 @@ class Observer final : public CefDevToolsMessageObserver {
     CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, int browser, int id, std::string json) {
       const auto state = weak.lock(); if (!state || json.empty()) return;
       const auto entry = state->pip_buttons.find(browser);
-      if (entry == state->pip_buttons.end() || entry->second.pending != id) return;
+      if (entry == state->pip_buttons.end() || (entry->second.pending != id && entry->second.volume_pending != id)) return;
       const auto value = CefParseJSON(json, JSON_PARSER_RFC);
-      if (value && value->GetType() == VTYPE_DICTIONARY) entry->second.identifier = value->GetDictionary()->GetString("identifier").ToString().substr(0, 64);
+      if (!value || value->GetType() != VTYPE_DICTIONARY) return;
+      const auto identifier = value->GetDictionary()->GetString("identifier").ToString().substr(0, 64);
+      (entry->second.pending == id ? entry->second.identifier : entry->second.volume_identifier) = identifier;
     }, state_, browser->GetIdentifier(), id, std::move(json)));
   }
  private:
@@ -86,18 +125,27 @@ class Observer final : public CefDevToolsMessageObserver {
 // loads: a registration made before a cross-process navigation (YouTube) is
 // lost with the old process, so it is renewed (the previous one removed).
 void InstallVideoPipButton(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page) {
-  if (!state->session || !state->session->preferences || !state->session->preferences->Get().pip_button) return;
   auto& entry = state->pip_buttons[page->GetIdentifier()];
   if (!entry.observer) entry.observer = page->GetHost()->AddDevToolsMessageObserver(new Observer(state));
+  // The YouTube volume sync applies however PiP was opened (our button,
+  // YouTube's own button or Alt+P), so it does not depend on the preference.
+  if (!entry.volume_identifier.empty()) {
+    auto remove = CefDictionaryValue::Create(); remove->SetString("identifier", entry.volume_identifier);
+    page->GetHost()->ExecuteDevToolsMethod(0, "Page.removeScriptToEvaluateOnNewDocument", remove);
+    entry.volume_identifier.clear();
+  }
+  auto volume = CefDictionaryValue::Create();
+  volume->SetString("source", kYouTubeVolume); volume->SetBool("runImmediately", true);
+  entry.volume_pending = page->GetHost()->ExecuteDevToolsMethod(0, "Page.addScriptToEvaluateOnNewDocument", volume);
+  if (!state->session || !state->session->preferences || !state->session->preferences->Get().pip_button) return;
   if (!entry.identifier.empty()) {
     auto remove = CefDictionaryValue::Create(); remove->SetString("identifier", entry.identifier);
     page->GetHost()->ExecuteDevToolsMethod(0, "Page.removeScriptToEvaluateOnNewDocument", remove);
     entry.identifier.clear();
   }
   auto params = CefDictionaryValue::Create();
-  const std::string source = std::string(kButton) + "(location.protocol !== 'https:' || location.port !== '' || (" +
-      (BrowserIntegrationEnabled(state, "youtube") ? "true" : "!['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com','youtu.be'].includes(location.hostname)") +
-      ") && (" + (BrowserIntegrationEnabled(state, "googleMeet") ? "true" : "location.hostname !== 'meet.google.com'") + "));";
+  const std::string source = std::string(kButton) + "(location.protocol !== 'https:' || location.port !== '' || " +
+      (BrowserIntegrationEnabled(state, "googleMeet") ? "true" : "location.hostname !== 'meet.google.com'") + ");";
   params->SetString("source", source); params->SetString("worldName", "red-pip"); params->SetBool("runImmediately", true);
   entry.pending = page->GetHost()->ExecuteDevToolsMethod(0, "Page.addScriptToEvaluateOnNewDocument", params);
 }

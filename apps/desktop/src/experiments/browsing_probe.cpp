@@ -81,6 +81,8 @@ void ObserveBrowsingProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrow
       return;
     }
     if (message == "RED_BROWSING:blank") script = "document.querySelector('#blank').click()";
+    if (message == "RED_BROWSING:named") script = "document.querySelector('#named').click()";
+    if (message == "RED_BROWSING:named-reuse") script = "document.querySelector('#named-reuse').click()";
     if (message == "RED_BROWSING:popup") script = "document.querySelector('#popup').click()";
     if (!script) return;
     auto evaluate = CefDictionaryValue::Create(); evaluate->SetString("expression", script);

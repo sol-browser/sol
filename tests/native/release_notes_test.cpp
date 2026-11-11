@@ -49,6 +49,13 @@ int main() {
   Check(!CompareVersions("", "0.2.0"), "empty is not a version");
   Check(!CompareVersions("0..2", "0.2.0"), "empty part is not a version");
 
+  // A downloaded update is replaced only by a later release (0.1.3 had 0.2.0 waiting when 0.3.0 came out).
+  Check(red::UpdateReplacesWaiting("0.2.0", ""), "nothing waits: download");
+  Check(!red::UpdateReplacesWaiting("0.2.0", "0.2.0"), "the waiting version is not downloaded again");
+  Check(red::UpdateReplacesWaiting("0.3.0", "0.2.0"), "a later release replaces the waiting one");
+  Check(!red::UpdateReplacesWaiting("0.2.0", "0.3.0"), "an older feed version does not replace a later one");
+  Check(red::UpdateReplacesWaiting("0.3.0-rc", "0.2.0"), "an incomparable version counts as different");
+
   // Website anchors use dashes.
   Check(ReleaseNotesUrl("0.2.1") == "https://sol-browser.app/changelog/#v0-2-1", "site URL with the 0.2.1 anchor");
 

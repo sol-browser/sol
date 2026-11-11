@@ -1,5 +1,5 @@
 import type { TreeNode } from './bridge';
-import { favoriteColumns, inSpace, ordered, placement, sectionOf, type Section } from './sidebar-model';
+import { favoriteColumnLimit, favoriteColumns, inSpace, ordered, placement, sectionOf, type Section } from './sidebar-model';
 
 export type DropTarget = { section: Section; targetId: string | null; mode: 'before' | 'after' | 'inside' };
 
@@ -40,10 +40,12 @@ export function sidebarDropTarget(root: HTMLElement, nodes: TreeNode[], sourceId
     const b = grid.getBoundingClientRect(), css = getComputedStyle(grid);
     // Use the prospective count before the placeholder is mounted as well, so
     // entering a 4-tile grid previews the same 3-column layout as the 5th tile.
-    const columns = favoriteColumns(siblings.length + 1);
+    const columns = favoriteColumns(siblings.length + 1, favoriteColumnLimit(b.width));
     const gapX = parseFloat(css.columnGap) || 0, gapY = parseFloat(css.rowGap) || 0;
     const width = (b.width - gapX * (columns - 1)) / columns;
-    const row = Math.max(0, Math.floor((y - b.top) / (50 + gapY)));
+    // Tiles are 50 px tall, 42 px in a narrow sidebar.
+    const tile = grid.querySelector<HTMLElement>(':scope > .tree-node > .tree-row')?.offsetHeight || 50;
+    const row = Math.max(0, Math.floor((y - b.top) / (tile + gapY)));
     const column = Math.max(0, Math.min(columns - 1, Math.floor((x - b.left) / (width + gapX))));
     const after = x - b.left - column * (width + gapX) > width / 2;
     const index = Math.min(siblings.length, row * columns + column + Number(after));

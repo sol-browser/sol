@@ -15,11 +15,29 @@ export class SpaceTransition extends Component<Props, Record<string, never>, Fra
   private animations: Animation[] = [];
   private picture?: HTMLDivElement;
   private gutterObserver?: ResizeObserver;
+  // Whether the list was scrolled to its end before its height changed.
+  private atEnd = false;
+  private readonly trackEnd = () => {
+    const scroll = this.props.scrollRef.current;
+    this.atEnd = !!scroll && scroll.scrollHeight > scroll.clientHeight && scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 2;
+  };
 
   componentDidMount() {
     this.measureGutter();
-    this.gutterObserver = new ResizeObserver(() => this.measureGutter());
-    if (this.props.scrollRef.current) this.gutterObserver.observe(this.props.scrollRef.current);
+    const scroll = this.props.scrollRef.current;
+    this.gutterObserver = new ResizeObserver(() => {
+      // The viewport shrinks when the media player reserves room below it:
+      // a list scrolled to its end stays there, so its last tab moves up
+      // with the player instead of sliding out of view.
+      if (scroll && this.atEnd) scroll.scrollTop = scroll.scrollHeight;
+      this.measureGutter();
+      this.trackEnd();
+    });
+    if (scroll) {
+      this.gutterObserver.observe(scroll);
+      scroll.addEventListener('scroll', this.trackEnd, { passive: true });
+    }
+    this.trackEnd();
   }
 
   private measureGutter() {
@@ -71,7 +89,11 @@ export class SpaceTransition extends Component<Props, Record<string, never>, Fra
     });
   }
 
-  componentWillUnmount() { this.gutterObserver?.disconnect(); this.stop(); }
+  componentWillUnmount() {
+    this.gutterObserver?.disconnect();
+    this.props.scrollRef.current?.removeEventListener('scroll', this.trackEnd);
+    this.stop();
+  }
 
   private stop() {
     for (const animation of this.animations) animation.cancel();

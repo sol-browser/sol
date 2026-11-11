@@ -3,22 +3,27 @@ import { openSidebarMenu, type TreeNode, type TreeMutation } from './bridge';
 import type { Command, MediaInfo, SpaceInfo } from '../../../packages/browser-contracts/src';
 import { MediaStack } from './MediaPlayer';
 import { faviconColor } from './favicon-color';
-import { descendant, inSpace, neighborSpace, ordered, placement, sectionOf, favoriteColumns, displayTitle, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, withoutClosingTabs, type Section } from './sidebar-model';
+import { crossProfileLiveMove, descendant, inSpace, neighborSpace, ordered, placement, sectionOf, favoriteColumnLimit, favoriteColumns, displayTitle, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, withoutClosingTabs, sameRowNode, type Section } from './sidebar-model';
 import { swatchColor } from './theme-model';
 import { Icon } from './Icon';
 import { FolderIcon } from './FolderIcon';
 import { sidebarDropTarget, type DropTarget } from './sidebar-drop';
 import { useSidebarMotion } from './useSidebarMotion';
+import { renderCounts } from './render-counters';
 import { SpaceTransition } from './SpaceTransition';
 import { SpaceHeader } from './SpaceHeader';
 import { useAudioIndicator } from './useAudioIndicator';
-import { pinnedIntegration, integrationUnread } from './integrations';
+import { pinnedIntegration, integrationUnread, xCountUnread, whatsAppCountUnread } from './integrations';
 import { integrationEnabled, isIntegrationId, type IntegrationSettings } from '../../../packages/browser-contracts/src/integration-settings';
 
 export type SidebarProps = { nodes: TreeNode[]; treeRevision: number; activeId: string; busy: boolean; openNewTab: () => void; hidden: boolean; activeSurface?: boolean; standalone?: boolean;
   newTabShortcut?: string;
   previewIntegration: (id: string, anchor: HTMLElement) => void;
   integrations?: IntegrationSettings;
+  /** X's unread count from the native counter (no loaded X tab); absent when unknown. */
+  xUnread?: number;
+  /** WhatsApp's unread count from the last hidden check; absent when unknown. */
+  whatsappUnread?: number;
   /** Arc-style spaces: the switcher, header and which entries show. */
   spaces: SpaceInfo[]; activeSpace: string;
   /** Sidebar players (newest first) for tabs that played sound and are not on screen. */
@@ -42,16 +47,236 @@ type Props = SidebarProps;
 export type TabCommand = { method: 'split.focus'; id: string }
   | { method:'settings.openProfiles' }
   | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
-  | { method: 'tab.setHome'; id: string; url: string; title: string } | { method: 'tab.mute'; id: string; muted: boolean }
+  | { method: 'tab.editPinned'; id: string } | { method: 'tab.mute'; id: string; muted: boolean }
+  | { method: 'tab.confirmMoveToSpace'; id: string; space: string }
   | Extract<Command, { method: 'media.control' | 'tab.setXBadgeHidden' | 'tab.setIntegration' }>;
-function UnreadBadge({ node, settings }: { node: TreeNode; settings?: IntegrationSettings }) {
-  if (!node.pinned || !node.live || node.closing) return null;
-  const unread = integrationUnread(node.currentUrl || node.url, node.pageTitle || '', node.url, node.xBadgeHidden);
+function UnreadBadge({ node, settings, xUnread, whatsappUnread }: { node: TreeNode; settings?: IntegrationSettings; xUnread?: number; whatsappUnread?: number }) {
+  if (!node.pinned || node.closing) return null;
+  // X: the native counter decides, loaded or not. WhatsApp: an unloaded pin shows the last hidden
+  // check. Otherwise the loaded site's title does.
+  const x = xCountUnread(node.url, xUnread, node.xBadgeHidden);
+  const counted = x !== null ? x : whatsAppCountUnread(node.url, whatsappUnread, node.live);
+  if (counted === null && !node.live) return null;
+  const unread = counted !== null ? counted : integrationUnread(node.currentUrl || node.url, node.pageTitle || '', node.url, node.xBadgeHidden);
   if (!unread || !integrationEnabled(settings, unread === 'x' ? 'twitter' : unread)) return null;
   return <span className="integration-unread" data-favorite={node.favorite} data-provider={unread} role="img"
     aria-label={unread === 'x' ? 'Unread X notifications' : 'Unread messages'} />;
 }
-export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, activeSurface = true, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, newSpace, request, media, previewIntegration, integrations, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate }: Props) {
+type RowApi = {
+  perform: (command: TreeMutation) => Promise<boolean>; tabCommand: (command: TabCommand) => void;
+  context: (id: string, x: number, y: number) => Promise<void>;
+  startRename: (node: TreeNode) => void; saveRename: (id: string) => Promise<void>; cancelRename: () => void; setDraft: (value: string) => void;
+  pointerDown: (event: React.PointerEvent<HTMLDivElement>, node: TreeNode) => void;
+  drag: (event: DragEvent, id: string) => void; finishDrag: () => void;
+  hoverIntegration: (id: string, element: HTMLElement) => void; cancelIntegration: () => void;
+  cancelRemoval: () => void; confirmFolderRemoval: () => Promise<void>;
+  pressActivated: React.RefObject<string | null>; dragRef: React.RefObject<string | undefined>;
+  renameInput: React.RefObject<HTMLInputElement | null>; cancelRemovalButton: React.RefObject<HTMLButtonElement | null> };
+type FolderRemovalState = NonNullable<ReturnType<typeof folderRemovalSummary>> & { revision: number; error?: string };
+type RowProps = {
+  /** The Sidebar's current actions and refs. The object is stable and always holds the
+   *  latest render's functions, so a row that skipped a render never calls a stale one. */
+  api: React.RefObject<RowApi>;
+  node: TreeNode; peek: boolean;
+  /** The other tab of this row's split (the row is the split's anchor). */
+  other?: TreeNode;
+  selected: boolean; busy: boolean; hidden: boolean; activeSurface: boolean;
+  dragging: boolean; dragSource: boolean; dropInside: boolean;
+  anyRenaming: boolean;
+  /** The entry being renamed when it is in this row (the node or a split member), with its draft. */
+  renaming?: string; draft?: string;
+  nodeAudio: boolean; otherAudio: boolean;
+  tint?: string;
+  integrations?: IntegrationSettings; xUnread?: number; whatsappUnread?: number;
+  /** This folder's removal confirmation, when open. */
+  removal?: FolderRemovalState; removing: boolean; treeRevision: number;
+  /** A folder's child list, drop preview and collapsed active row. */
+  nested?: React.ReactNode };
+/** One sidebar row (tab, split, folder or Favorite tile). Memoized: with snapshots
+ *  that keep unchanged nodes' identity (snapshot-sharing.ts) a change to one tab
+ *  renders one row, not the whole list (docs/performance-audit.md). Every value
+ *  it shows is a prop; every action goes through |api|. */
+const SidebarRow = memo(function SidebarRow({ api, node, peek, other, selected, busy, hidden, activeSurface, dragging, dragSource, dropInside,
+  anyRenaming, renaming, draft, nodeAudio, otherAudio, tint, integrations, xUnread, whatsappUnread, removal, removing, treeRevision, nested }: RowProps) {
+  ++renderCounts.rows;
+  const folder = node.kind === 'folder';
+  const showAudio = !!node.live && !node.closing && (node.muted || node.audible || nodeAudio);
+  const group = node.splitAnchor === node.id;
+  const away = !node.favorite && pinnedAway(node);
+  const title = group ? `${displayTitle(node)} / ${other ? displayTitle(other) : 'Split view'}` : sidebarTitle(node);
+  const closeIcon = group ? 'close' as const : tabCloseIcon(node);
+  const removePin = !group && node.pinned && !node.live && !node.favorite;
+  const members = group ? [node, other ?? node] : [];
+  if (node.splitReversed) members.reverse();
+  async function focusMember(id: string) {
+    if (!selected && !await api.current.perform({ method:'tree.activate',id:node.id })) return;
+    api.current.tabCommand({ method:'split.focus',id });
+  }
+  const preview = node.pinned && !folder ? pinnedIntegration(node.url, node.currentUrl, integrations) : undefined;
+  // A tab switches on press (Chrome, Arc); the click after it is then ignored.
+  const press = (e: React.PointerEvent<HTMLElement>) => {
+    api.current.pressActivated.current = null;
+    if (folder || group || selected || busy || node.closing || e.button !== 0 || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+    api.current.pressActivated.current = node.id; void api.current.perform({ method: 'tree.activate', id: node.id });
+  };
+  // Split rows: free space (edges, padding, the gap) belongs to the half under
+  // the pointer, or the nearer one; buttons inside keep their own actions.
+  const memberAt = (e: React.MouseEvent<HTMLElement>) => {
+    if (!group || (e.target instanceof Element && e.target.closest('button, input, form'))) return undefined;
+    let best: string | undefined, distance = Infinity;
+    for (const part of e.currentTarget.querySelectorAll<HTMLElement>('.split-row-part')) {
+      const r = part.getBoundingClientRect();
+      const d = e.clientX < r.left ? r.left - e.clientX : e.clientX > r.right ? e.clientX - r.right : 0;
+      if (d < distance) { distance = d; best = part.dataset.tabId; }
+    }
+    return best;
+  };
+  const open = () => {
+    if (!folder && api.current.pressActivated.current === node.id) { api.current.pressActivated.current = null; return; }
+    void api.current.perform(folder ? { method: 'tree.expand', id: node.id, value: !node.expanded } : { method: 'tree.activate', id: node.id });
+  };
+  return <li className={`tree-node ${peek ? 'active-peek' : ''}`} data-node-id={node.id} data-drag-source={dragSource}>
+    <div className="tree-row" data-tinted={tint !== undefined} style={tint ? { '--favorite-tint': tint } as CSSProperties : undefined} data-kind={node.kind} data-split={group} data-drop-inside={dropInside} data-motion-key={peek ? `peek-${node.id}` : node.id} data-favorite={node.favorite === true} data-live={node.live === true} data-peek={node.peek === true}
+      onPointerEnter={event => {
+        api.current.cancelIntegration();
+        if (event.pointerType === 'touch' || !preview || busy || hidden || !activeSurface || dragging || anyRenaming) return;
+        api.current.hoverIntegration(node.id, event.currentTarget);
+      }} onPointerLeave={() => api.current.cancelIntegration()}
+      title={preview ? undefined : away ? `${node.title}\n${node.currentUrl}` : node.favorite ? displayTitle(node) : node.pageTitle && node.pageTitle !== node.title ? node.pageTitle : undefined} data-active={selected} data-pinned-away={away} data-expanded={folder ? node.expanded : undefined}
+      draggable={folder && !busy && !anyRenaming && !node.closing} onDragStart={e => { if (folder) api.current.drag(e, node.id); else e.preventDefault(); }} onDragEnd={event => {
+        // Handle the drop before clearing the source: the window's bubbling
+        // dragend listener runs after this row and used to see no drag ID.
+        if (!folder && api.current.dragRef.current === node.id && event.dataTransfer.dropEffect === 'none')
+          api.current.tabCommand({ method: 'tab.dragEnded', id: node.id });
+        api.current.finishDrag();
+      }}
+      // The whole highlighted row is the tab: its padding and edges (outside the
+      // name and icon buttons) press and click like the name.
+      onPointerDownCapture={event => { api.current.cancelIntegration(); api.current.pointerDown(event, node); }}
+      onPointerDown={event => {
+        const member = memberAt(event);
+        if (member) {
+          api.current.pressActivated.current = null;
+          if (event.button === 0 && !busy && !event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) { api.current.pressActivated.current = member; void focusMember(member); }
+        } else if (event.target === event.currentTarget) press(event);
+      }}
+      onClick={event => {
+        const member = memberAt(event);
+        if (member) { if (api.current.pressActivated.current === member) api.current.pressActivated.current = null; else if (!busy) void focusMember(member); return; }
+        if (event.target === event.currentTarget && !group && !busy && !node.closing) open();
+      }}
+      onAuxClick={event => {
+        if (event.button !== 1 || folder) return;
+        event.preventDefault(); event.stopPropagation();
+        const member = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-tab-id]')?.dataset.tabId : undefined;
+        if (!busy && !anyRenaming) void api.current.perform({ method:tabCloseMethod(member && other && member === other.id ? other : node),id:member ?? node.id });
+      }}
+      onContextMenu={e => {
+        if (e.target instanceof Element && e.target.closest('input,textarea')) return;
+        e.preventDefault(); e.stopPropagation(); e.currentTarget.querySelector<HTMLButtonElement>('.node-name')?.focus(); const bounds = e.currentTarget.getBoundingClientRect();
+        void api.current.context(node.id, e.clientX || bounds.x + 20, e.clientY || bounds.bottom);
+      }} onKeyDown={e => {
+        if (e.target instanceof Element && e.target.closest('input,textarea')) return;
+        if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+          e.preventDefault(); e.stopPropagation(); const bounds = e.currentTarget.getBoundingClientRect();
+          void api.current.context(node.id, bounds.x + 20, bounds.bottom);
+        }
+      }}>
+      {!folder && !group && (node.favorite ? <span className="node-icon" aria-hidden="true"><SiteMark node={node} /></span> : <button className="node-icon" aria-label={away ? `Back to pinned URL for ${node.title}` : node.pinned ? `Reset ${node.title}` : `Open ${title}`}
+        disabled={busy || node.closing || renaming === node.id} onClick={() => void api.current.perform({ method: !group && node.pinned ? 'tree.reset' : 'tree.activate', id: node.id })}>
+        <SiteMark node={node} />
+      </button>)}
+      {/* Arc: a speaker before the title while the tab plays sound; click to mute or unmute. */}
+      {!folder && !group && !node.favorite && showAudio && <button className="row-action tab-audio" data-muted={node.muted === true}
+        aria-label={node.muted ? `Unmute ${node.title}` : `Mute ${node.title}`} title={node.muted ? 'Unmute tab' : 'Mute tab'}
+        onClick={() => api.current.tabCommand({ method: 'tab.mute', id: node.id, muted: !node.muted })}><Icon name={node.muted ? 'muted' : 'speaker'} /></button>}
+      {renaming === node.id && !group ?
+        // Renaming edits the title in place: same font and position, no box or
+        // confirm button. Enter or leaving the field saves; Escape cancels.
+        <form className="inline-rename" onSubmit={e => { e.preventDefault(); void api.current.saveRename(node.id); }}>
+          {folder && <FolderIcon expanded={node.expanded} />}
+          <input ref={api.current.renameInput} aria-label="Rename entry" maxLength={80} value={draft ?? ''} onChange={e => api.current.setDraft(e.target.value)}
+            spellCheck={false} autoComplete="off" onBlur={() => void api.current.saveRename(node.id)}
+            onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); api.current.cancelRename(); } }} />
+        </form> : <>
+        {group ? <div className="node-name split-row-content" role="group" aria-label={title} tabIndex={-1}>
+          {members.map(member => <span className="split-row-part" key={member.id} data-tab-id={member.id}>
+            {renaming === member.id ? <form className="split-row-edit" onSubmit={event => { event.preventDefault(); void api.current.saveRename(member.id); }}>
+              <SiteMark node={member} /><input ref={api.current.renameInput} aria-label={`Rename ${displayTitle(member)}`} value={draft ?? ''} maxLength={80}
+                onChange={event => api.current.setDraft(event.target.value)} onBlur={() => void api.current.saveRename(member.id)} spellCheck={false} autoComplete="off"
+                onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); api.current.cancelRename(); } }} />
+            </form> : <button className="split-row-title" disabled={busy || member.closing} title={displayTitle(member)}
+              onPointerDown={e => {
+                api.current.pressActivated.current = null;
+                if (e.button !== 0 || busy || member.closing || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+                api.current.pressActivated.current = member.id; void focusMember(member.id);
+              }}
+              onDoubleClick={() => api.current.startRename(member)} onClick={() => {
+                if (api.current.pressActivated.current === member.id) { api.current.pressActivated.current = null; return; }
+                void focusMember(member.id);
+              }}>
+              <SiteMark node={member} /><span className="split-row-label">{displayTitle(member)}</span>
+              {(member.mediaCamera || member.mediaMicrophone) && <span className="tab-media" role="img" aria-label={member.mediaCamera ? 'Using camera' : 'Using microphone'}><Icon name={member.mediaCamera ? 'camera' : 'mic'} /></span>}
+            </button>}
+            {!member.favorite && <UnreadBadge node={member} settings={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} />}
+            {member.live && (member.muted || member.audible || (member === node ? nodeAudio : otherAudio)) && <button className="row-action tab-audio" data-muted={member.muted === true}
+              aria-label={`${member.muted ? 'Unmute' : 'Mute'} ${displayTitle(member)}`} title={member.muted ? 'Unmute tab' : 'Mute tab'}
+              onClick={() => api.current.tabCommand({ method:'tab.mute',id:member.id,muted:!member.muted })}><Icon name={member.muted ? 'muted' : 'speaker'} /></button>}
+            <button className="row-action split-tab-close" disabled={busy || member.closing}
+              aria-label={`Close ${displayTitle(member)}`} title={member.pinned ? 'Close page, keep pin' : 'Archive tab'}
+              onClick={() => void api.current.perform({ method:'tree.close',id:member.id })}><Icon name={tabCloseIcon(member) ?? 'close'} /></button>
+          </span>)}
+        </div> : <button className="node-name" disabled={busy || node.closing} aria-label={node.favorite ? displayTitle(node) : undefined} aria-expanded={folder ? node.expanded : undefined}
+          onPointerDown={press} onDoubleClick={folder ? undefined : () => api.current.startRename(node)} onClick={open}>
+          {folder && <FolderIcon expanded={node.expanded} />}
+          {away && <span className="pinned-away-prefix" title="Away from saved address" aria-hidden="true">/</span>}
+          {away ? <span className="pinned-away-label">
+            <span className="node-title">{title}</span>
+            <span className="pinned-reset-hint" aria-hidden="true">Back to pinned url</span>
+          </span> : <span className="node-title">{title}</span>}
+          {!node.favorite && (node.mediaCamera || node.mediaMicrophone) && <span className="tab-media" role="img" aria-label={node.mediaCamera ? 'Using camera' : 'Using microphone'}
+            title={node.mediaCamera ? 'Using your camera' : 'Using your microphone'}><Icon name={node.mediaCamera ? 'camera' : 'mic'} /></span>}
+        </button>}
+        {!group && closeIcon && <button className="row-action close-page" aria-label={removePin ? `Remove ${title} from Pinned` : node.pinned ? `Close page ${title}` : `Archive ${title}`}
+          title={removePin ? 'Remove from Pinned' : node.pinned ? 'Close page, keep pin' : 'Archive tab'} disabled={busy || node.closing}
+          onClick={() => void api.current.perform({ method:tabCloseMethod(node), id: node.id })}><Icon name={closeIcon} /></button>}
+      </>}
+      {/* After the close button: the row ends with the preview's icon; on a tile it sits in the top-right corner. */}
+      {!folder && !group && node.peek && <PeekMark node={node} />}
+      {(!group || node.favorite) && <UnreadBadge node={node} settings={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} />}
+      {node.favorite && (node.mediaCamera || node.mediaMicrophone || showAudio) &&
+        <span className="favorite-status">
+          {(node.mediaCamera || node.mediaMicrophone) && <span role="img" aria-label={[node.mediaCamera && 'Using camera', node.mediaMicrophone && 'Using microphone'].filter(Boolean).join(', ')}>
+            {node.mediaCamera && <Icon name="camera" />}{node.mediaMicrophone && <Icon name="mic" />}</span>}
+          {/* The speaker mutes or unmutes the tile's tab, like a row's audio button. */}
+          {showAudio && <button type="button" className="favorite-audio" data-muted={node.muted === true}
+            aria-label={node.muted ? `Unmute ${displayTitle(node)}` : `Mute ${displayTitle(node)}`} title={node.muted ? 'Unmute tab' : 'Mute tab'}
+            onClick={() => api.current.tabCommand({ method: 'tab.mute', id: node.id, muted: !node.muted })}><Icon name={node.muted ? 'muted' : 'speaker'} /></button>}
+        </span>}
+    </div>
+    {folder && removal && <div className="folder-remove-confirm" role="alertdialog" data-folder-removal={node.id}
+      aria-labelledby={`remove-folder-title-${node.id}`} aria-describedby={`remove-folder-description-${node.id}`}
+      onContextMenu={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); api.current.cancelRemoval(); } }}>
+      <strong id={`remove-folder-title-${node.id}`}>Delete “{removal.title}”?</strong>
+      <p id={`remove-folder-description-${node.id}`}>{removal.tabs} {removal.tabs === 1 ? 'tab' : 'tabs'}{removal.folders ? ' in this folder and its subfolders' : ''} will be closed and moved to Archive.</p>
+      {treeRevision !== removal.revision && <p role="status">Your workspace changed. Review the updated count first.</p>}
+      {removal.error && <p role="alert">{removal.error}</p>}
+      <div className="folder-remove-actions">
+        <button ref={api.current.cancelRemovalButton} type="button" className="popover-text-button" data-action="cancel-folder-removal" disabled={removing} onClick={() => api.current.cancelRemoval()}>Cancel</button>
+        <button type="button" className="popover-text-button danger" data-action="confirm-folder-removal" disabled={busy || removing}
+          onClick={() => void api.current.confirmFolderRemoval()}>{removing ? 'Removing…' : treeRevision !== removal.revision ? 'Review' : 'Delete folder'}</button>
+      </div>
+    </div>}
+    {nested}
+  </li>;
+}, (previous, next) => {
+  // Nodes compare by what a row shows (sameRowNode); everything else by identity.
+  const keys = Object.keys(next) as (keyof RowProps)[];
+  return keys.length === Object.keys(previous).length && keys.every(key => key === 'node' || key === 'other'
+    ? sameRowNode(previous[key], next[key]) : Object.is(previous[key], next[key]));
+});
+export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, activeSurface = true, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, newSpace, request, media, previewIntegration, integrations, xUnread, whatsappUnread, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate }: Props) {
+  ++renderCounts.sidebar;
   // Favorite tiles are tinted with their icon's color, read once per icon.
   const [, retint] = useReducer((n: number) => n + 1, 0);
   // A closing Today tab leaves the list as soon as native close starts, so the
@@ -75,19 +300,40 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   }, [removal?.id, removal?.revision]);
   useEffect(() => { if (!removalPending.current) setRemoval(undefined); }, [activeSpace, hidden]);
   const [renaming, setRenaming] = useState<string>();
-  // "Edit Pinned Page > Edit…": the saved title and address, edited in place.
-  const [editing, setEditing] = useState<{ id: string; title: string; url: string }>();
   const [draft, setDraft] = useState('');
   const archiveButton = useRef<HTMLButtonElement>(null);
   const [dragId, setDragId] = useState<string>();
   const integrationTimer = useRef<number | undefined>(undefined);
   const cancelIntegration = () => { clearTimeout(integrationTimer.current); integrationTimer.current = undefined; };
-  useEffect(() => { cancelIntegration(); return cancelIntegration; }, [hidden, activeSurface, activeSpace, busy, dragId, renaming, editing?.id]);
+  useEffect(() => { cancelIntegration(); return cancelIntegration; }, [hidden, activeSurface, activeSpace, busy, dragId, renaming]);
   const visible = useMemo(() => nodes.filter(n => inSpace(n, activeSpace)), [nodes, activeSpace]);
   const favorites = useMemo(() => visible.filter(n => n.favorite), [visible]);
   const spaceNodes = useMemo(() => visible.filter(n => !n.favorite), [visible]);
-  const favoriteMotion = useSidebarMotion(favorites, hidden, !!dragId, activeSpace);
-  const { scrollRef, layerRef } = useSidebarMotion(spaceNodes, hidden, !!dragId, activeSpace);
+  const favoriteMotion = useSidebarMotion(favorites, hidden, !!dragId, activeSpace, activeId);
+  // Favorites rearrange with the width: four, three or two columns
+  // (favoriteColumnLimit; sidebar-drop.ts uses the same limit).
+  const [favoriteLimit, setFavoriteLimit] = useState(4);
+  useLayoutEffect(() => {
+    const element = favoriteMotion.scrollRef.current;
+    if (!element) return;
+    // The grid is the Favorites container minus the zone's 4 px side margins.
+    const measure = () => setFavoriteLimit(favoriteColumnLimit(element.clientWidth - 8));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [favoriteMotion.scrollRef, standalone]);
+  // A collapsed folder shows its active tab as an extra row: that row comes and goes with the selection.
+  const collapsedActive = useMemo(() => {
+    const anchor = tree.find(n => n.id === activeId)?.splitAnchor ?? activeId;
+    for (let node = spaceNodes.find(n => n.id === anchor), depth = 0; node?.parentId && depth < 64; ++depth) {
+      const parent = spaceNodes.find(n => n.id === node!.parentId);
+      if (parent && !parent.expanded) return anchor;
+      node = parent;
+    }
+    return '';
+  }, [tree, spaceNodes, activeId]);
+  const { scrollRef, layerRef } = useSidebarMotion(spaceNodes, hidden, !!dragId, activeSpace, collapsedActive);
   const header = useRef<HTMLDivElement>(null);
   const space = spaces.find(s => s.id === activeSpace);
   const switchSpace = (id: string | undefined) => { if (id && id !== activeSpace && !current.current.busy) void action({ method: 'space.switch', id }); };
@@ -171,10 +417,6 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     } finally { removalPending.current = false; setRemoving(false); }
   }
   function startRename(node: TreeNode) { setDraft(displayTitle(node)); setRenaming(node.id); }
-  function splitTitle(node: TreeNode) {
-    const other = tree.find(n => n.id === node.splitOther);
-    return `${displayTitle(node)} / ${other ? displayTitle(other) : 'Split view'}`;
-  }
   // Enter and blur both save; a save in flight or an unchanged/empty name
   // simply ends editing.
   const saving = useRef(false);
@@ -343,7 +585,12 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
         case 'reset': await perform({ method: 'tree.reset', id }); break;
         case 'favorites': case 'pinned': case 'today': await move(choice.action); break;
         case 'folder': await move('pinned', choice.targetId); break;
-        case 'space': await perform({ method: 'tree.moveToSpace', id, space: choice.targetId }); break;
+        case 'space': {
+          const target = spaces.find(space => space.id === choice.targetId);
+          // Moving live pages to another profile reloads them: confirm in the window's modal.
+          if (target && crossProfileLiveMove(tree, spaces, id, target.id)) { tabCommand({ method: 'tab.confirmMoveToSpace', id, space: target.id }); break; }
+          await perform({ method: 'tree.moveToSpace', id, space: choice.targetId }); break;
+        }
         case 'up': case 'down': {
           const siblings = ordered(data.filter(n => n.parentId === node.parentId && !n.archived && sectionOf(n) === sectionOf(node) && inSpace(n, activeSpace)));
           const index = siblings.findIndex(n => n.id === id);
@@ -364,198 +611,38 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
           break;
         case 'copyLink': tabCommand({ method: 'tab.copyLink', id }); break;
         case 'setHome': tabCommand({ method: 'tab.setHome', id }); break;
-        case 'editPinned': setEditing({ id, title: displayTitle(node), url: node.url }); break;
+        case 'editPinned': tabCommand({ method: 'tab.editPinned', id }); break;
         case 'archiveOthers': tabCommand({ method: 'tab.archiveOthers', id }); break;
         case 'archiveBelow': tabCommand({ method: 'tab.archiveBelow', id }); break;
         case 'newSpaceWith': tabCommand({ method: 'tab.moveToNewSpace', id }); break;
       }
     } catch { setMenuError('The actions menu could not open. Try again.'); }
   }
+  // Latest actions for the memoized rows (see RowProps.api).
+  const api = useRef(null as unknown as RowApi);
+  api.current = { perform, tabCommand, context, startRename, saveRename, cancelRename, setDraft, pointerDown, drag, finishDrag,
+    hoverIntegration: (id, element) => { integrationTimer.current = window.setTimeout(() => { if (element.isConnected) previewIntegration(id, element); }, 400); },
+    cancelIntegration, cancelRemoval, confirmFolderRemoval, pressActivated, dragRef, renameInput, cancelRemovalButton };
   function row(node: TreeNode, peek = false) {
     const folder = node.kind === 'folder';
-    const showAudio = !!node.live && !node.closing && (node.muted || node.audible || audioIndicators.has(node.id));
     const group = node.splitAnchor === node.id;
-    const selected = node.id === activeId || group && node.splitOther === activeId;
-    const away = !node.favorite && pinnedAway(node);
-    const title = group ? splitTitle(node) : sidebarTitle(node);
-    const closeIcon = group ? 'close' as const : tabCloseIcon(node);
-    const removePin = !group && node.pinned && !node.live && !node.favorite;
-    const members = group ? [node,tree.find(n => n.id === node.splitOther) ?? node] : [];
-    if (node.splitReversed) members.reverse();
-    async function focusMember(id: string) {
-      if (!selected && !await perform({ method:'tree.activate',id:node.id })) return;
-      tabCommand({ method:'split.focus',id });
-    }
-    const tint = node.favorite ? faviconColor(node.favicon, retint) : undefined;
-    const preview = node.pinned && !folder ? pinnedIntegration(node.url, node.currentUrl, integrations) : undefined;
-    // A tab switches on press (Chrome, Arc); the click after it is then ignored.
-    const press = (e: React.PointerEvent<HTMLElement>) => {
-      pressActivated.current = null;
-      if (folder || group || selected || busy || node.closing || e.button !== 0 || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
-      pressActivated.current = node.id; void perform({ method: 'tree.activate', id: node.id });
-    };
-    // Split rows: free space (edges, padding, the gap) belongs to the half under
-    // the pointer, or the nearer one; buttons inside keep their own actions.
-    const memberAt = (e: React.MouseEvent<HTMLElement>) => {
-      if (!group || (e.target instanceof Element && e.target.closest('button, input, form'))) return undefined;
-      let best: string | undefined, distance = Infinity;
-      for (const part of e.currentTarget.querySelectorAll<HTMLElement>('.split-row-part')) {
-        const r = part.getBoundingClientRect();
-        const d = e.clientX < r.left ? r.left - e.clientX : e.clientX > r.right ? e.clientX - r.right : 0;
-        if (d < distance) { distance = d; best = part.dataset.tabId; }
-      }
-      return best;
-    };
-    const open = () => {
-      if (!folder && pressActivated.current === node.id) { pressActivated.current = null; return; }
-      void perform(folder ? { method: 'tree.expand', id: node.id, value: !node.expanded } : { method: 'tree.activate', id: node.id });
-    };
-    return <li className={`tree-node ${peek ? 'active-peek' : ''}`} key={peek ? `peek-${node.id}` : node.id} data-node-id={node.id} data-drag-source={dragId === node.id}>
-      <div className="tree-row" data-tinted={tint !== undefined} style={tint ? { '--favorite-tint': tint } as CSSProperties : undefined} data-kind={node.kind} data-split={group} data-drop-inside={folder && drop?.targetId === node.id && drop.mode === 'inside'} data-motion-key={peek ? `peek-${node.id}` : node.id} data-favorite={node.favorite === true} data-live={node.live === true} data-peek={node.peek === true}
-        onPointerEnter={event => {
-          cancelIntegration();
-          if (event.pointerType === 'touch' || !preview || busy || hidden || !activeSurface || dragId || renaming || editing) return;
-          const element = event.currentTarget;
-          integrationTimer.current = window.setTimeout(() => { if (element.isConnected) previewIntegration(node.id, element); }, 400);
-        }} onPointerLeave={cancelIntegration}
-        title={preview ? undefined : away ? `${node.title}\n${node.currentUrl}` : node.favorite ? displayTitle(node) : node.pageTitle && node.pageTitle !== node.title ? node.pageTitle : undefined} data-active={selected} data-pinned-away={away} data-expanded={folder ? node.expanded : undefined}
-        draggable={folder && !busy && !renaming && !node.closing} onDragStart={e => { if (folder) drag(e, node.id); else e.preventDefault(); }} onDragEnd={event => {
-          // Handle the drop before clearing the source: the window's bubbling
-          // dragend listener runs after this row and used to see no drag ID.
-          if (!folder && dragRef.current === node.id && event.dataTransfer.dropEffect === 'none')
-            tabCommand({ method: 'tab.dragEnded', id: node.id });
-          finishDrag();
-        }}
-        // The whole highlighted row is the tab: its padding and edges (outside the
-        // name and icon buttons) press and click like the name.
-        onPointerDownCapture={event => { cancelIntegration(); pointerDown(event, node); }}
-        onPointerDown={event => {
-          const member = memberAt(event);
-          if (member) {
-            pressActivated.current = null;
-            if (event.button === 0 && !busy && !event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) { pressActivated.current = member; void focusMember(member); }
-          } else if (event.target === event.currentTarget) press(event);
-        }}
-        onClick={event => {
-          const member = memberAt(event);
-          if (member) { if (pressActivated.current === member) pressActivated.current = null; else if (!busy) void focusMember(member); return; }
-          if (event.target === event.currentTarget && !group && !busy && !node.closing) open();
-        }}
-        onAuxClick={event => {
-          if (event.button !== 1 || folder) return;
-          event.preventDefault(); event.stopPropagation();
-          const member = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-tab-id]')?.dataset.tabId : undefined;
-          if (!busy && !renaming) void perform({ method:tabCloseMethod(tree.find(n => n.id === member) ?? node),id:member ?? node.id });
-        }}
-        onContextMenu={e => {
-          if (e.target instanceof Element && e.target.closest('input,textarea')) return;
-          e.preventDefault(); e.stopPropagation(); e.currentTarget.querySelector<HTMLButtonElement>('.node-name')?.focus(); const bounds = e.currentTarget.getBoundingClientRect();
-          void context(node.id, e.clientX || bounds.x + 20, e.clientY || bounds.bottom);
-        }} onKeyDown={e => {
-          if (e.target instanceof Element && e.target.closest('input,textarea')) return;
-          if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
-            e.preventDefault(); e.stopPropagation(); const bounds = e.currentTarget.getBoundingClientRect();
-            void context(node.id, bounds.x + 20, bounds.bottom);
-          }
-        }}>
-        {!folder && !group && (node.favorite ? <span className="node-icon" aria-hidden="true"><SiteMark node={node} /></span> : <button className="node-icon" aria-label={node.pinned ? `Reset ${node.title}` : `Open ${title}`}
-          disabled={busy || node.closing || renaming === node.id} onClick={() => void perform({ method: !group && node.pinned ? 'tree.reset' : 'tree.activate', id: node.id })}>
-          <SiteMark node={node} />
-        </button>)}
-        {/* Arc: a speaker before the title while the tab plays sound; click to mute or unmute. */}
-        {!folder && !group && !node.favorite && showAudio && <button className="row-action tab-audio" data-muted={node.muted === true}
-          aria-label={node.muted ? `Unmute ${node.title}` : `Mute ${node.title}`} title={node.muted ? 'Unmute tab' : 'Mute tab'}
-          onClick={() => tabCommand({ method: 'tab.mute', id: node.id, muted: !node.muted })}><Icon name={node.muted ? 'muted' : 'speaker'} /></button>}
-        {editing?.id === node.id && !group ?
-          <form className="pinned-edit" onSubmit={e => {
-            e.preventDefault(); const value = editing;
-            if (value.url.trim()) tabCommand({ method: 'tab.setHome', id: value.id, url: value.url.trim(), title: value.title.trim() });
-            setEditing(undefined);
-          }} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditing(undefined); } }}>
-            <input autoFocus aria-label="Pinned page title" maxLength={80} value={editing.title} spellCheck={false} autoComplete="off"
-              onChange={e => setEditing({ ...editing, title: e.target.value })} />
-            <input aria-label="Pinned page address" maxLength={4096} value={editing.url} spellCheck={false} autoComplete="off" type="url"
-              onChange={e => setEditing({ ...editing, url: e.target.value })} />
-            <button type="submit" hidden>Save</button>
-          </form> :
-        renaming === node.id && !group ?
-          // Renaming edits the title in place: same font and position, no box or
-          // confirm button. Enter or leaving the field saves; Escape cancels.
-          <form className="inline-rename" onSubmit={e => { e.preventDefault(); void saveRename(node.id); }}>
-            {folder && <FolderIcon expanded={node.expanded} />}
-            <input ref={renameInput} aria-label="Rename entry" maxLength={80} value={draft} onChange={e => setDraft(e.target.value)}
-              spellCheck={false} autoComplete="off" onBlur={() => void saveRename(node.id)}
-              onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelRename(); } }} />
-          </form> : <>
-          {group ? <div className="node-name split-row-content" role="group" aria-label={title} tabIndex={-1}>
-            {members.map(member => <span className="split-row-part" key={member.id} data-tab-id={member.id}>
-              {renaming === member.id ? <form className="split-row-edit" onSubmit={event => { event.preventDefault(); void saveRename(member.id); }}>
-                <SiteMark node={member} /><input ref={renameInput} aria-label={`Rename ${displayTitle(member)}`} value={draft} maxLength={80}
-                  onChange={event => setDraft(event.target.value)} onBlur={() => void saveRename(member.id)} spellCheck={false} autoComplete="off"
-                  onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelRename(); } }} />
-              </form> : <button className="split-row-title" disabled={busy || member.closing} title={displayTitle(member)}
-                onPointerDown={e => {
-                  pressActivated.current = null;
-                  if (e.button !== 0 || busy || member.closing || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
-                  pressActivated.current = member.id; void focusMember(member.id);
-                }}
-                onDoubleClick={() => startRename(member)} onClick={() => {
-                  if (pressActivated.current === member.id) { pressActivated.current = null; return; }
-                  void focusMember(member.id);
-                }}>
-                <SiteMark node={member} /><span className="split-row-label">{displayTitle(member)}</span>
-                {(member.mediaCamera || member.mediaMicrophone) && <span className="tab-media" role="img" aria-label={member.mediaCamera ? 'Using camera' : 'Using microphone'}><Icon name={member.mediaCamera ? 'camera' : 'mic'} /></span>}
-              </button>}
-              {!member.favorite && <UnreadBadge node={member} settings={integrations} />}
-              {member.live && (member.muted || member.audible || audioIndicators.has(member.id)) && <button className="row-action tab-audio" data-muted={member.muted === true}
-                aria-label={`${member.muted ? 'Unmute' : 'Mute'} ${displayTitle(member)}`} title={member.muted ? 'Unmute tab' : 'Mute tab'}
-                onClick={() => tabCommand({ method:'tab.mute',id:member.id,muted:!member.muted })}><Icon name={member.muted ? 'muted' : 'speaker'} /></button>}
-              <button className="row-action split-tab-close" disabled={busy || member.closing}
-                aria-label={`Close ${displayTitle(member)}`} title={member.pinned ? 'Close page, keep pin' : 'Archive tab'}
-                onClick={() => void perform({ method:'tree.close',id:member.id })}><Icon name={tabCloseIcon(member) ?? 'close'} /></button>
-            </span>)}
-          </div> : <button className="node-name" disabled={busy || node.closing} aria-label={node.favorite ? displayTitle(node) : undefined} aria-expanded={folder ? node.expanded : undefined}
-            onPointerDown={press} onDoubleClick={folder ? undefined : () => startRename(node)} onClick={open}>
-            {folder && <FolderIcon expanded={node.expanded} />}
-            {away && <span className="pinned-away-prefix" title="Away from saved address" aria-hidden="true">/</span>}
-            <span className="node-title">{title}</span>
-            {!node.favorite && (node.mediaCamera || node.mediaMicrophone) && <span className="tab-media" role="img" aria-label={node.mediaCamera ? 'Using camera' : 'Using microphone'}
-              title={node.mediaCamera ? 'Using your camera' : 'Using your microphone'}><Icon name={node.mediaCamera ? 'camera' : 'mic'} /></span>}
-          </button>}
-          {!group && closeIcon && <button className="row-action close-page" aria-label={removePin ? `Remove ${title} from Pinned` : node.pinned ? `Close page ${title}` : `Archive ${title}`}
-            title={removePin ? 'Remove from Pinned' : node.pinned ? 'Close page, keep pin' : 'Archive tab'} disabled={busy || node.closing}
-            onClick={() => void perform({ method:tabCloseMethod(node), id: node.id })}><Icon name={closeIcon} /></button>}
-        </>}
-        {/* After the close button: the row ends with the preview's icon; on a tile it sits in the top-right corner. */}
-        {!folder && !group && node.peek && <PeekMark node={node} />}
-        {(!group || node.favorite) && <UnreadBadge node={node} settings={integrations} />}
-        {node.favorite && (node.mediaCamera || node.mediaMicrophone || showAudio) &&
-          <span className="favorite-status">
-            {(node.mediaCamera || node.mediaMicrophone) && <span role="img" aria-label={[node.mediaCamera && 'Using camera', node.mediaMicrophone && 'Using microphone'].filter(Boolean).join(', ')}>
-              {node.mediaCamera && <Icon name="camera" />}{node.mediaMicrophone && <Icon name="mic" />}</span>}
-            {/* The speaker mutes or unmutes the tile's tab, like a row's audio button. */}
-            {showAudio && <button type="button" className="favorite-audio" data-muted={node.muted === true}
-              aria-label={node.muted ? `Unmute ${displayTitle(node)}` : `Mute ${displayTitle(node)}`} title={node.muted ? 'Unmute tab' : 'Mute tab'}
-              onClick={() => tabCommand({ method: 'tab.mute', id: node.id, muted: !node.muted })}><Icon name={node.muted ? 'muted' : 'speaker'} /></button>}
-          </span>}
-      </div>
-      {folder && removal?.id === node.id && <div className="folder-remove-confirm" role="alertdialog" data-folder-removal={node.id}
-        aria-labelledby={`remove-folder-title-${node.id}`} aria-describedby={`remove-folder-description-${node.id}`}
-        onContextMenu={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelRemoval(); } }}>
-        <strong id={`remove-folder-title-${node.id}`}>Delete “{removal.title}”?</strong>
-        <p id={`remove-folder-description-${node.id}`}>{removal.tabs} {removal.tabs === 1 ? 'tab' : 'tabs'}{removal.folders ? ' in this folder and its subfolders' : ''} will be closed and moved to Archive.</p>
-        {treeRevision !== removal.revision && <p role="status">Your workspace changed. Review the updated count first.</p>}
-        {removal.error && <p role="alert">{removal.error}</p>}
-        <div className="folder-remove-actions">
-          <button ref={cancelRemovalButton} type="button" className="popover-text-button" data-action="cancel-folder-removal" disabled={removing} onClick={cancelRemoval}>Cancel</button>
-          <button type="button" className="popover-text-button danger" data-action="confirm-folder-removal" disabled={busy || removing}
-            onClick={() => void confirmFolderRemoval()}>{removing ? 'Removing…' : treeRevision !== removal.revision ? 'Review' : 'Delete folder'}</button>
-        </div>
-      </div>}
+    const other = group ? tree.find(n => n.id === node.splitOther) : undefined;
+    const editing = renaming !== undefined && (renaming === node.id || renaming === other?.id);
+    const confirming = folder && removal?.id === node.id ? removal : undefined;
+    // Only folders have nested content; other rows keep identical props between renders.
+    const nested = folder ? <>
       {folder && node.expanded && <ul className="tree-children" data-folder-children={node.id}>{renderRows(ordered(nodes.filter(n => n.parentId === node.id && !n.archived)), node.id, 'pinned')}</ul>}
       {folder && !node.expanded && drop?.targetId === node.id && drop.mode === 'inside' && <ul className="tree-children drop-folder-preview">{dropSlot('pinned')}</ul>}
       {folder && !node.expanded && active && descendant(nodes, active.id, node.id) && <ul className="tree-children collapsed-active">{row(active, true)}</ul>}
-    </li>;
+    </> : undefined;
+    return <SidebarRow key={peek ? `peek-${node.id}` : node.id} api={api} node={node} peek={peek} other={other}
+      selected={node.id === activeId || group && node.splitOther === activeId} busy={busy} hidden={hidden} activeSurface={activeSurface}
+      dragging={!!dragId} dragSource={dragId === node.id} dropInside={folder && drop?.targetId === node.id && drop.mode === 'inside'}
+      anyRenaming={!!renaming} renaming={editing ? renaming : undefined} draft={editing ? draft : undefined}
+      nodeAudio={audioIndicators.has(node.id)} otherAudio={!!other && audioIndicators.has(other.id)}
+      tint={node.favorite ? faviconColor(node.favicon, retint) : undefined}
+      integrations={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread}
+      removal={confirming} removing={confirming ? removing : false} treeRevision={confirming ? treeRevision : 0} nested={nested} />;
   }
   const newTab = <button className="new-tab" data-motion-key="new-tab" data-action="new-tab" disabled={busy} onClick={openNewTab}><Icon name="plus" /><span>New tab</span><kbd>{newTabShortcut}</kbd></button>;
   function dropSlot(section: Section) {
@@ -574,11 +661,16 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     return result;
   }
   const todayTabs = ordered(visible.filter(n => !n.parentId && !n.archived && n.kind !== 'folder' && sectionOf(n) === 'today'));
+  // Clear keeps the page on screen (native ArchiveTodayTabs): the active tab
+  // and the other pane of its split.
+  const activeNode = tree.find(n => n.id === activeId);
+  const kept = new Set([activeId, activeNode?.splitAnchor, activeNode?.splitOther].filter(Boolean));
+  const clearableTabs = todayTabs.filter(n => !kept.has(n.id));
   const zone = (section: Section, label: string) => {
     const rows = ordered(visible.filter(n => !n.parentId && !n.archived && sectionOf(n) === section));
     const previewFavorite = section === 'favorites' && drop?.section === 'favorites';
     const count = rows.length + Number(previewFavorite) - Number(previewFavorite && rows.some(n => n.id === dragId));
-    const gridStyle = section === 'favorites' ? { '--favorite-columns': favoriteColumns(count) } as React.CSSProperties : undefined;
+    const gridStyle = section === 'favorites' ? { '--favorite-columns': favoriteColumns(count, favoriteLimit) } as React.CSSProperties : undefined;
     return <section className={`sidebar-zone ${section}`} aria-label={label} data-section={section}>
       {section === 'today' && newTab}
       <ul className="tree" style={gridStyle}>{renderRows(rows, '', section)}</ul>
@@ -625,8 +717,8 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     </div>}
     <SpaceTransition spaceId={activeSpace} position={space?.position ?? 0} hidden={hidden} scrollRef={scrollRef} layerRef={layerRef}>
     {!standalone && <>{zone('pinned', 'Pinned')}
-    <TodayDivider tabs={todayTabs} busy={busy} confirming={clearing} setConfirming={setClearing}
-      clear={() => { if (todayTabs[0]) tabCommand({ method: 'tab.clearToday', id: todayTabs[0].id }); setClearing(false); }} /></>}
+    <TodayDivider tabs={clearableTabs} busy={busy} confirming={clearing} setConfirming={setClearing}
+      clear={() => { if (clearableTabs[0]) tabCommand({ method: 'tab.clearToday', id: clearableTabs[0].id }); setClearing(false); }} /></>}
     {zone('today', 'Today')}
     </SpaceTransition>
     {!standalone && <div className="sidebar-footer">
@@ -664,7 +756,7 @@ function TodayDivider({ tabs, busy, confirming, setConfirming, clear }: {
     </> : <>
       <div className="section-divider" />
       {!!tabs.length && <button type="button" className="today-clear" data-action="clear-today" disabled={busy}
-        title="Close all Today tabs" onClick={() => setConfirming(true)}><Icon name="arrowDown" />Clear</button>}
+        title="Close Today tabs except the one on screen" onClick={() => setConfirming(true)}><Icon name="arrowDown" />Clear</button>}
     </>}
   </div>;
 }

@@ -6,6 +6,7 @@
 #include <dwmapi.h>
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include "downloads/download_manager.h"
 #include "extensions/extension_catalog.h"
 #include "windows/clipboard.h"
@@ -31,6 +32,7 @@
 #include "include/wrapper/cef_closure_task.h"
 #include "trust_policy.h"
 #include "windows/focus.h"
+#include "windows/sidebar_peek.h"
 #include "windows/window_close.h"
 #include "windows/workspace_layout.h"
 #include "windows/integration_card_bounds.h"
@@ -64,6 +66,10 @@ class PanelClient final : public CefClient, public CefLifeSpanHandler, public Ce
     if (auto s=state_.lock();s && s->probe && s->sidebar_peek_probe && text.starts_with("RED_INTEGRATION:")) {
       const auto v=CefParseJSON(text.substr(16),JSON_PARSER_RFC);
       if(v && v->GetType()==VTYPE_DICTIONARY)s->Record("integration_document",v->GetDictionary());
+    }
+    if (auto s = state_.lock(); s && s->sidebar_peek_probe && text.starts_with("RED_PIN_EDITOR:")) {
+      const auto v = CefParseJSON(text.substr(15), JSON_PARSER_RFC);
+      if (v && v->GetType() == VTYPE_DICTIONARY) s->Record("pin_editor_document", v->GetDictionary());
     }
     if (auto s = state_.lock(); s && s->probe && text.starts_with("RED_PANEL_RENDERED:")) {
       auto v = CefParseJSON(text.substr(19), JSON_PARSER_RFC);
@@ -99,8 +105,10 @@ class PanelClient final : public CefClient, public CefLifeSpanHandler, public Ce
   }
   void OnLoadEnd(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> f, int) override { if (f->IsMain()) if (auto o = owner_.lock()) o->Ready(); }
   bool OnPreKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& e, CefEventHandle, bool*) override {
-    if (e.type == KEYEVENT_RAWKEYDOWN && e.windows_key_code == VK_F4 && (e.modifiers & EVENTFLAG_ALT_DOWN))
+    if (e.type == KEYEVENT_RAWKEYDOWN && e.windows_key_code == VK_F4 && (e.modifiers & EVENTFLAG_ALT_DOWN)) {
+      if (auto o = owner_.lock(); o && o->modal()) { o->Hide(true); return true; }
       if (auto s = state_.lock(); s && s->window) { s->window->Close(); return true; }
+    }
     return false;
   }
   bool OnProcessMessageReceived(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, CefProcessId p, CefRefPtr<CefProcessMessage> m) override {
@@ -239,7 +247,15 @@ void PanelPopup::Closed(int id) {
     if (!s->window && s->browsers.empty()) QuitIfLastWindow(s);
   }
 }
-void PanelPopup::Destroyed() { presentation_.Reset(); window_ = nullptr; ready_ = prepared_ = presented_ = false; }
+void PanelPopup::RestoreModalOwner() {
+  const HWND owner = modal_owner_;
+  modal_owner_ = nullptr;
+  if (owner) if (const auto s = state_.lock(); s && s->embedded) s->embedded->SetModalShade(false);
+  if (IsWindow(owner)) EnableWindow(owner, TRUE);
+}
+void PanelPopup::Destroyed() {
+  RestoreModalOwner(); presentation_.Reset(); window_ = nullptr; ready_ = prepared_ = presented_ = false;
+}
 void PanelPopup::Reposition() {
   if (hover_ && hover_->is_open()) hover_->Reposition();
   auto p = parent(); if (!p || !window_) return;
@@ -251,7 +267,8 @@ void PanelPopup::Reposition() {
   // making the card grow from its unrelated geometric center.
   const bool compact_integration = hover_only_ && integration_ &&
       (integration_->HasKey("kind") || integration_->GetString("service") == "figma");
-  const int desired=kind_=="history"?kHistoryWidth:compact_integration?248:kPanelWidth;
+  const bool modal = this->modal();
+  const int desired=kind_=="moveToProfile" ? 360 : kind_=="history" || modal ? kHistoryWidth : compact_integration ? 248 : kPanelWidth;
   const bool editor=kind_=="space" || kind_=="newSpace" || kind_=="theme";
   const auto state=state_.lock();
   const auto page=WorkspaceContentArea(root.width,root.height,state && state->sidebar_visible,state?state->sidebar_width:kSidebarWidth);
@@ -264,16 +281,81 @@ void PanelPopup::Reposition() {
   if (editor) { x=page.x+std::min(24,std::max(0,(page.width-width)/2)); y=std::min(kToolbarHeight+24,std::max(kToolbarHeight,root.height-height-8)); }
   origin_x_ = std::clamp((button_center - x) / width, 0.f, 1.f);
   if (editor) origin_x_=0;
+  if (modal) { x = (root.width - width) / 2; y = (root.height - height) / 2; origin_x_ = .5f; }
   CefRect target(root.x + x, root.y + y, width, height);
   if (hover_only_) {
     const auto placement = PlaceIntegrationCard(root, anchor_, width, height, kToolbarHeight, integration_favorite_);
     target = placement.bounds; origin_x_ = placement.origin_x; integration_origin_y_ = placement.origin_y;
   }
   if (window_->GetBounds() != target) { if (presented_) presentation_.Settle(); window_->SetBounds(target); }
+  if (modal_owner_ && state && state->embedded) state->embedded->SetModalShade(true);
+}
+bool PanelPopup::EditPinnedPage(const std::string& id) {
+  const auto s = state_.lock();
+  if (!s || !s->workspace || shutdown_ || modal() || menu_open_ || !PopupOwnerIsForeground(s->window) ||
+      !IsWindowEnabled(s->window->GetWindowHandle())) return false;
+  const auto snapshot = s->workspace->Snapshot();
+  const auto nodes = snapshot->GetList("nodes");
+  for (size_t i = 0; nodes && i < nodes->GetSize(); ++i) {
+    const auto node = nodes->GetDictionary(i);
+    if (node->GetString("id") != id || node->GetString("kind") != "tab" || node->GetBool("archived") ||
+        node->GetBool("closing") || !node->GetBool("pinned") ||
+        (!node->GetBool("favorite") && node->GetString("space") != snapshot->GetString("activeSpace"))) continue;
+    pinned_page_ = CefDictionaryValue::Create();
+    pinned_page_->SetString("id", id);
+    auto title = node->GetString("title");
+    if (!node->GetBool("customTitle") && !node->GetString("pageTitle").empty() &&
+        node->GetString("currentUrl") == node->GetString("url")) title = node->GetString("pageTitle");
+    pinned_page_->SetString("title", title);
+    pinned_page_->SetString("url", node->GetString("url"));
+    Toggle("editPinned", {});
+    return editing_pin();
+  }
+  return false;
+}
+bool PanelPopup::ConfirmProfileMove(const std::string& id, const std::string& space) {
+  const auto s = state_.lock();
+  if (!s || !s->workspace || shutdown_ || modal() || menu_open_ || !PopupOwnerIsForeground(s->window) ||
+      !IsWindowEnabled(s->window->GetWindowHandle())) return false;
+  const auto snapshot = s->workspace->Snapshot();
+  const auto spaces = snapshot->GetList("spaces");
+  auto profile_of = [&](const std::string& wanted, std::string* name) -> std::optional<std::string> {
+    for (size_t i = 0; spaces && i < spaces->GetSize(); ++i) {
+      const auto row = spaces->GetDictionary(i);
+      if (row->GetString("id") != wanted) continue;
+      if (name) *name = row->GetString("name").ToString();
+      const auto profile = row->GetString("profileId").ToString();
+      return profile.empty() ? std::string("default") : profile;
+    }
+    return std::nullopt;
+  };
+  std::string space_name;
+  const auto target = profile_of(space, &space_name);
+  if (!target) return false;
+  const auto nodes = snapshot->GetList("nodes");
+  for (size_t i = 0; nodes && i < nodes->GetSize(); ++i) {
+    const auto node = nodes->GetDictionary(i);
+    if (node->GetString("id") != id || node->GetBool("archived") || node->GetBool("closing")) continue;
+    // Only a move across profiles needs this confirmation.
+    const auto source = profile_of(node->GetString("space").ToString(), nullptr);
+    if (!source || *source == *target) return false;
+    auto title = node->GetString("title").ToString();
+    if (node->GetString("kind") == "tab" && !node->GetBool("customTitle") && !node->GetString("pageTitle").empty())
+      title = node->GetString("pageTitle").ToString();
+    profile_move_ = CefDictionaryValue::Create();
+    profile_move_->SetString("id", id);
+    profile_move_->SetString("space", space);
+    profile_move_->SetString("title", title.substr(0, 240));
+    profile_move_->SetString("spaceName", space_name.substr(0, 120));
+    moving_tab_ = false;
+    Toggle("moveToProfile", {});
+    return open_ && kind_ == "moveToProfile";
+  }
+  return false;
 }
 void PanelPopup::Toggle(const std::string& kind, const CefRect& anchor) {
   auto s = state_.lock(); if (!s || !s->window || !s->workspace || s->workspace->WindowClosing() || shutdown_) return;
-  if (hover_only_ != (kind == "integration")) return;
+  if (hover_only_ != (kind == "integration") || modal()) return;
   if (hover_) hover_->DismissIntegration();
   if (open_ && kind == kind_) { Hide(true, true); return; }
   DropDraftTheme();
@@ -336,7 +418,11 @@ bool PanelPopup::PreviewIntegration(const std::string& node, const CefRect& anch
   integration_surface_ = surface;
   Toggle("integration", anchor); integration_left_ = 0;
   const int opening = request_;
-  if (live) { WatchIntegration(opening); return true; }
+  if (live) {
+    // The card shows the last snapshot at once; one older than 30 s is read again and replaces it.
+    if (const auto cache = s->workspace->integration_previews()) cache->RefreshIfOlder(integration_source_, std::chrono::seconds(30));
+    WatchIntegration(opening); return true;
+  }
   profile->history->Suggest(provider->query, 300, [weak = weak_from_this(), opening, node, policy = *provider, profile](std::vector<Visit> visits) {
     const auto self = weak.lock(); if (!self || !self->open_ || self->request_ != opening || !self->integration_) return;
     const auto state = self->state_.lock();
@@ -587,7 +673,7 @@ bool PanelPopup::PointerOverOpener() const {
       y >= anchor_.y && y < anchor_.y + anchor_.height;
 }
 void PanelPopup::Deactivated() {
-  if (!open_ || menu_open_) return;
+  if (!open_ || menu_open_ || modal()) return;
   // The spaces probe drives the editor while another app may hold the foreground.
   if (const auto state = state_.lock(); state && state->spaces_probe) return;
   const bool over_opener = PointerOverOpener(), owner_foreground = PopupOwnerIsForeground(parent());
@@ -630,13 +716,15 @@ void PanelPopup::DismissInactive(int request) {
 void PanelPopup::Hide(bool restore_focus, bool animate) {
   if (hover_) hover_->Hide(false);
   if ((!open_ && !presentation_.closing()) || menu_open_) return;
-  const bool animated = animate && presented_;
+  const bool animated = animate && presented_ && !modal();
   DropDraftTheme();
   if (kind_ == "integration" && integration_ && LiveIntegration(integration_source_)) {
     integration_->SetList("items",CefListValue::Create()); integration_->SetBool("composeAvailable",false);
   }
   open_ = false;
   prepared_ = presented_ = false;
+  pinned_page_ = nullptr; saving_pin_ = false;
+  RestoreModalOwner();
   const bool closing = animated && presentation_.Dismiss(kind_ == "archive", origin_x_);
   if (!closing) presentation_.Conceal();
   if (observer_) observer_->Success(Response());
@@ -661,7 +749,11 @@ std::string PanelPopup::Response(CefRefPtr<CefDictionaryValue> theme) const {
   auto s = state_.lock(); auto d = CefDictionaryValue::Create();
   d->SetInt("request", request_); d->SetString("kind", kind_); d->SetBool("open", open_);
   d->SetDictionary("snapshot", theme ? theme->Copy(false) : s && s->workspace ? s->workspace->Snapshot() : CefDictionaryValue::Create());
+  // One archive for every Space, sent only while its panel is open.
+  if (open_ && kind_ == "archive" && s && s->workspace) d->SetList("archive", s->workspace->ArchiveSnapshot());
   if (kind_ == "integration" && integration_) d->SetDictionary("integration", integration_->Copy(false));
+  if (editing_pin() && pinned_page_) d->SetDictionary("pinnedPage", pinned_page_->Copy(false));
+  if (open_ && kind_ == "moveToProfile" && profile_move_) d->SetDictionary("profileMove", profile_move_->Copy(false));
   if (s && kind_ == "site") {
     d->SetDictionary("site", SiteInfo(s));
     // Installed extensions for the popover's Extensions row (names and PNG
@@ -732,7 +824,7 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
   auto s = state_.lock();
   if (!s || !IsPanelUi(b->GetIdentifier(), hover_only_ ? s->integration_panel_id.load() : s->panel_id.load(),
                        f->IsMain(), f->GetURL().ToString())) { cb->Failure(403, "Untrusted panel document"); return true; }
-  if (raw.length() > 4096) { cb->Failure(413, "Request too large"); return true; }
+  if (raw.length() > (modal() ? 8192u : 4096u)) { cb->Failure(413, "Request too large"); return true; }
   auto value = CefParseJSON(raw, JSON_PARSER_RFC);
   if (!value || value->GetType() != VTYPE_DICTIONARY || value->GetDictionary()->GetType("method") != VTYPE_STRING) { cb->Failure(400, "Invalid command"); return true; }
   auto d = value->GetDictionary(); const auto method = d->GetString("method").ToString();
@@ -742,7 +834,11 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     if (observer_) { cb->Failure(409, "Already subscribed"); return true; }
     observer_ = cb; observer_id_ = query; Publish(); return true;
   }
-  if (method == "panel.close" && d->GetSize() == 1) { cb->Success(Response()); Hide(!hover_only_); return true; }
+  if (method == "panel.close" && d->GetSize() == 1) {
+    if (saving_pin_) { cb->Failure(409, "Saving pinned page"); return true; }
+    if (moving_tab_) { cb->Failure(409, "Moving tab"); return true; }
+    cb->Success(Response()); Hide(!hover_only_); return true;
+  }
   if ((method == "panel.resize" || method == "panel.present") &&
       (!open_ || !window_ || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_)) {
     cb->Failure(409, "Panel opening changed"); return true;
@@ -753,7 +849,9 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
       Hide(false); cb->Failure(409, "Panel opener is unavailable"); return true;
     }
     height_ = d->GetInt("height"); Reposition(); window_->Layout();
-    prepared_ = true; if (!presented_) presentation_.Stage();
+    // Cloaking a staged active window can move foreground away from its owner.
+    // The modal appears at once at its final size, so it needs no staging.
+    prepared_ = true; if (!presented_ && !modal()) presentation_.Stage();
     cb->Success(PopupViewport(window_, request_)); return true;
   }
   if (method == "panel.present" && d->GetSize() == 3 && d->GetType("reducedMotion") == VTYPE_BOOL && prepared_) {
@@ -762,10 +860,25 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     }
     if (!presented_) {
       presented_ = true;
-      if (!hover_only_) { window_->Show(); window_->Activate(); FocusBrowser(browser_); }
       const bool reduced_motion = d->GetBool("reducedMotion");
-      presentation_.Reveal(reduced_motion, kind_ == "archive", origin_x_, true, hover_only_ ? integration_origin_y_ : -1.f);
+      const bool modal = this->modal();
+      if (!hover_only_ && !modal) { window_->Show(); window_->Activate(); FocusBrowser(browser_); }
+      presentation_.Reveal(reduced_motion || modal, kind_ == "archive", origin_x_, !modal,
+                           hover_only_ ? integration_origin_y_ : -1.f, !modal);
+      if (modal) {
+        window_->Activate(); FocusBrowser(browser_);
+        if (s->sidebar_peek) s->sidebar_peek->Hide();
+        // The same owned panel also hosts modeless popovers. Block input to
+        // the root only for this opening, after the editor takes focus.
+        const HWND owner = s->window->GetWindowHandle();
+        if (IsWindowEnabled(owner)) {
+          modal_owner_ = owner;
+          EnableWindow(owner, FALSE);
+          if (s->embedded) s->embedded->SetModalShade(true);
+        }
+      }
       auto details = CefDictionaryValue::Create(); details->SetInt("request", request_);
+      if (modal) details->SetString("kind", kind_);
       details->SetDouble("elapsed_ms", static_cast<double>(GetTickCount64() - opened_ms_));
       details->SetInt("height", window_->GetBounds().height); details->SetBool("layered", presentation_.layered());
       details->SetBool("composed", presentation_.composed());
@@ -792,10 +905,55 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
       details->SetBool("keyboard_focus", GetAncestor(GetFocus(), GA_ROOT) == window_->GetWindowHandle());
       details->SetBool("command", false); s->Record("popup_presented", details);
     }
-    cb->Success(PopupViewport(window_, request_, presentation_.composed(), origin_x_, kind_ == "archive", true,
+    cb->Success(PopupViewport(window_, request_, presentation_.composed(), origin_x_, kind_ == "archive", !modal(),
                              hover_only_ ? integration_origin_y_ : -1.f)); return true;
   }
   if (!open_ || !s->workspace || s->workspace->WindowClosing()) { cb->Failure(409, "Panel is not open"); return true; }
+  if (kind_ == "moveToProfile") {
+    if (method != "move.confirm") { cb->Failure(404, "Unknown move confirmation command"); return true; }
+    if (d->GetSize() != 2 || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_ ||
+        !presented_ || moving_tab_ || !profile_move_) { cb->Failure(409, "Move confirmation changed"); return true; }
+    // The same command the sidebar sends; the controller validates it and
+    // unloads the live pages before moving (WorkspaceController::UnloadThenDispatch).
+    auto command = CefDictionaryValue::Create();
+    command->SetString("method", "tree.moveToSpace");
+    command->SetString("id", profile_move_->GetString("id"));
+    command->SetString("space", profile_move_->GetString("space"));
+    command->SetBool("unload", true);
+    command->SetDouble("expectedRevision", s->workspace->Snapshot()->GetDouble("treeRevision"));
+    moving_tab_ = true;
+    s->workspace->Handle(command, [weak = weak_from_this(), cb, opening = request_](int code, const std::string& error,
+                                                                                    CefRefPtr<CefDictionaryValue>) {
+      if (code) cb->Failure(code, error);
+      else cb->Success("{}");
+      const auto self = weak.lock();
+      if (!self || self->request_ != opening || !self->open_ || self->kind_ != "moveToProfile") return;
+      self->moving_tab_ = false;
+      if (!code) self->Hide(true);
+    });
+    return true;
+  }
+  if (editing_pin()) {
+    if (method != "pin.save") { cb->Failure(404, "Unknown pinned page editor command"); return true; }
+    if (d->GetSize() != 4 || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_ ||
+        !presented_ || saving_pin_ || !pinned_page_) { cb->Failure(409, "Pinned page editor opening changed"); return true; }
+    if (d->GetType("title") != VTYPE_STRING || d->GetType("url") != VTYPE_STRING || d->GetString("url").empty()) {
+      cb->Failure(400, "Invalid title or address"); return true;
+    }
+    saving_pin_ = true;
+    std::string error;
+    const int code = s->workspace->SetPinnedPage(pinned_page_->GetString("id"), d->GetString("url"), d->GetString("title"), error,
+        [weak = weak_from_this(), cb, opening = request_](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
+          const auto self = weak.lock();
+          if (code) cb->Failure(code, error);
+          else cb->Success("{}");
+          if (!self || self->request_ != opening || !self->editing_pin()) return;
+          self->saving_pin_ = false;
+          if (!code) self->Hide(true);
+        });
+    if (code) { saving_pin_ = false; cb->Failure(code, error); }
+    return true;
+  }
   if (kind_ == "integration" && method.starts_with("integration.") && integration_ &&
       !BrowserIntegrationEnabled(s, integration_->GetString("service").ToString())) { cb->Failure(409, "Integration is disabled"); return true; }
   if (kind_ == "integration" && (method == "integration.open" || method == "integration.join")) {
@@ -908,11 +1066,9 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
   }
   if (kind_ == "archive" && method == "tree.restore" && d->GetSize() == 2 && d->GetType("id") == VTYPE_STRING) {
     // Restore only an archived tab; the revision check happens in the controller.
-    auto current = s->workspace->Snapshot(); auto nodes = current->GetList("nodes"); bool archived = false;
-    for (size_t i = 0; i < nodes->GetSize(); ++i) { auto n = nodes->GetDictionary(i); if (n->GetString("id") == d->GetString("id") && n->GetBool("archived")) archived = true; }
-    if (!archived) { cb->Failure(404, "Archived tab is no longer available"); return true; }
+    if (!s->workspace->IsArchived(d->GetString("id").ToString())) { cb->Failure(404, "Archived tab is no longer available"); return true; }
     auto command = CefDictionaryValue::Create(); command->SetString("method", "tree.restore"); command->SetString("id", d->GetString("id"));
-    command->SetDouble("expectedRevision", current->GetDouble("treeRevision"));
+    command->SetDouble("expectedRevision", s->workspace->tree_revision());
     s->workspace->Handle(command, [weak = weak_from_this(), cb](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
       auto self = weak.lock(); if (!self) return;
       if (code) { cb->Failure(code, error); return; }

@@ -19,12 +19,14 @@ bool HandleSidebarAction(const std::shared_ptr<State>& s,CefRefPtr<CefBrowser> s
   const bool new_tab=method=="browser.shortcut" && d->GetType("action")==VTYPE_STRING && d->GetString("action")=="newTab";
   const bool drag=method=="tab.detach" || method=="tab.dragStarted" || method=="tab.dragCancel" || method=="tab.dragEnded";
   const bool home=method=="tab.setHome";
+  const bool edit_pinned=method=="tab.editPinned";
+  const bool confirm_move=method=="tab.confirmMoveToSpace";
   const bool batch=home || method=="tab.copyLink" || method=="tab.archiveOthers" || method=="tab.archiveBelow" || method=="tab.clearToday" || method=="tab.moveToNewSpace";
   const bool mute=method=="tab.mute", duplicate=method=="tab.duplicate";
   const bool integration=method=="integration.preview";
   const bool x_badge=method=="tab.setXBadgeHidden";
   const bool toggle_integration=method=="tab.setIntegration";
-  if(!new_tab && !drag && !batch && !mute && !duplicate && !integration && !x_badge && !toggle_integration && method!="browser.restartToUpdate" && method!="settings.openProfiles")return false;
+  if(!new_tab && !drag && !batch && !edit_pinned && !confirm_move && !mute && !duplicate && !integration && !x_badge && !toggle_integration && method!="browser.restartToUpdate" && method!="settings.openProfiles")return false;
   if(!s || !s->workspace || persistent){cb->Failure(400,"Invalid sidebar action");return true;}
   if(s->workspace->WindowClosing()){cb->Failure(409,"Window is closing");return true;}
   if(s->probe) {
@@ -91,6 +93,17 @@ bool HandleSidebarAction(const std::shared_ptr<State>& s,CefRefPtr<CefBrowser> s
       if(code)cb->Failure(code,error);else Reply(cb,snapshot);
     });return true;
   }
+  if(confirm_move) {
+    // Moving live pages to a Space of another profile: the window's modal asks first.
+    if(d->GetSize()!=3 || d->GetType("id")!=VTYPE_STRING || d->GetString("id").length()!=36 ||
+       d->GetType("space")!=VTYPE_STRING || d->GetString("space").length()!=36) { cb->Failure(400,"Invalid move command");return true; }
+    const bool floating = source && source->GetIdentifier() == s->peek_id;
+    if (!source || !s->panel_popup || (floating ? !s->sidebar_peek || !s->sidebar_peek->is_open() : !s->sidebar_visible) ||
+        !s->panel_popup->ConfirmProfileMove(d->GetString("id").ToString(),d->GetString("space").ToString()))
+      cb->Failure(409,"Move confirmation is unavailable");
+    else respond();
+    return true;
+  }
   if(x_badge) {
     if(d->GetSize()!=3 || d->GetType("id")!=VTYPE_STRING || d->GetString("id").length()!=36 || d->GetType("hidden")!=VTYPE_BOOL) {
       cb->Failure(400,"Invalid X badge command");return true;
@@ -99,14 +112,19 @@ bool HandleSidebarAction(const std::shared_ptr<State>& s,CefRefPtr<CefBrowser> s
       if(code)cb->Failure(code,error);else Reply(cb,snapshot);
     });return true;
   }
-  const bool edited=home && d->GetSize()==4 && d->GetType("url")==VTYPE_STRING && d->GetType("title")==VTYPE_STRING;
-  const bool fields=batch ? d->GetSize()==2 || edited : d->GetSize()==(mute?3u:2u);
-  if(!fields || d->GetType("id")!=VTYPE_STRING || d->GetString("id").length()!=36 || (mute && d->GetType("muted")!=VTYPE_BOOL)){
+  if(d->GetSize()!=(mute?3u:2u) || d->GetType("id")!=VTYPE_STRING || d->GetString("id").length()!=36 || (mute && d->GetType("muted")!=VTYPE_BOOL)){
     cb->Failure(400,"Invalid tab command");return true;
   }
   std::string error;const auto id=d->GetString("id").ToString();
+  if (edit_pinned) {
+    const bool floating = source && source->GetIdentifier() == s->peek_id;
+    if (!source || !s->panel_popup || (floating ? !s->sidebar_peek || !s->sidebar_peek->is_open() : !s->sidebar_visible) ||
+        !s->panel_popup->EditPinnedPage(id)) cb->Failure(409, "Pinned page editor is unavailable");
+    else respond();
+    return true;
+  }
   const int code=method=="tab.copyLink" ? s->workspace->CopyTabLink(id,error)
-      : home ? s->workspace->SetPinnedPage(id,edited?d->GetString("url").ToString():"",edited?d->GetString("title").ToString():"",error)
+      : home ? s->workspace->SetPinnedPage(id,"","",error)
       : method=="tab.moveToNewSpace" ? s->workspace->MoveToNewSpace(id,error)
       : mute ? s->workspace->SetMuted(id,d->GetBool("muted"),error)
       : duplicate ? s->workspace->Duplicate(id,error)

@@ -14,6 +14,7 @@ class EmbeddedContent {
   EmbeddedContent(std::weak_ptr<State> state, std::function<CefRefPtr<CefClient>(const std::string&, bool)> client_factory);
   ~EmbeddedContent();
   bool Create(const std::string& url, const std::string& node_id = "");
+  void ConfigureNewTabWindow(CefWindowInfo& info) const;
   void OnCreated(CefRefPtr<CefBrowser> browser);
   void OnClosed(int id);
   void Resize(const CefRect& bounds);
@@ -92,6 +93,8 @@ class EmbeddedContent {
   void HideNotification();
   bool NotificationVisible() const { return corners_.notification_visible(); }
   bool NotificationGeometryOk() const;
+  void SetModalShade(bool visible);
+  bool modal_shade_visible() const { return corners_.modal_shade_visible(); }  // Probes only.
   bool BeginPopupAnimation(HWND popup, bool bottom, float origin_x,
                            bool closing = false, float from_scale = 1.f, float origin_y = -1.f);
   bool FadePopupShadow(HWND popup, int duration_ms);

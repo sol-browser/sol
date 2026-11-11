@@ -15,6 +15,12 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   explicit PanelPopup(std::weak_ptr<State> state) : state_(std::move(state)) {}
   // |anchor| is the opening button in root client DIP coordinates.
   void Toggle(const std::string& kind, const CefRect& anchor);
+  bool EditPinnedPage(const std::string& id);
+  bool editing_pin() const { return open_ && kind_ == "editPinned"; }
+  // Centered over the window with the page shaded and the window disabled.
+  bool modal() const { return open_ && (kind_ == "editPinned" || kind_ == "moveToProfile"); }
+  // Confirms moving a loaded tab to a Space that uses another browsing profile.
+  bool ConfirmProfileMove(const std::string& id, const std::string& space);
   bool PreviewIntegration(const std::string& node, const CefRect& anchor, HWND surface);
   bool DismissIntegration();
   void Hide(bool restore_focus, bool animate = false);
@@ -46,6 +52,7 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   // Probe-only fixed DOM driver: click the popover row containing |text|.
   void ProbeClick(const std::string& text, int attempts = 100);
  private:
+  void RestoreModalOwner();
   std::string Response(CefRefPtr<CefDictionaryValue> theme = nullptr) const;
   bool PointerOverOpener() const;
   bool PointerOverIntegration() const;
@@ -69,6 +76,11 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   CefRefPtr<CefMessageRouterBrowserSide::Callback> observer_;
   int64_t observer_id_ = -1;
   std::string kind_ = "downloads";
+  CefRefPtr<CefDictionaryValue> pinned_page_;
+  HWND modal_owner_ = nullptr;
+  bool saving_pin_ = false;
+  CefRefPtr<CefDictionaryValue> profile_move_;
+  bool moving_tab_ = false;
   CefRect anchor_;
   float origin_x_ = .5f, integration_origin_y_ = 0.f;
   PopupPresentation presentation_;

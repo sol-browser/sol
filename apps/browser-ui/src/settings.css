@@ -42,12 +42,6 @@
 .settings-appearance .theme-label { color:#aaa0b6; }
 .settings-error { padding:12px 14px; border-radius:8px; background:#d67d9012; border:1px solid #d67d9025; color:#e8a8b8; font-size:12px; line-height:1.6; }
 .settings-version { display:flex; justify-content:space-between; gap:12px; padding:5px 2px; font-size:10px; color:#77707f; }
-.settings-release-heading { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
-.settings-release-heading h2 { margin:0; font-size:17px; }
-.settings-release-heading time { margin-left:auto; font-size:10px; color:#9992a3; }
-.settings-release ul { display:grid; gap:11px; margin:21px 0 0; padding-left:17px; color:#bbb4c3; font-size:12px; line-height:1.75; }
-.settings-release li { padding-left:3px; }
-.settings-release li::marker { color:#a78cbe; }
 @keyframes settings-page-in { from { opacity:0; transform:translateY(3px); } to { opacity:1; transform:none; } }
 .settings-field { display:grid; gap:10px; margin-top:24px; color:#c6bfce; font-size:12px; }
 .settings-field select, .settings-homepage input { min-width:0; padding:10px 12px; border:1px solid #ffffff12; border-radius:7px; background:#1c1a20; color:#e8e2ed; font:inherit; }

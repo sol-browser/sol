@@ -35,6 +35,11 @@ class PageCorners {
                   std::span<const COLORREF> borders = {}, float border_width = 0);
   void Hide();
   bool visible() const { return visible_; }
+  // Modal shade in the browser's compositor, above its children and below
+  // separate owned dialogs.
+  bool ShowModalShade(HWND parent);
+  void HideModalShade();
+  bool modal_shade_visible() const { return modal_shade_ != nullptr; }
   // Passive URL label above the native document: no HWND or hit-test surface.
   bool PrepareLinkStatus(HWND parent) { return Init(parent); }
   bool ShowLinkStatus(HWND parent, const RECT& area, float scale,
@@ -103,6 +108,7 @@ class PageCorners {
   Microsoft::WRL::ComPtr<IDCompositionDevice> device_;
   Microsoft::WRL::ComPtr<IDCompositionTarget> target_;
   Microsoft::WRL::ComPtr<IDCompositionVisual> root_;
+  Microsoft::WRL::ComPtr<IDCompositionVisual> modal_shade_;
   SidebarShadow sidebar_shadow_;
   SidebarShadow link_peek_shadow_;
   LinkPeekScene link_peek_scene_;

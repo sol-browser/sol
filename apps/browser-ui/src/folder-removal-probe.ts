@@ -1,4 +1,5 @@
 import { request, type Snapshot, type TreeMutation } from './bridge';
+import { archivedTabs, waitArchived } from './archive-probe';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function waitFor(check: (value: Snapshot) => boolean) {
   for (let i = 0; i < 160; ++i) {
@@ -134,7 +135,7 @@ export async function folderRemovalProbe(base: string) {
   x.focus(); await sleep(180);
   if (x.title !== 'Remove from Pinned' || getComputedStyle(x).opacity !== '1') throw new Error('Closed pin X is missing on focus');
   x.click();
-  await waitFor(s => s.nodes!.some(n => n.id === pin && n.archived && !n.pinned && !n.live));
+  await waitArchived(pin);
   async function prompt() {
     const row = await dom<HTMLElement>(`[data-node-id="${root}"] > .tree-row`);
     row.querySelector<HTMLButtonElement>('.node-name')!.focus();
@@ -178,8 +179,9 @@ export async function folderRemovalProbe(base: string) {
   if (confirm.textContent === 'Review') { confirm.click(); await sleep(60); confirm = await dom('[data-action="confirm-folder-removal"]'); }
   confirm.click();
   current = await waitFor(s => s.organizationUnloadDecisions === 2 && !s.nodes!.some(n => n.id === root || n.id === nested));
+  const archive = await archivedTabs();
   for (const id of [protectedTab,first,second,added])
-    if (!current.nodes!.some(n => n.id === id && n.archived && !n.pinned && !n.live && !n.parentId)) throw new Error('Folder tab was not safely archived');
+    if (!archive.some(n => n.id === id) || current.nodes!.some(n => n.id === id)) throw new Error('Folder tab was not safely archived');
   console.info('RED_FOLDER_REMOVAL_CHECKS:' + JSON.stringify({ root, nested, tabs: [protectedTab,first,second,added], pin, count: 4 }));
   const start = current.nodes!.find(n => n.url === base)!.id;
   const abandoned = (await mutate({ method: 'tree.createTab', parentId: '', title: 'Abandoned', url: `${base}?abandoned` })).createdId!;
@@ -187,6 +189,6 @@ export async function folderRemovalProbe(base: string) {
   await mutate({ method: 'tree.activate', id: start });
   await waitFor(s => s.activeId === start && !s.isLoading);
   await mutate({ method: 'tree.close', id: abandoned });
-  await waitFor(s => s.nodes!.some(n => n.id === abandoned && !n.live));
+  await waitArchived(abandoned);  // A closed Today tab leaves the snapshot for the archive.
   console.info('RED_ORGANIZATION_CHECKS:pass');
 }

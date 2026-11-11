@@ -128,6 +128,8 @@ void RecordIntegrationPreviewCheck(const std::shared_ptr<State>& state, const st
   data->SetInt("rows",static_cast<int>(result->GetList("items")->GetSize()));
   data->SetBool("composeAvailable",result->GetBool("composeAvailable"));
   if (result->HasKey("mailView")) data->SetString("mailView",result->GetString("mailView"));
+  if (service=="twitter") data->SetInt("httpStatus",result->GetInt("httpStatus"));
+  if ((service=="twitter" || service=="whatsapp") && result->HasKey("unread")) data->SetInt("unread",result->GetInt("unread"));
   if (service=="googleCalendar") {
     const auto items=result->GetList("items");
     int timed=0;

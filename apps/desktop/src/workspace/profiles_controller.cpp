@@ -30,15 +30,30 @@ void WorkspaceController::ChangeProfile(TreeCommand command, Reply done) {
     done(400,"Unknown Space",nullptr); return;
   }
   if (spaces.empty()) { Dispatch(std::move(command),std::move(done)); return; }
+  UnloadThenDispatch([spaces](WorkspaceController& workspace,const TreeNode& node) {
+    const TreeNode* root=&node;
+    for (int depth=0;!root->parent.empty() && depth<64;++depth) {
+      const auto parent=std::find_if(workspace.tree_.nodes.begin(),workspace.tree_.nodes.end(),[&](const auto& n){return n.id==root->parent;});
+      if (parent==workspace.tree_.nodes.end()) break; root=&*parent;
+    }
+    return spaces.contains(root->space);
+  },std::move(command),std::move(done),"Close Link Peek in the selected Spaces before changing profiles","Profile change cancelled; remaining tabs were kept");
+}
+// Unloads the live pages |selected| picks in every window of this workspace,
+// each through its own close dialogs, then dispatches |command|. Refuses while
+// another tab operation or a Link Peek is in progress; stops if a page is kept.
+void WorkspaceController::UnloadThenDispatch(std::function<bool(WorkspaceController&,const TreeNode&)> selected,TreeCommand command,
+                                             Reply done,const std::string& peek_error,const std::string& cancelled_error) {
   struct Operation {
     std::vector<std::shared_ptr<WorkspaceController>> windows;
     std::deque<std::pair<std::shared_ptr<WorkspaceController>,std::string>> pages;
     std::weak_ptr<WorkspaceController> owner;
     TreeCommand command;
     Reply done;
+    std::string cancelled;  // Error when the user keeps one of the pages.
     std::function<void()> next;
   };
-  auto operation=std::make_shared<Operation>(); operation->owner=weak_from_this(); operation->command=std::move(command); operation->done=std::move(done);
+  auto operation=std::make_shared<Operation>(); operation->owner=weak_from_this(); operation->command=std::move(command); operation->done=std::move(done); operation->cancelled=cancelled_error;
   for (const auto& window : session_->Windows()) if (window->workspace_data==data_ && window->workspace) {
     const auto workspace=window->workspace;
     if (workspace->profile_changing_ || !workspace->closing_.empty() || workspace->folder_removal_ || !workspace->creating_.empty() ||
@@ -47,15 +62,9 @@ void WorkspaceController::ChangeProfile(TreeCommand command, Reply done) {
     }
     operation->windows.push_back(workspace);
     for (const auto& node : workspace->tree_.nodes) {
-      const TreeNode* root=&node;
-      for (int depth=0;!root->parent.empty() && depth<64;++depth) {
-        const auto parent=std::find_if(workspace->tree_.nodes.begin(),workspace->tree_.nodes.end(),[&](const auto& n){return n.id==root->parent;});
-        if (parent==workspace->tree_.nodes.end()) break; root=&*parent;
-      }
-      if (spaces.contains(root->space) && workspace->parked_peeks_.contains(node.id)) {
-        operation->done(409,"Close Link Peek in the selected Spaces before changing profiles",nullptr); return;
-      }
-      if (spaces.contains(root->space) && workspace->LiveBrowser(node.id)) operation->pages.emplace_back(workspace,node.id);
+      if (!selected(*workspace,node)) continue;
+      if (workspace->parked_peeks_.contains(node.id)) { operation->done(409,peek_error,nullptr); return; }
+      if (workspace->LiveBrowser(node.id)) operation->pages.emplace_back(workspace,node.id);
     }
   }
   if (operation->pages.empty()) { Dispatch(operation->command,std::move(operation->done)); return; }
@@ -74,11 +83,11 @@ void WorkspaceController::ChangeProfile(TreeCommand command, Reply done) {
     const auto browser=workspace->LiveBrowser(id);
     if (!browser) { CefPostTask(TID_UI,base::BindOnce([](std::shared_ptr<Operation> pending){if(pending->next)pending->next();},op)); return; }
     workspace->profile_closing_[id]=[op,finish](bool closed) {
-      if (!closed) { finish(409,"Profile change cancelled; remaining tabs were kept",nullptr); return; }
+      if (!closed) { finish(409,op->cancelled,nullptr); return; }
       CefPostTask(TID_UI,base::BindOnce([](std::shared_ptr<Operation> pending){if(pending->next)pending->next();},op));
     };
     CloseBrowserWithDialogs(workspace->state_, browser, false);
   };
   operation->next();
 }
-}
+}  // namespace red

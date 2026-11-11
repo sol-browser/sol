@@ -66,6 +66,9 @@ def main():
         with sqlite3.connect(f'file:{database.as_posix()}?mode=ro', uri=True) as db:
             saved = db.execute('SELECT name FROM spaces ORDER BY position').fetchall()
     home_space = get('home', 'active_space')
+    archive = {r['details']['step']: r['details'] for r in rows if r['event'] == 'spaces_probe_archive'}
+    via_panel = [r['details']['panel'] for r in rows if r['event'] == 'spaces_probe_archive_restore']
+    aget = lambda step, key: archive.get(step, {}).get(key)
     checks = {
         'all_steps': list(steps) == ['home', 'empty_work', 'work_tab', 'back_home', 'work_again', 'editor', 'deleted', 'brief_empty', 'brief_deleted_open', 'brief_deleted'],
         'created': created == [0] and get('empty_work', 'spaces') == 2,
@@ -83,12 +86,22 @@ def main():
         'collapsed_delete_shows_page': get('brief_empty', 'active_id') == '' and get('brief_deleted', 'spaces') == 1
             and get('brief_deleted', 'active_id') == get('deleted', 'active_id') and get('brief_deleted', 'page_visible') is True,
         'floating_sidebar_delete_shows_page': get('brief_deleted_open', 'spaces') == 1 and get('brief_deleted_open', 'page_visible') is True,
+        # One archive for every Space: closed at home, listed and restored in another Space.
+        'closed_tab_leaves_the_snapshot': aget('closed_at_home', 'archived') is True and aget('closed_at_home', 'in_snapshot') is None
+            and aget('closed_at_home', 'archived_space') == home_space,
+        'archive_lists_tabs_of_other_spaces': aget('listed_elsewhere', 'archived') is True and aget('listed_elsewhere', 'active_space') != home_space
+            and aget('listed_elsewhere', 'archived_space') == home_space,
+        'restore_opens_in_the_space_on_screen': aget('restored_elsewhere', 'archived') is None and aget('restored_elsewhere', 'in_snapshot') is True
+            and aget('restored_elsewhere', 'active') is True and aget('restored_elsewhere', 'space') == aget('listed_elsewhere', 'active_space')
+            and aget('restored_elsewhere', 'archive_rows') == 0,
         'saved_spaces': [tuple(r) for r in saved] == [('Personal',)],
         'probe_passed': any(r['event'] == 'probe_result' and r['details']['pass'] for r in rows),
     }
     result = {'passed': process.returncode == 0 and all(checks.values()),
               'exit_code': process.returncode, 'directory': str(directory),
-              'checks': checks, 'shots': shots, 'steps': steps}
+              'checks': checks, 'shots': shots, 'steps': steps, 'archive': archive,
+              # False: the Archive panel lost the foreground in this run and the restore went by command.
+              'archive_restored_through_panel': via_panel == [True]}
     (directory / 'spaces.json').write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     print(json.dumps({k: v for k, v in result.items() if k != 'steps'}, indent=2), flush=True)
     print(directory)

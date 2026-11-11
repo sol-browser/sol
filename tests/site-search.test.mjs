@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { defaultSiteSearches, validSiteSearches, validSiteSearch, parseSnapshot, parseSettingsSnapshot } from '../packages/browser-contracts/src/index.ts';
-import { matchingSiteSearch, siteSearchKey, siteSearchUrl } from '../apps/browser-ui/src/site-search.ts';
+import { matchingSiteSearch, siteSearchKey, siteSearchTemplate, siteSearchUrl, wikipediaLanguage } from '../apps/browser-ui/src/site-search.ts';
 import { readFileSync } from 'node:fs';
 const site = { name: 'Owned search', keyword: 'owned', url: 'https://example.test/search?q=%s' };
 
@@ -13,6 +13,29 @@ test('shortcuts require exact typed text; disabled defaults stay disabled', () =
   assert.equal(matchingSiteSearch({ siteSearches: [site] }, 'yt'), undefined);
   assert.equal(matchingSiteSearch({ siteSearches: [{ ...site, enabled: false }] }, 'owned'), undefined);
   assert.equal(matchingSiteSearch({ siteSearches: [{ ...site, keyword: 'blog.example.com' }] }, 'BLOG.EXAMPLE.COM')?.keyword, 'blog.example.com');
+});
+
+test('the built-in Wikipedia searches in the language of the query', () => {
+  const wiki = defaultSiteSearches.find(s => s.keyword === 'wiki');
+  const host = query => new URL(siteSearchUrl(wiki, query)).host;
+  assert.equal(host('чёрная дыра'), 'ru.wikipedia.org');
+  assert.equal(host('Київ'), 'uk.wikipedia.org');
+  assert.equal(host('чорна діра'), 'uk.wikipedia.org');
+  assert.equal(host('black hole'), 'en.wikipedia.org');
+  assert.equal(host('2026'), 'en.wikipedia.org');
+  assert.equal(host('東京'), 'zh.wikipedia.org');
+  assert.equal(host('東京タワー'), 'ja.wikipedia.org');
+  assert.equal(host('서울'), 'ko.wikipedia.org');
+  assert.equal(host('Αθήνα'), 'el.wikipedia.org');
+  assert.equal(new URL(siteSearchUrl(wiki, 'чёрная дыра')).searchParams.get('search'), 'чёрная дыра');
+  assert.equal(wikipediaLanguage('Мінск ў'), 'uk'); // Ukrainian letters win over Belarusian ў
+  assert.equal(wikipediaLanguage('Мурманск ў'), 'be');
+});
+
+test('a Wikipedia address the person set is kept as is', () => {
+  const german = { name: 'Wikipedia DE', keyword: 'wde', url: 'https://de.wikipedia.org/w/index.php?search=%s' };
+  assert.equal(new URL(siteSearchUrl(german, 'чёрная дыра')).host, 'de.wikipedia.org');
+  assert.equal(siteSearchTemplate(site, 'чёрная дыра'), site.url);
 });
 
 test('keyboard activation can be Space or Tab, or Tab only', () => {

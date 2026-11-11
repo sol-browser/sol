@@ -1,6 +1,7 @@
 #include "experiments/devtools_probe.h"
 #include "windows/devtools.h"
 #include "windows/devtools_dock.h"
+#include "windows/devtools_window.h"
 #include "windows/embedded_content.h"
 #include "experiments/shell_capture.h"
 #include "workspace/controller.h"
@@ -36,7 +37,8 @@ class Observer final : public CefDevToolsMessageObserver {
     const auto value = result ? result->GetDictionary("value") : nullptr;
     if (value && value->GetBool("red_devtools_probe")) if (auto state = state_.lock()) {
       const auto kind = value->GetString("kind");
-      state->Record(kind == "shell" ? "devtools_probe_shell" : kind == "frontend" ? "devtools_probe_frontend" : "devtools_probe_page", value->Copy(false));
+      state->Record(kind == "shell" ? "devtools_probe_shell" : kind == "frontend" ? "devtools_probe_frontend" :
+                    kind == "window" ? "devtools_probe_window" : "devtools_probe_page", value->Copy(false));
     }
   }
  private:
@@ -123,10 +125,15 @@ void Sample(const std::shared_ptr<State>& s, CefRefPtr<CefBrowser> page, const s
     if (auto dock = s->devtools_dock->Describe()) out->SetDictionary("dock", dock);
     if (auto device = s->devtools_dock->DescribeDevice()) out->SetDictionary("device", device);
   }
+  const auto own = s->devtools_dock ? s->devtools_dock->SeparateWindow(page->GetIdentifier()) : nullptr;
+  if (own) { out->SetBool("own_window", true); out->SetBool("window_visible", own->hwnd() && IsWindowVisible(own->hwnd())); }
   for (const auto& [id, target] : s->devtools_targets) if (target == page->GetIdentifier()) {
     out->SetInt("frontend", id);
-    if (const auto at = s->browsers.find(id); at != s->browsers.end())
-      out->SetBool("child", GetParent(at->second->GetHost()->GetWindowHandle()) == s->window->GetWindowHandle());
+    if (const auto at = s->browsers.find(id); at != s->browsers.end()) {
+      const HWND parent = GetParent(at->second->GetHost()->GetWindowHandle());
+      out->SetBool("child", parent == s->window->GetWindowHandle());
+      if (own) out->SetBool("in_own_window", parent == own->hwnd());
+    }
   }
   s->Record("devtools_probe_step", out);
   if (phase=="device" || phase=="detached" || phase=="rotated") {
@@ -171,9 +178,23 @@ void StartDevToolsProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowse
   });
   at(3940, [](auto s, auto) { TestDockInput(s,"restored"); });
   at(4450, [](auto s, auto page) { Sample(s,page,"icon_changed"); s->devtools_dock->SetSide(page->GetIdentifier(),DevToolsSide::Window); });
-  at(5400, [](auto s, auto page) {
+  at(5600, [](auto s, auto page) {
     Sample(s,page,"detached");
-    Evaluate(Shell(s),"document.querySelector('[aria-label=\"Dock right\"]')?.click()");
+    // Sol's own DevTools window carries the controls; the browser window has none.
+    Evaluate(Shell(s),"({red_devtools_probe:true,kind:'shell',phase:'detached_shell',header:!!document.querySelector('.devtools-header')})");
+    const auto own = s->devtools_dock ? s->devtools_dock->SeparateWindow(page->GetIdentifier()) : nullptr;
+    if (const auto header = own ? own->header() : nullptr) {
+      static CefRefPtr<CefRegistration> window_observer;
+      window_observer = header->GetHost()->AddDevToolsMessageObserver(new Observer(s));
+      Evaluate(header,"({red_devtools_probe:true,kind:'window',phase:'detached',"
+        "buttons:[...document.querySelectorAll('.devtools-window-header button')].map(b=>b.getAttribute('aria-label')),"
+        "dockEnabled:document.querySelector('[aria-label=\"Dock right\"]')?.disabled===false,"
+        "height:Math.round(document.querySelector('.devtools-window-header')?.getBoundingClientRect().height||0),"
+        "href:location.href,ready:document.readyState,body:(document.body?.innerHTML||'').slice(0,300)})");
+      CefPostDelayedTask(TID_UI, base::BindOnce([](CefRefPtr<CefBrowser> header) {
+        Evaluate(header,"document.querySelector('[aria-label=\"Dock right\"]')?.click()");
+      }, header), 250);
+    }
   });
   at(6900, [](auto s, auto page) { Sample(s,page,"reattach_button");
     // Continue testing emulation even when the baseline has no button.

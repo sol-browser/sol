@@ -1,4 +1,5 @@
 import { request, type Snapshot } from './bridge';
+import { waitArchived } from './archive-probe';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function waitFor(test: (s: Snapshot) => boolean, attempts = 120) {
   for (let i = 0; i < attempts; ++i) { const s = await request({ method: 'browser.getSnapshot' }); if (test(s)) return s; await delay(40); }
@@ -33,8 +34,27 @@ export async function browsingProbe() {
   await request({ method: 'tree.activate', id: source, expectedRevision: s.treeRevision! });
   await waitFor(s => s.activeId === source && !s.isLoading);
   console.info('RED_BROWSING:inspect'); await waitFor(s => s.browsingPreserved === true);
+  console.info('RED_BROWSING:named');
+  s = await waitFor(s => s.activeId !== source && s.url === `${origin}/named` && !s.isLoading && s.popupCount === 0 &&
+    s.nodes!.some(n => n.id === s.activeId && n.url === `${origin}/named`));
+  const named = s.activeId!;
+  await request({ method: 'tree.activate', id: source, expectedRevision: s.treeRevision! });
+  await waitFor(s => s.activeId === source && !s.isLoading);
+  console.info('RED_BROWSING:named-reuse');
+  s = await waitFor(s => s.popupCount === 0 &&
+    s.nodes!.some(n => n.id === named && n.currentUrl === `${origin}/named-reused` && n.url === `${origin}/named-reused`));
+  if (s.activeId !== named) await request({ method: 'tree.activate', id: named, expectedRevision: s.treeRevision! });
+  await waitFor(s => s.activeId === named && !s.isLoading);
+  await request({ method: 'browser.shortcut', action: 'closeTab' });
+  s = await waitArchived(named);
+  if (s.activeId !== source) await request({ method: 'tree.activate', id: source, expectedRevision: s.treeRevision! });
+  await waitFor(s => s.activeId === source && !s.isLoading);
   console.info('RED_BROWSING:popup');
   await waitFor(s => s.popupCount === 1); await waitFor(s => s.popupCount === 0);
+  if (new URL(sourceUrl).searchParams.has('named-targets-only')) {
+    console.info('RED_BROWSING_CHECKS:pass');
+    return;
+  }
   await request({ method: 'navigation.load', url: `${origin}/history` });
   await waitFor(s => s.url === `${origin}/history` && !s.isLoading);
   await request({ method: 'navigation.load', url: `${origin}/next` });
@@ -59,7 +79,7 @@ export async function browsingProbe() {
   await request({ method: 'tree.activate', id: blank, expectedRevision: s.treeRevision! });
   await waitFor(s => s.activeId === blank);
   await request({ method: 'browser.shortcut', action: 'closeTab' });
-  await waitFor(s => s.activeId !== blank && s.nodes!.some(n => n.id === blank && n.archived));
+  await waitArchived(blank); await waitFor(s => s.activeId !== blank);
   const snapshotBeforeAddress = await request({ method: 'browser.getSnapshot' });
   const address = document.querySelector<HTMLButtonElement>('.address-trigger');
   if (!address || address.disabled) throw new Error('Missing address command button');

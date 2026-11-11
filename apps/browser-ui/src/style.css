@@ -60,7 +60,9 @@ input { min-width: 0; }
 .status-light.loading { background: oklch(calc(0.5833 + var(--theme-dark, 0) * 0.0441) min(calc(0.1286 * var(--theme-chroma, 1)), 0.24) calc(var(--theme-hue, 307) + 1.5)); opacity: 1; animation: breathe 1s ease-in-out infinite alternate; }
 .error { color: oklch(calc(0.5044 + var(--theme-dark, 0) * 0.1879) 0.1337 8.5); }
 .spinning { animation: spin 1.2s linear infinite; }
-.sidebar { position: absolute; inset: var(--sidebar-top) auto 0 0; width: var(--sidebar-size, 256px); display: flex; flex-direction: column; padding: 9px 10px 10px; user-select: none;  font-size: 14px; }
+.sidebar { position: absolute; inset: var(--sidebar-top) auto 0 0; width: var(--sidebar-size, 256px); display: flex; flex-direction: column;
+  /* Side padding narrows from 10 px (170 DIP and wider) to 6 px at the 150 DIP minimum. */
+  --sidebar-pad-x: clamp(6px, calc((var(--sidebar-size, 256px) - 150px) / 5 + 6px), 10px); padding: 9px var(--sidebar-pad-x) 10px; user-select: none;  font-size: 14px; }
 .sidebar[data-hidden="true"] { visibility: hidden; pointer-events: none; }
 .sidebar-resizer { position: absolute; left: calc(var(--sidebar-width) + 8px - var(--sidebar-resize-hit-width, 8px)); top: var(--toolbar-height); bottom: 8px; width: var(--sidebar-resize-hit-width, 8px); cursor: col-resize; touch-action: none; user-select: none; z-index: 5; outline: none; }
 .sidebar-resizer::after { content: ''; position: absolute; right: 0; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: oklch(calc(0.5395 + var(--theme-dark, 0) * 0.1244) min(calc(0.1016 * var(--theme-chroma, 1)), 0.24) calc(var(--theme-hue, 307) + 2.3)); opacity: 0; transition: opacity .12s; }
@@ -71,6 +73,11 @@ input { min-width: 0; }
 .devtools-header > span { flex: 1; min-width: 0; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .devtools-header button { width: 24px; height: 24px; padding: 0; border-radius: 4px; display: grid; place-items: center; flex-shrink: 0; }
 .devtools-header button:hover, .devtools-header button[aria-pressed="true"] { background: #ffffff1c; }
+/* Sol's separate DevTools window: the strip spans the window above the native frontend. */
+.devtools-window-header { inset: 0 0 auto 0; height: 32px; padding: 4px 6px 4px 12px; }
+.devtools-header button:disabled { opacity: .45; }
+.devtools-header button[aria-pressed="true"]:disabled { opacity: 1; }
+html:has(.devtools-window-header), html:has(.devtools-window-header) body { background: #282828; }
 .devtools-resizer { position: absolute; z-index: 6; background: #282828; cursor: col-resize; touch-action: none; user-select: none; }
 .devtools-resizer[data-horizontal="true"] { cursor: row-resize; }
 .devtools-resizer[data-hovered="true"], .devtools-resizer[data-dragging="true"], .devtools-resizer:focus-visible { background: var(--accent); }
@@ -98,8 +105,13 @@ input { min-width: 0; }
 .device-resizer[data-edge="bottom"]::after { width: 28px; height: 3px; top: 3px; left: calc(50% - 14px); }
 .device-resizer[data-edge="corner"]::after { width: 5px; height: 5px; top: 2px; left: 2px; }
 .sidebar-fixed { flex: 0 0 auto; padding: 0 2px; }
+/* Docked: the page starts 8 px beyond the sidebar and the tab list uses that
+   gutter (see .sidebar-scroll). Favorites, the space heading and the bottom bar
+   use it too, so their right edge sits as far from the page as their left edge
+   from the window. The floating sidebar has no gutter and is already even. */
+.workspace .sidebar-fixed, .workspace .sidebar-footer { margin-right: -8px; }
 .sidebar-favorites { position: relative; }
-.sidebar-list { position: relative; flex: 1; min-height: 0; overflow: hidden; margin-right: -18px; }
+.sidebar-list { position: relative; flex: 1; min-height: 0; overflow: hidden; margin-right: calc(-1 * var(--sidebar-pad-x, 10px) - 8px); }
 /* The page starts 8px beyond the sidebar. Use that gutter for the scrollbar,
    giving rows 12px to both the window's left edge and the website's left edge.
    Native reserved gutters and overlay scrollbars have different widths. */
@@ -155,7 +167,37 @@ input { min-width: 0; }
 .site-mark { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; }
 .site-mark.favicon { padding: 1px; background: transparent; box-shadow: none; object-fit: contain; }
 .site-mark.fallback-site-icon { width: 16px; height: 16px; color: inherit; background: transparent; box-shadow: none; border-radius: 0; }
-.pinned-away-prefix { flex: 0 0 auto; color: currentColor; opacity: .48; font-size: 16px; line-height: 1; margin-right: -4px; }
+.pinned-away-prefix { flex: 0 0 auto; color: currentColor; opacity: var(--pinned-prefix-opacity, .48); font-size: 16px; line-height: 1; margin-right: -4px; transition: opacity 140ms ease; }
+.pinned-away-label { position: relative; min-width: 0; }
+.pinned-away-label > .node-title {
+  display: block; transform: translateY(var(--pinned-title-y, 0px)); transition: transform 180ms var(--motion-settle);
+}
+.pinned-reset-hint {
+  position: absolute; inset: 14px 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none;
+  color: color-mix(in oklch, currentColor 72%, transparent); font-size: 10px; line-height: 11px; font-weight: 400;
+  opacity: var(--pinned-hint-opacity, 0); transition: opacity 140ms ease;
+}
+.tree-row[data-pinned-away="true"] > .node-icon {
+  /* Fill the favicon column using the row's leading padding and icon gap. */
+  align-self: stretch; height: auto; width: 34px; min-width: 34px;
+  margin-inline: -4px 0; padding-inline: 4px 6px; border-radius: 7px 0 0 7px;
+  transition: background-color 140ms ease;
+}
+.tree-row[data-pinned-away="true"] > .node-icon:enabled:is(:hover, :focus-visible) {
+  background-color: rgb(0 0 0 / .09);
+}
+:root[data-theme="dark"] .tree-row[data-pinned-away="true"] > .node-icon:enabled:is(:hover, :focus-visible) {
+  background-color: rgb(255 255 255 / .14);
+}
+.tree-row[data-pinned-away="true"]:has(> .node-icon:enabled:is(:hover, :focus-visible)) {
+  --pinned-prefix-opacity: 0;
+  --pinned-title-y: -5px;
+  --pinned-hint-opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pinned-away-prefix, .pinned-away-label > .node-title, .pinned-reset-hint,
+  .tree-row[data-pinned-away="true"] > .node-icon { transition: none; }
+}
 .row-action { display: flex; flex: 0 0 auto; justify-content: center; align-items: center; opacity: 0; width: 24px; height: 24px; padding: 0; color: oklch(calc(0.5259 + var(--theme-dark, 0) * 0.2022) calc(0.0501 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 2.6));
   transition: opacity 140ms ease, background 140ms ease; }
 .row-action .icon { width: 13px; height: 13px; }
@@ -225,7 +267,7 @@ input { min-width: 0; }
 .favorite-audio:focus-visible { outline: 2px solid currentColor; outline-offset: -1px; }
 .favorites .zone-empty { display: flex; align-items: center; justify-content: center; min-height: 43px; border: 1px dashed oklch(calc(0.7134 + var(--theme-dark, 0) * -0.2008) calc(0.0565 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 4.1) / 0.314); border-radius: 9px; margin: 0; font-size: 11px; }
 .new-tab { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; color: oklch(calc(0.5111 + var(--theme-dark, 0) * 0.2297) calc(0.0577 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 4.6)); padding: 0 9px; min-height: 36px; margin-top: 3px; font-size: 13px; line-height: 20px; }
-.new-tab > span { transform: translateY(-1px); }
+.new-tab > span { transform: translateY(-1px); white-space: nowrap; }
 .new-tab .icon { width: 16px; height: 16px; }
 .new-tab kbd { font-size: 11px; opacity: 0; transition: opacity 120ms ease; }
 .new-tab:hover kbd { opacity: 1; }
@@ -280,9 +322,32 @@ kbd { margin-left: auto; font-family: inherit; font-size: 10px; color: oklch(cal
 /* Bottom bar (Arc): Archive at the left, the spaces centered, + at the right. */
 .sidebar-bottom { display: grid; grid-template-columns: 28px minmax(0, 1fr) 28px; }
 .sidebar-bottom > [data-action="archive"] { justify-self: start; position: relative; width: 28px; height: 28px; padding: 0; justify-content: center; }
-.space-switcher { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.space-switcher { min-width: 0; display: flex; align-items: center; justify-content: safe center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
 .sidebar-bottom .space-dot, .sidebar-bottom .space-add { flex: 0 0 auto; justify-content: center; width: 26px; height: 26px; padding: 0; border-radius: 7px; }
 .sidebar-bottom .space-dot:hover:enabled { background: color-mix(in oklch, currentColor 7%, transparent); }
+/* Narrow sidebar (down to 150 DIP): a compact bottom bar that still shows four
+   spaces (22 px buttons 2 px apart below 216 DIP, 20 px below about 170 DIP).
+   More spaces scroll as before. The query measures the content box. */
+.sidebar { container: sidebar / inline-size; }
+@container sidebar (width < 196px) {
+  .sidebar-bottom { grid-template-columns: 22px minmax(0, 1fr) 22px; gap: 4px; padding-inline: 2px; }
+  .sidebar-bottom > [data-action="archive"] { width: 22px; height: 22px; }
+  .space-switcher { gap: 2px; }
+  .sidebar-bottom .space-dot, .sidebar-bottom .space-add { width: 22px; height: 22px; border-radius: 6px; }
+  /* Shorter Favorites tiles: two columns double the rows, which matters on
+     short laptop screens (1280x720 DIP). */
+  .favorites .tree-row { min-height: 42px; }
+  .favorites .node-icon { height: 40px; }
+  /* More spaces than fit: the row fades out at its end instead of cutting a button. */
+  .space-switcher { mask-image: linear-gradient(90deg, #000 calc(100% - 8px), transparent); }
+  /* The hover-only shortcut hint would wrap "New tab" at this width. */
+  .new-tab kbd { display: none; }
+}
+@container sidebar (width < 150px) {
+  .sidebar-bottom { grid-template-columns: 20px minmax(0, 1fr) 20px; padding-inline: 0; }
+  .sidebar-bottom > [data-action="archive"] { width: 20px; height: 20px; }
+  .sidebar-bottom .space-dot, .sidebar-bottom .space-add { width: 20px; height: 20px; }
+}
 .space-dot-mark { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .45; transition: transform .16s var(--motion-settle), opacity .16s, background .16s; }
 .space-dot-icon { font-size: 15px; line-height: 1; opacity: .55; filter: saturate(.7); transition: opacity .16s, filter .16s, transform .16s var(--motion-settle); }
 .space-dot:hover .space-dot-mark, .space-dot:hover .space-dot-icon { opacity: .85; }
@@ -365,7 +430,7 @@ kbd { margin-left: auto; font-family: inherit; font-size: 10px; color: oklch(cal
 .workspace .notice { justify-self: center; width: min(660px, 100%); }
 /* Compact address centered in the balanced title-bar grid. The Go button sits
    outside its width so it cannot pull the address field off-center. */
-.workspace .page-toolbar:not(.notice) { --address-width: clamp(120px, calc((100vw - 560px) / 2.5), 300px); justify-self: center; width: auto; min-width: 0; }
+.workspace .page-toolbar:not(.notice) { --address-width: clamp(96px, calc((100vw - 560px) / 5), 150px); justify-self: center; width: auto; min-width: 0; }
 .workspace .page-toolbar:not(.notice) .address-trigger { width: var(--address-width); flex: 0 1 auto; }
 /* The zoom badge sits inside the address, at its right edge; the text keeps its centre. */
 .address-wrap { position: relative; display: flex; flex: 0 1 auto; min-width: 0; }
@@ -620,7 +685,7 @@ kbd, .sidebar-bottom button, .local-badge, .archive-list p { color: var(--muted)
 html:has(.peek-root), body:has(.peek-root) { margin: 0; height: 100%; overflow: hidden; background: oklch(calc(0.9179 + var(--theme-dark, 0) * -0.7058 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9179 - var(--theme-dark, 0) * -0.7058)) calc(0.0211 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 6.8)); }
 .peek-root { position: fixed; inset: 0; --theme-legacy-gradient: linear-gradient(155deg, oklch(calc(0.9182 + var(--theme-dark, 0) * -0.7058 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9182 - var(--theme-dark, 0) * -0.7058)) calc(0.0202 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 33.7)) 0%, oklch(calc(0.9134 + var(--theme-dark, 0) * -0.7053 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9134 - var(--theme-dark, 0) * -0.7053)) calc(0.0237 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) - 5.1)) 55%, oklch(calc(0.9031 + var(--theme-dark, 0) * -0.7043 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9031 - var(--theme-dark, 0) * -0.7043)) calc(0.0220 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) - 29.5)) 100%); background: var(--theme-grain, none), var(--theme-palette-gradient, var(--theme-legacy-gradient)); }
 .peek-root .sidebar { --sidebar-top: 0px; left: auto; right: 0; top: 0; bottom: 0; }
-.peek-root .sidebar-list { margin-right: -10px; }
+.peek-root .sidebar-list { margin-right: calc(-1 * var(--sidebar-pad-x, 10px)); }
 .peek-root .sidebar-resizer { left: auto; right: 0; top: 0; bottom: 0; }
 .peek-error { position: absolute; left: 10px; right: 10px; bottom: 8px; margin: 0; font-size: 11px; color: oklch(calc(0.5044 + var(--theme-dark, 0) * 0.1879) 0.1337 8.5); }
 
@@ -630,11 +695,6 @@ html:has(.peek-root), body:has(.peek-root) { margin: 0; height: 100%; overflow: 
   background:oklch(calc(0.9336 + var(--theme-dark, 0) * -0.7074) calc(0.0234 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 3.7)); box-shadow:0 1px 2px rgb(0 0 0 / 22%); }
 /* Same box as the row's close button (.row-action), so the row's edges match. */
 .peek-mark img,.peek-mark .icon { width:16px; height:16px; border-radius:3px; }
-/* "Edit Pinned Page > Edit…": title and address fields in place of the row. */
-.pinned-edit { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; padding: 4px 2px; }
-.pinned-edit input { width: 100%; min-width: 0; padding: 3px 6px; border-radius: 6px; font: inherit; font-size: 13px; color: inherit;
-  background: oklch(calc(1 - var(--theme-dark, 0) * .8) 0 0 / .55); border: 1px solid oklch(.5 0 0 / .25); }
-.pinned-edit input + input { font-size: 12px; opacity: .85; }
 /* A small gap after the close button. */
 .tree-row > .peek-mark { margin-left:4px; }
 .favorites .tree-row { position:relative; }

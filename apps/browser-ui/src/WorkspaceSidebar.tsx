@@ -13,6 +13,8 @@ export function WorkspaceSidebar({ snapshot, surface, command, mutate, panel }: 
   const props = {
     ...sidebarPresentation(snapshot, surface),
     integrations: snapshot.integrations,
+    xUnread: snapshot.xUnread,
+    whatsappUnread: snapshot.whatsappUnread,
     openNewTab: () => command({ method: 'browser.shortcut', action: 'newTab' }),
     previewIntegration: (id: string, anchor: HTMLElement) => {
       if (snapshot.privateWindow) return;

@@ -1,15 +1,20 @@
 #include "experiments/sidebar_peek_probe.h"
 #include "experiments/shell_capture.h"
+#include "windows/embedded_content.h"
 #include "windows/panel_popup.h"
 #include "windows/command_actions.h"
 #include <windows.h>
 #include <dwmapi.h>
 #include <cstdio>
 #include "include/base/cef_callback.h"
+#include "include/cef_devtools_message_observer.h"
+#include "include/cef_parser.h"
+#include "include/views/cef_display.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "windows/sidebar_menu.h"
 #include "windows/sidebar_peek.h"
 #include "workspace/controller.h"
+#include "integrations/x_unread.h"
 #include "app/browsing_profiles.h"
 #include "history/history_service.h"
 #include "windows/focus.h"
@@ -45,6 +50,152 @@ void Later(const std::shared_ptr<State>& state, int delay, Step step) {
     if (auto state = weak.lock()) step(state);
   }, std::weak_ptr<State>(state), step), delay);
 }
+void ChoosePinEditor(const std::shared_ptr<State>& state, int attempts) {
+  if (state->sidebar_menu && state->sidebar_menu->ProbeSelect("editPinned")) {
+    state->window->Activate();
+    SetForegroundWindow(state->window->GetWindowHandle());
+  } else if (attempts > 0) {
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, int attempts) {
+      if (const auto state = weak.lock(); state && state->window) ChoosePinEditor(state, attempts);
+    }, std::weak_ptr<State>(state), attempts - 1), 10);
+  }
+}
+void PinEditorMouse(CefRefPtr<CefBrowser> browser, const char* type, int x, int y, bool down) {
+  if (!browser || !browser->IsValid()) return;
+  const auto params = CefDictionaryValue::Create();
+  params->SetString("type", type);
+  params->SetInt("x", x); params->SetInt("y", y);
+  params->SetString("button", "left"); params->SetInt("buttons", down ? 1 : 0);
+  params->SetInt("clickCount", 1);
+  browser->GetHost()->ExecuteDevToolsMethod(0, "Input.dispatchMouseEvent", params);
+}
+void CheckPinEditor(const std::shared_ptr<State>& s, bool floating) {
+  const auto host = s->browsers.find(floating ? s->peek_id : s->shell_id);
+  if (host == s->browsers.end()) return;
+  s->window->Activate();
+  const auto root = s->window->GetWindowHandle();
+  if (!SetForegroundWindow(root) && !PopupOwnerIsForeground(s->window)) {
+    INPUT keys[2]{};
+    keys[0].type = keys[1].type = INPUT_KEYBOARD;
+    keys[0].ki.wVk = keys[1].ki.wVk = VK_MENU;
+    keys[1].ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(2, keys, sizeof(INPUT));
+    SetForegroundWindow(root);
+  }
+  RECT client{};
+  GetClientRect(root, &client);
+  POINT page_sample{client.right - 48, client.bottom - 48};
+  ClientToScreen(root, &page_sample);
+  HDC desktop = GetDC(nullptr);
+  const COLORREF undimmed = GetPixel(desktop, page_sample.x, page_sample.y);
+  ReleaseDC(nullptr, desktop);
+  const auto frame = host->second->GetMainFrame();
+  frame->ExecuteJavaScript(R"JS((()=>{
+    const row = [...document.querySelectorAll('.tree-row')].find(r=>r.querySelector('.node-title')?.textContent==='Pinned editor fixture');
+    row?.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));
+  })())JS", frame->GetURL(), 0);
+  ChoosePinEditor(s, 20);
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, bool floating, POINT page_sample, COLORREF undimmed) {
+    const auto state = weak.lock();
+    if (!state || !state->panel_popup) return;
+    const auto panel = state->panel_popup;
+    const auto root = state->window->GetWindowHandle();
+    const auto owner = state->window->GetClientAreaBoundsInScreen();
+    const auto window = panel->window();
+    const auto bounds = window ? window->GetBounds() : CefRect();
+    const auto data = CefDictionaryValue::Create();
+    data->SetBool("floating", floating);
+    data->SetBool("presented", panel->is_presented() && window && window->IsVisible());
+    data->SetBool("centered", std::abs(2 * bounds.x + bounds.width - 2 * owner.x - owner.width) <= 2 &&
+        std::abs(2 * bounds.y + bounds.height - 2 * owner.y - owner.height) <= 2);
+    data->SetBool("owner_disabled", !IsWindowEnabled(root));
+    const HWND dialog = window ? window->GetWindowHandle() : nullptr;
+    data->SetBool("owned", dialog && GetWindow(dialog, GW_OWNER) == root);
+    RECT editor{};
+    GetWindowRect(dialog, &editor);
+    const POINT editor_center{(editor.left + editor.right) / 2, (editor.top + editor.bottom) / 2};
+    data->SetBool("editor_hit_test", dialog && GetAncestor(WindowFromPoint(editor_center), GA_ROOT) == dialog);
+    HDC desktop = GetDC(nullptr);
+    const COLORREF dimmed = GetPixel(desktop, page_sample.x, page_sample.y);
+    ReleaseDC(nullptr, desktop);
+    const auto intensity = [](COLORREF c) { return GetRValue(c) + GetGValue(c) + GetBValue(c); };
+    data->SetInt("page_before", intensity(undimmed));
+    data->SetInt("page_dimmed", intensity(dimmed));
+    data->SetBool("backdrop", state->embedded && state->embedded->modal_shade_visible() &&
+        undimmed != CLR_INVALID && dimmed != CLR_INVALID && intensity(undimmed) > 100 &&
+        std::abs(intensity(dimmed) - .6 * intensity(undimmed)) <= 15);
+    data->SetBool("foreground", PopupOwnerIsForeground(state->window));
+    const auto monitor = MonitorFromWindow(root, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitor_info{}; monitor_info.cbSize = sizeof(monitor_info);
+    data->SetBool("secondary", GetMonitorInfoW(monitor, &monitor_info) && !(monitor_info.dwFlags & MONITORINFOF_PRIMARY));
+    state->Record("pin_editor_window", data);
+    if (!panel->is_presented() || !panel->browser()) return;
+    const auto frame = panel->browser()->GetMainFrame();
+    if (!floating) {
+      auto capture = CaptureShell(panel->browser(), state->evidence_directory / "pinned-editor.png");
+      CefPostDelayedTask(TID_UI, base::BindOnce([](CefRefPtr<CefRegistration>) {}, capture), 500);
+    }
+    const std::string script = std::string("(async(save)=>{") + R"JS(
+      const modal=document.querySelector('[role=dialog][aria-modal=true]');
+      const [title,url]=modal?.querySelectorAll('input')??[];
+      const original=url?.value;
+      const initialTitle=title?.value;
+      const prefilled=initialTitle==='Pinned editor fixture'&&original?.endsWith('/pinned-editor');
+      const focused=document.activeElement===title;
+      const button=modal?.querySelector(save?'button[type=submit]':'button[type=button]');
+      let pressed=false;
+      button?.addEventListener('pointerdown',event=>{
+        setTimeout(()=>{
+          const style=getComputedStyle(button);
+          const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+          const scale=parseFloat(style.scale)||1;
+          pressed=event.isTrusted&&button.matches(':active')&&style.filter!=='none'&&
+              (reduced?scale===1&&style.transitionDuration==='0s':scale<.98);
+        },75);
+      },{once:true});
+      await new Promise(r=>setTimeout(r,205));
+      const set=(input,value)=>{
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,value);
+        input.dispatchEvent(new Event('input',{bubbles:true}));
+      };
+      let rejected=false;
+      if(title&&url){
+        set(title,save?'Edited in modal':'Cancelled draft');
+        if(save){
+          const submit=modal.querySelector('[type=submit]');
+          set(url,'javascript:alert(1)');submit.click();
+          for(let i=0;i<30&&!modal.querySelector('[role=alert]');++i)await new Promise(r=>setTimeout(r,20));
+          rejected=modal.querySelector('[role=alert]')?.textContent==='Invalid address';
+          set(url,new URL('/pinned-saved',original).href);
+          submit.click();
+        }else{
+          set(url,new URL('/pinned-cancelled',original).href);
+          await new Promise(r=>setTimeout(r,100));
+          title.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+        }
+      }
+      console.info('RED_PIN_EDITOR:'+JSON.stringify({save,prefilled,focused,pressed,rejected,initialTitle,original}));
+    })()JS" + (floating ? "true)" : "false)");
+    frame->ExecuteJavaScript(script, frame->GetURL(), 0);
+    // Hold the footer button down, then release outside so the existing
+    // cancellation and save checks can still operate on this opening.
+    const auto viewport = window->GetClientAreaBoundsInScreen();
+    CefPostDelayedTask(TID_UI, base::BindOnce(&PinEditorMouse, panel->browser(), "mousePressed",
+        viewport.width - (floating ? 46 : 112), viewport.height - 35, true), 30);
+    CefPostDelayedTask(TID_UI, base::BindOnce(&PinEditorMouse, panel->browser(), "mouseReleased", 4, 4, false), 165);
+  }, std::weak_ptr<State>(s), floating, page_sample, undimmed), 650);
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, bool floating) {
+    if (const auto state = weak.lock(); state && state->window && state->panel_popup) {
+      auto data = CefDictionaryValue::Create();
+      data->SetBool("floating", floating);
+      data->SetBool("closed", !state->panel_popup->is_open());
+      data->SetBool("owner_enabled", IsWindowEnabled(state->window->GetWindowHandle()));
+      data->SetBool("backdrop_removed", state->embedded && !state->embedded->modal_shade_visible());
+      state->Record("pin_editor_closed", data);
+      if (state->panel_popup->editing_pin()) state->panel_popup->Hide(true);
+    }
+  }, std::weak_ptr<State>(s), floating), 1250);
+}
 void CheckXBadge(CefRefPtr<CefBrowser> browser, bool floating) {
   if (!browser) return;
   const auto frame = browser->GetMainFrame();
@@ -73,7 +224,8 @@ void CheckXBadge(CefRefPtr<CefBrowser> browser, bool floating) {
         const duplicate=first.nodes.find(n=>n.title==='WhatsApp duplicate fixture');
         const deep=first.nodes.find(n=>n.title==='WhatsApp deep-link fixture');
         const whatsAppBadge=whatsapp&&document.querySelector(`[data-node-id="${whatsapp.id}"] [data-provider="whatsapp"]`);
-        report({whatsAppFloating:!!whatsAppBadge&&whatsapp.live&&first.activeId!==whatsapp.id,
+        // The dot comes from the hidden check while the pin itself stays unloaded.
+        report({whatsAppFloating:!!whatsAppBadge&&!whatsapp.live&&first.activeId!==whatsapp.id,
           otherPinsCold:duplicate?.live===false&&deep?.live===false});
         const startsHidden = first.nodes.find(n=>n.id===id)?.xBadgeHidden===true && !badge();
         await setHidden(false);
@@ -85,7 +237,8 @@ void CheckXBadge(CefRefPtr<CefBrowser> browser, bool floating) {
         const visible = await wait(badge);
         const style = visible ? getComputedStyle(badge()) : null;
         const corner = style?.position==='absolute' && style.bottom==='7px' && style.right==='7px' && style.width==='6px';
-        const startedInBackground = pin.live && first.activeId!==id && visible;
+        // X's count arrives without loading the X pin (integrations/x_unread.h).
+        const startedInBackground = !pin.live && first.activeId!==id && visible;
         const disabledPin = first.nodes.find(n=>n.title==='X disabled fixture');
         const duplicate = first.nodes.find(n=>n.title==='X duplicate fixture');
         const deep = first.nodes.find(n=>n.title==='X deep-link fixture');
@@ -143,15 +296,103 @@ void CheckWhatsAppPin(const std::shared_ptr<State>& state) {
       const pin=before.nodes.find(n=>n.title==='WhatsApp fixture');
       const row=document.querySelector(`[data-node-id="${pin.id}"]`);
       const badge=()=>row?.querySelector('[data-provider="whatsapp"]');
-      const docked=pin.live && !!badge() && before.activeId!==pin.id;
+      const docked=!pin.live && !!badge() && before.activeId!==pin.id;
       row?.querySelector('.node-name')?.click();
       const activated=await wait(s=>s.activeId===pin.id && s.url===pin.url && s.nodes.length===before.nodes.length);
       await q({method:'tree.activate',id:before.activeId,expectedRevision:(await read()).treeRevision});
       await q({method:'tree.close',id:pin.id,expectedRevision:(await read()).treeRevision});
-      const unloaded=await wait(s=>s.nodes.some(n=>n.id===pin.id && n.url===pin.url && !n.live) && !badge());
+      // Unloaded again: the last hidden check's count keeps the dot until the next check.
+      const unloaded=await wait(s=>s.nodes.some(n=>n.id===pin.id && n.url===pin.url && !n.live) && !!badge());
       report({whatsAppDocked:docked,activated,unloaded});
     } catch (error) { report({whatsAppError:String(error)}); }
   })())JS", frame->GetURL(), 0);
+}
+class PinnedHintHover final : public CefDevToolsMessageObserver {
+ public:
+  int query = 0;
+  void OnDevToolsMethodResult(CefRefPtr<CefBrowser> browser, int id, bool success, const void* bytes, size_t size) override {
+    if (id != query || !success) return;
+    const auto json = CefParseJSON(std::string(static_cast<const char*>(bytes), size), JSON_PARSER_RFC);
+    const auto result = json && json->GetType() == VTYPE_DICTIONARY ? json->GetDictionary()->GetDictionary("result") : nullptr;
+    const auto point = result ? result->GetDictionary("value") : nullptr;
+    if (!point) return;
+    const auto mouse = CefDictionaryValue::Create();
+    mouse->SetString("type", "mouseMoved");
+    mouse->SetInt("x", point->GetInt("x")); mouse->SetInt("y", point->GetInt("y"));
+    browser->GetHost()->ExecuteDevToolsMethod(0, "Input.dispatchMouseEvent", mouse);
+  }
+ private:
+  IMPLEMENT_REFCOUNTING(PinnedHintHover);
+};
+void CheckPinnedHint(const std::shared_ptr<State>& s, bool floating) {
+  const auto host = s->browsers.find(floating ? s->peek_id : s->shell_id);
+  if (host == s->browsers.end()) return;
+  const auto snapshot = s->workspace->Snapshot();
+  const auto nodes = snapshot->GetList("nodes");
+  for (size_t i = 0; nodes && i < nodes->GetSize(); ++i) {
+    const auto node = nodes->GetDictionary(i);
+    const auto home = node->GetString("url").ToString();
+    if (!home.ends_with("/pinned-saved")) continue;
+    const auto id = node->GetString("id").ToString();
+    auto command = CefDictionaryValue::Create();
+    command->SetString("method", "tree.activate"); command->SetString("id", id);
+    command->SetDouble("expectedRevision", snapshot->GetDouble("treeRevision"));
+    s->workspace->Handle(command, [weak = std::weak_ptr<State>(s), host = host->second, id, home, floating](int code, const std::string&, CefRefPtr<CefDictionaryValue>) {
+      if (code) return;
+      CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> host,
+          std::string id, std::string home, bool floating) {
+        const auto state = weak.lock();
+        if (!state || !host->IsValid()) return;
+        const auto page = state->workspace->LiveBrowser(id);
+        if (!page) return;
+        page->GetMainFrame()->LoadURL(home.substr(0, home.rfind('/')) + "/pinned-away");
+        const std::string script = std::string("(async(floating)=>{") + R"JS(
+          const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+          const wait=async check=>{for(let i=0;i<25;i++){const result=check();if(result)return result;await pause(40);}};
+          const row=await wait(()=>document.querySelector('.tree-row[data-pinned-away=true] .node-icon[aria-label="Back to pinned URL for Edited in modal"]')?.closest('.tree-row'));
+          if(!row)return null;
+          const icon=row.querySelector('.node-icon'), title=row.querySelector('.node-title'), hint=row.querySelector('.pinned-reset-hint');
+          row.scrollIntoView({block:'nearest'});
+          const titleY=title.getBoundingClientRect().top, height=row.getBoundingClientRect().height;
+          const hidden=getComputedStyle(hint).opacity==='0'&&getComputedStyle(icon).backgroundColor==='rgba(0, 0, 0, 0)';
+          icon.addEventListener('pointerenter',async event=>{
+            await pause(220);
+            const shown=event.isTrusted&&icon.matches(':hover')&&getComputedStyle(hint).opacity==='1'&&hint.textContent==='Back to pinned url';
+            const lifted=titleY-title.getBoundingClientRect().top>=4;
+            const sameHeight=height===row.getBoundingClientRect().height;
+            const arrowCursor=getComputedStyle(icon).cursor==='default';
+            const root=document.documentElement, theme=root.getAttribute('data-theme');
+            icon.style.transition='none';
+            root.dataset.theme='light';
+            const light=getComputedStyle(icon).backgroundColor;
+            root.dataset.theme='dark';
+            const dark=getComputedStyle(icon).backgroundColor;
+            if(theme===null)root.removeAttribute('data-theme');else root.setAttribute('data-theme',theme);
+            icon.style.removeProperty('transition');
+            const iconHeight=icon.getBoundingClientRect().height;
+            const highlight=iconHeight>=height-2&&light==='rgba(0, 0, 0, 0.09)'&&dark==='rgba(255, 255, 255, 0.14)';
+            const id=row.closest('[data-node-id]').dataset.nodeId;
+            icon.click();
+            const cleared=await wait(()=>row.dataset.pinnedAway==='false'&&!row.querySelector('.pinned-reset-hint'));
+            const snapshot=await new Promise(resolve=>window.cefQuery({request:'{"method":"browser.getSnapshot"}',persistent:false,
+              onSuccess:raw=>resolve(JSON.parse(raw)),onFailure:()=>resolve(null)}));
+            const pin=snapshot?.nodes.find(n=>n.id===id);
+            const atHome=!!cleared&&snapshot?.activeId===id&&pin?.currentUrl===pin?.url&&pin?.url.endsWith('/pinned-saved');
+            console.info('RED_PEEK:'+JSON.stringify({pinnedHint:floating?'floating':'docked',hidden,shown,lifted,sameHeight,arrowCursor,highlight,atHome,light,dark,height,iconHeight}));
+          },{once:true});
+          const box=icon.getBoundingClientRect();
+          return {x:Math.round(box.x+box.width/2),y:Math.round(box.y+box.height/2)};
+        })()JS" + (floating ? "true)" : "false)");
+        CefRefPtr<PinnedHintHover> observer = new PinnedHintHover;
+        const auto registration = host->GetHost()->AddDevToolsMessageObserver(observer);
+        auto params = CefDictionaryValue::Create(); params->SetString("expression", script);
+        params->SetBool("awaitPromise", true); params->SetBool("returnByValue", true);
+        observer->query = host->GetHost()->ExecuteDevToolsMethod(0, "Runtime.evaluate", params);
+        CefPostDelayedTask(TID_UI, base::BindOnce([](CefRefPtr<CefRegistration>) {}, registration), 1600);
+      }, weak, host, id, home, floating), 300);
+    });
+    return;
+  }
 }
 void CheckFigmaCreate(std::weak_ptr<State> weak, Hover invoke, std::shared_ptr<POINT> cursor) {
   const auto s=weak.lock(); if(!s)return;
@@ -187,6 +428,12 @@ void CheckFigmaCreate(std::weak_ptr<State> weak, Hover invoke, std::shared_ptr<P
       s->Record("figma_create_in_pin",result);
       s->panel_popup->Hide(false);s->sidebar_peek->Hide();s->workspace->SetSidebarVisible(true);
       SetCursorPos(cursor->x,cursor->y);
+      Later(s, 400, [](const std::shared_ptr<State>& s) { CheckPinnedHint(s, false); });
+      Later(s, 1900, [](const std::shared_ptr<State>& s) {
+        s->workspace->SetSidebarVisible(false);
+        s->sidebar_peek->Show();
+      });
+      Later(s, 2500, [](const std::shared_ptr<State>& s) { CheckPinnedHint(s, true); });
     },weak,node,count,cursor),1200);
   },weak,node,nodes->GetSize(),cursor),350);
 }
@@ -403,7 +650,10 @@ static void Start(const std::shared_ptr<State>& state) {
   if (!state->ipc_rejections) { Later(state, 100, &Start); return; }
   {
     // Leave room left of the window so the slide's clipping is visible on screen.
-    if (!state->window->IsMaximized()) state->window->SetBounds(CefRect(240, 80, 1100, 820));
+    if (!state->window->IsMaximized()) {
+      const auto area = state->window->GetDisplay()->GetWorkArea();
+      state->window->SetBounds(CefRect(area.x + 240, area.y + 80, 1100, 820));
+    }
     state->workspace->SetSidebarVisible(false);
     Later(state,650,[](const std::shared_ptr<State>& s){
       const auto shell=s->browsers.find(s->shell_id);
@@ -470,19 +720,16 @@ static void Start(const std::shared_ptr<State>& state) {
       const auto shell=s->browsers.find(s->shell_id);
       if(shell!=s->browsers.end())CheckXBadge(shell->second,false);
     });
+    Later(state,9300,[](const std::shared_ptr<State>& s){ CheckPinEditor(s, false); });
     Later(state,11000,[](const std::shared_ptr<State>& s){s->workspace->SetSidebarVisible(false);s->sidebar_peek->Show();});
     Later(state,11600,[](const std::shared_ptr<State>& s){CheckXBadge(s->sidebar_peek->browser(),true);});
     Later(state,12400,[](const std::shared_ptr<State>& s){
-      const auto snapshot=s->workspace->Snapshot(); const auto nodes=snapshot->GetList("nodes");
-      for(size_t i=0;i<nodes->GetSize();++i) {
-        const auto node=nodes->GetDictionary(i);
-        if(node->GetString("title")!="X fixture")continue;
-        if(const auto browser=s->workspace->LiveBrowser(node->GetString("id"))) {
-          const auto frame=browser->GetMainFrame();
-          frame->ExecuteJavaScript("document.title='Home / X'",frame->GetURL(),0);
-        }
-      }
+      // X's counter reports nothing unread: the dot clears even though the X tab may be loaded
+      // (activated earlier) with "(4)" still in its title.
+      s->x_unread_fixture=0;
+      if(const auto counter=s->workspace->x_unread())counter->RefreshSoon();
     });
+    Later(state,13100,[](const std::shared_ptr<State>& s){ CheckPinEditor(s, true); });
     Later(state,14500,[](const std::shared_ptr<State>& s){s->sidebar_peek->Hide();s->workspace->SetSidebarVisible(true);});
     Later(state,15300,&CheckWhatsAppPin);
     // Leave time for an interactive runner to foreground this owned test window.

@@ -1,5 +1,6 @@
 #include "app/updates.h"
 #include "app/session.h"
+#include "app/release_notes.h"
 #include "workspace/controller.h"
 #include "include/base/cef_callback.h"
 #include "include/wrapper/cef_closure_task.h"
@@ -118,20 +119,34 @@ Check CheckOnce(const std::function<void(const std::string&)>& ready) {
     LOG(WARNING) << "Updates off: " << error.what();
     return Check::NotInstalled;
   }
+  // A version downloaded earlier is offered at once, also without a network.
+  std::string waiting;
   try {
-    if (const auto pending = manager->UpdatePendingRestart()) { SetReady(pending->Version); ready(pending->Version); return Check::Ready; }
+    if (const auto pending = manager->UpdatePendingRestart()) {
+      waiting = pending->Version;
+      if (ReadyUpdate() != waiting) { SetReady(waiting); ready(waiting); }
+    }
+  } catch (const std::exception& error) {
+    LOG(WARNING) << "Reading the downloaded update failed: " << error.what();
+  }
+  // The feed is still checked while a version waits: a release published after
+  // that download replaces it, so the person goes straight to the latest
+  // version instead of through each one in turn (0.1.3 -> 0.2.0 -> 0.3.0,
+  // user report 2026-11-10).
+  try {
     const auto update = manager->CheckForUpdates();
-    if (!update) return Check::Nothing;
-    manager->DownloadUpdates(*update);
-    LOG(WARNING) << "Update " << update->TargetFullRelease.Version << " downloaded; applies on next start";
-    SetReady(update->TargetFullRelease.Version);
-    ready(update->TargetFullRelease.Version);
-    return Check::Ready;
+    if (update && UpdateReplacesWaiting(update->TargetFullRelease.Version, waiting)) {
+      manager->DownloadUpdates(*update);
+      waiting = update->TargetFullRelease.Version;
+      LOG(WARNING) << "Update " << waiting << " downloaded; applies on next start";
+      SetReady(waiting);
+      ready(waiting);
+    }
   } catch (const std::exception& error) {
     // No network, GitHub unavailable or rate-limited: try again next time.
     LOG(WARNING) << "Update check failed: " << error.what();
-    return Check::Nothing;
   }
+  return waiting.empty() ? Check::Nothing : Check::Ready;
 }
 
 // Four hours, like browsers that update in the background. SOL_UPDATE_INTERVAL
@@ -150,8 +165,9 @@ std::chrono::seconds CheckInterval() {
 void StartUpdateCheck(std::function<void(const std::string&)> ready) {
   std::thread([ready = std::move(ready)] {
     const auto interval = CheckInterval();
-    // Until an update waits for a restart; the process ending stops the thread.
-    for (Check result = CheckOnce(ready); result == Check::Nothing; result = CheckOnce(ready))
+    // Keeps checking while an update waits, so a later release replaces it.
+    // Only a copy outside a Velopack install stops; the process ending stops the thread.
+    for (Check result = CheckOnce(ready); result != Check::NotInstalled; result = CheckOnce(ready))
       std::this_thread::sleep_for(interval);
   }).detach();
 }

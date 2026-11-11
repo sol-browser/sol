@@ -81,7 +81,7 @@ struct TreeCommand {
   std::int64_t expected_revision = 0;
   std::string id, parent, title, url, section, next_active;
   std::optional<std::string> page_title;  // Native metadata for the new URL.
-  std::string space, icon;  // Space commands; MoveToSpace target.
+  std::string space, icon;  // Space commands; MoveToSpace target; native Activate of a Favorite in its profile.
   std::string profile;
   std::vector<std::string> spaces;  // Atomic initial assignment on CreateProfile.
   std::string after;  // CreateTab: a Today tab to open directly below (a link's opener); else first.

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSnapshot, parseSnapshotUpdate, parseSidebarMenuChoice, parseSettingsSnapshot, DEFAULT_THEME } from '../packages/browser-contracts/src/index.ts';
+import { parseSnapshot, parseSnapshotUpdate, parseArchive, parseSidebarMenuChoice, parseSettingsSnapshot, DEFAULT_THEME } from '../packages/browser-contracts/src/index.ts';
 const folder = '11111111-1111-4111-8111-111111111111';
 const tab = '22222222-2222-4222-8222-222222222222';
 test('Space actions validate profile and export destinations',()=>{
@@ -195,4 +195,25 @@ test('accepts spaces and rejects invalid ones or an unknown active space', () =>
   assert.throws(() => parseSnapshot(JSON.stringify({ ...fixture(), spaces, activeSpace: tab })));
   const nodes = fixture().nodes.map(n => ({ ...n, space: 'not-a-space-id' }));
   assert.throws(() => parseSnapshot(JSON.stringify({ ...fixture(), nodes })));
+});
+
+test('the shared archive accepts only archived tabs in the node format', () => {
+  const row = { id: tab, parentId: '', kind: 'tab', title: 'Closed', url: 'https://example.com/', position: 3, pinned: false, expanded: true,
+    live: false, favorite: false, archived: true, archivedAt: 1700000000000, currentUrl: 'https://example.com/', closing: false,
+    space: folder, pageTitle: 'Closed page', customTitle: false, favicon: 'sol://ui/favicon/example.com/v1' };
+  assert.deepEqual(parseArchive([row]), [row]);
+  assert.deepEqual(parseArchive([]), []);
+  const second = { ...row, id: folder, splitAnchor: tab, splitOther: folder, splitTitle: '', splitHidden: true, splitReversed: false };
+  assert.equal(parseArchive([row, second]).length, 2);
+  for (const bad of [{ ...row, archived: false }, { ...row, live: true }, { ...row, pinned: true }, { ...row, favorite: true }, { ...row, kind: 'folder' },
+    { ...row, parentId: folder }, { ...row, id: 'short' }, { ...row, archivedAt: -1 }, { ...row, archivedAt: undefined }, { ...row, space: 'nowhere' },
+    { ...row, favicon: 'https://evil.example/icon.png' }, { ...row, title: 'x'.repeat(241) }, { ...row, splitAnchor: 'short' }])
+    assert.throws(() => parseArchive([bad]));
+  assert.throws(() => parseArchive([row, row]));
+  assert.throws(() => parseArchive({ nodes: [row] }));
+  assert.throws(() => parseArchive(undefined));
+});
+test('a snapshot no longer needs archived tabs: the active tree validates without them', () => {
+  const snapshot = fixture();
+  assert.equal(parseSnapshot(JSON.stringify(snapshot)).nodes.some(n => n.archived), false);
 });

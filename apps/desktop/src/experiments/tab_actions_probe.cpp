@@ -48,13 +48,13 @@ void OnTabActionsProbeLoad(const std::shared_ptr<State>& state, const std::strin
       Step(s, "muted_and_unmuted");
       ExecuteShortcut(s, Shortcut::CloseTab);
       Later(s, 1200, [copy](const std::shared_ptr<State>& s) {
-        const auto closed = Node(s, copy);
-        if (!closed || !closed->GetBool("archived")) { Fail(s, "closed_archived"); return; }
+        // Archived tabs are outside the snapshot (one archive for every Space).
+        if (Node(s, copy) || !s->workspace->IsArchived(copy)) { Fail(s, "closed_archived"); return; }
         Step(s, "closed");
         ExecuteShortcut(s, Shortcut::ReopenClosed);
         Later(s, 1500, [copy](const std::shared_ptr<State>& s) {
           const auto reopened = Node(s, copy);
-          if (!reopened || reopened->GetBool("archived") || ActiveId(s) != copy) { Fail(s, "reopened"); return; }
+          if (!reopened || s->workspace->IsArchived(copy) || ActiveId(s) != copy) { Fail(s, "reopened"); return; }
           Step(s, "reopened");
           s->tab_actions_checks = true; s->Record("tab_actions_checks_pass");
         });

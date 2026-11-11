@@ -11,7 +11,8 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run(url: str, extra: list[str] | None = None, *, allow_failure: bool = False, profile: Path | None = None) -> tuple[Path, list[dict]]:
+def run(url: str, extra: list[str] | None = None, *, allow_failure: bool = False, profile: Path | None = None,
+        timeout: int = 45) -> tuple[Path, list[dict]]:
     directory = ROOT / "artifacts" / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8])
     directory.mkdir(parents=True)
     report = directory / "native.jsonl"
@@ -22,10 +23,10 @@ def run(url: str, extra: list[str] | None = None, *, allow_failure: bool = False
     with (directory / "process.log").open("w", encoding="utf-8") as log:
         process = subprocess.Popen(command, cwd=executable.parent, stdout=log, stderr=log)
         try:
-            code = process.wait(timeout=45)
+            code = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True)
-            raise RuntimeError(f"CEF did not shut down within 45s: {directory}")
+            raise RuntimeError(f"CEF did not shut down within {timeout}s: {directory}")
     rows = [json.loads(line) for line in report.read_text().splitlines()] if report.exists() else []
     results = [row["details"] for row in rows if row["event"] == "probe_result"]
     passed = code == 0 and len(results) == 1 and results[0]["pass"] and any(r["event"] == "shutdown" for r in rows)

@@ -46,7 +46,7 @@ bool AutoPipEnabled(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> p
 bool SitePipIntegrationEnabled(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page) {
   const auto frame = page && page->IsValid() ? page->GetMainFrame() : nullptr;
   const auto provider = frame ? IntegrationForUrl(frame->GetURL().ToString()) : std::string{};
-  return (provider != "youtube" && provider != "googleMeet") || BrowserIntegrationEnabled(state, provider);
+  return provider != "googleMeet" || BrowserIntegrationEnabled(state, provider);
 }
 void RefreshPipIntegrations(const std::shared_ptr<State>& state) {
   for (const auto& [id, page] : state->browsers) {

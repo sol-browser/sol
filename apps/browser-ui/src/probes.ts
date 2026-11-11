@@ -1,5 +1,6 @@
 import { request, type Command, type Snapshot, type TreeMutation } from './bridge';
 import { authoredIcons } from './Icon';
+import { SIDEBAR_MIN_WIDTH } from './sidebar-model';
 
 export async function ipcProbe() {
   const cases: [unknown, number][] = [
@@ -23,7 +24,7 @@ export async function ipcProbe() {
     [{ method: 'browser.shortcut', action: 'closeTab', id: 'untrusted' }, 400],
     [{ method: 'workspace.setSidebarVisible', visible: 'no' }, 400],
     [{ method: 'navigation.copyLink', url: 'https://untrusted.example/' }, 400],
-    [{ method: 'workspace.setSidebarWidth', width: 199, save: true }, 400],
+    [{ method: 'workspace.setSidebarWidth', width: SIDEBAR_MIN_WIDTH - 1, save: true }, 400],
     [{ method: 'workspace.setSidebarWidth', width: 481, save: true }, 400],
     [{ method: 'workspace.setSidebarWidth', width: 256.5, save: true }, 400],
     [{ method: 'workspace.setSidebarWidth', width: 256, save: 'yes' }, 400],
@@ -194,9 +195,9 @@ export async function workspaceProbe(initial: Snapshot) {
   await settled(); snapshot = await request({ method: 'browser.getSnapshot' }); checkLayout(snapshot, true);
   const separator = document.querySelector<HTMLElement>('[role="separator"][aria-label="Sidebar width"]')!;
   separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
-  snapshot = await waitFor(s => s.sidebarWidth === 200 && layoutReady(s)); checkLayout(snapshot, true);
+  snapshot = await waitFor(s => s.sidebarWidth === SIDEBAR_MIN_WIDTH && layoutReady(s)); checkLayout(snapshot, true);
   separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-  snapshot = await waitFor(s => s.sidebarWidth === 210 && layoutReady(s)); checkLayout(snapshot, true);
+  snapshot = await waitFor(s => s.sidebarWidth === SIDEBAR_MIN_WIDTH + 10 && layoutReady(s)); checkLayout(snapshot, true);
   await request({ method: 'workspace.setSidebarWidth', width: 480, save: false });
   snapshot = await waitFor(s => s.sidebarWidth === 480 && layoutReady(s)); checkLayout(snapshot, true);
   // Drag cost per pointer move: live (layout delta) vs the full snapshot path.

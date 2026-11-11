@@ -25,7 +25,7 @@ int main() {
   const auto minimum = red::WorkspaceContentArea(1, 1, true);
   check(minimum.width == 1 && minimum.height == 1, "transient small bounds never produce invalid native sizes");
   check(red::WorkspaceContentArea(1200, 820, true, 336).x == 344, "resized sidebar moves the native page");
-  check(red::SidebarWidth(480, 700) == 300 && red::SidebarWidth(0, 1200) == 200 &&
+  check(red::SidebarWidth(480, 700) == 300 && red::SidebarWidth(0, 1200) == red::kSidebarMinWidth &&
         red::SidebarWidth(9999, 1200) == 480, "sidebar limits reserve page space at minimum window size");
   check(!red::IsAllowedMethod("eval"), "code execution denied");
   check(red::IsLocalFileUrl("file:///C:/Users/me/a%20b.pdf"), "local file URL");
@@ -77,7 +77,15 @@ int main() {
         "command-line, component and default external extensions are not announced");
   check(red::IsCommandUi(9, 9, true, red::kCommandUrl), "exact command document accepted");
   check(red::IsAllowedBrowserSwitch("probe-google-integrations",true)&&!red::IsAllowedBrowserSwitch("probe-google-integrations",false),"Google fixture is probe-only");
+  check(red::IsAllowedBrowserSwitch("memory-report",false)&&!red::IsAllowedBrowserSwitch("memory-report",true),"memory report is a normal-mode request, not a probe input");
   check(!red::IsTrustedUi(9, 9, true, red::kCommandUrl), "command document cannot call full shell IPC");
+  // The separate DevTools window's strip: only its own exact document, main frame, registered browser.
+  check(red::IsDevToolsWindowUi(12, 12, true, red::kDevToolsWindowUrl), "registered DevTools window strip");
+  check(!red::IsDevToolsWindowUi(13, 12, true, red::kDevToolsWindowUrl), "another browser cannot use the strip's IPC");
+  check(!red::IsDevToolsWindowUi(12, 12, false, red::kDevToolsWindowUrl), "strip subframes denied");
+  check(!red::IsDevToolsWindowUi(0, 0, true, red::kDevToolsWindowUrl), "unregistered strip denied");
+  check(!red::IsDevToolsWindowUi(12, 12, true, red::kUiUrl), "the shell document is not the strip");
+  check(!red::IsTrustedUi(12, 12, true, red::kDevToolsWindowUrl), "the strip cannot call full shell IPC");
   check(!red::IsCommandUi(9, 9, true, red::kUiUrl), "shell document cannot call command IPC");
   check(!red::IsCommandUi(8, 9, true, red::kCommandUrl) && !red::IsCommandUi(9, 9, false, red::kCommandUrl), "browser and main frame required");
   check(!red::IsCommandUi(9, 9, true, "sol://ui/command.html?x") && !red::IsCommandUi(-1, -1, true, red::kCommandUrl), "exact URL and created browser required");

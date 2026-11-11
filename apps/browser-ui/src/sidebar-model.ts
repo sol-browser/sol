@@ -37,8 +37,11 @@ export function folderRemovalSummary(nodes: TreeNode[], id: string) {
   }
   return { id, title: root.title, tabs, folders };
 }
+/** Sidebar width bounds in DIP (native kSidebarMinWidth/kSidebarMaxWidth). At
+ *  150 the compact bottom bar still shows four spaces and Favorites use two columns. */
+export const SIDEBAR_MIN_WIDTH = 150, SIDEBAR_MAX_WIDTH = 480;
 export function sidebarWidth(value: number, windowWidth: number): number {
-  return Math.max(200, Math.min(Math.round(value), 480, Math.max(200, windowWidth - 400)));
+  return Math.max(SIDEBAR_MIN_WIDTH, Math.min(Math.round(value), SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, windowWidth - 400)));
 }
 export const ordered = (nodes: TreeNode[]) => [...nodes].sort((a, b) => a.position - b.position);
 /** Whether a top-level entry shows in |space|: Favorites everywhere, Pinned and
@@ -60,9 +63,16 @@ export function neighborSpace(spaces: { id: string; position: number }[], curren
 }
 export const sectionOf = (node: TreeNode): Section => node.favorite ? 'favorites' : node.pinned ? 'pinned' : 'today';
 /** Fill compact rows evenly: six use 3×2, nine use 3×3, twelve use 4×3.
- * Partial final rows retain ordinary left-to-right grid placement. */
-export function favoriteColumns(count: number): number {
-  return Math.max(1, Math.ceil(count / Math.max(1, Math.ceil(count / 4))));
+ * Partial final rows retain ordinary left-to-right grid placement. A narrow
+ * sidebar allows fewer columns (|limit|, see favoriteColumnLimit). */
+export function favoriteColumns(count: number, limit = 4): number {
+  const most = Math.max(1, Math.min(4, Math.floor(limit)));
+  return Math.max(1, Math.ceil(count / Math.max(1, Math.ceil(count / most))));
+}
+/** Most Favorites columns for a grid |width| px wide: tiles stay at least
+ *  44 px wide (7 px gaps), so a narrow sidebar rearranges into 3, then 2. */
+export function favoriteColumnLimit(width: number): number {
+  return Math.max(2, Math.min(4, Math.floor((width + 7) / 51)));
 }
 export function descendant(nodes: TreeNode[], id: string, ancestor: string): boolean {
   let node = nodes.find(n => n.id === id);
@@ -115,3 +125,40 @@ export const isStaleRevision = (error: unknown) => error instanceof Error && /^4
 /** Rows the sidebar shows: a Today tab that is closing is already gone. */
 export const withoutClosingTabs = (nodes: TreeNode[]) =>
   nodes.some(n => n.closing && !n.pinned && !n.favorite) ? nodes.filter(n => !(n.closing && !n.pinned && !n.favorite)) : nodes;
+
+/** Moving |id| to |target| crosses profiles while it (a folder's pages, a split's
+ *  other pane, a Link Peek) is live: it would reload in the other profile, so
+ *  the user confirms and the move unloads it first (tree.moveToSpace unload). */
+export function crossProfileLiveMove(nodes: TreeNode[], spaces: { id: string; profileId?: string }[], id: string, target: string): boolean {
+  const node = nodes.find(n => n.id === id), to = spaces.find(s => s.id === target);
+  if (!node || !to) return false;
+  const from = spaces.find(s => s.id === node.space);
+  if ((from?.profileId ?? 'default') === (to.profileId ?? 'default')) return false;
+  const ids = new Set([id]);
+  for (let added = true; added;) {
+    added = false;
+    for (const n of nodes) if (!ids.has(n.id) && ids.has(n.parentId)) { ids.add(n.id); added = true; }
+  }
+  for (const n of nodes) if (ids.has(n.id)) { if (n.splitAnchor) ids.add(n.splitAnchor); if (n.splitOther) ids.add(n.splitOther); }
+  return nodes.some(n => ids.has(n.id) && (n.live || n.peek === true));
+}
+/** What decides where rows are: which entries exist, their order and nesting,
+ *  their section and whether a folder is open. A title, icon or loading change
+ *  moves nothing, so it must not make the hook read every row's layout again. */
+export function sidebarLayoutKey(nodes: TreeNode[]): string {
+  return nodes.map(n => `${n.id}:${n.parentId}:${n.position}:${n.kind === 'folder' ? Number(n.expanded) : ''}:${Number(n.pinned)}${Number(n.favorite)}`).join('|');
+}
+// Node fields a sidebar row does not show: its slot among siblings (the list
+// orders rows), its Space (the list filters by it) and its archive time.
+const NOT_IN_ROW: ReadonlySet<string> = new Set(['position', 'space', 'archivedAt']);
+/** Whether two versions of a node render the same row. Every field counts unless
+ *  it is listed above, so a new node field is compared until someone decides
+ *  otherwise. Opening a tab shifts every sibling's position: those rows stay. */
+export function sameRowNode(previous: TreeNode | undefined, next: TreeNode | undefined): boolean {
+  if (previous === next) return true;
+  if (!previous || !next) return false;
+  const a = previous as unknown as Record<string, unknown>, b = next as unknown as Record<string, unknown>;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every(key => NOT_IN_ROW.has(key) ? key in b : a[key] === b[key]);
+}

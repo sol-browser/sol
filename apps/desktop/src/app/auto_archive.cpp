@@ -2,6 +2,7 @@
 #include "app/session.h"
 #include "workspace/controller.h"
 #include "windows/embedded_content.h"
+#include "integrations/providers.h"
 #include "include/cef_command_line.h"
 #include "include/base/cef_callback.h"
 #include "include/wrapper/cef_closure_task.h"
@@ -128,8 +129,12 @@ bool AutoArchive::UnloadNext() {
   const auto session=session_.lock();
   const int minutes=session && session->preferences ? session->preferences->Get().unload_minutes : 0;
   if (stopped_ || !session || (!minutes && !unload_test_ms_) || unload_budget_<=0) return false;
-  const auto cutoff=Now()-(unload_test_ms_ ? unload_test_ms_ : static_cast<int64_t>(minutes)*60000);
+  const auto general=Now()-(unload_test_ms_ ? unload_test_ms_ : static_cast<int64_t>(minutes)*60000);
+  // A pinned WhatsApp home tab leaves memory 30 minutes after its last use (when the setting is
+  // longer); hidden checks then keep its badge current (integrations/whatsapp_unread.h).
+  const auto whatsapp=unload_test_ms_ || minutes<=30 ? general : Now()-30*60000LL;
   for (const auto& node:session->workspace->tree.nodes) {
+    const auto cutoff=node.pinned && StartupBadgeFor(node.url,false)==StartupBadgeSite::WhatsApp ? whatsapp : general;
     if (node.folder || node.archived || node.last_active_at<=0 || node.last_active_at>cutoff || blocked_.contains(node.id)) continue;
     if (const auto activity=recent_.find(node.id); activity!=recent_.end() && activity->second>cutoff) continue;
     std::shared_ptr<State> window; bool held=false;

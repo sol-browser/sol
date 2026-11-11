@@ -102,7 +102,7 @@ void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRe
   for (auto& item : items) if (item.action == "split" && item.target.empty()) item.enabled = false;
   if (!space_menu && entry && !state->private_window && !state->standalone_window && !entry->GetBool("closing") &&
       !entry->GetBool("archived") && entry->GetBool("pinned") && entry->GetString("kind") == "tab") {
-    if (const auto* provider = FindIntegrationSetting(IntegrationForUrl(entry->GetString("url").ToString()))) {
+    if (const auto* provider = FindIntegrationSetting(IntegrationForUrl(entry->GetString("url").ToString())); provider && provider->listed) {
       const bool enabled = BrowserIntegrationEnabled(state, provider->id);
       items.push_back({"", "", "", false, {}});
       items.push_back({std::string(enabled ? "Disable " : "Enable ") + std::string(provider->name) + " Integration (All Tabs)",
@@ -168,7 +168,9 @@ void SidebarMenu::Closed(unsigned generation) {
   }, weak_from_this(), generation, std::string(action), target, source));
 }
 bool SidebarMenu::ProbeSelect(const std::string& wanted) {
-  auto state = state_.lock(); if (!state || !state->probe || !state->organization_probe || !shown_) return false;
+  auto state = state_.lock();
+  if (!state || !state->probe || !shown_ ||
+      (!state->organization_probe && !(state->sidebar_peek_probe && wanted == "editPinned"))) return false;
   for (const auto& [command, action] : actions_) if (action.first == wanted) {
     Choose(generation_, command); if (state->menu_popup) state->menu_popup->Close(false); return true;
   }

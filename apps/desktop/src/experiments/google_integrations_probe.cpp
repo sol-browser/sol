@@ -7,14 +7,15 @@
 #include "include/wrapper/cef_stream_resource_handler.h"
 #include "include/base/cef_callback.h"
 #include "include/wrapper/cef_closure_task.h"
+#include <cstdio>
 #include <cstring>
 namespace red {
 namespace {
 constexpr char kMail[]="https://mail.google.com/mail/u/0/?sol-owned-integration-fixture=1#inbox";
 constexpr char kReadMail[]="https://mail.google.com/mail/u/0/?sol-owned-integration-inbox=recent#inbox";
-constexpr char kSearchMail[]="https://mail.google.com/mail/u/0/?sol-owned-integration-search=1#search/in%3Ainbox+is%3Aunread";
+constexpr char kSearchMail[]="https://mail.google.com/mail/u/0/?sol-owned-integration-search=1#search/in%3Ainbox+is%3Aunread+newer_than%3A7d";
 constexpr char kSecondInbox[]="https://mail.google.com/mail/u/1/?sol-owned-integration-inbox=1#inbox";
-constexpr char kEmptySearch[]="https://mail.google.com/mail/u/1/?sol-owned-integration-empty=1#search/in%3Ainbox+is%3Aunread";
+constexpr char kEmptySearch[]="https://mail.google.com/mail/u/1/?sol-owned-integration-empty=1#search/in%3Ainbox+is%3Aunread+newer_than%3A7d";
 constexpr char kRecentSearch[]="https://mail.google.com/mail/u/1/?sol-owned-integration-recent=1#search/in%3Ainbox";
 constexpr char kRecentSearchDefault[]="https://mail.google.com/mail/u/0/?sol-owned-integration-recent=1#search/in%3Ainbox";
 constexpr char kCalendar[]="https://calendar.google.com/calendar/u/0/r/day?sol-owned-integration-fixture=1";
@@ -33,7 +34,7 @@ constexpr char kMailHtml[]=R"HTML(<!doctype html><html><title>Owned Gmail fixtur
 <tr class="zA zE" data-legacy-thread-id="javascript:alert(1)"><td><span class="bog">Bad token excluded</span></td></tr>
 </tbody></table></main></html>)HTML";
 constexpr char kSearchMailHtml[]=R"HTML(<!doctype html><title>Owned cross-category Gmail search</title>
-<input name="q" value="in:inbox is:unread"><main role="main"><table role="grid"><tbody>
+<input name="q" value="in:inbox is:unread newer_than:7d"><main role="main"><table role="grid"><tbody>
 <tr class="zA zE" data-legacy-thread-id="1234567890abcd01"><td><span class="bog">Owned primary thread</span></td></tr>
 <tr class="zA zE" data-legacy-thread-id="1234567890abcd02"><td><span class="bog">Owned updates thread</span></td></tr>
 <tr class="zA zE" data-legacy-thread-id="1234567890abcd03"><td><span class="bog">Owned promotions thread</span></td></tr>
@@ -44,7 +45,7 @@ constexpr char kReadMailHtml[]=R"HTML(<!doctype html><title>Owned read Gmail fix
 <td><span class="bog">Owned recent thread</span><span class="y2">Private preview excluded</span></td></tr>
 </tbody></table></main>)HTML";
 constexpr char kEmptySearchHtml[]=R"HTML(<!doctype html><title>Owned empty Gmail search</title>
-<input name="q" value="in:inbox is:unread"><main role="main"><table role="grid"></table></main>)HTML";
+<input name="q" value="in:inbox is:unread newer_than:7d"><main role="main"><table role="grid"></table></main>)HTML";
 constexpr char kRecentSearchHtml[]=R"HTML(<!doctype html><title>Owned recent Gmail search</title>
 <input name="q" value="in:inbox"><main role="main"><table role="grid"><tbody>
 <tr class="zA" data-legacy-thread-id="abcdef1234567890"><td><span class="bog">Owned read updates thread</span></td></tr>
@@ -73,6 +74,13 @@ constexpr char kOutlookHtml[]=R"HTML(<!doctype html><meta charset="utf-8"><title
   <div>
     <div><div><span title="Owned local sender">Owned local sender</span></div></div>
     <div><div><span>Owned local subject</span><time title="Yesterday">Yesterday</time></div></div>
+  </div>
+  <div class="snippet"><span>Private preview</span></div>
+</div></div>
+<div data-convid="Older_6"><div role="option" class="stacked" aria-label="Unread Owned old sender Owned old subject 10/26/2025 Private preview">
+  <div>
+    <div><div><span title="Owned old sender">Owned old sender</span></div></div>
+    <div><div><span>Owned old subject</span><time title="10/26/2025">10/26/2025</time></div></div>
   </div>
   <div class="snippet"><span>Private preview</span></div>
 </div></div>
@@ -270,9 +278,9 @@ void CheckBackground(std::weak_ptr<State> weak, std::string outlook_node, int at
   }
   Record(s,"background_gmail_while_away",away&&gmail&&gmail->GetString("status")=="ready"&&gmail->GetString("mailView")=="unreadAll"&&
       gmail->GetList("items")->GetSize()==3&&gmail->GetList("items")->GetDictionary(1)->GetString("title")=="Owned updates thread");
-  Record(s,"background_gmail_recent_across_categories",gmail_recent&&gmail_recent->GetString("status")=="ready"&&
-      gmail_recent->GetString("mailView")=="recentAll"&&gmail_recent->GetList("items")->GetSize()==1&&
-      gmail_recent->GetList("items")->GetDictionary(0)->GetString("title")=="Owned read updates thread");
+  // No unread mail in the last week: the card stays empty instead of listing read mail.
+  Record(s,"background_gmail_no_unread_is_empty",gmail_recent&&gmail_recent->GetString("status")=="ready"&&
+      gmail_recent->GetString("mailView")=="unreadAll"&&gmail_recent->GetList("items")->GetSize()==0);
   Record(s,"background_outlook_while_unloaded",!s->workspace->LiveBrowser(outlook_node)&&outlook&&
       outlook->GetString("status")=="ready"&&outlook->GetList("items")->GetSize()==3&&
       outlook->GetList("items")->GetDictionary(1)->GetString("title")=="Owned local subject"&&
@@ -351,6 +359,34 @@ CefRefPtr<CefResourceRequestHandler> IntegrationFixtureResource(const std::share
   if(url==kOutlook||url==kOutlookRoot||url==kOutlookRestored)return new Fixture(kOutlookHtml);
   if(url==kOutlookSignedOut)return new Fixture(kOutlookSignInHtml);
   return nullptr;
+}
+std::string GmailFeedFixture(const std::shared_ptr<State>& state, const std::string& feed_url) {
+  if (!Enabled(state)) return {};
+  const auto iso = [](long long ago_seconds) {
+    FILETIME now{}; GetSystemTimeAsFileTime(&now);
+    ULARGE_INTEGER t{}; t.LowPart = now.dwLowDateTime; t.HighPart = now.dwHighDateTime;
+    t.QuadPart -= static_cast<ULONGLONG>(ago_seconds) * 10000000ULL;
+    FILETIME then{}; then.dwLowDateTime = t.LowPart; then.dwHighDateTime = t.HighPart;
+    SYSTEMTIME s{}; FileTimeToSystemTime(&then, &s);
+    char text[32]; std::snprintf(text, sizeof(text), "%04u-%02u-%02uT%02u:%02u:%02uZ", s.wYear, s.wMonth, s.wDay, s.wHour, s.wMinute, s.wSecond);
+    return std::string(text);
+  };
+  const auto entry = [&](const char* title, const char* sender, const char* id, long long ago) {
+    return std::string("<entry><title>") + title + "</title><summary>Private preview excluded</summary>"
+        "<link rel=\"alternate\" href=\"https://mail.google.com/mail/u/0?account_id=owner@example.test&amp;message_id=" + id +
+        "&amp;view=conv&amp;extsrc=atom\" type=\"text/html\"/><issued>" + iso(ago) + "</issued><author><name>" + sender +
+        "</name><email>owner@example.test</email></author></entry>";
+  };
+  const std::string head = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><feed version=\"0.3\" xmlns=\"http://purl.org/atom/ns#\">"
+      "<title>Gmail - Inbox</title><fullcount>";
+  if (feed_url == "https://mail.google.com/mail/u/0/feed/atom")
+    return head + "4</fullcount>" + entry("Owned primary thread", "Owned sender", "1234567890abcd01", 3600) +
+        entry("Owned updates thread", "Owned updates", "1234567890abcd02", 7200) +
+        entry("Owned promotions &amp; offers thread", "Owned promotions", "1234567890abcd03", 10800) +
+        entry("Owned month-old thread", "Owned sender", "1234567890abcd04", 30LL * 86400) + "</feed>";
+  if (feed_url == "https://mail.google.com/mail/u/1/feed/atom")
+    return head + "1</fullcount>" + entry("Owned old thread", "Owned sender", "1234567890abcd05", 30LL * 86400) + "</feed>";
+  return {};
 }
 std::string PreviewFixtureUrl(const std::shared_ptr<State>& state, const std::string& canonical) {
   if (!Enabled(state)) return {};

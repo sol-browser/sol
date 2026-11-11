@@ -7,6 +7,9 @@ param([ValidatePattern('^[A-Za-z]:\\[^ ]+$')][string]$WorkDirectory = 'E:\cef-bu
       [switch]$SyncOnly,
       # Validate pins and paths only; no Git checkout, fetch, sync or build.
       [switch]$ValidateOnly,
+      # A test build of a candidate branch. Its version name carries the branch
+      # (e.g. sol-156-candidate-88), so it is never a release engine.
+      [switch]$AllowCandidate,
       [string]$SourceLock = '')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -76,6 +79,18 @@ if (!$SkipUpdate) {
     if ($LASTEXITCODE) { throw 'CEF fork checkout failed' }
 }
 
+# CEF names the engine after the checked-out branch (cef_version.py). A release
+# engine is built only from the branch in the source lock: merge or push the
+# candidate there first. 0.4.0 shipped "sol-156-candidate-88" because the
+# official build ran on the candidate branch (docs/cef-fork.md).
+function Assert-ReleaseBranch([string]$Checkout) {
+    if ($AllowCandidate) { return }
+    $branch = (git -C $Checkout rev-parse --abbrev-ref HEAD).Trim()
+    if ($branch -ne $source.branch) {
+        throw "Release engines are built from '$($source.branch)', not '$branch' ($Checkout). Move the candidate to '$($source.branch)' first, or pass -AllowCandidate for a test build."
+    }
+}
+if ($SkipUpdate) { Assert-ReleaseBranch $info.paths.build_checkout }
 $env:DEPOT_TOOLS_WIN_TOOLCHAIN = '0'
 $env:CEF_ARCHIVE_FORMAT = 'tar.bz2'
 $env:GN_DEFINES = 'is_official_build=true proprietary_codecs=true ffmpeg_branding=Chromium red_platform_codecs=true'
@@ -120,6 +135,9 @@ $versionOutput = & python (Join-Path $buildCef 'tools\cef_version.py') current $
 if ($LASTEXITCODE) { throw 'Cannot determine built CEF version' }
 $cefVersion = ($versionOutput -join "`n").Trim()
 if ($cefVersion -notmatch '^[A-Za-z0-9.+_-]+$') { throw "Invalid built CEF version: $cefVersion" }
+if (!$AllowCandidate -and !$cefVersion.Contains("-$($source.branch).")) {
+    throw "Built version $cefVersion is not named after '$($source.branch)'; refusing to publish it to .cache as a release engine."
+}
 $root = "cef_binary_$($cefVersion)_windows64"
 $built = Join-Path (Join-Path $buildCef 'binary_distrib') "$root.tar.bz2"
 if (!(Test-Path -LiteralPath $built)) { throw "Expected distribution not found: $built" }

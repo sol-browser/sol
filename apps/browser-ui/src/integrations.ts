@@ -93,6 +93,28 @@ function badgeHost(url: string): string | undefined {
     if (u.protocol === 'https:' && !u.username && !u.password && !u.port) return u.hostname;
   } catch { /* Unrecognized site: no notification badge. */ }
 }
+/** A pinned X home page: the pins that show X's unread count (native StartupBadgeFor). */
+export function xHomePin(saved: string): boolean {
+  const host = badgeHost(saved);
+  if (!host || !xHosts.includes(host)) return false;
+  try { const path = new URL(saved).pathname; return !new URL(saved).search && !new URL(saved).hash && (path === '/' || path === '/home' || path === '/home/'); }
+  catch { return false; }
+}
+/** X's counter (native, no loaded tab) decides the X dot on a home pin when known. */
+export function xCountUnread(saved: string, xUnread: number | undefined, xBadgeHidden = false): 'x' | undefined | null {
+  if (xUnread === undefined || xBadgeHidden || !xHomePin(saved)) return null;  // null: not decided here.
+  return xUnread > 0 ? 'x' : undefined;
+}
+/** A pinned WhatsApp home page: the pins that show the hidden check's count (native StartupBadgeFor). */
+export function whatsAppHomePin(saved: string): boolean {
+  if (badgeHost(saved) !== 'web.whatsapp.com') return false;
+  try { const u = new URL(saved); return u.pathname === '/' && !u.search && !u.hash; } catch { return false; }
+}
+/** WhatsApp: a loaded tab's title is current; otherwise the last hidden check decides. */
+export function whatsAppCountUnread(saved: string, whatsappUnread: number | undefined, live: boolean): 'whatsapp' | undefined | null {
+  if (live || whatsappUnread === undefined || !whatsAppHomePin(saved)) return null;  // null: not decided here.
+  return whatsappUnread > 0 ? 'whatsapp' : undefined;
+}
 /** Use the unread marker published by the loaded site's title. */
 export function integrationUnread(url: string, title: string, saved: string, xBadgeHidden = false): 'whatsapp' | 'x' | undefined {
   const host = badgeHost(url);

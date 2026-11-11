@@ -1,5 +1,6 @@
 #include "experiments/pip_probe.h"
 #include <windows.h>
+#include <string_view>
 #include "include/base/cef_callback.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "workspace/controller.h"
@@ -31,6 +32,100 @@ void Mouse(CefRefPtr<CefBrowser> page, const char* type, double x, double y) {
 std::string Script(const char* label) {
   std::string s(kRequest); s.replace(s.find("%s"), 2, label); return s;
 }
+HWND VideoPipWindow(HWND root) {
+  struct Search { HWND root; HWND pip = nullptr; } search{root};
+  EnumWindows([](HWND window, LPARAM param) -> BOOL {
+    auto& search = *reinterpret_cast<Search*>(param);
+    DWORD pid = 0;
+    GetWindowThreadProcessId(window, &pid);
+    if (pid != GetCurrentProcessId() || window == search.root || !IsWindowVisible(window) ||
+        !(GetWindowLongPtrW(window, GWL_EXSTYLE) & WS_EX_TOPMOST)) return TRUE;
+    wchar_t type[64]{};
+    GetClassNameW(window, type, 64);
+    if (!std::wstring_view(type).starts_with(L"Chrome_WidgetWin_")) return TRUE;
+    search.pip = window;
+    return FALSE;
+  }, reinterpret_cast<LPARAM>(&search));
+  return search.pip;
+}
+
+enum class PipButton { Close, BackToTab };
+void ClickPipButton(const std::shared_ptr<State>& state, PipButton button) {
+  const HWND root = state->window->GetWindowHandle();
+  const HWND pip = VideoPipWindow(root);
+  if (!pip) return;
+  MONITORINFO monitor{sizeof(monitor)};
+  if (!GetMonitorInfoW(MonitorFromWindow(root, MONITOR_DEFAULTTONEAREST), &monitor) ||
+      !SetWindowPos(pip, nullptr, monitor.rcWork.left + 80, monitor.rcWork.top + 80, 0, 0,
+                    SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER)) return;
+  // The pinned overlay uses 24 DIP buttons, 5 DIP from the top and
+  // 4 (Close) or 28 (Back to tab) DIP from the right.
+  RECT bounds{};
+  GetClientRect(pip, &bounds);
+  const auto dpi = GetDpiForWindow(pip);
+  POINT point{bounds.right - MulDiv(button == PipButton::Close ? 16 : 40, dpi, 96), MulDiv(17, dpi, 96)};
+  POINT previous{};
+  if (!ClientToScreen(pip, &point) || !GetCursorPos(&previous) || !SetCursorPos(point.x, point.y)) return;
+
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, PipButton button, HWND pip, POINT point, POINT previous) {
+    auto state = weak.lock();
+    if (!state || !state->pip_page) return;
+    POINT cursor{}, restore = previous;
+    bool hits_pip = GetAncestor(WindowFromPoint(point), GA_ROOT) == pip && GetCursorPos(&cursor);
+    if (hits_pip && (cursor.x != point.x || cursor.y != point.y)) {
+      restore = cursor;
+      hits_pip = SetCursorPos(point.x, point.y);
+    }
+    INPUT click[2]{};
+    click[0].type = click[1].type = INPUT_MOUSE;
+    click[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+    click[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+    auto data = CefDictionaryValue::Create();
+    data->SetBool("other_tab_active", state->content && state->content->GetMainFrame()->GetURL().ToString().ends_with("/other"));
+    data->SetBool("clicked", hits_pip && SendInput(2, click, sizeof(INPUT)) == 2);
+    state->Record(button == PipButton::Close ? "pip_close_clicked" : "pip_return_clicked", data);
+    if (hits_pip) CefPostDelayedTask(TID_UI, base::BindOnce([](POINT point, POINT previous) {
+      POINT current{};
+      if (GetCursorPos(&current) && current.x == point.x && current.y == point.y) SetCursorPos(previous.x, previous.y);
+    }, point, restore), 150);
+  }, std::weak_ptr<State>(state), button, pip, point, previous), 300);
+}
+
+void RecordPipReturn(const std::shared_ptr<State>& state) {
+  auto data = CefDictionaryValue::Create();
+  data->SetBool("opener_active", state->content && state->content->IsSame(state->pip_page));
+  data->SetBool("opener_visible", IsWindowVisible(state->pip_page->GetHost()->GetWindowHandle()));
+  data->SetBool("pip_closed", !VideoPipWindow(state->window->GetWindowHandle()));
+  data->SetBool("browser_foreground", GetForegroundWindow() == state->window->GetWindowHandle());
+  data->SetBool("split", state->workspace->Snapshot()->HasKey("splitView"));
+  state->Record("pip_return_result", data);
+}
+
+void FocusOtherSplitPane(const std::shared_ptr<State>& state) {
+  if (!state->content || !state->content->IsSame(state->pip_page)) return;
+  const auto snapshot = state->workspace->Snapshot();
+  const auto nodes = snapshot->GetList("nodes");
+  std::string other;
+  for (size_t i = 0; nodes && i < nodes->GetSize(); ++i) {
+    const auto node = nodes->GetDictionary(i);
+    if (node->GetString("url").ToString().ends_with("/other")) { other = node->GetString("id").ToString(); break; }
+  }
+  if (other.empty()) return;
+  auto split = CefDictionaryValue::Create();
+  split->SetString("method", "split.create");
+  split->SetString("id", state->workspace->ActiveNode());
+  split->SetString("otherId", other);
+  split->SetBool("vertical", false);
+  split->SetDouble("expectedRevision", snapshot->GetDouble("treeRevision"));
+  state->workspace->Handle(split, [weak = std::weak_ptr<State>(state), other](int code, const std::string&, CefRefPtr<CefDictionaryValue>) {
+    const auto state = weak.lock();
+    if (code || !state) return;
+    auto focus = CefDictionaryValue::Create();
+    focus->SetString("method", "split.focus");
+    focus->SetString("id", other);
+    state->workspace->Handle(focus, [](int, const std::string&, CefRefPtr<CefDictionaryValue>) {});
+  });
+}
 // Visible top-level windows of this process except the root (titles).
 void RecordWindows(const std::shared_ptr<State>& state, const char* phase) {
   struct Search { DWORD pid; HWND root; CefRefPtr<CefListValue> list; } search{GetCurrentProcessId(),
@@ -46,6 +141,7 @@ void RecordWindows(const std::shared_ptr<State>& state, const char* phase) {
     return TRUE;
   }, reinterpret_cast<LPARAM>(&search));
   auto data = CefDictionaryValue::Create(); data->SetString("phase", phase); data->SetList("windows", search.list);
+  data->SetBool("video_pip", VideoPipWindow(search.root) != nullptr);
   state->Record("pip_windows", data);
 }
 using Step = void (*)(const std::shared_ptr<State>&);
@@ -153,15 +249,40 @@ void OnPipProbeLoad(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> p
   state->pip_phase = 1; state->pip_page = page;
   // 1. Visible page, host-initiated with a DevTools user gesture.
   Later(state, 2000, [](const std::shared_ptr<State>& s) { Evaluate(s->pip_page, Script("visible"), true); });
-  Later(state, 3500, [](const std::shared_ptr<State>& s) { RecordWindows(s, "after_visible"); Evaluate(s->pip_page, kExit, false); });
-  // 2. Hide the page by opening another tab, then ask again.
+  Later(state, 3500, [](const std::shared_ptr<State>& s) { RecordWindows(s, "after_visible"); });
+  // 2. After switching tabs, Close must close PiP without selecting its opener.
   Later(state, 5000, [](const std::shared_ptr<State>& s) {
     const auto url = s->pip_page->GetMainFrame()->GetURL().ToString();
     s->workspace->OpenLink(url.substr(0, url.rfind('/')) + "/other", true);
   });
-  Later(state, 7500, [](const std::shared_ptr<State>& s) { Evaluate(s->pip_page, Script("hidden"), true); });
-  Later(state, 9000, [](const std::shared_ptr<State>& s) { RecordWindows(s, "after_hidden"); Evaluate(s->pip_page, kExit, false); });
-  Later(state, 10500, [](const std::shared_ptr<State>& s) { s->pip_done = true; s->pip_page = nullptr; });
+  Later(state, 6500, [](const std::shared_ptr<State>& s) { ClickPipButton(s, PipButton::Close); });
+  Later(state, 7500, [](const std::shared_ptr<State>& s) {
+    auto data = CefDictionaryValue::Create();
+    data->SetBool("other_tab_active", s->content && s->content->GetMainFrame()->GetURL().ToString().ends_with("/other"));
+    data->SetBool("pip_closed", !VideoPipWindow(s->window->GetWindowHandle()));
+    s->Record("pip_close_result", data);
+    Evaluate(s->pip_page, Script("hidden"), true);
+  });
+  // 3. Back to tab from the reopened PiP must select and show its opener.
+  Later(state, 9000, [](const std::shared_ptr<State>& s) { RecordWindows(s, "after_hidden"); ClickPipButton(s, PipButton::BackToTab); });
+  Later(state, 10800, [](const std::shared_ptr<State>& s) { RecordPipReturn(s); FocusOtherSplitPane(s); });
+  // 4. In a split, the anchor is the opener, even after the other pane was focused.
+  Later(state, 12400, [](const std::shared_ptr<State>& s) { Evaluate(s->pip_page, Script("split"), true); });
+  Later(state, 13900, [](const std::shared_ptr<State>& s) { ClickPipButton(s, PipButton::BackToTab); });
+  Later(state, 15400, [](const std::shared_ptr<State>& s) {
+    RecordPipReturn(s);
+    const auto snapshot = s->workspace->Snapshot();
+    if (const auto split = snapshot->GetDictionary("splitView")) {
+      // Restore the single-page layout that the shared CEF smoke checks on exit.
+      auto remove = CefDictionaryValue::Create();
+      remove->SetString("method", "split.remove");
+      remove->SetString("id", split->GetString("anchor"));
+      remove->SetDouble("expectedRevision", snapshot->GetDouble("treeRevision"));
+      s->workspace->Handle(remove, [](int, const std::string&, CefRefPtr<CefDictionaryValue>) {});
+    }
+    s->pip_done = true;
+    s->pip_page = nullptr;
+  });
 }
 void ObservePipProbe(const std::shared_ptr<State>& state, const std::string& message) {
   if (state->pip_probe && message == "RED_AUTO_PIP:entered") { state->Record("auto_pip_entered"); return; }

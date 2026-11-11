@@ -7,6 +7,7 @@ import { Peek } from './Peek';
 import { SidebarResizer } from './SidebarResizer';
 import { AddressLoading } from './AddressLoading';
 import { DevToolsDock } from './DevToolsDock';
+import { DevToolsWindowHeader } from './DevToolsWindowHeader';
 import { DeviceToolbar } from './DeviceToolbar';
 import { organizationProbe } from './organization-probe';
 import { Icon } from './Icon';
@@ -18,6 +19,7 @@ import { treeCommand } from './bridge';
 import { browsingProbe } from './browsing-probe';
 import { lifecycleProbe } from './lifecycle-probe';
 import { downloadsProbe } from './downloads-probe';
+import { installPerfProbe } from './perf-probe';
 import type { ShortcutAction } from '../../../packages/browser-contracts/src';
 import './style.css';
 import { CommandBar } from './CommandBar';
@@ -128,6 +130,8 @@ function Shell() {
     if (snapshot?.sidebarVisible === false && document.querySelector('.sidebar')?.contains(document.activeElement))
       document.querySelector<HTMLButtonElement>('[data-action="toggle-sidebar"]')?.focus();
   }, [snapshot?.sidebarVisible]);
+  // --probe-sidebar-perf calls window.solPerfProbe (probe mode only).
+  useEffect(() => { if (snapshot?.probeMode) installPerfProbe(); }, [snapshot?.probeMode]);
   useEffect(() => {
     if (!snapshot?.probeMode || probeStarted.current) return;
     if (snapshot.workspaceEnabled && (!snapshot.ready || snapshot.isLoading || !snapshot.nodes?.some(n => n.id === snapshot.activeId && n.live))) return;
@@ -331,4 +335,4 @@ createRoot(document.getElementById('root')!).render(location.pathname === '/peek
   location.pathname === '/boost.html' ? <BoostEditor /> :
   location.pathname === '/menu.html' ? <Menu /> :
   location.pathname === '/command.html' ? <CommandBar /> :
-  location.pathname === '/panel.html' ? <Panel /> : location.pathname === '/history.html' ? <HistoryPage /> : location.pathname === '/downloads.html' ? <DownloadsPage /> : <Shell />);
+  location.pathname === '/panel.html' ? <Panel /> : location.pathname === '/devtools.html' ? <DevToolsWindowHeader /> : location.pathname === '/history.html' ? <HistoryPage /> : location.pathname === '/downloads.html' ? <DownloadsPage /> : <Shell />);

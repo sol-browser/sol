@@ -28,6 +28,11 @@ inline constexpr std::string_view kPeekUrl = "sol://ui/peek.html";
 inline bool IsPeekUi(int browser, int trusted, bool main_frame, std::string_view url) {
   return trusted > 0 && browser == trusted && main_frame && url == kPeekUrl;
 }
+// The separate DevTools window's placement strip (windows/devtools_window.cpp).
+inline constexpr std::string_view kDevToolsWindowUrl = "sol://ui/devtools.html";
+inline bool IsDevToolsWindowUi(int browser, int trusted, bool main_frame, std::string_view url) {
+  return trusted > 0 && browser == trusted && main_frame && url == kDevToolsWindowUrl;
+}
 // Internal pages (history, downloads): workspace tabs created in the trusted
 // UI profile, each limited to its own IPC commands.
 inline constexpr std::string_view kHistoryUrl = "sol://ui/history.html";
@@ -137,6 +142,8 @@ inline bool IsAllowedBrowserSwitch(std::string_view name, bool probe) {
   if(name=="probe-theme-preview")return probe;
   if(name=="probe-google-integrations")return probe;
   if(name=="integration-diagnostics")return !probe;
+  // Asks the running Sol to describe its browsers (app/memory_report.h); opens nothing.
+  if(name=="memory-report")return !probe;
   return name == "profile-dir" || name == "workspace" || name == "trace-tab-switches" || name == "make-default-browser" || name == "auto-archive-test-clock" || (probe && (name == "probe-report" ||
       name == "probe-url" || name == "probe-navigation" || name == "probe-browsing" || name == "probe-lifecycle" || name == "probe-tabs" || name == "probe-window-transfer" ||
       name == "probe-native-tabs" || name == "probe-embedded-tabs" || name == "probe-workspace" || name == "probe-organization" || name == "probe-input" || name == "probe-chrome-toolbar" || name == "probe-downloads-dir" || name == "probe-downloads" || name == "probe-fullscreen" || name == "probe-permissions" || name == "probe-site-settings" || name == "probe-history" || name == "probe-tab-actions" || name == "probe-audible" || name == "probe-downloads-page" || name == "probe-extension-popup" || name == "probe-protocols" || name == "probe-close-motion" || name == "probe-sidebar-peek" || name == "probe-sidebar-perf" || name == "probe-pip" || name == "probe-capture-mute" || name == "probe-theme" || name == "probe-spaces" || name == "probe-ua-brand" || name == "probe-boost" || name == "probe-menu" || name == "probe-private" || name == "probe-pin" || name == "probe-backdrop" || name == "probe-link-headers" || name == "probe-unload" || name == "probe-import" || name == "load-extension"));

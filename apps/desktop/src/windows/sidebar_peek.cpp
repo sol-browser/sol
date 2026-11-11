@@ -451,7 +451,9 @@ void SidebarPeek::Show() {
   const int width = std::max(1, static_cast<int>(std::lround(target.width * scale)));
   const int height = std::max(1, static_cast<int>(std::lround(target.height * scale)));
   SizeFrame(width, height, scale);
-  prepare_revision_ = s->workspace->Snapshot()->GetInt("revision");
+  // The snapshot sent below carries this revision. It is a double there: GetInt
+  // read 0, so any older acknowledgement passed the readiness check.
+  prepare_revision_ = static_cast<int>(s->workspace->revision());
   const auto generation = ++prepare_generation_;
   Publish();
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<SidebarPeek> weak, unsigned generation) {
@@ -678,9 +680,27 @@ void SidebarPeek::Shutdown() {
   if (pacer_) pacer_->stop = true;
   if (browser_) browser_->GetHost()->CloseBrowser(true);
 }
-void SidebarPeek::Publish(CefRefPtr<CefDictionaryValue> theme) {
+void SidebarPeek::Publish(CefRefPtr<CefDictionaryValue> update) {
+  // A parked sidebar is not seen: rebuilding, sending and rendering every
+  // snapshot there doubled the cost of each workspace change
+  // (docs/performance-audit.md). Its first snapshot comes with the subscription.
+  if (wants_updates()) Send(update);
+}
+bool SidebarPeek::wants_updates() const {
+  if (!observer_) return false;
+  if (open_ || pending_show_ || resizing_) return true;
+  // A browser-menu request (New space, New folder, Edit space) is one-shot.
+  // The parked sidebar must still see it, or it would carry it out when shown.
+  const auto s = state_.lock();
+  return s && s->workspace && s->workspace->sidebar_request() != sent_request_;
+}
+void SidebarPeek::Send(CefRefPtr<CefDictionaryValue> update) {
   auto s = state_.lock();
-  if (observer_ && s && s->workspace) observer_->Success(Json(theme ? theme : s->workspace->Snapshot()));
+  if (!observer_ || !s || !s->workspace) return;
+  if (!update || (!update->HasKey("layoutOnly") && !update->HasKey("themeOnly"))) sent_request_ = s->workspace->sidebar_request();
+  const auto json = Json(update ? update : s->workspace->Snapshot());
+  ++s->snapshot_counters.peek_messages; s->snapshot_counters.peek_bytes += json.length();
+  observer_->Success(json);
 }
 void SidebarPeek::Created(CefRefPtr<CefBrowser> browser) {
   browser_ = browser; creating_ = false;
@@ -738,7 +758,7 @@ bool SidebarPeek::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t 
   if (persistent != (method == "browser.subscribe")) { cb->Failure(400, "Only the subscription persists"); return true; }
   if (method == "browser.subscribe" && d->GetSize() == 1) {
     if (observer_) { cb->Failure(409, "Already subscribed"); return true; }
-    observer_ = cb; observer_id_ = query; Publish(); return true;
+    observer_ = cb; observer_id_ = query; Send(nullptr); return true;
   }
   if (method == "browser.getSnapshot" && d->GetSize() == 1) { cb->Success(Json(s->workspace->Snapshot())); return true; }
   if (s->workspace->WindowClosing()) { cb->Failure(409, "Window is closing"); return true; }

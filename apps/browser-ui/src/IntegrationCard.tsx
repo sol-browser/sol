@@ -115,7 +115,6 @@ function CalendarAgenda({ items, open, join, active }: { items: Card['items']; o
 export function IntegrationCard({ card, open, join, control, active }: { card: Card; active: boolean; open: (index: number) => void;
   join: (index: number) => void; control: (action: 'open' | 'refresh' | 'compose' | 'createFigma') => void }) {
   const mail=card.kind==='mail', calendar=card.kind==='calendar', figma=card.service==='figma';
-  const recentMail=card.mailView==='recent'||card.mailView==='recentAll';
   const mark = serviceMarks[card.service as keyof typeof serviceMarks];
   const hasAddAction = figma || (mail && card.composeAvailable === true);
   const addLabel = figma ? 'New Figma Design' : 'Compose email';
@@ -157,7 +156,7 @@ export function IntegrationCard({ card, open, join, control, active }: { card: C
         <Icon name="history" /><span className="archive-text"><span>{item.title || item.url}</span>
           {(item.detail||item.url) && <span>{item.detail || (item.url?new URL(item.url).hostname:'')}</span>}</span><Icon name="arrow" className="archive-go" />
       </button></li>)}</ul> :
-      <p className="popover-empty">{mail?(recentMail?'No messages in this inbox view.':'No unread messages in this inbox view.'):'Pages you visit in this profile will appear here.'}</p>}
+      <p className="popover-empty">{mail?'No unread mail from the last week.':'Pages you visit in this profile will appear here.'}</p>}
     {calendar && <footer className="integration-controls">
       <button type="button" className="popover-text-button" aria-label="Refresh preview" title="Refresh preview" onClick={()=>control('refresh')}><Icon name="reload" /></button>
       <button type="button" className="popover-text-button" aria-label="Open calendar" title="Open calendar" onClick={()=>control('open')}><Icon name="arrow" /></button>

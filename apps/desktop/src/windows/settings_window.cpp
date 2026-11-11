@@ -22,6 +22,7 @@
 #include "include/cef_parser.h"
 #include "include/cef_version.h"
 #include "red_version.h"
+#include "app/release_notes.h"
 #include "include/views/cef_fill_layout.h"
 namespace red {
 namespace {
@@ -384,6 +385,13 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
       if (code) callback->Failure(code, error); else callback->Success(owner->Response());
     },data->GetString("spaceId").ToString());
     return true;
+  }
+  // What's new: the website's notes for this version, in a new tab of this window.
+  if (method == "settings.whatsNew" && data->GetSize() == 1) {
+    if (!state->workspace || state->workspace->WindowClosing()) { callback->Failure(409, "Browser is closing"); return true; }
+    state->workspace->OpenLink(ReleaseNotesUrl(RED_APP_VERSION), true);
+    if (state->window) state->window->Activate();
+    callback->Success(Response()); return true;
   }
   if (method == "settings.extensions" && data->GetSize() == 1) {
     if (!state->extensions_window) state->extensions_window = std::make_shared<ExtensionsWindow>(state);

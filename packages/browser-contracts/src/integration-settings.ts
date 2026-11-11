@@ -13,9 +13,10 @@ export const integrationSettingsCatalog = [
 ] as const;
 
 export type IntegrationId = typeof integrationSettingsCatalog[number]['id'];
-// Kept valid so saved settings still load, but not offered in Settings: Spotify's licence server
-// refuses Sol (no Widevine VMP signature, docs/codecs.md), so its player integration has nothing to play.
-export const unlistedIntegrations: readonly IntegrationId[] = ['spotify'];
+// Kept valid so saved settings still load, but not offered in Settings (native: `listed` in
+// integrations/providers.h). Spotify's licence server refuses Sol (no Widevine VMP signature,
+// docs/codecs.md); YouTube has no feature of its own: Picture-in-Picture works on every site.
+export const unlistedIntegrations: readonly IntegrationId[] = ['spotify', 'youtube'];
 export type IntegrationSettings = Partial<Record<IntegrationId, boolean>>;
 
 export function isIntegrationId(value: unknown): value is IntegrationId {

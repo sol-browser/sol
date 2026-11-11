@@ -23,11 +23,13 @@ if __name__=='__main__':
         'google_mail_reader','google_calendar_reader','google_stale_reader',
         'outlook_mail_reader','outlook_shape_numeric','outlook_mail_open','outlook_mail_stale_row','outlook_mail_compose',
         'background_fixture_pinned','background_gmail_while_away','background_outlook_while_unloaded',
-        'background_calendar_while_unloaded','background_gmail_recent_across_categories','preview_opens_original_favorite',
+        'background_calendar_while_unloaded','background_gmail_no_unread_is_empty','preview_opens_original_favorite',
         'preview_refreshes_after_mail_open','outlook_sign_in_redirect_blocked','outlook_recovers_from_loaded_inbox')}
     workers=[r['event'] for r in rows if r['event'] in ('mailbox_worker_created','mailbox_worker_closed')]
-    checks['serial_workers_close']=workers==['mailbox_worker_created','mailbox_worker_closed']*6
-    checks['workers_offscreen_in_profile']=len(workers)==12 and all(
+    # Hidden browsers serve Outlook and Calendar only (4 jobs). Gmail reads its Atom feed and opens
+    # no browser at all (integrations/gmail_feed.h), which used to be 2 more jobs here.
+    checks['serial_workers_close']=workers==['mailbox_worker_created','mailbox_worker_closed']*4
+    checks['workers_offscreen_in_profile']=len(workers)==8 and all(
         r['details'].get('offscreen') is True and r['details'].get('same_profile') is True
         for r in rows if r['event']=='mailbox_worker_created')
     checks['foreground_snapshot_supplies_recovery']=sum(r['event']=='outlook_foreground_snapshot' for r in rows)==1

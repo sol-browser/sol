@@ -94,10 +94,11 @@ class PopupPresentation {
   }
   // |composable|: false when the window opens over another owned popup; the composed proxy is drawn
   // in the browser window's tree, below that popup, so such a window fades in on its own instead.
-  void Reveal(bool reduced_motion, bool bottom, float origin_x = .5f, bool composable = true, float origin_y = -1.f) {
+  void Reveal(bool reduced_motion, bool bottom, float origin_x = .5f, bool composable = true, float origin_y = -1.f,
+              bool allow_sidebar = true) {
     if (!motion_ || !motion_->window) return;
     auto& m = *motion_; const auto generation = ++m.generation;
-    SetOwner(m, true);
+    SetOwner(m, allow_sidebar);
     m.reduced = reduced_motion; m.closing = false; m.growth_started = GetTickCount64(); m.composable = composable;
     if (m.layered) SetLayeredWindowAttributes(m.window->GetWindowHandle(), 0, reduced_motion ? 255 : 1, LWA_ALPHA);
     m.window->Show();

@@ -1,12 +1,14 @@
 import { parseSnapshotUpdate, parseSidebarMenuChoice, type SidebarMenuChoice, type Command, type Snapshot, type TreeMutation } from '../../../packages/browser-contracts/src';
 import { isStaleRevision, retryable } from './sidebar-model';
+import { sharedUpdate } from './snapshot-sharing';
 export type { Command, Snapshot, TreeNode, TreeMutation } from '../../../packages/browser-contracts/src';
 let previousSnapshot:Snapshot|undefined;
-function decodeSnapshot(raw:string):Snapshot {
-  const next=parseSnapshotUpdate(raw,previousSnapshot);
-  if(!previousSnapshot||next.revision>=previousSnapshot.revision)previousSnapshot=next;
-  return next;
+function decodeUpdate(raw:string):{snapshot:Snapshot;themeOnly:boolean} {
+  const decoded=sharedUpdate(previousSnapshot,parseSnapshotUpdate(raw,previousSnapshot));
+  if(!previousSnapshot||decoded.snapshot.revision>=previousSnapshot.revision)previousSnapshot=decoded.snapshot;
+  return decoded;
 }
+function decodeSnapshot(raw:string):Snapshot { return decodeUpdate(raw).snapshot; }
 declare global {
   interface Window {
     cefQuery?: (options: { request: string; persistent: boolean; onSuccess: (response: string) => void;
@@ -47,10 +49,10 @@ export function subscribe(onSnapshot: (snapshot: Snapshot) => void, onError: (er
   if (!window.cefQuery) { onError('Native bridge unavailable'); return () => {}; }
   const query = window.cefQuery({ request: JSON.stringify({ method: 'browser.subscribe' }), persistent: true,
     onSuccess: raw => { try {
-      const before=previousSnapshot,next=decodeSnapshot(raw);
       // Only a validated theme delta retains the tree and swaps the theme;
       // layout deltas (live resizes) keep both and go through onSnapshot.
-      if(onTheme&&before?.nodes&&before.nodes===next.nodes&&before.theme!==next.theme)onTheme(next);else onSnapshot(next);
+      const {snapshot:next,themeOnly}=decodeUpdate(raw);
+      if(onTheme&&themeOnly)onTheme(next);else onSnapshot(next);
     } catch (error) { onError(String(error)); } },
     onFailure: (code, message) => onError(`${code}: ${message}`),
   });

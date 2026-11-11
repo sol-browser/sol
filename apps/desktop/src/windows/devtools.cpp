@@ -95,6 +95,9 @@ bool ShowPageDevTools(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser>
       state->devtools_targets.contains(page->GetIdentifier())) return false;
   const bool existing = page->GetHost()->HasDevTools();
   if (existing && toggle) { page->GetHost()->CloseDevTools(); return true; }
+  if (!state->devtools_dock) state->devtools_dock = std::make_shared<DevToolsDock>(state);
+  // A separate window is Sol's own: it is created first and shows the tools when ready.
+  if (!existing && !state->devtools_dock->ReadyToShow(page->GetIdentifier())) return true;
   CefWindowInfo info; ConfigurePageDevTools(state, page->GetIdentifier(), info);
   CefBrowserSettings settings;
   page->GetHost()->ShowDevTools(info, DevToolsClient(state, page->GetIdentifier()), settings, inspect);

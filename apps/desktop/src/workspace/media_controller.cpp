@@ -13,9 +13,11 @@ namespace red {
 namespace {
 // The page's main media element: playing first, then the longest. Read-only
 // summary plus the Media Session metadata the page publishes (the title and
-// artist Windows' own media overlay shows).
+// artist Windows' own media overlay shows). Silent elements (muted or volume
+// 0, e.g. YouTube's hover previews) are skipped: they would keep the player
+// alive and show as playing. Tab mute is separate and does not affect this.
 constexpr char kPick[] =
-    "const pick=()=>[...document.querySelectorAll('video,audio')].filter(m=>m.currentSrc||m.srcObject)"
+    "const pick=()=>[...document.querySelectorAll('video,audio')].filter(m=>(m.currentSrc||m.srcObject)&&!m.muted&&m.volume>0)"
     ".sort((a,b)=>(a.paused-b.paused)||((b.duration||0)-(a.duration||0)))[0];";
 constexpr char kRead[] =
     "(()=>{const m=pick();const d=navigator.mediaSession&&navigator.mediaSession.metadata;"

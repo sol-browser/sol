@@ -221,9 +221,10 @@ void TabMenuStep(std::weak_ptr<State> weak, const char* name, int code = 0) {
   const auto snapshot = s->workspace->Snapshot();
   if (const auto nodes = snapshot->GetList("nodes")) for (size_t i = 0; i < nodes->GetSize(); ++i) {
     const auto n = nodes->GetDictionary(i); if (n->GetString("kind") != "tab") continue;
-    if (n->GetBool("archived")) ++archived; else if (n->GetBool("pinned")) { pinned_url = n->GetString("url"); pinned_title = n->GetString("title"); }
+    if (n->GetBool("pinned")) { pinned_url = n->GetString("url"); pinned_title = n->GetString("title"); }
     else if (!n->GetBool("favorite") && !n->GetBool("closing")) ++today;
   }
+  archived = s->workspace->ArchivedCount();  // Archived tabs are outside the snapshot.
   data->SetInt("today", today); data->SetInt("archived", archived); data->SetString("pinned_url", pinned_url); data->SetString("pinned_title", pinned_title);
   data->SetInt("spaces", snapshot->GetList("spaces") ? static_cast<int>(snapshot->GetList("spaces")->GetSize()) : 0);
   s->Record("tab_menu_step", data);

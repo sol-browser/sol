@@ -1,7 +1,7 @@
 import { validSiteSearches, type SiteSearch, type SiteSearchActivation } from './site-search.ts';
 import { isIntegrationId, validIntegrationSettings, type IntegrationId, type IntegrationSettings } from './integration-settings.ts';
 export { integrationSettingsCatalog, integrationEnabled, unlistedIntegrations, type IntegrationId, type IntegrationSettings } from './integration-settings.ts';
-export { defaultSiteSearches, validSiteSearch, validSiteSearches, type SiteSearch, type SiteSearchActivation } from './site-search.ts';
+export { defaultSiteSearches, defaultWikipediaUrl, validSiteSearch, validSiteSearches, type SiteSearch, type SiteSearchActivation } from './site-search.ts';
 export type TreeNode = { id: string; parentId: string; kind: 'folder' | 'tab'; title: string;
   url: string; position: number; pinned: boolean; expanded: boolean; live: boolean;
   favorite: boolean; archived: boolean; currentUrl: string; closing: boolean; crashed?: boolean;
@@ -54,6 +54,10 @@ export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boo
   /** A downloaded Sol version waiting for "Restart to update". */
   updateReady?: string;
   integrations?: IntegrationSettings;
+  /** X's unread count from its counter, without a loaded X tab; absent when unknown. */
+  xUnread?: number;
+  /** WhatsApp's unread count from the last hidden check; absent when unknown. */
+  whatsappUnread?: number;
   searchEngine?: SearchEngine; searchSuggestions?: boolean; siteSearches?: SiteSearch[]; siteSearchActivation?: SiteSearchActivation; shortcutLabels?: Record<string, string>;
   splitView?: SplitViewInfo;
   linkPeek?: LinkPeekInfo;
@@ -91,7 +95,7 @@ export type KeyBinding = { key: number; ctrl: boolean; shift: boolean; alt: bool
 export type BrowserPreferences = { schema: 1; searchEngine: SearchEngine; searchSuggestions?: boolean; siteSearches?: SiteSearch[]; siteSearchActivation?: SiteSearchActivation; autoArchiveHours?: number; autoPictureInPicture?: boolean; autoPipSites?: Record<string, boolean>; pipButton?: boolean; unloadMinutes?: number; clock?: Clock; backdrop?: Backdrop; downloadDirectory: string; askDownload: boolean;
   notesProvider?: 'googleDocs' | 'word'; integrations?: IntegrationSettings; startup: 'restore' | 'newTab' | 'homepage'; homepage: string; shortcuts: Record<string, KeyBinding> };
 export type KeyboardSetting = { action: string; title: string; label: string; defaultLabel: string; custom: boolean; editable: boolean };
-export type SettingsCommand = { method: 'settings.get' | 'settings.ready' | 'settings.makeDefault' | 'settings.extensions'
+export type SettingsCommand = { method: 'settings.get' | 'settings.ready' | 'settings.makeDefault' | 'settings.extensions' | 'settings.whatsNew'
     | 'settings.chooseDownloadFolder' | 'settings.resetDownloadFolder' | 'settings.resetShortcuts' }
   | { method: 'settings.set'; key: 'searchEngine' | 'startup' | 'homepage'; value: string }
   | { method: 'settings.set'; key: 'notesProvider'; value: 'googleDocs' | 'word' }
@@ -211,7 +215,7 @@ export type TreeMutation =
   | { method: 'tree.pin' | 'tree.expand'; id: string; value: boolean }
   | { method: 'tree.activate' | 'tree.close' | 'tree.archive' | 'tree.restore' | 'tree.reset' | 'tree.usePageTitle'; id: string }
   | { method: 'tree.removeFolder'; id: string; confirmation?: { revision: number; tabs: number } }
-  | { method: 'tree.moveToSpace'; id: string; space: string }
+  | { method: 'tree.moveToSpace'; id: string; space: string; unload?: boolean }
   | { method: 'space.create'; title: string; icon: string; profileId?: string }
   | { method: 'profile.create'; title: string; spaceIds?: string[] }
   | { method: 'profile.rename'; id: string; title: string }
@@ -247,7 +251,8 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
   | { method: 'tab.dragStarted'; id: string; previousId: string | null }
   | { method: 'tab.dragCancel'; id: string }
-  | { method: 'tab.setHome'; id: string; url: string; title: string }
+  | { method: 'tab.editPinned'; id: string }
+  | { method: 'tab.confirmMoveToSpace'; id: string; space: string }
   | { method: 'tab.mute'; id: string; muted: boolean }
   | { method: 'tab.setXBadgeHidden'; id: string; hidden: boolean }
   | { method: 'tab.setIntegration'; id: string; provider: IntegrationId; enabled: boolean }
@@ -289,7 +294,7 @@ export function parseSnapshotUpdate(raw:string, previous?:Snapshot):Snapshot {
   const delta:unknown=JSON.parse(raw);
   if(object(delta)&&delta.layoutOnly===true){
     if(!integer(delta.revision)||Object.keys(delta).some(k=>!['layoutOnly','revision','sidebarWidth','sidebarResizing','contentBounds','devTools','devicePreview'].includes(k))
-      ||(delta.sidebarWidth!==undefined&&(!integer(delta.sidebarWidth)||delta.sidebarWidth<200||delta.sidebarWidth>480))
+      ||(delta.sidebarWidth!==undefined&&(!integer(delta.sidebarWidth)||delta.sidebarWidth<150||delta.sidebarWidth>480))
       ||typeof delta.sidebarResizing!=='boolean'||(delta.contentBounds!==undefined&&!dockBounds(delta.contentBounds))
       ||(delta.devTools!==undefined&&!validDevTools(delta.devTools))||(delta.devicePreview!==undefined&&!validDevicePreview(delta.devicePreview)))
       throw new Error('Invalid layout update');
@@ -307,12 +312,38 @@ export function parseSnapshotUpdate(raw:string, previous?:Snapshot):Snapshot {
   if(delta.activeSpace!==previous.activeSpace)throw new Error('Theme update targets a different space');
   return {...previous,revision:delta.revision,theme:delta.theme};
 }
+/** The archive of every Space: archived tabs are not in the snapshot. Rows use
+ *  the snapshot's node format; the Archive panel and probes ask for them. */
+export function parseArchive(value: unknown): TreeNode[] {
+  if (!Array.isArray(value) || value.length > 100000) throw new Error('Invalid archive');
+  const ids = new Set<string>();
+  for (const n of value as unknown[]) {
+    if (!object(n) || typeof n.id !== 'string' || n.id.length !== 36 || ids.has(n.id) || n.kind !== 'tab' || n.archived !== true
+      || n.pinned !== false || n.favorite !== false || n.live !== false || n.closing !== false || n.parentId !== ''
+      || typeof n.title !== 'string' || n.title.length > 240 || typeof n.url !== 'string' || n.url.length > 4096
+      || typeof n.currentUrl !== 'string' || !integer(n.position) || typeof n.expanded !== 'boolean'
+      || !(typeof n.archivedAt === 'number' && Number.isSafeInteger(n.archivedAt) && n.archivedAt >= 0)
+      || (n.pageTitle !== undefined && (typeof n.pageTitle !== 'string' || n.pageTitle.length > 240))
+      || (n.customTitle !== undefined && typeof n.customTitle !== 'boolean')
+      || (n.space !== undefined && (typeof n.space !== 'string' || (n.space !== '' && n.space.length !== 36)))
+      || (n.favicon !== undefined && !isFaviconUrl(n.favicon))
+      || (n.splitAnchor !== undefined && (typeof n.splitAnchor !== 'string' || n.splitAnchor.length !== 36))
+      || (n.splitOther !== undefined && (typeof n.splitOther !== 'string' || n.splitOther.length !== 36))
+      || (n.splitTitle !== undefined && (typeof n.splitTitle !== 'string' || n.splitTitle.length > 240))
+      || (n.splitHidden !== undefined && typeof n.splitHidden !== 'boolean')
+      || (n.splitReversed !== undefined && typeof n.splitReversed !== 'boolean')) throw new Error('Invalid archived tab');
+    ids.add(n.id);
+  }
+  return value as TreeNode[];
+}
 export function parseSnapshot(raw: string): Snapshot {
   const s: unknown = JSON.parse(raw);
   if (!object(s) || !integer(s.revision) || typeof s.canGoBack !== 'boolean' || typeof s.canGoForward !== 'boolean'
     || typeof s.probeMode !== 'boolean') throw new Error('Invalid native snapshot');
   if (s.workspaceEnabled === true) {
     if (s.integrations !== undefined && !validIntegrationSettings(s.integrations)) throw new Error('Invalid integrations');
+    for (const field of ['xUnread', 'whatsappUnread'])
+      if (s[field] !== undefined && (!integer(s[field]) || (s[field] as number) < 0 || (s[field] as number) > 999999)) throw new Error('Invalid unread count');
     if (s.searchEngine !== undefined && !['google','duckduckgo','bing','brave'].includes(String(s.searchEngine))) throw new Error('Invalid search engine');
     if (s.searchSuggestions !== undefined && typeof s.searchSuggestions !== 'boolean') throw new Error('Invalid suggestion preference');
     if (s.siteSearches !== undefined && !validSiteSearches(s.siteSearches)) throw new Error('Invalid site searches');
@@ -380,7 +411,7 @@ export function parseSnapshot(raw: string): Snapshot {
     }
     if (s.notice !== undefined && (typeof s.notice !== 'string' || s.notice.length > 240 || !integer(s.noticeId))) throw new Error('Invalid notice');
     if (s.shellExtensions !== undefined && (!Number.isSafeInteger(s.shellExtensions) || (s.shellExtensions as number) < -1)) throw new Error('Invalid shell extension count');
-    if (s.sidebarWidth !== undefined && (!integer(s.sidebarWidth) || s.sidebarWidth < 200 || s.sidebarWidth > 480)) throw new Error('Invalid sidebar width');
+    if (s.sidebarWidth !== undefined && (!integer(s.sidebarWidth) || s.sidebarWidth < 150 || s.sidebarWidth > 480)) throw new Error('Invalid sidebar width');
     if (s.devTools !== undefined && !validDevTools(s.devTools)) throw new Error('Invalid developer tools layout');
     if (s.devicePreview !== undefined && !validDevicePreview(s.devicePreview)) throw new Error('Invalid device preview');
     if (s.theme !== undefined && !validTheme(s.theme)) throw new Error('Invalid theme');

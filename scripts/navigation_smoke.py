@@ -19,26 +19,35 @@ PAGE = b'''<!doctype html><html lang="en"><meta charset="utf-8"><title>Owned nav
 <a id="blank" href="/blank" target="_blank" rel="noopener">Open a foreground tab</a>
 <button id="popup" onclick="window.open('/popup','red-owned-popup','popup,width=480,height=360')">Open owned popup</button>
 <a id="same" href="/next">Navigate in this tab</a>
+<a id="named" style="top:346px" href="/named-redirect" target="_NEW">Open a named tab</a>
+<a id="named-reuse" style="top:396px" href="/named-reused" target="_NEW">Reuse the named tab</a>
 <script>addEventListener('message',e=>{if(e.origin===location.origin&&e.data==='owned-popup'){fetch('/opener-report');setTimeout(()=>e.source.postMessage('close',e.origin),700)}});</script></html>'''
 POPUP = b'''<!doctype html><title>Owned popup fixture</title><h1>Owned popup</h1><p>Testing opener communication. This window closes itself.</p>
 <script>fetch('/popup-report?opener='+!!opener+'&bridge='+typeof window.cefQuery);if(opener)opener.postMessage('owned-popup',location.origin);addEventListener('message',e=>{if(e.origin===location.origin&&e.data==='close')window.close()});</script>'''
+NAMED = b'''<!doctype html><title>Named tab fixture</title><h1>Named tab</h1>
+<script>fetch('/named-report?path='+location.pathname+'&name='+window.name+'&opener='+!!opener);</script>'''
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument('--manual', action='store_true'); parser.add_argument('--observe', action='store_true'); args=parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument('--manual', action='store_true'); parser.add_argument('--observe', action='store_true')
+    parser.add_argument('--named-targets-only', action='store_true', help='Stop after the named-target and explicit popup checks')
+    args=parser.parse_args()
     counts=Counter()
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*_args): pass
         def do_GET(self):
             counts[self.path]+=1
             path=urlsplit(self.path).path
+            if path=='/named-redirect':
+                self.send_response(302); self.send_header('Location','/named'); self.end_headers(); return
             if path=='/slow': time.sleep(3)
             if path=='/reload': time.sleep(.15)
-            body=POPUP if path=='/popup' else PAGE
+            body=POPUP if path=='/popup' else NAMED if path in ('/named','/named-reused') else PAGE
             self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8'); self.send_header('Cache-Control','no-store'); self.send_header('Content-Length',str(len(body))); self.end_headers()
             try:self.wfile.write(body)
             except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):pass  # Expected for Stop.
     server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start()
-    url=f'http://127.0.0.1:{server.server_port}/fixture'
+    fixture = '/fixture?named-targets-only=1' if args.named_targets_only else '/fixture'
+    url=f'http://127.0.0.1:{server.server_port}{fixture}'
     try:
         if args.manual:
             directory=ROOT/'artifacts'/('manual-navigation-'+uuid.uuid4().hex[:8]);database=directory/'profile/BrowserData/workspace.sqlite3';database.parent.mkdir(parents=True)
@@ -54,12 +63,20 @@ def main():
             directory,rows=run(url,['--probe-browsing'])
             required=['browsing_checks_pass','browsing_source_form_preserved','popup_bridge_absent','popup_closed']
             passed=all(any(r['event']==event for r in rows) for event in required)
-            passed=passed and all(counts[p]==1 for p in ['/fixture','/fixture?saved','/middle','/ctrl','/blank','/popup','/typed'])
+            passed=passed and all(counts[p]==1 for p in [fixture,'/middle','/ctrl','/blank','/popup',
+                                                         '/named-redirect','/named','/named-reused'])
+            passed=passed and sum(r['event']=='named_link_tab_created' for r in rows)==1
+            passed=passed and all(counts[f'/named-report?path={p}&name=_NEW&opener=true']==1 for p in ('/named','/named-reused'))
             passed=passed and counts['/popup-report?opener=true&bridge=undefined']==1 and counts['/opener-report']==1
-            passed=passed and counts['/reload']==3 and counts['/slow']==1
             visibility=[r['details']['pass'] for r in rows if r['event']=='browsing_background_visibility']
             passed=passed and visibility==[True,True]
             passed=passed and [r['details']['pass'] for r in rows if r['event']=='browsing_input_ready']==[True,True]
+            if args.named_targets_only:
+                result={'passed':passed,'requests':dict(counts),'run':directory.name,'checks':required}
+                (directory/'named-targets.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2),flush=True)
+                if not passed: raise RuntimeError('Named target or popup regression failed')
+                return
+            passed=passed and counts['/fixture?saved']==1 and counts['/typed']==1 and counts['/reload']==3 and counts['/slow']==1
             command_inputs=[r['details'] for r in rows if r['event']=='command_input_probe']
             passed=passed and len(command_inputs)==1 and command_inputs[0]['focused'] and command_inputs[0]['selected'] and command_inputs[0]['nativeRejected']==8
             passed=passed and command_inputs[0]['predictionChecks']==4

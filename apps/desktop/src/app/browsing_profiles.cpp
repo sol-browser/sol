@@ -1,4 +1,5 @@
 #include "app/browsing_profiles.h"
+#include "app/chrome_session_restore.h"
 #include "app/session.h"
 #include "app/windows_locale.h"
 #include "storage/tree_store.h"
@@ -22,6 +23,7 @@ class ProfileReady final : public CefRequestContextHandler {
     auto off=CefValue::Create(); off->SetBool(false); CefString error;
     if (context->CanSetPreference("download_bubble.partial_view_enabled"))
       context->SetPreference("download_bubble.partial_view_enabled",off,error);
+    SuppressChromeSessionRestore(context);
     if(auto profile=profile_.lock()) {
       profile->initialized=true;
       auto actions=std::move(profile->on_initialized);
@@ -85,6 +87,8 @@ std::shared_ptr<BrowsingProfile> BrowsingProfiles::ForContext(CefRefPtr<CefReque
 void BrowsingProfiles::Stop() {
   std::lock_guard lock(mutex_);
   for (const auto& [id,profile] : profiles_) {
+    // Clean exit (app/chrome_session_restore.h). The default profile is the global context.
+    if (profile->context && profile->initialized) KeepSessionCookiesForNextStart(profile->context);
     profile->install_watch = nullptr;
     profile->history->Stop();
   }

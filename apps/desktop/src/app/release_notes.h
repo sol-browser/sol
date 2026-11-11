@@ -22,6 +22,11 @@ std::string ReleaseNotesUrl(std::string_view version);
 // not a number makes the version invalid (std::nullopt), so a dev label never triggers a tab.
 std::optional<int> CompareVersions(std::string_view a, std::string_view b);
 
+// Updates (app/updates.cpp): whether the feed's |latest| version should be downloaded while
+// |waiting| is already downloaded (empty: nothing waits). The same version, or an older one, is
+// not; a version that cannot be compared counts as different.
+bool UpdateReplacesWaiting(std::string_view latest, std::string_view waiting);
+
 // Reads and updates the marker in |browser_data|; returns the URL to open, if any.
 // |fresh_profile|: the profile was created by this start.
 std::optional<std::string> ReleaseNotesAfterUpdate(const std::filesystem::path& browser_data,

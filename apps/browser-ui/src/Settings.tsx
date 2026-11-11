@@ -6,7 +6,6 @@ import { Icon } from './Icon';
 import { ThemePanel } from './Theme';
 import { ImportSettings } from './ImportSettings';
 import { applyTheme } from './theme-apply';
-import { releaseNotes } from './release-notes';
 import { PasswordsSettings } from './PasswordsSettings';
 import { ProfilesSettings } from './ProfilesSettings';
 import { SiteSearchSettings } from './SiteSearchSettings';
@@ -121,7 +120,7 @@ export function Settings() {
         <header className="settings-heading"><h1>{sections.find(item => item.id === section)?.title}</h1>
           <p>{section === 'general' ? 'A few essentials to make Sol feel at home.' :
             section === 'appearance' ? `Make ${data?.spaceName ?? 'your space'} your own.` :
-            section === 'releases' ? 'Every release, a little better. Here’s what changed.' :
+            section === 'releases' ? 'Every release, a little better. The notes live on our website.' :
             section === 'search' ? 'Find things with your preferred search engine.' : section === 'siteSearch' ? 'Search your sites directly from the command bar.' :
             section === 'downloads' ? 'Keep new downloads where you want them.' :
             section === 'startup' ? 'Choose what opens when you start Sol.' :
@@ -212,19 +211,12 @@ export function Settings() {
           <p className="settings-note">{!data?.backdrop?.available ? 'Needs Windows 11 version 22H2 or later.' :
             (data.preferences.backdrop ?? 'none') !== 'none' && !data.backdrop.active ? 'Restart Sol to turn it on.' :
             'Windows shows a solid color while Sol is not the active window.'}</p>
-        </section></> : section === 'releases' ? <div className="settings-releases">
-          {releaseNotes.map(release => <section key={release.version} className="settings-card settings-release"
-            aria-labelledby={`release-${release.version}`}>
-            <header className="settings-release-heading">
-              <h2 id={`release-${release.version}`}>Sol {release.version}</h2>
-              {data?.version === release.version && <span className="settings-badge">Current version</span>}
-              <time dateTime={release.date}>{new Date(`${release.date}T12:00:00Z`).toLocaleDateString('en',
-                { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })}</time>
-            </header>
-            <ul>{release.changes.map((change, index) => <li key={index}>
-              {change.title && <strong>{change.title}: </strong>}{change.text}</li>)}</ul>
-          </section>)}
-        </div> : <ImportSettings disabled={busy || !data?.ready} profileName={data?.profiles?.find(profile => profile.id === 'default')?.name ?? 'Default'} />}
+        </section></> : section === 'releases' ? <section className="settings-card settings-inline-card">
+          <span className="settings-card-icon"><NotebookPen size={21} strokeWidth={1.6} /></span>
+          <div><h2>Sol {data?.version ?? ''}</h2><p>See what’s new in this version and every earlier one on sol-browser.app.</p></div>
+          <button type="button" className="settings-secondary" disabled={busy || !data?.ready}
+            onClick={() => void action({ method: 'settings.whatsNew' })}>Open release notes<ArrowUpRight size={14} /></button>
+        </section> : <ImportSettings disabled={busy || !data?.ready} profileName={data?.profiles?.find(profile => profile.id === 'default')?.name ?? 'Default'} />}
         {error && <p className="settings-error" role="alert">{error}</p>}
         {data?.preferencesError && <p className="settings-error" role="alert">{data.preferencesError}</p>}
       </div>

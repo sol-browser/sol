@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { request, watchSidebarResizeLeave, type Snapshot } from './bridge';
-import { sidebarWidth } from './sidebar-model';
+import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, sidebarWidth } from './sidebar-model';
 
 type Props = { width: number; hidden: boolean; disabled: boolean;
   nativeDragging?: boolean;
@@ -57,7 +57,7 @@ export function SidebarResizer({ width, hidden, disabled, nativeDragging, viewpo
     }, () => Math.round(separator.current?.getBoundingClientRect().width ?? 2));
   }, [hovered, dragging, hidden, disabled, keyboardFocus]);
   return <div ref={separator} className="sidebar-resizer" role="separator" aria-label="Sidebar width" aria-orientation="vertical"
-    aria-controls="browser-sidebar" aria-valuemin={200} aria-valuemax={sidebarWidth(480, viewportWidth)} aria-valuenow={width}
+    aria-controls="browser-sidebar" aria-valuemin={SIDEBAR_MIN_WIDTH} aria-valuemax={sidebarWidth(SIDEBAR_MAX_WIDTH, viewportWidth)} aria-valuenow={width}
     aria-disabled={disabled} tabIndex={disabled ? -1 : 0} hidden={hidden} data-dragging={nativeDragging ?? dragging}
     data-hovered={hovered} data-keyboard-focus={keyboardFocus}
     onPointerEnter={() => setHovered(true)} onPointerLeave={event => {
@@ -98,7 +98,7 @@ export function SidebarResizer({ width, hidden, disabled, nativeDragging, viewpo
       }
       const delta = event.shiftKey ? 30 : 10;
       const next = event.key === 'ArrowLeft' ? width - delta : event.key === 'ArrowRight' ? width + delta :
-        event.key === 'Home' ? 200 : event.key === 'End' ? 480 : event.key === 'Enter' ? 256 : undefined;
+        event.key === 'Home' ? SIDEBAR_MIN_WIDTH : event.key === 'End' ? SIDEBAR_MAX_WIDTH : event.key === 'Enter' ? 256 : undefined;
       if (next !== undefined) { event.preventDefault(); setKeyboardFocus(true); resize(next, true); }
     }} />;
 }

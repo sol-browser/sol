@@ -9,6 +9,7 @@
 #include "navigation/shortcut_settings.h"
 #include "windows/tab_drag_preview.h"
 #include "windows/devtools_dock.h"
+#include "app/snapshot_counters.h"
 #include <windows.h>
 #include <dwmapi.h>
 #include <algorithm>
@@ -33,6 +34,8 @@
 #include "windows/panel_popup.h"
 #include "integrations/integration_previews.h"
 #include "integrations/providers.h"
+#include "integrations/x_unread.h"
+#include "integrations/whatsapp_unread.h"
 #include "history/favicon_cache.h"
 #include "history/history_service.h"
 
@@ -138,6 +141,8 @@ void WorkspaceController::Start() {
 void WorkspaceController::Stop() {
   stopped_ = true;
   if (integration_previews_) integration_previews_->Stop();
+  if (x_unread_) x_unread_->Stop();
+  if (whatsapp_unread_) whatsapp_unread_->Stop();
   CancelFolderRemoval();
   observer_ = {};
   // AppSession closes all data scopes on their worker threads after the last
@@ -149,8 +154,36 @@ void WorkspaceController::SetObserver(std::function<void(CefRefPtr<CefDictionary
   observer_ = std::move(observer);
   if (observer_) observer_(Snapshot());
 }
+// Coalesced: every change made in the same UI task, and any already queued
+// behind it, shares one snapshot (a page load used to publish ~8 times,
+// docs/performance-audit.md). The flush is the next UI task, not a timer, so
+// nothing waits a frame. Replies to requests carry their own Snapshot().
 void WorkspaceController::Publish() {
+  if (const auto state = state_.lock()) ++state->snapshot_counters.publish_requests;
+  if (shutting_down_ || stopped_) { FlushPublish(); return; }  // Closing: no later task.
+  if (publish_pending_) return;
+  publish_pending_ = true;
+  CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak) {
+    if (const auto self = weak.lock(); self && self->publish_pending_) self->FlushPublish();
+  }, weak_from_this()));
+}
+// A reply never overtakes the snapshot of the change it reports: subscribers
+// get the pending publish first, as when publishing was synchronous. (A shell
+// acting right after another surface's reply would send a stale tree revision.)
+WorkspaceController::Reply WorkspaceController::Ordered(Reply done) {
+  return [weak = weak_from_this(), done = std::move(done)](int code, const std::string& error, CefRefPtr<CefDictionaryValue> snapshot) {
+    if (const auto self = weak.lock(); self && self->publish_pending_) {
+      self->FlushPublish();
+      // Same state as the snapshot just published: carry its revision.
+      if (snapshot && snapshot->IsValid() && snapshot->HasKey("revision")) snapshot->SetDouble("revision", self->revision_);
+    }
+    if (done) done(code, error, snapshot);
+  };
+}
+void WorkspaceController::FlushPublish() {
+  publish_pending_ = false;
   ++revision_;
+  if (const auto state = state_.lock()) ++state->snapshot_counters.publishes;
   UpdateIntegrationPreviews();
   UpdateMedia();
   const auto snapshot = Snapshot();
@@ -158,12 +191,20 @@ void WorkspaceController::Publish() {
     auto data = CefDictionaryValue::Create(); data->SetBool("can_go_back", snapshot->GetBool("canGoBack"));
     state->Record("snapshot_published", data);
   }
+  // The floating sidebar shows the same snapshot. Copy it before the observer
+  // takes ownership (CefValue detaches it) instead of building it again.
+  CefRefPtr<CefDictionaryValue> peek;
+  if (auto state = state_.lock(); state && state->sidebar_peek && state->sidebar_peek->wants_updates()) peek = snapshot->Copy(false);
   if (observer_) observer_(snapshot);
   if (auto state = state_.lock(); state && state->panel_popup) state->panel_popup->Publish();
-  if (auto state = state_.lock(); state && state->sidebar_peek) state->sidebar_peek->Publish();
+  if (auto state = state_.lock(); state && state->sidebar_peek && peek) state->sidebar_peek->Publish(peek);
 }
 void WorkspaceController::PublishTheme() {
+  // A pending full snapshot first carries the theme too: a theme delta must
+  // never reach the UI before the snapshot of its Space.
+  if (publish_pending_) { FlushPublish(); return; }
   ++revision_;
+  if (const auto state = state_.lock()) ++state->snapshot_counters.theme_publishes;
   const auto theme=ThemeSnapshot();
   if(observer_)observer_(theme->Copy(false));
   if(auto state=state_.lock()) {
@@ -172,7 +213,9 @@ void WorkspaceController::PublishTheme() {
   }
 }
 void WorkspaceController::PublishLayout() {
+  if (publish_pending_) { FlushPublish(); return; }  // The full snapshot has the layout too.
   ++revision_;
+  if (const auto state = state_.lock()) ++state->snapshot_counters.layout_publishes;
   const auto layout=LayoutSnapshot();
   if(observer_)observer_(layout->Copy(false));
   if(auto state=state_.lock(); state && state->sidebar_peek)state->sidebar_peek->Publish(layout);
@@ -217,6 +260,16 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::ThemeSnapshot() const {
 }
 CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   auto state = state_.lock();
+  // Counts every full snapshot and its build time (not the JSON writing).
+  struct Timer {
+    State* state; std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    ~Timer() {
+      if (!state) return;
+      ++state->snapshot_counters.snapshots;
+      state->snapshot_counters.snapshot_microseconds += static_cast<std::uint64_t>(
+          std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count());
+    }
+  } timer{state.get()};
   auto result = CefDictionaryValue::Create();
   result->SetInt("schemaVersion", 2); result->SetDouble("revision", revision_);
   result->SetDouble("treeRevision", static_cast<double>(tree_.revision));
@@ -283,6 +336,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   result->SetBool("workspaceProbe", state && state->workspace_probe);
   result->SetBool("organizationProbe", state && state->organization_probe);
   result->SetBool("paletteProbe",state&&state->palette_probe);
+  if (state && state->sidebar_perf_probe) result->SetDictionary("perfCounters", SnapshotCountersDictionary(*state));
   result->SetBool("browsingProbe", state && state->browsing_probe);
   result->SetBool("downloadsProbe", state && state->downloads_probe);
   if (state && state->lifecycle_probe) {
@@ -304,6 +358,8 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   auto content = state ? state->content : nullptr;
   if (auto peek=DescribeLinkPeek()) result->SetDictionary("linkPeek",peek);
   if (auto media=DescribeMedia()) result->SetList("media",media);
+  if (x_unread_) if (const auto count = x_unread_->count()) result->SetInt("xUnread", *count);
+  if (whatsapp_unread_) if (const auto count = whatsapp_unread_->count()) result->SetInt("whatsappUnread", *count);
   result->SetBool("canGoBack", content && content->CanGoBack());
   result->SetBool("canGoForward", content && content->CanGoForward());
   const bool crashed = content && crashed_.contains(content->GetIdentifier());
@@ -325,6 +381,9 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   if (auto split = DescribeSplitView()) result->SetDictionary("splitView",split);
   for (size_t i = 0; i < tree_.nodes.size(); ++i) {
     const auto& node = tree_.nodes[i]; auto row = CefDictionaryValue::Create();
+    // Archived tabs are not part of the workspace on screen: the Archive panel
+    // asks for them (ArchiveSnapshot). They made up most of a long-used tree.
+    if (node.archived) continue;
     if (node.favorite && node.profile != BrowsingProfileId(tree_)) continue;
     row->SetString("id", node.id); row->SetString("parentId", node.parent); row->SetString("space", node.space);
     row->SetString("kind", node.folder ? "folder" : "tab"); row->SetString("title", node.title);
@@ -388,6 +447,40 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   }
   result->SetList("nodes", nodes);
   return result;
+}
+// The one archive of every Space, for the Archive panel (and probes): rows in
+// the snapshot's node format. Archived tabs have no page: nothing is live.
+CefRefPtr<CefListValue> WorkspaceController::ArchiveSnapshot() const {
+  const auto state = state_.lock();
+  auto rows = CefListValue::Create();
+  std::map<std::string,const SplitGroup*> split_members;
+  for (const auto& split : tree_.archived_splits) { split_members[split.anchor] = &split; split_members[split.other] = &split; }
+  for (const auto& node : tree_.nodes) {
+    if (!node.archived || node.folder) continue;
+    auto row = CefDictionaryValue::Create();
+    row->SetString("id", node.id); row->SetString("parentId", node.parent); row->SetString("space", node.space);
+    row->SetString("kind", "tab"); row->SetString("title", node.title); row->SetString("url", node.url);
+    row->SetInt("position", node.position); row->SetBool("pinned", false); row->SetBool("expanded", node.expanded);
+    row->SetBool("favorite", false); row->SetBool("archived", true); row->SetDouble("archivedAt", static_cast<double>(node.archived_at));
+    row->SetBool("live", false); row->SetBool("closing", false); row->SetString("currentUrl", node.url);
+    row->SetBool("customTitle", node.custom_title); row->SetString("pageTitle", node.page_title);
+    if (const auto member = split_members.find(node.id); member != split_members.end()) {
+      row->SetString("splitAnchor", member->second->anchor); row->SetString("splitOther", member->second->other);
+      row->SetString("splitTitle", member->second->title); row->SetBool("splitHidden", node.id != member->second->anchor);
+      row->SetBool("splitReversed", member->second->reversed);
+    }
+    const auto profile = ProfileForNode(node.id);
+    const auto favicons = profile ? profile->favicons : state ? state->favicons : nullptr;
+    if (favicons) if (const auto icon = favicons->Url(IconHost(node.url))) row->SetString("favicon", *icon);
+    rows->SetDictionary(rows->GetSize(), row);
+  }
+  return rows;
+}
+bool WorkspaceController::IsArchived(const std::string& id) const {
+  return std::any_of(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id && n.archived && !n.folder; });
+}
+int WorkspaceController::ArchivedCount() const {
+  return static_cast<int>(std::count_if(tree_.nodes.begin(), tree_.nodes.end(), [](const auto& n) { return n.archived && !n.folder; }));
 }
 void WorkspaceController::ReceiveSharedTree(const TreeSnapshot& incoming) {
   if (stopped_ || shutting_down_) return;
@@ -470,8 +563,6 @@ void WorkspaceController::ApplyStartup() {
   const auto state = state_.lock();
   if (startup_applied_ || !ready_ || !state || !state->embedded || !state->window || !session_ || !session_->preferences) return;
   startup_applied_ = true;
-  if (!state->secondary_window && !state->private_window && !state->standalone_window &&
-      (!state->probe || state->sidebar_peek_probe)) WarmStartupBadgePins();
   if (state->probe || state->secondary_window || state->standalone_window || !external_pending_.empty()) return;
   const auto& preferences = session_->preferences->Get();
   if (preferences.startup == "newTab") { tree_.active_id.clear(); OpenNewTab(); }
@@ -483,36 +574,6 @@ void WorkspaceController::ApplyStartup() {
       TreeCommand activate{TreeAction::Activate}; activate.id = node.id; Dispatch(activate,{},true); return;
     }
     OpenLink(preferences.homepage,true);
-  }
-}
-void WorkspaceController::WarmStartupBadgePins() {
-  const auto state = state_.lock();
-  std::map<std::string_view, StartupBadgeSite> candidates;
-  for (const auto& node : tree_.nodes) {
-    if (!node.pinned || node.folder || node.archived) continue;
-    if (const auto site = StartupBadgeFor(node.url, node.x_badge_hidden); site && BrowserIntegrationEnabled(state, StartupBadgeId(*site)))
-      candidates.emplace(node.id, *site);
-  }
-  if (candidates.empty()) return;
-  std::set<StartupBadgeSite> scheduled;
-  for (const auto& id : OrderedTabsForSpace(tree_, tree_.active_space)) {
-    const auto candidate = candidates.find(id);
-    if (candidate == candidates.end() || !scheduled.insert(candidate->second).second) continue;
-    const auto site = candidate->second;
-    startup_badge_tabs_.insert(id);
-    // Stagger page loads behind startup navigation. EnsurePage preserves
-    // the saved pin's identity, request context and selection.
-    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, std::string space,
-        std::string id, StartupBadgeSite site) {
-      const auto self = weak.lock();
-      if (!self || self->stopped_ || !self->startup_badge_tabs_.contains(id)) return;
-      const auto node = std::find_if(self->tree_.nodes.begin(), self->tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
-      if (self->CanOpen() && self->tree_.active_space == space && node != self->tree_.nodes.end() &&
-          node->pinned && StartupBadgeFor(node->url, node->x_badge_hidden) == site &&
-          BrowserIntegrationEnabled(self->state_.lock(), StartupBadgeId(site)) &&
-          BrowsingProfileId(self->tree_, id) == BrowsingProfileId(self->tree_)) self->EnsurePage(id);
-      if (!self->creating_.contains(id) && !self->LiveBrowser(id)) self->startup_badge_tabs_.erase(id);
-    }, weak_from_this(), tree_.active_space, id, site), site == StartupBadgeSite::WhatsApp ? 800 : 1400);
   }
 }
 void WorkspaceController::ImportZen(const TreeSnapshot& incoming, Reply done) {
@@ -529,7 +590,7 @@ void WorkspaceController::ImportZen(const TreeSnapshot& incoming, Reply done) {
     }, self, std::move(result), std::move(done)));
   }, shared_from_this(), incoming, backup, std::move(done))));
 }
-void WorkspaceController::Dispatch(TreeCommand command, Reply done, bool internal) {
+void WorkspaceController::Dispatch(TreeCommand command, Reply done, bool internal, bool exact_activation) {
   if (command.action == TreeAction::SwitchSpace || command.action == TreeAction::DeleteSpace) {
     // A space opens on a page that is already loaded, or on the empty tab: after a cold start
     // nothing is loaded from the saved sidebar until you select it.
@@ -544,11 +605,11 @@ void WorkspaceController::Dispatch(TreeCommand command, Reply done, bool interna
   }
   // Leaving the source tab parks its preview with it; it returns with the tab.
   if (HasLinkPeek() && leaving && !(link_peek_promoting_ && command.action==TreeAction::CreateTab && command.id==link_peek_id_) && !ParkLinkPeek()) {
-    DismissLinkPeek([weak=weak_from_this(),command,done,internal](bool closed) {
-      if (auto self=weak.lock()) { if (closed) self->Dispatch(command,done,internal); else if (done) done(409,"Close cancelled; preview kept",self->Snapshot()); }
+    DismissLinkPeek([weak=weak_from_this(),command,done,internal,exact_activation](bool closed) {
+      if (auto self=weak.lock()) { if (closed) self->Dispatch(command,done,internal,exact_activation); else if (done) done(409,"Close cancelled; preview kept",self->Snapshot()); }
     }); return;
   }
-  if (command.action == TreeAction::Activate) for (const auto& split : tree_.splits) if (split.anchor == command.id) {
+  if (command.action == TreeAction::Activate && !exact_activation) for (const auto& split : tree_.splits) if (split.anchor == command.id) {
     const auto remembered = split_focus_.find(split.anchor);
     if (remembered != split_focus_.end() && (remembered->second == split.anchor || remembered->second == split.other)) command.id = remembered->second;
     break;
@@ -582,6 +643,45 @@ void WorkspaceController::Dispatch(TreeCommand command, Reply done, bool interna
 }
 CefRefPtr<CefBrowser> WorkspaceController::LiveBrowser(const std::string& id) const {
   const auto found = sessions_.find(id); return found == sessions_.end() ? nullptr : found->second;
+}
+void WorkspaceController::OnPageActivationRequested(int browser_id) {
+  const auto state = state_.lock();
+  const auto binding = browser_nodes_.find(browser_id);
+  if (!state || !state->window || !ready() || profile_changing_ || native_page_activation_pending_ || binding == browser_nodes_.end()) return;
+  const auto id = binding->second;
+  if (closing_.contains(id) || moving_unloads_.contains(id) || archiving_.contains(id) ||
+      auto_closing_.contains(id) || crashed_.contains(browser_id) || IsPeekPage(id)) return;
+
+  if (state->window->IsMinimized()) state->window->Restore();
+  if (GetForegroundWindow() != state->window->GetWindowHandle()) state->window->Activate();
+  if (id == tree_.active_id) return;
+
+  const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& node) { return node.id == id; });
+  if (node == tree_.nodes.end() || node->archived) return;
+  TreeCommand activate{TreeAction::Activate};
+  activate.id = id;
+  if (node->favorite && node->profile != BrowsingProfileId(tree_)) {
+    auto space = std::find_if(tree_.spaces.begin(), tree_.spaces.end(), [&](const auto& space) {
+      return space.profile == node->profile && space.active_id == id;
+    });
+    if (space == tree_.spaces.end()) space = std::find_if(tree_.spaces.begin(), tree_.spaces.end(), [&](const auto& space) {
+      return space.profile == node->profile;
+    });
+    if (space == tree_.spaces.end()) return;
+    activate.space = space->id;
+  }
+  // The native request names a specific page, including a split anchor whose
+  // sidebar row would normally reopen the last focused pane instead.
+  if (const auto* split = SelectedSplit(); split && (id == split->anchor || id == split->other) &&
+      !expanded_split_pane_.empty() && expanded_split_pane_ != id) expanded_split_pane_.clear();
+  native_page_activation_pending_ = true;
+  Dispatch(std::move(activate), [weak = weak_from_this()](int, const std::string&, CefRefPtr<CefDictionaryValue>) {
+    // CEF queues BrowserView focus while applying the selection. Keep its
+    // resulting native activation messages within this same focus handoff.
+    CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak) {
+      if (const auto self = weak.lock()) self->native_page_activation_pending_ = false;
+    }, weak));
+  }, true, true);
 }
 std::shared_ptr<BrowsingProfile> WorkspaceController::ProfileForNode(const std::string& id) const {
   const auto state = state_.lock();
@@ -618,10 +718,14 @@ std::optional<std::string> WorkspaceController::SavedPreview(const std::string& 
 }
 void WorkspaceController::UpdateIntegrationPreviews() {
   const auto state = state_.lock();
-  if (!state || state->private_window || state->standalone_window || (state->probe && !state->google_integrations_probe)) return;
+  if (!state || state->private_window || state->standalone_window ||
+      (state->probe && !state->google_integrations_probe && !state->sidebar_peek_probe)) return;
   const auto profile = ready() && !stopped_ ? ProfileForNode("") : nullptr;
+  // Mail and calendar previews run only for real use and their own probe; the sidebar probe
+  // exercises the X count (with a fixture value) but no mailbox jobs.
+  const bool previews = !state->probe || state->google_integrations_probe;
   std::vector<std::string> targets;
-  if (profile) {
+  if (profile && previews) {
     for (const bool favorites : {true, false}) {
       for (const auto& node : tree_.nodes) {
         if (!node.pinned || node.archived || node.folder || node.favorite != favorites) continue;
@@ -638,6 +742,39 @@ void WorkspaceController::UpdateIntegrationPreviews() {
   }
   if (!integration_previews_ && !targets.empty()) integration_previews_ = std::make_shared<IntegrationPreviews>(state);
   if (integration_previews_) integration_previews_->Update(profile, targets);
+  // X's unread count (integrations/x_unread.h): wanted while this profile has a pinned X home tab
+  // with its badge on. The X tab itself is no longer loaded for the badge.
+  bool x_wanted = false;
+  if (profile && BrowserIntegrationEnabled(state, "twitter"))
+    for (const auto& node : tree_.nodes)
+      if (node.pinned && !node.archived && !node.folder && BrowsingProfileId(tree_, node.id) == profile->id &&
+          StartupBadgeFor(node.url, node.x_badge_hidden) == StartupBadgeSite::X) { x_wanted = true; break; }
+  if (!x_unread_ && x_wanted)
+    x_unread_ = std::make_shared<XUnread>(state, [weak = weak_from_this()] {
+      // Count changes publish a new snapshot, never from inside the current Publish.
+      CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> w) {
+        if (const auto self = w.lock(); self && !self->stopped_) self->Publish();
+      }, weak));
+    });
+  if (x_unread_) x_unread_->Update(profile, x_wanted);
+  // WhatsApp (integrations/whatsapp_unread.h): checked in the background only while none of this
+  // profile's WhatsApp tabs is loaded; a loaded one shows its own title.
+  bool whatsapp_wanted = false, whatsapp_loaded = false;
+  if (profile && BrowserIntegrationEnabled(state, "whatsapp"))
+    for (const auto& node : tree_.nodes) {
+      if (node.archived || node.folder || BrowsingProfileId(tree_, node.id) != profile->id) continue;
+      if (node.pinned && StartupBadgeFor(node.url, false) == StartupBadgeSite::WhatsApp) whatsapp_wanted = true;
+      if (const auto browser = LiveBrowser(node.id))
+        if (const auto address = IntegrationUrl(browser->GetMainFrame()->GetURL().ToString()); address && address->host == "web.whatsapp.com")
+          whatsapp_loaded = true;
+    }
+  if (!whatsapp_unread_ && whatsapp_wanted)
+    whatsapp_unread_ = std::make_shared<WhatsAppUnread>(state, [weak = weak_from_this()] {
+      CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> w) {
+        if (const auto self = w.lock(); self && !self->stopped_) self->Publish();
+      }, weak));
+    });
+  if (whatsapp_unread_) whatsapp_unread_->Update(profile, whatsapp_wanted, whatsapp_loaded);
 }
 void WorkspaceController::DetachedReady(const std::string& id) {
   const auto seed = DetachedSeed(id);
@@ -698,7 +835,7 @@ CefRefPtr<CefBrowser> WorkspaceController::ReleaseForTransfer(const std::string&
   const int browser_id = browser->GetIdentifier();
   // The page leaves without unloading: forget it as OnClosed would, then show
   // another tab here.
-  loaded_.erase(browser_id); last_urls_.erase(browser_id);
+  loaded_.erase(browser_id); last_urls_.erase(browser_id); media_sessions_.erase(browser_id);
   sessions_.erase(id); browser_nodes_.erase(browser_id); std::erase(recent_, id);
   auto_archive_media_.erase(browser_id);
   page_titles_.erase(id);
@@ -712,15 +849,17 @@ CefRefPtr<CefBrowser> WorkspaceController::ReleaseForTransfer(const std::string&
   EnsureActive(); Publish();
   return browser;
 }
-bool WorkspaceController::AdoptPage(CefRefPtr<CefBrowser> browser, const std::string& node_id) {
+bool WorkspaceController::AdoptPage(CefRefPtr<CefBrowser> browser, const std::string& node_id, bool foreground) {
   const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == node_id && !n.folder && !n.archived; });
   if (!browser || shutting_down_ || node == tree_.nodes.end() || sessions_.contains(node_id)) return false;
   creating_.erase(node_id);
   sessions_[node_id] = browser; browser_nodes_[browser->GetIdentifier()] = node_id;
   if (!browser->IsLoading()) loaded_.insert(browser->GetIdentifier());
   OnTitleChanged(browser);
-  TreeCommand activate{TreeAction::Activate}; activate.id = node_id;
-  Dispatch(std::move(activate), {}, true);
+  if (foreground) {
+    TreeCommand activate{TreeAction::Activate}; activate.id = node_id;
+    Dispatch(std::move(activate), {}, true);
+  }
   EnsureActive(); Publish();
   return true;
 }
@@ -928,12 +1067,12 @@ void WorkspaceController::OnClosed(int browser_id, const std::string& last_url) 
     const auto icons = profile == state->browser_profiles.end() ? state->favicons : profile->second->favicons;
     if (icons) icons->ForgetPage(browser_id);
   }
+  // Every map keyed by this browser forgets it (media artwork stayed forever).
+  loaded_.erase(browser_id); last_urls_.erase(browser_id); media_sessions_.erase(browser_id);
   const auto binding = browser_nodes_.find(browser_id);
   if (binding == browser_nodes_.end()) return;
   const auto id = binding->second;
-  startup_badge_tabs_.erase(id);
-  loaded_.erase(browser_id);
-  crashed_.erase(browser_id); last_urls_.erase(browser_id);
+  crashed_.erase(browser_id);
   sessions_.erase(id); browser_nodes_.erase(binding); std::erase(recent_, id);
   auto_archive_media_.erase(browser_id);
   if (closing_peeks_.erase(id) || std::erase_if(parked_peeks_, [&](const auto& entry) { return entry.second.id == id; })) {
@@ -990,8 +1129,7 @@ void WorkspaceController::Close(const std::string& id, bool archive, Reply done)
   }
   const auto live = sessions_.find(id);
   if (live == sessions_.end()) {
-    startup_badge_tabs_.erase(id);
-    FinishClose(id, archive || !node->pinned, std::move(done)); return;
+      FinishClose(id, archive || !node->pinned, std::move(done)); return;
   }
   closing_[id] = {archive || !node->pinned, std::move(done)}; Publish();
   CloseBrowserWithDialogs(state_, live->second, false);
@@ -1021,10 +1159,10 @@ void WorkspaceController::CancelClose(int browser_id) {
 void WorkspaceController::FinishClose(const std::string& id, bool archive, Reply done, const std::string& last_url) {
   TreeCommand command{archive ? TreeAction::Archive : TreeAction::Unload}; command.id = id;
   if (PageUrlAllowed(last_url)) command.url = last_url;
-  // Unloading the active peek of a collapsed folder dismisses that branch.
-  // Another live descendant must not replace the page beneath the folder.
-  const auto excluded_folder = !archive && tree_.active_id == id ? CollapsedFolderContaining(tree_.nodes, id) : std::string_view{};
-  const auto ordered = OrderedTabsForSpace(tree_, tree_.active_space, excluded_folder);
+  // The next page is never one hidden in a collapsed folder: unloading the
+  // active peek of a collapsed folder dismisses that branch, and closing any
+  // other page does not pull a page out of a collapsed folder either.
+  const auto ordered = OrderedTabsForSpace(tree_, tree_.active_space, {}, /*skip_collapsed=*/true);
   for (auto i = recent_.rbegin(); i != recent_.rend(); ++i)
     if (*i != id && !removing_folder_nodes_.contains(*i) && sessions_.contains(*i) && std::find(ordered.begin(), ordered.end(), *i) != ordered.end()) { command.next_active = *i; break; }
   // A live page that was never shown (opened in the background) still beats the empty page,
@@ -1419,6 +1557,42 @@ void WorkspaceController::Notify(const std::string& text) {
 bool WorkspaceController::CanOpen() const {
   return ready_ && !shutting_down_ && !profile_changing_ && !folder_removal_ && closing_.empty() && !closing_commits_ && opening_links_ + creating_.size() < 16;
 }
+void WorkspaceController::RegisterNamedTab(CefRefPtr<CefBrowser> browser, const std::string& url, int opener_id, bool foreground) {
+  const auto state = state_.lock();
+  CefURLParts parts;
+  if (!state || !CanOpen() || !UrlAllowed(url) || !CefParseURL(url, parts) ||
+      !browser->GetHost()->GetRequestContext()->IsSharingWith(state->WebContext())) {
+    browser->GetHost()->CloseBrowser(true);
+    return;
+  }
+
+  // Write an inactive entry first. The browser already exists and Chromium
+  // owns its navigation, so EnsureActive must not create a replacement.
+  TreeCommand create{TreeAction::CreateTab};
+  create.url = url;
+  create.title = CefString(&parts.host).ToString().substr(0, 240);
+  if (const auto opener = browser_nodes_.find(opener_id); opener != browser_nodes_.end()) create.after = opener->second;
+  ++opening_links_;
+  Dispatch(std::move(create), [weak = weak_from_this(), browser, foreground](int code, const std::string&, CefRefPtr<CefDictionaryValue> snapshot) {
+    const auto self = weak.lock();
+    if (!self) return;
+    --self->opening_links_;
+    const auto state = self->state_.lock();
+    const bool live = state && browser->IsValid() && state->browsers.contains(browser->GetIdentifier());
+    if (!code && snapshot) {
+      const auto id = snapshot->GetString("createdId").ToString();
+      const auto profile = self->ProfileForNode(id);
+      if (live && browser->GetHost()->GetRequestContext()->IsSharingWith(profile ? profile->context : state->WebContext()) &&
+          self->AdoptPage(browser, id, foreground)) {
+        self->OnPageChanged(browser);
+        state->Record("named_link_tab_created");
+        return;
+      }
+      self->RemoveDetachedToday(id);
+    }
+    if (live) browser->GetHost()->CloseBrowser(true);
+  }, true);
+}
 void WorkspaceController::OpenPage(const std::string& url, const std::string& title, bool foreground, Reply done, const std::string& initiator,
                                    const std::string& after) {
   if (!CanOpen()) { if (done) done(409, "Cannot open this link now", nullptr); return; }
@@ -1659,6 +1833,7 @@ void WorkspaceController::NavigatePinned(const std::string& id, const std::strin
   done(0,"",Snapshot());
 }
 void WorkspaceController::Navigate(const std::string& url, Reply done) {
+  if (done) done = Ordered(std::move(done));
   if (!ready_ || shutting_down_ || folder_removal_ || !closing_.empty() || closing_commits_ || !UserUrlAllowed(url)) { done(400, "Invalid active tab or URL", nullptr); return; }
   if (HasLinkPeek()) {
     const auto browser=LiveBrowser(link_peek_id_); if (!browser || link_peek_closing_) { done(409,"Link preview is opening",nullptr); return; }
@@ -1686,6 +1861,7 @@ void WorkspaceController::Navigate(const std::string& url, Reply done) {
   }, true);
 }
 void WorkspaceController::Handle(CefRefPtr<CefDictionaryValue> request, Reply done) {
+  if (done) done = Ordered(std::move(done));
   if (profile_changing_) { done(409,"Finish changing the profile first",nullptr); return; }
   if (folder_removal_) { done(409,"Finish removing the folder first",nullptr); return; }
   if (shutting_down_) { done(409, "Window is closing", nullptr); return; }
@@ -1780,8 +1956,11 @@ void WorkspaceController::Handle(CefRefPtr<CefDictionaryValue> request, Reply do
     else if (method == "tree.activate") { command.action = TreeAction::Activate; fields = 3; }
     else if (method == "tree.restore") { command.action = TreeAction::Restore; fields = 3; }
     else if (method == "tree.moveToSpace") {
-      command.action = TreeAction::MoveToSpace; fields = 4;
-      if (!text("space", 36, command.space)) { reject(); return; }
+      // Optional "unload": the user confirmed moving live pages to a Space of
+      // another profile; they are unloaded first and reload there.
+      command.action = TreeAction::MoveToSpace; fields = 4 + size_t(request->HasKey("unload"));
+      if (!text("space", 36, command.space) || (request->HasKey("unload") && request->GetType("unload") != VTYPE_BOOL)) { reject(); return; }
+      command.value = request->HasKey("unload") && request->GetBool("unload");
       // If the page on screen leaves, show the next one of this space.
       const auto order = OrderedTabsForSpace(tree_, tree_.active_space);
       for (const auto& candidate : order) if (candidate != command.id) { command.next_active = candidate; break; }
@@ -1849,10 +2028,17 @@ void WorkspaceController::Handle(CefRefPtr<CefDictionaryValue> request, Reply do
           std::find(ids.begin(),ids.end(),split.other)!=ids.end()) {
         ids.push_back(split.anchor); ids.push_back(split.other);
       }
+      bool live = false;
       for (const auto& window : session_->Windows()) if (window->workspace_data == data_ && window->workspace)
-        for (const auto& id : ids) if (window->workspace->LiveBrowser(id) || window->workspace->creating_.contains(id) || window->workspace->parked_peeks_.contains(id)) {
-          done(409,"Unload these tabs and close their Link Peeks before moving to another profile",nullptr); return;
-        }
+        for (const auto& id : ids) live = live || window->workspace->LiveBrowser(id) || window->workspace->creating_.contains(id) || window->workspace->parked_peeks_.contains(id);
+      if (live && command.action == TreeAction::MoveToSpace && command.value) {
+        if (command.expected_revision != tree_.revision) { done(409, "Workspace changed; retry", nullptr); return; }
+        const std::set<std::string> selected(ids.begin(), ids.end());
+        UnloadThenDispatch([selected](WorkspaceController&, const TreeNode& node) { return selected.contains(node.id); }, std::move(command), std::move(done),
+            "Close the Link Peek of this tab before moving it to another profile", "Move cancelled; the tab was kept");
+        return;
+      }
+      if (live) { done(409,"Unload these tabs and close their Link Peeks before moving to another profile",nullptr); return; }
     }
   }
   if (command.action == TreeAction::Pin || command.action == TreeAction::Place || command.action == TreeAction::Move) {

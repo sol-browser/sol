@@ -26,14 +26,15 @@ bool BrowserIntegrationEnabled(const std::shared_ptr<State>& state, std::string_
 }
 void SaveIntegrationPreference(const std::shared_ptr<State>& state, std::string id, bool enabled, BrowserPreferences::Reply done) {
   const auto session = state ? state->session : nullptr;
-  if (!session || !session->preferences || !FindIntegrationSetting(id)) { done("Integration is unavailable"); return; }
+  const auto* provider = FindIntegrationSetting(id);
+  if (!session || !session->preferences || !provider || !provider->listed) { done("Integration is unavailable"); return; }
   auto next = session->preferences->Get();
   next.integrations[id] = enabled;
   session->preferences->Save(std::move(next), [weak = std::weak_ptr<AppSession>(session), id = std::move(id), done = std::move(done)](const std::string& error) {
     if (error.empty()) if (const auto owner = weak.lock()) for (const auto& window : owner->Windows()) {
       if (window->workspace) window->workspace->Refresh();
       if (window->command_bar) window->command_bar->Refresh();
-      if (id == "youtube" || id == "googleMeet") RefreshPipIntegrations(window);
+      if (id == "googleMeet") RefreshPipIntegrations(window);
     }
     done(error);
   });

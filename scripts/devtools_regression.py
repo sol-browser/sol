@@ -38,6 +38,8 @@ def main():
     steps={r['details']['phase']:r['details'] for r in rows if r['event']=='devtools_probe_step'}
     pages={r['details']['phase']:r['details'] for r in rows if r['event']=='devtools_probe_page'}
     hits={r['details']['phase']:r['details'] for r in rows if r['event']=='devtools_probe_hit'}
+    window_doc=next((r['details'] for r in rows if r['event']=='devtools_probe_window' and r['details'].get('phase')=='detached'),{})
+    shell_detached=next((r['details'] for r in rows if r['event']=='devtools_probe_shell' and r['details'].get('phase')=='detached_shell'),{})
     pointer={r['details']['phase']:r['details'] for r in rows if r['event']=='devtools_probe_frontend'}
     phases=('initial','resized','restored')
     cost=next((r['details'] for r in rows if r['event']=='devtools_probe_shell' and r['details'].get('phase')=='resize_cost'),{})
@@ -62,7 +64,10 @@ def main():
         'same_docked_frontend':len(hits)==len(phases) and len({hit['frontend'] for hit in hits.values()})==1,
         'frontend_native_hit':all(hits.get(phase,{}).get('frontend_hit') for phase in phases),
         'frontend_hover_and_click':all(pointer.get(phase,{}).get('moves',0)>0 and pointer.get(phase,{}).get('clicks',0)>0 for phase in phases),
-        'detached_control_visible':steps.get('detached',{}).get('dock',{}).get('side')=='window',
+        # Sol's own window: the frontend lives in it under the placement strip; the browser window has no strip.
+        'detached_in_own_window':steps.get('detached',{}).get('in_own_window') is True and steps.get('detached',{}).get('window_visible') is True and 'dock' not in steps.get('detached',{}),
+        'detached_control_visible':window_doc.get('dockEnabled') is True and 'Dock right' in window_doc.get('buttons',[]) and 30<=window_doc.get('height',0)<=34,
+        'detached_strip_not_in_browser_window':shell_detached.get('header') is False,
         'reattach_button_works':steps.get('reattach_button',{}).get('child') is True,
         'device_actual_metrics':pages.get('device',{}).get('width')==390 and pages.get('device',{}).get('height')==844 and pages.get('device',{}).get('dpr')==3 and pages.get('device',{}).get('touch')==1,
         'device_resize_preserves_metrics':pages.get('device_resized',{}).get('width')==390 and pages.get('device_resized',{}).get('height')==844,

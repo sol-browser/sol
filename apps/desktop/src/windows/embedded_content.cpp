@@ -113,6 +113,11 @@ void EmbeddedContent::Relayout() {
   if (!cold_cover_) FinishPresentation(presentation_generation_, false);
   Resize(bounds_);
 }
+void EmbeddedContent::SetModalShade(bool visible) {
+  if (!visible) { corners_.HideModalShade(); return; }
+  if (const auto state = state_.lock(); state && state->window)
+    corners_.ShowModalShade(state->window->GetWindowHandle());
+}
 bool EmbeddedContent::BeginPopupAnimation(HWND popup, bool bottom, float origin_x, bool closing, float from_scale, float origin_y) {
   const auto state = state_.lock();
   if (!state || !state->window) return false;
@@ -174,22 +179,26 @@ bool EmbeddedContent::ShowSidebarShadow(const RECT& panel, float scale, double p
   const auto state = state_.lock();
   return state && state->window && corners_.ShowSidebarShadow(state->window->GetWindowHandle(), panel, scale, progress);
 }
+void EmbeddedContent::ConfigureNewTabWindow(CefWindowInfo& info) const {
+  const auto state = state_.lock();
+  if (!state || !state->window) return;
+  auto bounds = WorkspacePhysicalBounds();
+  if (state->workspace_mode) {
+    // Chrome shows a child after OnAfterCreated. Park it outside the parent's
+    // clip until workspace selection can present it at its real bounds.
+    bounds.x = -bounds.width - 32;
+    bounds.y = -bounds.height - 32;
+  }
+  info.SetAsChild(state->window->GetWindowHandle(), bounds);
+  if (state->workspace_mode) info.ex_style |= WS_EX_NOACTIVATE;
+}
+
 bool EmbeddedContent::Create(const std::string& url, const std::string& node_id) {
   auto state = state_.lock();
   if (!state || !state->window) return false;
   if (state->tab_trace.is_open()) state->Record("page_load_create_requested");
   CefWindowInfo info;
-  auto initial_bounds = WorkspacePhysicalBounds();
-  if (state->workspace_mode) {
-    // Chrome ChildWindowDelegate calls Show() after OnAfterCreated. Hiding in
-    // that callback alone cannot prevent its initial blank surface flashing.
-    // Keep the real viewport size but park the child outside its parent's clip
-    // until creation unwinds and the workspace activates it behind the old page.
-    initial_bounds.x = -initial_bounds.width - 32;
-    initial_bounds.y = -initial_bounds.height - 32;
-  }
-  info.SetAsChild(state->window->GetWindowHandle(), initial_bounds);
-  if (state->workspace_mode) info.ex_style |= WS_EX_NOACTIVATE;
+  ConfigureNewTabWindow(info);
   CefBrowserSettings settings;
   if (state->workspace_mode) {
     link_status_available_ = corners_.PrepareLinkStatus(state->window->GetWindowHandle());

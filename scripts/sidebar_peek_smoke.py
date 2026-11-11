@@ -1,6 +1,7 @@
 """Floating sidebar acceptance (--probe-sidebar-peek) through actual CEF."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 import sqlite3
 import threading
 from uuid import uuid4
@@ -35,6 +36,7 @@ def main():
                 ('X fixture', 'https://x.com/home'),
                 ('X duplicate fixture', 'https://x.com/'),
                 ('X deep-link fixture', 'https://x.com/notifications'),
+                ('Pinned editor fixture', url.removesuffix('/a') + '/pinned-editor'),
             ]):
                 node = f'11111111-1111-4111-8111-{position:012d}'
                 favorite = title in ('X disabled fixture', 'X fixture')
@@ -52,6 +54,8 @@ def main():
         with sqlite3.connect(database) as db:
             db.execute("UPDATE nodes SET x_badge_hidden=1 WHERE title='X disabled fixture'")
         directory, rows = run(url, ['--probe-sidebar-peek'], allow_failure=True, profile=profile)
+        with sqlite3.connect(database) as db:
+            saved_pin = db.execute("SELECT title,url FROM nodes WHERE id='11111111-1111-4111-8111-000000000008'").fetchone()
     finally:
         server.shutdown(); server.server_close()
     def first(event): return next((r.get('details', {}) for r in rows if r['event'] == event), {})
@@ -65,7 +69,28 @@ def main():
     cards = [r['details'] for r in rows if r['event'] == 'popup_presented' and r['details'].get('kind') == 'integration']
     favorites = [c for c in cards if c.get('favorite') is True]
     pinned = [c for c in cards if c.get('favorite') is False]
+    editors = {r['details']['floating']: r['details'] for r in rows if r['event'] == 'pin_editor_window'}
+    editor_documents = {r['details']['save']: r['details'] for r in rows if r['event'] == 'pin_editor_document'}
+    editor_closes = {r['details']['floating']: r['details'] for r in rows if r['event'] == 'pin_editor_closed'}
+    editor_presentations = [r['details'] for r in rows if r['event'] == 'popup_presented' and r['details'].get('kind') == 'editPinned']
+    pinned_hints = {d['pinnedHint']: d for d in documents if 'pinnedHint' in d}
     checks = {
+        'both_hosts_reveal_pinned_hint_and_reset': set(pinned_hints) == {'docked', 'floating'} and
+            all(all(d.get(key) is True for key in ('hidden', 'shown', 'lifted', 'sameHeight', 'arrowCursor', 'highlight', 'atHome')) for d in pinned_hints.values()),
+        'both_hosts_open_pinned_editor': {r['details']['surface'] for r in rows if r['event']=='shared_sidebar_action' and r['details']['method']=='tab.editPinned'} == {'docked','floating'},
+        'both_editors_centered_owned_and_modal': len(editors) == 2 and all(
+            all(d[key] for key in ('presented', 'centered', 'owned', 'owner_disabled'))
+            and (os.environ.get('RED_PROBE_DISPLAY') != 'secondary' or d['secondary']) for d in editors.values()),
+        'both_composited_backdrops_dim_the_page_and_leave_the_editor_clickable': len(editors) == 2 and
+            all(d['backdrop'] and d['editor_hit_test'] for d in editors.values()),
+        'both_editors_remove_the_backdrop': len(editor_closes) == 2 and all(d['backdrop_removed'] for d in editor_closes.values()),
+        'editor_prefills_and_focuses_after_open_and_cancel': len(editor_documents) == 2 and len(editor_presentations) == 2 and
+            all(d['prefilled'] and d['focused'] for d in editor_documents.values()) and
+            all(d['foreground'] and d['keyboard_focus'] for d in editor_presentations),
+        'save_and_cancel_give_pressed_feedback': len(editor_documents) == 2 and all(d['pressed'] for d in editor_documents.values()),
+        'editor_rejects_invalid_scheme_and_saves': editor_documents.get(True, {}).get('rejected') is True and
+            saved_pin == ('Edited in modal', url.removesuffix('/a') + '/pinned-saved'),
+        'both_editors_restore_owner_on_close': len(editor_closes) == 2 and all(d['closed'] and d['owner_enabled'] for d in editor_closes.values()),
         'docked_sidebar_hidden_after_animation': any(r['event'] == 'sidebar_native_layout' and not r['details']['visible'] and r['details']['native_geometry'] for r in rows),
         'peek_window_shown': first('peek_state_open').get('open') is True and first('peek_state_open').get('visible') is True,
         'peek_lists_tabs': {'a', 'b'} <= set(document.get('rows', [])),
@@ -82,15 +107,19 @@ def main():
             x_docked.get('globalDisabled') is True and x_floating.get('globallyOff') is True and x_floating.get('restoredGlobal') is True,
         'paused_integration_preferences_are_ignored': x_docked.get('legacyPreferencesLoaded') is True and x_docked.get('pausedCommandsRejected') is True,
         'docked_x_badge_renders_and_can_be_hidden': all(x_docked.get(key) is True for key in ('visible', 'corner', 'hidden')),
-        'x_badge_appears_on_startup_without_switching_tabs': x_docked.get('startedInBackground') is True,
-        'x_only_warms_one_enabled_home_pin_and_reuses_it': x_docked.get('otherXCold') is True and x_docked.get('activated') is True and
+        # X's counter supplies the dot; the X pin itself stays unloaded (integrations/x_unread.h).
+        'x_badge_appears_on_startup_without_loading_x': x_docked.get('startedInBackground') is True,
+        'x_pins_stay_cold_and_open_on_click': x_docked.get('otherXCold') is True and x_docked.get('activated') is True and
             [r['details']['url'] for r in rows if r['event']=='address_change' and r['details']['url'].startswith(('https://x.com/', 'https://twitter.com/'))]==['https://x.com/home'],
-        'floating_x_badge_can_be_restored_and_tracks_background_title': all(x_floating.get(key) is True for key in ('startsHidden', 'visible', 'cleared')),
-        'whatsapp_badge_after_startup_in_both_hosts': whatsapp_docked.get('whatsAppDocked') is True and whatsapp_floating.get('whatsAppFloating') is True,
-        'whatsapp_only_warms_one_home_pin': whatsapp_floating.get('otherPinsCold') is True and
+        'floating_x_badge_can_be_restored_and_follows_the_counter': all(x_floating.get(key) is True for key in ('startsHidden', 'visible', 'cleared')),
+        # WhatsApp is not kept loaded: hidden periodic checks supply the dot (integrations/whatsapp_unread.h).
+        'whatsapp_badge_from_hidden_check_in_both_hosts': whatsapp_docked.get('whatsAppDocked') is True and whatsapp_floating.get('whatsAppFloating') is True,
+        'whatsapp_pins_stay_cold_until_opened': whatsapp_floating.get('otherPinsCold') is True and
             sum(r['event']=='address_change' and r['details']['url'].startswith('https://web.whatsapp.com/') for r in rows)==1,
-        'whatsapp_reuses_pin_and_respects_explicit_unload': whatsapp_docked.get('activated') is True and whatsapp_docked.get('unloaded') is True,
-        'whatsapp_background_pin_survives_idle_unload': first('whatsapp_startup_pin').get('protected') is True,
+        'whatsapp_reuses_pin_and_keeps_dot_after_unload': whatsapp_docked.get('activated') is True and whatsapp_docked.get('unloaded') is True,
+        'whatsapp_hidden_check_reads_count_and_closes': any(r['event']=='whatsapp_check' and r['details'].get('unread')==3 for r in rows) and
+            sum(r['event']=='whatsapp_worker_closed' for r in rows) >= 1,
+        'whatsapp_pin_is_not_held_in_memory': first('whatsapp_startup_pin').get('protected') is False,
         'integration_card_shows_without_focus_theft': first('integration_docked').get('open') is True and first('integration_docked').get('kept_focus') is True,
         'integration_card_in_floating_host': first('integration_floating').get('open') is True,
         'integration_cef_widget_and_document_visible': first('integration_docked').get('views_visible') is True and first('integration_document').get('visible') is True,
@@ -140,7 +169,8 @@ def main():
             pacing.append({'in': direction, 'frames': len(times), 'median_ms': round(gaps[len(gaps) // 2], 1),
                            'max_ms': round(gaps[-1], 1), 'over_20ms': sum(g > 20 for g in gaps)})
     result = {'passed': all(checks.values()), 'checks': checks, 'document': document, 'pacing': pacing,
-              'context_menu': first('peek_context_menu')}
+              'context_menu': first('peek_context_menu'), 'pin_editors': editors, 'pin_editor_documents': editor_documents,
+              'pin_editor_closes': editor_closes, 'pinned_hints': pinned_hints}
     (directory / 'sidebar_peek.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2), flush=True)
     if not result['passed']: raise RuntimeError('Floating sidebar smoke failed')

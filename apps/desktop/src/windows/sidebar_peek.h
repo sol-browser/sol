@@ -36,7 +36,10 @@ class SidebarPeek : public std::enable_shared_from_this<SidebarPeek> {
   bool window_visible() const { return host_ && !parked_ && IsWindowVisible(host_); }
   HWND host() const { return host_; }
   CefRefPtr<CefBrowser> browser() const { return browser_; }
-  void Publish(CefRefPtr<CefDictionaryValue> theme = nullptr);
+  // Sends a snapshot or delta (null: a fresh full snapshot). Parked, the
+  // sidebar gets none: Show() sends a full one before it is revealed.
+  void Publish(CefRefPtr<CefDictionaryValue> update = nullptr);
+  bool wants_updates() const;
   // Browser/window callbacks.
   void Created(CefRefPtr<CefBrowser> browser);
   void Closed(int id);
@@ -47,6 +50,7 @@ class SidebarPeek : public std::enable_shared_from_this<SidebarPeek> {
   // Paths of files dragged over the peek (from the OS drag, never the page).
   void DragEntered(std::vector<std::string> files) { drop_files_ = std::move(files); }
  private:
+  void Send(CefRefPtr<CefDictionaryValue> update);
   void Watch(unsigned generation);
   void ConfigureHost();
   bool Ensure();
@@ -80,6 +84,7 @@ class SidebarPeek : public std::enable_shared_from_this<SidebarPeek> {
   CefRefPtr<CefRegistration> frame_observer_;
   CefRefPtr<CefMessageRouterBrowserSide::Callback> observer_;
   int64_t observer_id_ = -1;
+  int sent_request_ = 0;  // sidebarRequest.id of the last full snapshot sent.
   std::vector<std::string> drop_files_;
   unsigned watch_ = 0, motion_ = 0;
   int hover_ = 0, away_ = 0;

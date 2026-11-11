@@ -1,6 +1,7 @@
 #include "windows/devtools_dock.h"
 #include "windows/device_emulation.h"
 #include "windows/devtools.h"
+#include "windows/devtools_window.h"
 #include "windows/embedded_content.h"
 #include "windows/focus.h"
 #include "workspace/controller.h"
@@ -39,9 +40,13 @@ struct DevToolsDock::Entry {
   bool reopening = false;
   CefRect header, divider;
   std::shared_ptr<DeviceEmulation> device;
+  std::shared_ptr<DevToolsWindow> window;  // Separate window (side Window) once created.
   explicit Entry(DevToolsSide value) : side(value) {}
 };
-DevToolsDock::~DevToolsDock() = default;
+DevToolsDock::~DevToolsDock() {
+  // A separate window outlives no dock: it would stay open without its tools.
+  for (const auto& [target, entry] : entries_) if (entry->window) entry->window->Close();
+}
 std::shared_ptr<DevToolsDock::Entry> DevToolsDock::Ensure(int target) {
   if (auto at = entries_.find(target); at != entries_.end()) return at->second;
   auto entry = std::make_shared<Entry>(preferred_); entries_[target] = entry; return entry;
@@ -50,11 +55,43 @@ void DevToolsDock::Configure(int target, CefWindowInfo& info) {
   auto s = state_.lock(); auto entry = Ensure(target);
   if (s && s->window && entry->side != DevToolsSide::Window)
     info.SetAsChild(s->window->GetWindowHandle(), CefRect(-4000, -4000, 420, 400));
-  else info.SetAsPopup(nullptr, "Developer Tools");
+  else if (entry->window && entry->window->ready())
+    info.SetAsChild(entry->window->hwnd(), entry->window->FrontendBounds());
+  else info.SetAsPopup(nullptr, "Developer Tools");  // Not reached: ReadyToShow creates the window first.
   info.runtime_style = CEF_RUNTIME_STYLE_CHROME;
+}
+bool DevToolsDock::ReadyToShow(int target) {
+  auto s = state_.lock(); auto entry = Ensure(target);
+  if (entry->side != DevToolsSide::Window) return true;
+  if (entry->window && entry->window->ready()) return true;
+  if (!s || !s->window) return false;
+  if (!entry->window) {
+    // Remembered bounds, or a window over the right part of the browser window.
+    auto bounds = window_bounds_;
+    if (bounds.IsEmpty()) {
+      const auto owner = s->window->GetBounds();
+      const int width = std::min(980, std::max(520, owner.width * 3 / 5)), height = std::max(420, owner.height - 120);
+      bounds = CefRect(owner.x + owner.width - width - 40, owner.y + 60, width, height);
+    }
+    entry->window = std::make_shared<DevToolsWindow>(state_, target, bounds, [weak = state_, target] {
+      auto s = weak.lock(); if (!s || !s->devtools_dock) return;
+      auto& entries = s->devtools_dock->entries_;
+      const auto at = entries.find(target);
+      const auto page = s->browsers.find(target);
+      if (at == entries.end() || page == s->browsers.end() || at->second->side != DevToolsSide::Window) {
+        if (at != entries.end() && at->second->window) { at->second->window->Close(); at->second->window.reset(); }
+        return;
+      }
+      at->second->reopening = false;
+      ShowPageDevTools(s, page->second);
+    });
+    entry->window->Open();
+  }
+  return false;
 }
 void DevToolsDock::Attached(int target, CefRefPtr<CefBrowser> frontend) {
   Ensure(target)->frontend = frontend->GetIdentifier();
+  if (const auto entry = Ensure(target); entry->side == DevToolsSide::Window && entry->window) entry->window->Attach(frontend);
   // Chrome finalizes its initial window bounds after OnAfterCreated.
   CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
     if (auto s = weak.lock(); s && s->devtools_dock) s->devtools_dock->Relayout();
@@ -63,10 +100,8 @@ void DevToolsDock::Attached(int target, CefRefPtr<CefBrowser> frontend) {
 CefRect DevToolsDock::DockedPageBounds(int target, const CefRect& area) const {
   const auto at = entries_.find(target); auto s = state_.lock();
   if (!s || !s->window || fullscreen_ || at == entries_.end() || at->second->frontend == -1) return area;
-  if (at->second->side==DevToolsSide::Window) {
-    const int header=std::min(area.height,std::max(1,static_cast<int>(std::lround(kHeader*Scale(s)))));
-    return CefRect(area.x,area.y+header,area.width,std::max(1,area.height-header));
-  }
+  // A separate window carries its own controls: the page keeps the whole area.
+  if (at->second->side==DevToolsSide::Window) return area;
   const auto& entry = *at->second; const float scale = Scale(s);
   const int divider = std::max(1, static_cast<int>(std::lround(kDivider * scale)));
   const bool bottom = entry.side == DevToolsSide::Bottom;
@@ -113,9 +148,9 @@ void DevToolsDock::Layout(const CefRect& area, int active, bool fullscreen) {
       entry->device->Apply(zoom);
     }
     if (entry->side == DevToolsSide::Window) {
-      const CefRect title(area.x,area.y,area.width,std::min(header,area.height));
-      changed |= title!=entry->header;
-      entry->header=title;entry->divider={};continue;
+      changed |= !entry->header.IsEmpty() || !entry->divider.IsEmpty();
+      entry->header = {}; entry->divider = {};
+      continue;
     }
     const HWND hwnd = frontend->second->GetHost()->GetWindowHandle();
     const bool show = target == active && !fullscreen && !entry->reopening;
@@ -139,6 +174,8 @@ void DevToolsDock::Layout(const CefRect& area, int active, bool fullscreen) {
   // Publish after the caller commits its active page. No recursive layouts or
   // privileged bridge in DevTools: the existing trusted Shell paints controls
   // in the unoccupied header/gutter between native browser children.
+  // Separate windows show whether their page is active (device preview).
+  if (changed) for (const auto& [target, entry] : entries_) if (entry->window) entry->window->Publish();
   if (changed && !live_ && !refresh_queued_) {
     refresh_queued_ = true;
     CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
@@ -178,10 +215,7 @@ CefRefPtr<CefDictionaryValue> DevToolsDock::Describe() const {
   result->SetString("side", entry.side==DevToolsSide::Window ? "window" : entry.side == DevToolsSide::Bottom ? "bottom" : entry.side == DevToolsSide::Left ? "left" : "right");
   const float scale = Scale(s);
   const auto page = DockedPageBounds(active_, area_);
-  if (entry.side==DevToolsSide::Window) {
-    result->SetInt("extent",0);result->SetDictionary("header",Bounds(entry.header,scale));
-    result->SetDictionary("divider",Bounds({},scale));return result;
-  }
+  if (entry.side==DevToolsSide::Window) return nullptr;  // Its controls are in its own window.
   result->SetInt("extent", std::lround(((entry.side == DevToolsSide::Bottom ? area_.height - page.height : area_.width - page.width) / scale) - kDivider));
   result->SetDictionary("header", Bounds(entry.header, scale)); result->SetDictionary("divider", Bounds(entry.divider, scale));
   return result;
@@ -204,6 +238,23 @@ bool DevToolsDock::Control(int frontend, const std::string& action) {
   if (action == "close") ClosePageDevTools(s, active_);
   else SetSide(active_, action == "bottom" ? DevToolsSide::Bottom : action == "left" ? DevToolsSide::Left : action == "window" ? DevToolsSide::Window : DevToolsSide::Right);
   return true;
+}
+bool DevToolsDock::ControlTarget(int target, const std::string& action) {
+  auto s = state_.lock(); const auto at = entries_.find(target);
+  if (!s || at == entries_.end() || at->second->reopening) return false;
+  if (action == "device") return target == active_ && ToggleDevice(target);
+  if (action == "close") { ClosePageDevTools(s, target); return true; }
+  if (action != "right" && action != "bottom" && action != "left") return false;
+  SetSide(target, action == "bottom" ? DevToolsSide::Bottom : action == "left" ? DevToolsSide::Left : DevToolsSide::Right);
+  return true;
+}
+std::shared_ptr<DevToolsWindow> DevToolsDock::SeparateWindow(int target) const {
+  const auto at = entries_.find(target);
+  return at == entries_.end() ? nullptr : at->second->window;
+}
+bool DevToolsDock::DeviceEnabled(int target) const {
+  const auto at = entries_.find(target);
+  return at != entries_.end() && at->second->device && at->second->device->config().enabled;
 }
 bool DevToolsDock::Resize(int frontend, int extent, bool live) {
   const auto at = entries_.find(active_); auto s = state_.lock();
@@ -261,6 +312,11 @@ void DevToolsDock::Detached(int target, int frontend) {
   const auto at = entries_.find(target);
   if (at == entries_.end() || at->second->frontend != frontend) return;
   auto entry = at->second; entry->frontend = -1;
+  if (entry->window) {
+    entry->window->FrontendClosed(frontend);
+    // Moving to a dock (or closing) ends the window; reopening into a window keeps it.
+    if (!(entry->reopening && entry->side == DevToolsSide::Window)) { entry->window->Close(); entry->window.reset(); }
+  }
   if (!entry->reopening) entries_.erase(at);
   else CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, int target) {
     if (auto s = weak.lock(); s && s->devtools_dock) s->devtools_dock->Reopen(target);
