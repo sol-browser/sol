@@ -1,4 +1,4 @@
-import { useRef, useState, type RefObject } from 'react';
+import { useCallback, useRef, useState, type RefObject } from 'react';
 import type { SpaceInfo, TreeMutation } from '../../../packages/browser-contracts/src';
 import { spaceGlyph } from './sidebar-model';
 
@@ -15,6 +15,7 @@ export function SpaceHeader({ space, busy, anchorRef, action, editSpace }: Props
   const [draft, setDraft] = useState(space?.name ?? '');
   const active = useRef(false);
   const input = useRef<HTMLInputElement>(null);
+  const focusInput = useCallback((element: HTMLInputElement | null) => { input.current = element; element?.focus(); }, []);
   const pending = useRef<Promise<boolean> | undefined>(undefined);
   function start() {
     if (busy || !space) return;
@@ -40,7 +41,7 @@ export function SpaceHeader({ space, busy, anchorRef, action, editSpace }: Props
   return <div className="sidebar-heading" ref={anchorRef}>
     <span className="space-mark" data-emoji={!!space?.icon} aria-hidden="true">{space ? spaceGlyph(space) : 'R'}</span>
     {editing ? <form className="space-title-edit" onSubmit={event => { event.preventDefault(); void save(); }}>
-      <input ref={input} aria-label="Space name" value={draft} maxLength={40} spellCheck={false} autoComplete="off" autoFocus
+      <input ref={focusInput} aria-label="Space name" value={draft} maxLength={40} spellCheck={false} autoComplete="off"
         onFocus={event => event.currentTarget.select()} onChange={event => setDraft(event.target.value)} onBlur={() => void save()}
         onKeyDown={event => {
           if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(); }

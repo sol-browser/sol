@@ -34,6 +34,8 @@ import { SplitView } from './SplitView';
 import { LinkPeek } from './LinkPeek';
 import { VenetianMask } from 'lucide-react';
 import { BoostEditor } from './BoostEditor';
+import { UpdateWindow } from './UpdateWindow';
+import { CaptureOverlay } from './CaptureOverlay';
 import { Menu } from './Menu';
 import { internalPage } from './internal-pages';
 // After every component stylesheet: popovers and menus share the Orbit look.
@@ -192,7 +194,10 @@ function Shell() {
     if (event.code === 'F12' && !event.ctrlKey && !event.altKey && !event.shiftKey) shortcut = 'devTools';
     if (event.ctrlKey && event.shiftKey && !event.altKey && event.code === 'KeyI') shortcut = 'devTools';
     if (event.ctrlKey && !event.altKey) {
-      if (event.code === 'Tab') shortcut = event.shiftKey ? 'previousTab' : 'nextTab';
+      if (event.code === 'Tab') shortcut = event.shiftKey ? 'recentTabBack' : 'recentTab';
+      else if (event.code === 'PageDown' || event.code === 'PageUp') shortcut = event.code === 'PageUp' ? 'previousTab' : 'nextTab';
+      else if (event.shiftKey && event.code === 'KeyC') shortcut = 'copyUrl';
+      else if (event.shiftKey && event.code === 'Digit5') shortcut = 'capture';
       else if (event.shiftKey && event.code === 'KeyT') shortcut = 'reopenClosed';
       else if (event.shiftKey && event.code === 'KeyH') shortcut = 'historyPage';
       else if (event.code === 'KeyR') shortcut = event.shiftKey ? 'reloadBypass' : 'reload';
@@ -242,7 +247,9 @@ function Shell() {
           <button type="button" className="notice-dismiss" onClick={() => setDismissedNotice(snapshot?.noticeId ?? 0)}>Dismiss</button></div> :
         <div className="page-toolbar">
           {workspace && <><button type="button" className="icon-button copy-link" data-action="copy-link" aria-label="Copy link"
-            disabled={!ready || !snapshot.activeId || !snapshot.url || copyingLink} onClick={() => void copyLink()}><Icon name="link" /></button>
+            disabled={!ready || !snapshot.activeId || !snapshot.url || copyingLink} onClick={() => void copyLink()}
+            onContextMenu={event => { event.preventDefault(); const r = event.currentTarget.getBoundingClientRect();
+              void send({ method: 'menu.copy', x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) }); }}><Icon name="link" /></button>
             <span className="sr-only" role="status">{copiedUrl && copiedUrl === snapshot.url ? `Copied Current URL ${copiedUrl}` : ''}</span></>}
           {workspace ? <span className="address-wrap" data-zoom={snapshot.zoom ? 'true' : undefined}>
             <button type="button" className="address address-trigger" aria-label="Website address" disabled={!ready}
@@ -333,6 +340,8 @@ createRoot(document.getElementById('root')!).render(location.pathname === '/peek
   location.pathname === '/welcome.html' ? <Welcome /> :
   location.pathname === '/settings.html' ? <Settings /> :
   location.pathname === '/boost.html' ? <BoostEditor /> :
+  location.pathname === '/update.html' ? <UpdateWindow /> :
+  location.pathname === '/capture.html' ? <CaptureOverlay /> :
   location.pathname === '/menu.html' ? <Menu /> :
   location.pathname === '/command.html' ? <CommandBar /> :
   location.pathname === '/panel.html' ? <Panel /> : location.pathname === '/devtools.html' ? <DevToolsWindowHeader /> : location.pathname === '/history.html' ? <HistoryPage /> : location.pathname === '/downloads.html' ? <DownloadsPage /> : <Shell />);

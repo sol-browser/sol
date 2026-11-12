@@ -1,4 +1,5 @@
 #pragma once
+#include "web_url.h"
 #include <algorithm>
 #include <cctype>
 #include <string_view>
@@ -19,6 +20,14 @@ inline bool IsBoostUi(int browser, int trusted, bool main_frame, std::string_vie
   return trusted > 0 && browser == trusted && main_frame && url == kBoostUrl;
 }
 // Red's own menus (windows/menu_popup.cpp), one document per menu level.
+inline constexpr std::string_view kUpdateUrl = "sol://ui/update.html";
+inline bool IsUpdateUi(int browser, int trusted, bool main_frame, std::string_view url) {
+  return trusted > 0 && browser == trusted && main_frame && url == kUpdateUrl;
+}
+inline constexpr std::string_view kCaptureUrl = "sol://ui/capture.html";
+inline bool IsCaptureUi(int browser, int trusted, bool main_frame, std::string_view url) {
+  return trusted > 0 && browser == trusted && main_frame && url == kCaptureUrl;
+}
 inline constexpr std::string_view kMenuUrl = "sol://ui/menu.html";
 inline bool IsMenuUi(int browser, int trusted, bool main_frame, std::string_view url) {
   return trusted > 0 && browser == trusted && main_frame && url == kMenuUrl;
@@ -99,7 +108,7 @@ inline ForeignPage ClassifyForeignPage(std::string_view url) {
   // Chromium 154 loads its new tab page as chrome://new-tab-page/.
   if (url.starts_with("chrome://newtab") || url.starts_with("chrome://new-tab-page")) return ForeignPage::NewTab;
   if (IsPasswordManagerUrl(url)) return ForeignPage::Passwords;
-  if (IsExtensionPageUrl(url) || url.starts_with("https://") || url.starts_with("http://")) return ForeignPage::Adopt;
+  if (IsExtensionPageUrl(url) || HasWebScheme(url)) return ForeignPage::Adopt;
   return ForeignPage::Reject;
 }
 // Installs the user made: kInternal = 1 (Web Store/CRX), kUnpacked = 4
@@ -122,8 +131,10 @@ inline bool IsAllowedMethod(std::string_view method) {
 }
 inline bool IsTreeMethod(std::string_view method) {
   if (method=="linkPeek.control" || method=="media.control") return true;
-  if (method == "split.create" || method == "split.remove" || method == "split.rename" || method == "split.layout" || method == "split.swap" ||
-      method == "split.focus" || method == "split.expand" || method == "split.preview" || method == "split.beginResize" || method == "split.navigate" || method == "split.site") return true;
+  // Split View: mutations (create/remove/removePane/rename/swap) and pane commands; native validates each.
+  if (method == "split.create" || method == "split.remove" || method == "split.removePane" || method == "split.rename" || method == "split.swap" ||
+      method == "split.focus" || method == "split.expand" || method == "split.beginResize" || method == "split.navigate" || method == "split.site" ||
+      method == "split.add" || method == "split.preset" || method == "split.nudge" || method == "split.menu" || method == "split.beginMove") return true;
   return method == "tree.createFolder" || method == "tree.createTab" || method == "tree.rename" ||
       method == "tree.move" || method == "tree.pin" || method == "tree.expand" || method == "tree.activate" ||
       method == "tree.place" || method == "tree.close" || method == "tree.archive" || method == "tree.restore" || method == "tree.reset" || method == "tree.removeFolder" || method == "tree.usePageTitle" ||
@@ -139,6 +150,8 @@ inline bool IsForbiddenSwitch(std::string_view name) {
 }
 inline bool IsAllowedBrowserSwitch(std::string_view name, bool probe) {
   if(name=="probe-palette")return probe;
+  // Probes only: a display scale other than the machine's (capture at 150%, as on a laptop).
+  if(name=="force-device-scale-factor")return probe;
   if(name=="probe-theme-preview")return probe;
   if(name=="probe-google-integrations")return probe;
   if(name=="integration-diagnostics")return !probe;
@@ -146,6 +159,6 @@ inline bool IsAllowedBrowserSwitch(std::string_view name, bool probe) {
   if(name=="memory-report")return !probe;
   return name == "profile-dir" || name == "workspace" || name == "trace-tab-switches" || name == "make-default-browser" || name == "auto-archive-test-clock" || (probe && (name == "probe-report" ||
       name == "probe-url" || name == "probe-navigation" || name == "probe-browsing" || name == "probe-lifecycle" || name == "probe-tabs" || name == "probe-window-transfer" ||
-      name == "probe-native-tabs" || name == "probe-embedded-tabs" || name == "probe-workspace" || name == "probe-organization" || name == "probe-input" || name == "probe-chrome-toolbar" || name == "probe-downloads-dir" || name == "probe-downloads" || name == "probe-fullscreen" || name == "probe-permissions" || name == "probe-site-settings" || name == "probe-history" || name == "probe-tab-actions" || name == "probe-audible" || name == "probe-downloads-page" || name == "probe-extension-popup" || name == "probe-protocols" || name == "probe-close-motion" || name == "probe-sidebar-peek" || name == "probe-sidebar-perf" || name == "probe-pip" || name == "probe-capture-mute" || name == "probe-theme" || name == "probe-spaces" || name == "probe-ua-brand" || name == "probe-boost" || name == "probe-menu" || name == "probe-private" || name == "probe-pin" || name == "probe-backdrop" || name == "probe-link-headers" || name == "probe-unload" || name == "probe-import" || name == "load-extension"));
+      name == "probe-native-tabs" || name == "probe-embedded-tabs" || name == "probe-workspace" || name == "probe-organization" || name == "probe-input" || name == "probe-chrome-toolbar" || name == "probe-downloads-dir" || name == "probe-downloads" || name == "probe-fullscreen" || name == "probe-permissions" || name == "probe-site-settings" || name == "probe-history" || name == "probe-tab-actions" || name == "probe-audible" || name == "probe-downloads-page" || name == "probe-extension-popup" || name == "probe-protocols" || name == "probe-close-motion" || name == "probe-sidebar-peek" || name == "probe-sidebar-perf" || name == "probe-pip" || name == "probe-split" || name == "probe-capture-mute" || name == "probe-theme" || name == "probe-spaces" || name == "probe-ua-brand" || name == "probe-boost" || name == "probe-menu" || name == "probe-screenshot-ask" || name == "probe-private" || name == "probe-pin" || name == "probe-backdrop" || name == "probe-link-headers" || name == "probe-unload" || name == "probe-import" || name == "load-extension"));
 }
 }  // namespace red

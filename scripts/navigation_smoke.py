@@ -80,6 +80,7 @@ def main():
             command_inputs=[r['details'] for r in rows if r['event']=='command_input_probe']
             passed=passed and len(command_inputs)==1 and command_inputs[0]['focused'] and command_inputs[0]['selected'] and command_inputs[0]['nativeRejected']==8
             passed=passed and command_inputs[0]['predictionChecks']==4
+            passed=passed and command_inputs[0]['inputChecks']==5
             passed=passed and [r['details'] for r in rows if r['event']=='command_actions_probe']==[{'pass':True,'nativeRejected':4}]
             settings=[r['details'] for r in rows if r['event']=='site_search_settings_probe']
             passed=passed and len(settings)==1 and settings[0].get('passed') and settings[0].get('persisted') and settings[0].get('nativeRejected')==8 and settings[0].get('dialog') and settings[0].get('activation')

@@ -5,6 +5,8 @@
 #include <vector>
 #include "include/cef_request_context.h"
 namespace red {
+inline constexpr char kChromeWebStoreUrl[] = "https://chromewebstore.google.com/";
+
 // One user-installed, enabled extension as the site popover shows it.
 struct InstalledExtension {
   std::string id, name;

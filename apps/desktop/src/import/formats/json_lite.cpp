@@ -1,7 +1,7 @@
 #include "import/formats/json_lite.h"
 #include <cstdlib>
 
-namespace red::import {
+namespace red::importer {
 namespace {
 class Parser {
  public:
@@ -58,7 +58,9 @@ class Parser {
       if (i_ < s_.size() && s_[i_] == '}') { ++i_; return true; }
       while (true) {
         std::string key; Space(); if (!String(key)) return false; Space();
-        if (i_ >= s_.size() || s_[i_++] != ':') return false; Space();
+        if (i_ >= s_.size()) return false;
+        if (s_[i_++] != ':') return false;
+        Space();
         Json value; if (!Value(value, depth + 1)) return false;
         out.fields.insert_or_assign(std::move(key), std::move(value)); Space();
         if (i_ >= s_.size()) return false;
@@ -117,4 +119,4 @@ std::optional<Json> ParseJson(std::string_view source) {
   if (!parser.Parse(out)) return std::nullopt;
   return out;
 }
-}  // namespace red::import
+}  // namespace red::importer

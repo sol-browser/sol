@@ -422,6 +422,7 @@ void CommandBar::ProbeInput(const std::string& input, int attempts, bool actions
     if(!i)throw Error('Missing command input');
     const initial={focused:document.activeElement===i,selected:i.selectionStart===0&&i.selectionEnd===i.value.length,initial:i.value};
     const type=async text=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,text);i.dispatchEvent(new Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,80));};
+    const key=async(key,extra={})=>{i.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...extra}));await new Promise(r=>setTimeout(r,50));};
     const rows=()=>[...document.querySelectorAll('[role="option"]')];
     const check=(ok,message)=>{if(!ok)throw Error('Prediction probe: '+message);};
     await type('youtu');check(rows()[0]?.dataset.kind==='visit'&&rows()[0]?.textContent.includes('YouTube')&&rows()[0]?.textContent.includes('youtube.com')&&rows()[1]?.dataset.kind==='search','YouTube prefix');
@@ -429,6 +430,12 @@ void CommandBar::ProbeInput(const std::string& input, int attempts, bool actions
     await type('yt');check(rows()[0]?.textContent.includes('YouTube')&&rows()[1]?.dataset.kind==='search','brand alias');
     await type('youtube tutorial');check(rows()[0]?.dataset.kind==='search','phrase remains search');
     await type('yotube');check(rows()[0]?.dataset.kind==='search'&&rows().some(r=>r.textContent.includes('YouTube')),'typo preserves search');
+    await key('ArrowDown');check(i.value==='https://youtube.com/'&&i.selectionStart===i.value.length&&i.selectionEnd===i.value.length,'selected address is ready to edit');
+    await key('ArrowUp');check(i.value==='yotube'&&rows().some(r=>r.textContent.includes('YouTube')),'arrows retain the original result list');
+    await key('ArrowDown');document.execCommand('insertText',false,'watch?v=fixture');await new Promise(r=>setTimeout(r,80));
+    check(i.value==='https://youtube.com/watch?v=fixture'&&rows()[0]?.dataset.kind==='visit','typing extends selected address');
+    await type('first.last+tag@example.org');check(rows()[0]?.dataset.kind==='search'&&rows()[0]?.textContent.includes(i.value),'email is searchable');
+    await type('10.10.10.10:304');check(rows()[0]?.dataset.kind==='visit','private IPv4 is an address');
     const reject=(request,persistent=false)=>new Promise((resolve,reject)=>cefQuery({request:JSON.stringify(request),persistent,onSuccess:()=>reject(Error('Unsafe command accepted')),onFailure:code=>code>=400?resolve():reject(Error('Unexpected rejection'))}));
     await reject({method:'navigation.load',url:'https://example.com/'});
     await reject({method:'tree.createFolder',parentId:'',title:'Forbidden'});
@@ -438,9 +445,8 @@ void CommandBar::ProbeInput(const std::string& input, int attempts, bool actions
     await reject({method:'command.submit',url:'javascript:alert(1)'});
     await reject({method:'command.submit',url:'https://user:pass@example.com/'});
     await reject({method:'command.snapshot'},true);
-    console.info('RED_COMMAND_INPUT:'+JSON.stringify({...initial,nativeRejected:8,predictionChecks:4}));
+    console.info('RED_COMMAND_INPUT:'+JSON.stringify({...initial,nativeRejected:8,predictionChecks:4,inputChecks:5}));
     )JS") + (s->browsing_probe ? R"JS(
-    const key=async(key,extra={})=>{i.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...extra}));await new Promise(r=>setTimeout(r,50));};
     await type('yt');await key('Tab',{ctrlKey:true});check(!document.querySelector('.command-site-mode'),'modified Tab keeps normal mode');
     await key('Tab',{isComposing:true});check(!document.querySelector('.command-site-mode'),'IME Tab keeps normal mode');
     await key('Tab');check(document.querySelector('.command-site-mode')?.textContent.includes('YouTube')&&i.value==='','Tab scopes YouTube');

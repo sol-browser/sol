@@ -15,5 +15,7 @@ export function sidebarPresentation(snapshot: Snapshot, surface: SidebarSurface)
     media: snapshot.media, spaces: snapshot.spaces ?? EMPTY_SPACES,
     activeSpace: snapshot.activeSpace ?? '', request: snapshot.sidebarRequest,
     updateReady: snapshot.updateReady,
+    /** A split pane carried over the sidebar: the row it will become is shown below its group. */
+    splitLeaving: snapshot.splitView?.leaving,
   };
 }

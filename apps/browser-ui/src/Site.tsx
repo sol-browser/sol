@@ -48,8 +48,13 @@ export function SitePanel({ site, extensions, details, changed, set, reset, relo
   // Arc shows a switch for each permission this site already has a decision for.
   const decided = site.permissions.filter(p => p.value !== 'ask' && p.value !== defaultValue(p.key));
   return <section className="popover site-popover site-main" aria-label="Site controls">
-    <button type="button" className="site-share" disabled={!site.origin} onClick={() => command({ method: 'site.share' })}>
-      <Icon name="link" /><span>Share URL</span></button>
+    <div className="site-actions">
+      <button type="button" className="site-share" disabled={!site.origin} onClick={() => command({ method: 'site.share' })}>
+        <Icon name="link" /><span>Share URL</span></button>
+      {/* Capture: hover an element or drag an area; the overlay also saves the full page or the visible part (windows/page_capture.cpp). */}
+      <button type="button" className="site-share site-capture" aria-label="Capture area or element" title="Capture area or element" disabled={!site.origin}
+        onClick={() => command({ method: 'site.capture' })}><Icon name="shot" /></button>
+    </div>
     <div className="site-group">
       <h3 className="site-section">Extensions</h3>
       <ul className="site-extensions" aria-label="Extensions">

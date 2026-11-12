@@ -44,7 +44,7 @@ export function EmptyStart({ snapshot, load, activate }: { snapshot: Snapshot; l
           }} />
       </div>
       {rows.length > 0 && <div className="empty-start-results" id="empty-start-results" role="listbox" aria-label="Suggestions">
-        {rows.map((row, i) => <div className="empty-start-row" key={row.key} id={`empty-start-${i}`} role="option" aria-selected={index === i}
+        {rows.map((row, i) => <div className="empty-start-row" key={row.key} id={`empty-start-${i}`} role="option" tabIndex={-1} aria-selected={index === i}
           onPointerMove={() => setSelected(i)} onMouseDown={e => e.preventDefault()} onClick={() => void open(row)}>
           <span className="empty-start-icon">
             {row.icon ? <img src={row.icon} alt="" draggable={false} /> : <Icon name={row.kind === 'search' ? 'search' : 'globe'} />}

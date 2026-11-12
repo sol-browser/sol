@@ -167,8 +167,8 @@ test('moving a live tab to a Space of another profile asks first', async () => {
   const node = (id, extra = {}) => ({ id, parentId: '', kind: 'tab', title: id, url: '', position: 0, pinned: false, expanded: true,
     live: false, favorite: false, archived: false, currentUrl: '', closing: false, space: 'a', ...extra });
   const nodes = [node('live', { live: true }), node('cold'), node('folder', { kind: 'folder', pinned: true }),
-    node('inside', { parentId: 'folder', pinned: true, live: true, space: undefined }), node('split', { splitOther: 'partner' }),
-    node('partner', { splitAnchor: 'split', live: true }), node('peeked', { peek: true })];
+    node('inside', { parentId: 'folder', pinned: true, live: true, space: undefined }), node('split', { splitAnchor: 'split', splitPanes: ['split', 'partner'] }),
+    node('partner', { splitAnchor: 'split', splitPanes: ['split', 'partner'], live: true }), node('peeked', { peek: true })];
   assert.equal(crossProfileLiveMove(nodes, spaces, 'live', 'w'), true);
   assert.equal(crossProfileLiveMove(nodes, spaces, 'live', 'b'), false, 'same profile moves directly');
   assert.equal(crossProfileLiveMove(nodes, spaces, 'cold', 'w'), false, 'cold tabs move directly');

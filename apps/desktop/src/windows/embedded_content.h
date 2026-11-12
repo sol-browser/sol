@@ -5,6 +5,7 @@
 #include "app/state.h"
 #include "windows/page_corners.h"
 #include "windows/popup_animation_host.h"
+#include "workspace/split_layout.h"
 
 namespace red {
 // Each page is created with public CefWindowInfo::SetAsChild. Never reparent a
@@ -33,8 +34,17 @@ class EmbeddedContent {
   void Activate(CefRefPtr<CefBrowser> browser, bool cold = false);
   void OnPresentationLoadFinished(CefRefPtr<CefBrowser> browser);
   void OnPresentationLoading(CefRefPtr<CefBrowser> browser, bool loading);
-  void SetSplitPages(int first, int second, bool vertical, int ratio, bool reversed, int expanded = -1, const std::set<int>& crashed = {});
-  bool IsSplitPage(int id) const { return split_enabled_ && (id == split_first_ || id == split_second_); }
+  // Split View: browser IDs by slot (-1: still opening) laid out by |layout|.
+  // |expanded|: the one pane shown alone (-1: none; -2: it is still opening).
+  void SetSplitPages(std::vector<int> pages, const SplitNode& layout, bool linked, int expanded = -1, const std::set<int>& crashed = {});
+  void ClearSplit() { SetSplitPages({}, {}, false); }
+  // While a divider is dragged: the cards follow every frame, but each website
+  // window only moves and is clipped to its card; its renderer keeps its size
+  // (no relayout per frame) until live resizing ends and the next layout.
+  void SetSplitLiveResize(bool live) { split_live_ = live; }
+  bool SplitLiveResize() const { return split_live_; }
+  bool IsSplitPage(int id) const { return split_enabled_ && id != -1 && SplitSlot(id) != -1; }
+  int SplitSlot(int id) const;
   bool HasSplit() const { return split_enabled_; }
   bool HasLinkPeek() const { return link_peek_id_!=-1; }
   bool IsLinkPeek(int id) const { return id==link_peek_id_ && id!=-1; }
@@ -56,9 +66,18 @@ class EmbeddedContent {
   void ClearLinkPeek(bool promote=false);
   CefRect LinkPeekCard() const;
   CefRect LinkPeekViewport() const;
-  CefRect SplitCell(bool second) const;
-  COLORREF SplitBorder(bool second) const;
+  // A pane's card (header and page), client pixels.
+  CefRect SplitCell(int slot) const;
+  COLORREF SplitBorder(int slot) const;
+  // Physical client-pixel geometry of the current panes and dividers.
+  SplitGeometry SplitPaneGeometry() const;
+  // Geometry of |layout| with |panes| in the split area (drop previews, gestures).
+  SplitGeometry SplitPaneGeometry(const SplitNode& layout, int panes, bool linked) const;
+  SplitMetrics SplitPaneMetrics() const;
+  SplitRect SplitPaneArea() const;
   CefRect SplitDropArea() const { return browser_fullscreen_ ? FullClientBounds() : WorkspacePhysicalBounds(); }
+  // Where page |id| belongs now (client pixels), for geometry probes.
+  CefRect ExpectedPageBounds(int id) const { return PagePhysicalBounds(id); }
   void PresentCrash(CefRefPtr<CefBrowser> browser);
   void HideAll();
   void RaiseActive();
@@ -91,6 +110,11 @@ class EmbeddedContent {
   void Notify(const std::string& kind, const std::wstring& text, const std::vector<std::wstring>& keys = {},
               const std::wstring& tail = L"", int duration_ms = 2500, int page = -1);
   void HideNotification();
+  // The Ctrl+Tab strip over the page area (PageCorners): no window, no focus, nothing in the page.
+  bool ShowTabSwitcher(const std::vector<PageCorners::SwitcherCard>& cards, int selected);
+  void SelectTabSwitcher(int selected);
+  void HideTabSwitcher();
+  bool TabSwitcherVisible() const { return corners_.tab_switcher_visible(); }
   bool NotificationVisible() const { return corners_.notification_visible(); }
   bool NotificationGeometryOk() const;
   void SetModalShade(bool visible);
@@ -173,8 +197,11 @@ class EmbeddedContent {
   bool window_was_fullscreen_ = false;
   CefRect bounds_;
   bool sidebar_overlay_visible_ = false;
-  bool split_enabled_ = false, split_vertical_ = false, split_reversed_ = false;
-  int split_first_ = -1, split_second_ = -1, split_ratio_ = 5000, split_expanded_ = -1;
+  bool split_enabled_ = false, split_linked_ = false, split_live_ = false;
+  std::set<int> split_clipped_;  // Pages clipped (not resized) by a live divider drag.
+  std::vector<int> split_pages_;
+  SplitNode split_layout_;
+  int split_expanded_ = -1;
   std::set<int> split_crashed_;
   PageCorners corners_;
   bool link_status_available_ = false;

@@ -7,16 +7,16 @@ namespace red {
 // as PNG resources at the Windows 100/150/200% icon scales.
 inline CefRefPtr<CefImage> RedWindowIcon() {
   auto image = CefImage::CreateImage();
-  HMODULE module = nullptr;
+  HMODULE library = nullptr;
   if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                          reinterpret_cast<LPCWSTR>(&RedWindowIcon), &module)) return image;
+                          reinterpret_cast<LPCWSTR>(&RedWindowIcon), &library)) return image;
   const struct { float scale; int id; } frames[] = {
       {1.0f, IDR_RED_ICON_32}, {1.5f, IDR_RED_ICON_48}, {2.0f, IDR_RED_ICON_64}};
   for (const auto& frame : frames) {
-    HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(frame.id), MAKEINTRESOURCEW(10));  // RT_RCDATA
-    HGLOBAL data = resource ? LoadResource(module, resource) : nullptr;
+    HRSRC resource = FindResourceW(library, MAKEINTRESOURCEW(frame.id), MAKEINTRESOURCEW(10));  // RT_RCDATA
+    HGLOBAL data = resource ? LoadResource(library, resource) : nullptr;
     const void* bytes = data ? LockResource(data) : nullptr;
-    if (bytes) image->AddPNG(frame.scale, bytes, SizeofResource(module, resource));
+    if (bytes) image->AddPNG(frame.scale, bytes, SizeofResource(library, resource));
   }
   return image;
 }

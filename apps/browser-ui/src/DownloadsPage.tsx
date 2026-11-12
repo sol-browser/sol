@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Icon } from './Icon';
+import { focusOnMount } from './focus-on-mount';
 import { extensionHue, extensionLabel, formatBytes, statusLine } from './downloads-model';
 import { timeLabel } from './history-model';
 import { groupDownloads, matches, parseDownloadsPage, savedStatus, type ActiveDownload, type SavedDownload } from './downloads-page-model';
@@ -74,7 +75,7 @@ export function DownloadsPage() {
       <button type="button" className="hp-button" aria-expanded={clearing} disabled={!items.length} onClick={() => setClearing(!clearing)}><Icon name="trash" />Clear list…</button>
     </header>
     <div className="hp-bar"><label className="hp-search"><Icon name="search" />
-      <input autoFocus value={search} placeholder="Search downloads" aria-label="Search downloads" spellCheck={false} autoComplete="off" maxLength={200}
+      <input ref={focusOnMount} value={search} placeholder="Search downloads" aria-label="Search downloads" spellCheck={false} autoComplete="off" maxLength={200}
         onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Escape' && search) { e.preventDefault(); setSearch(''); } }} />
       {search && <button type="button" className="hp-search-clear" aria-label="Clear search" onClick={() => setSearch('')}><Icon name="close" /></button>}
     </label></div>

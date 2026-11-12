@@ -114,8 +114,9 @@ test('rejects duplicate download IDs and more than thirty entries', () => {
 });
 test('split navigation state belongs to each pane and requires boolean flags', () => {
   const pane = id => ({ id, bounds: { x: 10, y: 40, width: 400, height: 500 }, canGoBack: false, canGoForward: false, loading: false, borderColor:'#aabbcc' });
-  const splitView = { anchor:tab, other:folder, focused:tab, expanded:'', vertical:false, reversed:false, resizing:false, ratio:5000,
-    panes:[{ ...pane(tab), canGoBack:true }, { ...pane(folder), loading:true }] };
+  const splitView = { anchor:tab, focused:tab, expanded:'', resizing:false, linked:false, layout:'h(5000*0,5000*1)', canAdd:true, presets:['columns','rows'],
+    panes:[{ ...pane(tab), canGoBack:true }, { ...pane(folder), loading:true }],
+    dividers:[{ path:[], index:0, axis:'h', cross:false, share:50, bounds:{ x:410, y:40, width:8, height:500 } }] };
   const value = { ...fixture(), splitView };
   const parsed = parseSnapshot(JSON.stringify(value)).splitView;
   assert.equal(parsed.panes[0].canGoBack,true);
@@ -128,6 +129,31 @@ test('split navigation state belongs to each pane and requires boolean flags', (
   }
   const malformed = structuredClone(value); malformed.splitView.panes[0].borderColor = 'url(https://example.com/)';
   assert.throws(() => parseSnapshot(JSON.stringify(malformed)));
+});
+test('split view describes two to four distinct panes and dividers addressed by a short path', () => {
+  const id = n => `${n}${n}${n}${n}${n}${n}${n}${n}-${n}${n}${n}${n}-4${n}${n}${n}-8${n}${n}${n}-${n.repeat(12)}`;
+  const pane = (n, x) => ({ id: id(n), bounds: { x, y: 40, width: 200, height: 300 }, canGoBack: false, canGoForward: false, loading: false, borderColor: '#aabbcc' });
+  const divider = (path, index, cross = false) => ({ path, index, axis: 'h', cross, share: 50, bounds: { x: 1, y: 2, width: 8, height: 300 } });
+  const view = { anchor: id('1'), focused: id('3'), expanded: '', resizing: false, linked: true, layout: 'v(5000*h(5000*0,5000*1),5000*h(5000*2,5000*3))',
+    canAdd: false, presets: ['grid', 'columns', 'main-left'], panes: [pane('1', 0), pane('2', 210), pane('3', 420), pane('4', 630)],
+    dividers: [divider([], 0, true), divider([], 0), divider([0], 0), divider([1], 0)] };
+  const parsed = parseSnapshot(JSON.stringify({ ...fixture(), splitView: view })).splitView;
+  assert.equal(parsed.panes.length, 4);
+  assert.equal(parsed.dividers[0].cross, true);
+  const bad = [
+    { ...view, panes: view.panes.slice(0, 1) },
+    { ...view, panes: [...view.panes, pane('5', 840)] },
+    { ...view, panes: [pane('1', 0), pane('1', 10)] },
+    { ...view, presets: ['diagonal'] },
+    { ...view, layout: 'h(5000*0,5000*1);alert(1)' },
+    { ...view, dividers: [divider([9], 0)] },
+    { ...view, dividers: [divider([0, 0, 0, 0], 0)] },
+    { ...view, dividers: [{ ...divider([], 0), axis: 'x' }] },
+    { ...view, dividers: [{ ...divider([], 0), share: 140 }] },
+    { ...view, expanded: 'not-a-pane' },
+    { ...view, other: undefined, linked: undefined },
+  ];
+  for (const splitView of bad) assert.throws(() => parseSnapshot(JSON.stringify({ ...fixture(), splitView })), JSON.stringify(splitView).slice(0, 80));
 });
 
 test('accepts live page title and cached favicon address', () => {
@@ -203,8 +229,11 @@ test('the shared archive accepts only archived tabs in the node format', () => {
     space: folder, pageTitle: 'Closed page', customTitle: false, favicon: 'sol://ui/favicon/example.com/v1' };
   assert.deepEqual(parseArchive([row]), [row]);
   assert.deepEqual(parseArchive([]), []);
-  const second = { ...row, id: folder, splitAnchor: tab, splitOther: folder, splitTitle: '', splitHidden: true, splitReversed: false };
+  const second = { ...row, id: folder, splitAnchor: tab, splitPanes: [tab, folder], splitTitle: '', splitHidden: true };
   assert.equal(parseArchive([row, second]).length, 2);
+  for (const bad of [{ ...second, splitPanes: [tab] }, { ...second, splitPanes: [folder, folder] }, { ...second, splitPanes: [folder, 'short'] },
+    { ...second, splitPanes: undefined }, { ...second, splitAnchor: undefined }, { ...second, splitPanes: [folder, '33333333-3333-4333-8333-333333333333'] }])
+    assert.throws(() => parseArchive([row, bad]), 'split rows name 2-4 distinct pages including the anchor');
   for (const bad of [{ ...row, archived: false }, { ...row, live: true }, { ...row, pinned: true }, { ...row, favorite: true }, { ...row, kind: 'folder' },
     { ...row, parentId: folder }, { ...row, id: 'short' }, { ...row, archivedAt: -1 }, { ...row, archivedAt: undefined }, { ...row, space: 'nowhere' },
     { ...row, favicon: 'https://evil.example/icon.png' }, { ...row, title: 'x'.repeat(241) }, { ...row, splitAnchor: 'short' }])

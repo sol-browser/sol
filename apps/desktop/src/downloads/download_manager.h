@@ -38,6 +38,9 @@ class DownloadManager : public std::enable_shared_from_this<DownloadManager> {
   void ForgetRecord(int64_t record_id);
   // In-progress and paused downloads of this session, for the downloads page.
   CefRefPtr<CefListValue> ActiveList() const;
+  // A file Sol wrote itself (a screenshot of |url|): listed and kept on the downloads page as a finished download,
+  // with the same Open / Show in folder / Copy / Delete actions.
+  void AddFinishedFile(const std::filesystem::path& path, const std::string& url);
  private:
   struct Entry {
     uint32_t id = 0;
@@ -58,6 +61,7 @@ class DownloadManager : public std::enable_shared_from_this<DownloadManager> {
   std::map<uint32_t, Entry> entries_;
   std::vector<uint32_t> order_;  // Oldest first.
   int started_ = 0;
+  uint32_t next_local_id_ = 0x40000000u;  // Files Sol wrote: far above Chrome's download ids, still a positive int.
   bool publish_pending_ = false;
 };
 }  // namespace red

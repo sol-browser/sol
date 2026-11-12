@@ -1,4 +1,5 @@
 #include "app/updates.h"
+#include "red_version.h"
 #include "app/session.h"
 #include "app/release_notes.h"
 #include "workspace/controller.h"
@@ -25,6 +26,17 @@ namespace {
 struct Ready { std::mutex mutex; std::string version; };
 Ready& ReadyState() { static auto* state = new Ready; return *state; }
 void SetReady(const std::string& version) { auto& r = ReadyState(); std::lock_guard lock(r.mutex); r.version = version; }
+// What the update window shows. Written by whichever check runs, read by the window.
+struct Status { std::mutex mutex; UpdateStatus value{UpdatePhase::Idle, RED_APP_VERSION, "", 0}; };
+Status& StatusState() { static auto* state = new Status; return *state; }
+void SetStatus(UpdatePhase phase, const std::string& version = "", int percent = 0) {
+  auto& s = StatusState(); std::lock_guard lock(s.mutex);
+  s.value.phase = phase; s.value.version = version; s.value.percent = percent;
+}
+void SetProgress(int percent) {
+  auto& s = StatusState(); std::lock_guard lock(s.mutex);
+  if (s.value.phase == UpdatePhase::Downloading) s.value.percent = percent < 0 ? 0 : percent > 100 ? 100 : percent;
+}
 // icacls <folder> /grant *S-1-15-2-2:(OI)(CI)(RX): "ALL RESTRICTED APPLICATION
 // PACKAGES" may read and execute Sol's own files, as the build and setup grant.
 bool GrantSandboxAccess(const std::filesystem::path& folder) {
@@ -44,10 +56,10 @@ bool GrantSandboxAccess(const std::filesystem::path& folder) {
 // Grant on that folder and on the app root, so later versions placed under the
 // root inherit the access even if a hook is skipped.
 void GrantAfterChange(void*, const char*) {
-  wchar_t module[MAX_PATH];
-  const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH);
+  wchar_t executable[MAX_PATH];
+  const DWORD length = GetModuleFileNameW(nullptr, executable, MAX_PATH);
   if (!length || length == MAX_PATH) return;
-  const auto folder = std::filesystem::path(module).parent_path();
+  const auto folder = std::filesystem::path(executable).parent_path();
   GrantSandboxAccess(folder.parent_path());
   GrantSandboxAccess(folder);
 }
@@ -78,13 +90,13 @@ void RemoveInnoInstall() {
 // registration and replaces the Inno install. A test package installed under
 // another packId must not remove or unregister the person's Sol.
 bool IsMainInstall() {
-  wchar_t module[MAX_PATH];
-  const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH);
+  wchar_t executable[MAX_PATH];
+  const DWORD length = GetModuleFileNameW(nullptr, executable, MAX_PATH);
   if (!length || length == MAX_PATH) return false;
   const auto installed = InstalledBrowserPath();
   std::error_code error;
   return !installed.empty() && installed.parent_path().filename() == L"current" &&
-         std::filesystem::equivalent(installed, module, error) && !error;
+         std::filesystem::equivalent(installed, executable, error) && !error;
 }
 
 void AfterInstall(void* data, const char* version) {
@@ -110,15 +122,24 @@ std::unique_ptr<Velopack::UpdateManager> Manager() {
 namespace {
 enum class Check { Ready, Nothing, NotInstalled };
 
-Check CheckOnce(const std::function<void(const std::string&)>& ready) {
+// What one pass found, for the person who asked ("Check for Updates").
+struct Found { bool feed_failed = false; bool downloaded = false; };
+
+// The periodic thread and a manual check never run together: two downloads of
+// one version would write the same files.
+std::mutex& CheckMutex() { static auto* mutex = new std::mutex; return *mutex; }
+
+Check CheckOnce(const std::function<void(const std::string&)>& ready, Found& found) {
   std::unique_ptr<Velopack::UpdateManager> manager;
   try {
     manager = Manager();
   } catch (const std::exception& error) {
     // Development builds and copies outside a Velopack install never update.
     LOG(WARNING) << "Updates off: " << error.what();
+    SetStatus(UpdatePhase::NotInstalled);
     return Check::NotInstalled;
   }
+  SetStatus(UpdatePhase::Checking);
   // A version downloaded earlier is offered at once, also without a network.
   std::string waiting;
   try {
@@ -136,8 +157,10 @@ Check CheckOnce(const std::function<void(const std::string&)>& ready) {
   try {
     const auto update = manager->CheckForUpdates();
     if (update && UpdateReplacesWaiting(update->TargetFullRelease.Version, waiting)) {
-      manager->DownloadUpdates(*update);
+      SetStatus(UpdatePhase::Downloading, update->TargetFullRelease.Version, 0);
+      manager->DownloadUpdates(*update, [](void*, size_t percent) { SetProgress(static_cast<int>(percent)); });
       waiting = update->TargetFullRelease.Version;
+      found.downloaded = true;
       LOG(WARNING) << "Update " << waiting << " downloaded; applies on next start";
       SetReady(waiting);
       ready(waiting);
@@ -145,7 +168,10 @@ Check CheckOnce(const std::function<void(const std::string&)>& ready) {
   } catch (const std::exception& error) {
     // No network, GitHub unavailable or rate-limited: try again next time.
     LOG(WARNING) << "Update check failed: " << error.what();
+    found.feed_failed = true;
   }
+  if (!waiting.empty()) SetStatus(UpdatePhase::Ready, waiting, 100);
+  else SetStatus(found.feed_failed ? UpdatePhase::Failed : UpdatePhase::UpToDate);
   return waiting.empty() ? Check::Nothing : Check::Ready;
 }
 
@@ -167,8 +193,43 @@ void StartUpdateCheck(std::function<void(const std::string&)> ready) {
     const auto interval = CheckInterval();
     // Keeps checking while an update waits, so a later release replaces it.
     // Only a copy outside a Velopack install stops; the process ending stops the thread.
-    for (Check result = CheckOnce(ready); result != Check::NotInstalled; result = CheckOnce(ready))
+    for (;;) {
+      Check result;
+      {
+        std::lock_guard lock(CheckMutex());
+        Found ignored;
+        result = CheckOnce(ready, ignored);
+      }
+      if (result == Check::NotInstalled) return;
       std::this_thread::sleep_for(interval);
+    }
+  }).detach();
+}
+
+UpdateStatus CurrentUpdateStatus() { auto& s = StatusState(); std::lock_guard lock(s.mutex); return s.value; }
+
+void StartUpdateCheckNow(const std::shared_ptr<State>& state) {
+  std::thread([weak = std::weak_ptr<State>(state)] {
+    std::unique_lock lock(CheckMutex(), std::try_to_lock);
+    if (!lock.owns_lock()) return;  // The periodic check is working: the window shows its progress.
+    Found found;
+    // The sidebar offers "Restart to update" as soon as a version waits.
+    const auto ready = [weak](const std::string& version) {
+      LOG(WARNING) << "Update ready: " << version;
+      CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+        if (const auto owner = weak.lock(); owner && owner->session)
+          for (const auto& window : owner->session->Windows()) if (window->workspace) window->workspace->Refresh();
+      }, weak));
+    };
+    CheckOnce(ready, found);
+    CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+      if (const auto owner = weak.lock()) {
+        const auto status = CurrentUpdateStatus();
+        auto details = CefDictionaryValue::Create();
+        details->SetInt("phase", static_cast<int>(status.phase)); details->SetString("version", status.version);
+        owner->Record("update_check_result", details);
+      }
+    }, weak));
   }).detach();
 }
 

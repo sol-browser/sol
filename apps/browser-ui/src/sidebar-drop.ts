@@ -41,7 +41,7 @@ export function sidebarDropTarget(root: HTMLElement, nodes: TreeNode[], sourceId
     // Use the prospective count before the placeholder is mounted as well, so
     // entering a 4-tile grid previews the same 3-column layout as the 5th tile.
     const columns = favoriteColumns(siblings.length + 1, favoriteColumnLimit(b.width));
-    const gapX = parseFloat(css.columnGap) || 0, gapY = parseFloat(css.rowGap) || 0;
+    const gapX = Number.parseFloat(css.columnGap) || 0, gapY = Number.parseFloat(css.rowGap) || 0;
     const width = (b.width - gapX * (columns - 1)) / columns;
     // Tiles are 50 px tall, 42 px in a narrow sidebar.
     const tile = grid.querySelector<HTMLElement>(':scope > .tree-node > .tree-row')?.offsetHeight || 50;

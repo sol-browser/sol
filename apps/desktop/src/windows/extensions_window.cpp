@@ -1,4 +1,5 @@
 #include "windows/utility_window.h"
+#include "web_url.h"
 #include "windows/extensions_window.h"
 #include "include/cef_request_context.h"
 #include "include/views/cef_browser_view.h"
@@ -29,7 +30,7 @@ class ExtensionsClient final : public UtilityWindowClient, public CefLifeSpanHan
  private:
   void Open(const std::string& url) {
     auto state = state_.lock(); if (!state || !state->workspace) return;
-    if (url.starts_with("https://") || url.starts_with("http://")) state->workspace->OpenLink(url, true);
+    if (HasWebScheme(url)) state->workspace->OpenLink(url, true);
     else if (IsExtensionPageUrl(url)) state->workspace->AdoptExtensionPage(url);
   }
   std::weak_ptr<State> state_;

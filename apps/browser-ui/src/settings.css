@@ -59,10 +59,9 @@
 .settings-switch[aria-checked="true"] > span { transform:translateX(14px); background:#241a30; }
 .settings-switch:focus-visible { outline:2px solid #d5baf2; outline-offset:3px; }
 .settings-radio-list { display:grid; gap:6px; margin-top:21px; }
-.settings-radio-row { display:flex; align-items:flex-start; gap:12px; padding:12px 8px; border-radius:8px; }
+.settings-radio-row { display:grid; grid-template-columns:auto 1fr; align-items:start; column-gap:12px; row-gap:5px; padding:12px 8px; border-radius:8px; }
 .settings-radio-row:has(:checked) { background:#bba0da0a; }
-.settings-radio-row input { margin-top:3px; accent-color:#cdb4e8; }
-.settings-radio-row span { display:grid; gap:5px; }
+.settings-radio-row input { grid-row:1 / span 2; margin-top:3px; accent-color:#cdb4e8; }
 .settings-radio-row strong { font-size:12px; font-weight:500; color:#ddd6e5; }
 .settings-radio-row small { font-size:11px; line-height:1.6; color:#9890a3; }
 .settings-homepage { display:grid; gap:9px; margin:17px 8px 0; font-size:11px; color:#a79cb4; }

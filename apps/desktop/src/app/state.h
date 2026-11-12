@@ -42,6 +42,8 @@ class PasswordsWindow;
 class SettingsWindow;
 class WelcomeWindow;
 class BoostWindow;
+class UpdateWindow;
+class CaptureWindow;
 class SidebarPeek;
 class DevToolsDock;
 struct State {
@@ -111,9 +113,14 @@ struct State {
   std::atomic<int> welcome_id{-1};
   std::shared_ptr<WelcomeWindow> welcome_window;
   std::atomic<int> boost_id{-1};
+  std::atomic<bool> probe_ctrl_held{false};  // Probes: Ctrl counts as held (the switcher test has no keyboard).
+  std::atomic<int> update_id{-1};
+  std::atomic<int> capture_id{-1};
   std::atomic<int> menu_id[3] = {-1, -1, -1};  // Menu levels (windows/menu_popup.cpp); read on the IO thread too.
   std::shared_ptr<MenuPopup> menu_popup;
   std::shared_ptr<BoostWindow> boost_window;  // Boost editor, on demand.
+  std::shared_ptr<UpdateWindow> update_window;  // Check for Updates, on demand.
+  std::shared_ptr<CaptureWindow> capture_window;  // Capture (Ctrl+Shift+5), on demand.
   std::shared_ptr<ExtensionCatalog> extensions;  // Web profile extensions (site popover).
   std::shared_ptr<SidebarMenu> sidebar_menu;
   bool probe = false;
@@ -159,11 +166,13 @@ struct State {
   bool protocols_done = false;
   bool close_motion_probe = false, close_motion_done = false;
   std::atomic<int> peek_id{-1};
-  // Placement strips of separate DevTools windows (windows/devtools_window.cpp).
-  // Read by the sol://ui handler on the IO thread, hence the lock.
-  mutable std::mutex devtools_window_ids_mutex;
-  std::set<int> devtools_window_ids;
-  bool IsDevToolsWindowUi(int id) const { std::lock_guard lock(devtools_window_ids_mutex); return devtools_window_ids.contains(id); }
+  // Placement strips of separate DevTools windows (windows/devtools_window.cpp). The sol://ui
+  // handler asks on the IO thread, the window registers on the UI thread: the set is private.
+  bool IsDevToolsWindowUi(int id) const { std::lock_guard lock(devtools_window_ids_mutex_); return devtools_window_ids_.contains(id); }
+  void SetDevToolsWindowUi(int id, bool registered) {
+    std::lock_guard lock(devtools_window_ids_mutex_);
+    if (registered) devtools_window_ids_.insert(id); else devtools_window_ids_.erase(id);
+  }
   bool sidebar_peek_probe = false, sidebar_peek_done = false;
   bool google_integrations_probe = false, google_integrations_checks = false;
   int google_integrations_phase = 0;
@@ -179,6 +188,7 @@ struct State {
     std::uint64_t last_bytes = 0;
   } snapshot_counters;
   bool pip_probe = false, pip_done = false;
+  bool split_probe = false, split_done = false;  // --probe-split (experiments/split_probe.cpp).
   bool capture_mute_probe = false, capture_mute_done = false;
   bool theme_probe = false, theme_done = false;
   bool palette_probe=false,palette_checks=false;
@@ -195,7 +205,7 @@ struct State {
   std::string pin_id;
   CefRefPtr<CefDictionaryValue> pin_result;
   bool private_probe = false, private_started = false, private_done = false;
-  bool menu_probe = false, menu_probe_started = false, menu_done = false, menu_page = false, menu_edges = false;
+  bool menu_probe = false, menu_probe_started = false, menu_done = false, menu_page = false, menu_edges = false, menu_update = false, menu_update_restart = false, menu_screenshot = false, menu_recent = false, menu_capture = false, menu_capture_tiles = false, menu_settings = false, screenshot_ask_probe = false, menu_copy = false, menu_switcher = false, menu_switcher_empty = false, menu_switcher_again = false;
   int menu_loads = 0;
   bool boost_probe = false, boost_done = false, boost_store = false, boost_pick = false;
   int boost_phase = 0;
@@ -271,5 +281,8 @@ struct State {
   int exit_code = 0;
   int revision = 0;
   void Record(const std::string& event, CefRefPtr<CefDictionaryValue> details = nullptr);
+ private:
+  mutable std::mutex devtools_window_ids_mutex_;
+  std::set<int> devtools_window_ids_;
 };
 }  // namespace red

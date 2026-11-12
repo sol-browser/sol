@@ -3,6 +3,7 @@
 #include "windows/ui_context_menu.h"
 #include "app/session.h"
 #include "windows/settings_window.h"
+#include <fstream>
 #include <dwmapi.h>
 #include "windows/default_browser.h"
 #include "windows/branding.h"
@@ -44,6 +45,7 @@ class SettingsClient final : public UtilityWindowClient, public CefLifeSpanHandl
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   bool OnConsoleMessage(CefRefPtr<CefBrowser> browser,cef_log_severity_t,const CefString& message,const CefString&,int) override {
+    if (const auto owner=owner_.lock()) owner->Console(message.ToString());
     if (const auto owner=owner_.lock()) if (const auto window=owner->parent()) {
       ObserveProfileSettingsProbe(browser,message.ToString());
       ObserveSiteSearchProbe(browser,message.ToString());
@@ -114,6 +116,16 @@ void ShowSettings(const std::shared_ptr<State>& state) {
 }
 void ShowProfileSettings(const std::shared_ptr<State>& state, bool create) {
   ShowSettings(state); state->settings_window->ShowSection(create?"newProfile":"profiles");
+}
+void SettingsWindow::Console(const std::string& message) {
+  const auto state = state_.lock();
+  if (!state || !state->probe) return;
+  auto details = CefDictionaryValue::Create(); details->SetString("message", message.substr(0, 400));
+  state->Record("settings_console", details);
+  if (!state->evidence_directory.empty()) {
+    std::ofstream out(state->evidence_directory / "settings-console.txt", std::ios::app | std::ios::binary);
+    out << message << "\n";
+  }
 }
 void SettingsWindow::Show() {
   const auto state = state_.lock();

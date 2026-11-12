@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <optional>
 #include <vector>
@@ -60,6 +61,9 @@ class HistoryStore {
   void ClearDownloads();
   // Site icons by host (PNG bytes), newest first; bounded to 1000 hosts.
   void SaveFavicon(const std::string& host, const std::string& png, int64_t now);
+  // Atomically adds missing icons and returns only the new records. A failed
+  // write returns nullopt so the caller does not publish uncommitted icons.
+  std::optional<std::map<std::string, std::string>> ImportFavicons(std::map<std::string, std::string> icons, int64_t now);
   std::vector<std::pair<std::string, std::string>> Favicons(int limit);
  private:
   bool Exec(const char* sql);

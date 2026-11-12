@@ -1,4 +1,5 @@
-import { lazy, Suspense, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useRef, useState } from 'react';
+import { focusOnMount } from './focus-on-mount';
 import type { Snapshot } from '../../../packages/browser-contracts/src';
 import { ThemePanel } from './Theme';
 import { themeCommand } from './palette-model';
@@ -28,7 +29,7 @@ export function SpacePanel({ snapshot, command }: Props) {
   const closeEmoji=(restoreFocus:boolean)=>{setChoosingIcon(false);if(restoreFocus)iconButton.current?.focus();};
   const heading = <form className="space-name" onSubmit={e => { e.preventDefault(); save(name, icon); (document.activeElement as HTMLElement | null)?.blur(); }}>
     <button ref={iconButton} className="space-name-mark" type="button" aria-label="Choose space icon" aria-haspopup="dialog" aria-expanded={choosingIcon} title="Choose an emoji" onClick={()=>setChoosingIcon(value=>!value)}>{spaceGlyph({ name: name || space.name, icon })}</button>
-    <input aria-label="Space name" value={name} maxLength={40} spellCheck={false} autoComplete="off" autoFocus={space.name === 'New space'}
+    <input aria-label="Space name" value={name} maxLength={40} spellCheck={false} autoComplete="off" ref={space.name === 'New space' ? focusOnMount : undefined}
       onFocus={e => {if(space.name==='New space'||e.currentTarget.closest<HTMLElement>('.orbit-editor')?.dataset.focusMode==='keyboard')e.currentTarget.select();}} onChange={e => setName(e.target.value)} onBlur={() => save(name, icon)}
       onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); setName(space.name); } }} />
     {choosingIcon&&<Suspense fallback={<div className="space-emoji-picker" role="status">Loading emoji…</div>}><EmojiPicker anchor={iconButton} value={icon} onClose={closeEmoji} onPick={emoji=>{setIcon(emoji);save(name||space.name,emoji);closeEmoji(true);}}/></Suspense>}
@@ -48,6 +49,7 @@ export function NewSpacePanel({ snapshot, command }: Props) {
   const [error, setError] = useState('');
   const iconButton = useRef<HTMLButtonElement>(null);
   const field = useRef<HTMLInputElement>(null);
+  const focusField = useCallback((element: HTMLInputElement | null) => { field.current = element; element?.focus(); }, []);
   const full = (snapshot.spaces ?? []).length >= 24;
   const title = name.trim();
   const create = async (theme: ThemeChoice) => {
@@ -63,7 +65,7 @@ export function NewSpacePanel({ snapshot, command }: Props) {
   }}>
     <button ref={iconButton} className="space-name-mark" type="button" aria-label="Choose space icon" aria-haspopup="dialog" aria-expanded={choosingIcon}
       title="Choose an emoji" data-empty={!icon && !title} onClick={() => setChoosingIcon(value => !value)}>{icon || title ? spaceGlyph({ name: title, icon }) : '+'}</button>
-    <input ref={field} aria-label="Space name" placeholder="Name your space" value={name} maxLength={40} spellCheck={false} autoComplete="off" autoFocus
+    <input ref={focusField} aria-label="Space name" placeholder="Name your space" value={name} maxLength={40} spellCheck={false} autoComplete="off"
       onChange={e => setName(e.target.value)} />
     {choosingIcon && <Suspense fallback={<div className="space-emoji-picker" role="status">Loading emoji…</div>}>
       <EmojiPicker anchor={iconButton} value={icon} onClose={closeEmoji} onPick={emoji => { setIcon(emoji); closeEmoji(true); }} /></Suspense>}

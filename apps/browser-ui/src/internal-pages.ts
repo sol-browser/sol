@@ -7,9 +7,15 @@ const PAGES = [
 ] as const;
 export type InternalPage = typeof PAGES[number];
 
+function withoutTrailingSlashes(text: string): string {
+  let end = text.length;
+  while (end > 0 && text.charCodeAt(end - 1) === 47) --end;  // "/"
+  return text.slice(0, end);
+}
+
 /** The page for its real URL or its short address (typed: any case, trailing slash). */
 export function internalPage(value: string): InternalPage | undefined {
-  const typed = value.trim().toLowerCase().replace(/\/+$/u, '');
+  const typed = withoutTrailingSlashes(value.trim().toLowerCase());
   return PAGES.find(page => page.url === value || page.address === typed);
 }
 /** What the address bar shows: the short address for Sol's pages, else the URL. */

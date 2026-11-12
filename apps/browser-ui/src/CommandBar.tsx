@@ -21,6 +21,9 @@ export function CommandBar() {
   useLayoutEffect(() => applyTheme(state?.snapshot.theme), [state?.snapshot.theme]);
   const [text, setText] = useState('');
   const [selectedKey, setSelectedKey] = useState<string>();
+  // Arrow navigation previews a row without changing the query that produced
+  // the list. The first actual edit commits the displayed value as a new query.
+  const [selectedText, setSelectedText] = useState<string>();
   const [actionsOnly, setActionsOnly] = useState(false);
   const [siteKeyword, setSiteKeyword] = useState<string>();
   const [inlineAllowed,setInlineAllowed] = useState(false);
@@ -32,7 +35,7 @@ export function CommandBar() {
   // Window-local, memory only. Editing an existing URL has its own fresh value.
   const newDraft = useRef<{ text: string; start: number; end: number; siteKeyword?: string }>({ text: '', start: 0, end: 0 });
   const site = (state?.snapshot.siteSearches ?? defaultSiteSearches).find(site => site.keyword === siteKeyword && site.enabled !== false);
-  const siteMatch = state && !actionsOnly && !siteKeyword ? matchingSiteSearch(state.snapshot, text) : undefined;
+  const siteMatch = state && !actionsOnly && !siteKeyword && selectedText === undefined ? matchingSiteSearch(state.snapshot, text) : undefined;
   useEffect(() => {
     if (!window.cefQuery) { setError('Native bridge unavailable'); return; }
     const id = window.cefQuery({ request: JSON.stringify({ method: 'command.subscribe' }), persistent: true,
@@ -42,7 +45,7 @@ export function CommandBar() {
           if (next.request !== request.current) {
             request.current = next.request; setText(next.mode === 'navigate' ? next.sourceUrl : newDraft.current.text);
             setInlineAllowed(next.mode === 'new' && newDraft.current.start === newDraft.current.text.length && newDraft.current.end === newDraft.current.text.length);
-            setActionsOnly(false); setSelectedKey(undefined); setError(''); setBusy(false);
+            setActionsOnly(false); setSelectedKey(undefined); setSelectedText(undefined); setError(''); setBusy(false);
             setSiteKeyword(next.mode === 'new' ? newDraft.current.siteKeyword : undefined);
           }
         } catch (e) { setError(String(e)); }
@@ -108,6 +111,9 @@ export function CommandBar() {
   useLayoutEffect(() => {
     if (inline && state?.open && document.activeElement === input.current) input.current?.setSelectionRange(text.length,inline.length);
   },[inline,text,state?.open]);
+  useLayoutEffect(() => {
+    if (selectedText !== undefined && state?.open) input.current?.setSelectionRange(selectedText.length, selectedText.length);
+  }, [selectedText, selectedKey, state?.open]);
   function acceptInline(moveToEnd = false) {
     if (!inline) return;
     setText(inline); setInlineAllowed(false); setSelectedKey(undefined);
@@ -155,16 +161,17 @@ export function CommandBar() {
       {siteKeyword && <button className="command-mode command-site-mode" type="button" aria-label="Exit site search" onClick={leaveSiteSearch}>{site?.name ?? siteKeyword} ×</button>}
       <input ref={input} aria-label={siteKeyword ? `Search ${site?.name ?? siteKeyword}` : actionsOnly ? 'Search actions' : 'Search or enter URL'} role="combobox" aria-autocomplete={actionsOnly || siteKeyword ? 'list' : 'both'} aria-expanded={rows.length > 0}
         aria-controls="command-results" aria-activedescendant={rows[index] ? `result-${index}` : undefined}
-        value={inline ?? text} placeholder={siteKeyword ? `Search ${site?.name ?? siteKeyword}…` : actionsOnly ? 'Search…' : 'Search or Enter URL…'} spellCheck={false} autoComplete="off" maxLength={4096}
+        value={selectedText ?? inline ?? text} placeholder={siteKeyword ? `Search ${site?.name ?? siteKeyword}…` : actionsOnly ? 'Search…' : 'Search or Enter URL…'} spellCheck={false} autoComplete="off" maxLength={4096}
         onChange={e => {
           const element = e.target;
-          setText(element.value); setSelectedKey(undefined); setError('');
+          setText(element.value); setSelectedKey(undefined); setSelectedText(undefined); setError('');
           const inputType = (e.nativeEvent as InputEvent).inputType ?? '';
           setInlineAllowed(!inputType.startsWith('delete') && element.selectionStart === element.value.length && element.selectionEnd === element.value.length);
           if (state?.mode === 'new') newDraft.current = { text: element.value, start: element.selectionStart ?? element.value.length, end: element.selectionEnd ?? element.value.length, siteKeyword };
         }}
         onPointerDown={() => acceptInline()}
         onSelect={e => {
+          if (selectedText !== undefined) return;
           const element=e.currentTarget, start=element.selectionStart ?? 0, end=element.selectionEnd ?? 0;
           const proposed = !!inline && element.value === inline && start === text.length && end === inline.length;
           if (inline && element.value === inline && !proposed) acceptInline();
@@ -182,22 +189,34 @@ export function CommandBar() {
               e.preventDefault(); enterSiteSearch(); return;
             }
           }
-          if (!siteKeyword && e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey && ((!text && !e.shiftKey) || actionsOnly && e.shiftKey)) {
+          if (!siteKeyword && selectedText === undefined && e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey && ((!text && !e.shiftKey) || actionsOnly && e.shiftKey)) {
             e.preventDefault(); setActionsOnly(!actionsOnly); setInlineAllowed(false); setSelectedKey(undefined); setError(''); return;
           }
           if (inline && (e.key === 'ArrowRight' || e.key === 'End')) { e.preventDefault(); acceptInline(true); }
           if (inline && (e.key === 'ArrowLeft' || e.key === 'Home')) acceptInline();
-          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setInlineAllowed(false);
-            if (rows.length) setSelectedKey(rows[index < 0 ? (e.key === 'ArrowDown' ? 0 : rows.length-1) : (index + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length].key); }
+          if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && rows.length) {
+            e.preventDefault();
+            const next = e.key === 'ArrowDown' ? 1 : -1;
+            const row = rows[index < 0 ? (next === 1 ? 0 : rows.length - 1) : (index + next + rows.length) % rows.length];
+            setInlineAllowed(false);
+            setSelectedKey(row.key);
+            setSelectedText(row.editText);
+            setError('');
+          }
         }} />
       {siteMatch && <button className="command-actions-toggle" type="button" aria-label={`Search ${siteMatch.name} with Tab`} onClick={enterSiteSearch}><span className="command-toggle-label">Search {siteMatch.name}</span><kbd>Tab</kbd></button>}
-      {!actionsOnly && !siteKeyword && !text && <button className="command-actions-toggle" type="button" onClick={() => {
+      {!actionsOnly && !siteKeyword && !text && selectedText === undefined && <button className="command-actions-toggle" type="button" onClick={() => {
         setActionsOnly(true); setInlineAllowed(false); setSelectedKey(undefined); setError(''); input.current?.focus();
       }}><span className="command-toggle-label">Search Actions</span><kbd>Tab</kbd></button>}
     </form>
     <div className="command-results" id="command-results" role="listbox" aria-label="Suggestions">
-      {rows.map((row, i) => <div className="command-result" key={row.key} id={`result-${i}`} role="option" aria-selected={index === i} data-kind={row.kind}
-        onPointerMove={e => { if (e.movementX || e.movementY) setSelectedKey(row.key); }} onMouseDown={e => e.preventDefault()} onClick={() => execute(row.action)}>
+      {rows.map((row, i) => <div className="command-result" key={row.key} id={`result-${i}`} role="option" tabIndex={-1} aria-selected={index === i} data-kind={row.kind}
+        onPointerMove={e => {
+          if ((e.movementX || e.movementY) && selectedKey !== row.key) {
+            setSelectedKey(row.key);
+            setSelectedText(undefined);
+          }
+        }} onMouseDown={e => e.preventDefault()} onClick={() => execute(row.action)}>
         <span className="command-site-icon">
           {row.icon ? <img src={row.icon} alt="" /> : <Icon name={row.actionIcon ?? (row.kind === 'search' ? 'search' : row.kind === 'history' ? 'history' : 'globe')} />}
         </span><span className="command-result-text"><span className="command-title">{row.title}</span>{row.detail && <span className="command-detail"> — {row.detail}</span>}</span>

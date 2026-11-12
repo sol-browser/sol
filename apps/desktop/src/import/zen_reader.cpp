@@ -78,7 +78,11 @@ class Query {
  public:
   Query(sqlite3* db, const char* sql) { if (db) sqlite3_prepare_v2(db, sql, -1, &s, nullptr); }
   ~Query() { sqlite3_finalize(s); }
-  bool Row() { return s && (code = sqlite3_step(s)) == SQLITE_ROW; }
+  bool Row() {
+    if (!s) return false;
+    code = sqlite3_step(s);
+    return code == SQLITE_ROW;
+  }
   std::string Text(int col) { const auto* p = sqlite3_column_text(s, col); return p ? std::string(reinterpret_cast<const char*>(p), sqlite3_column_bytes(s, col)) : ""; }
   int64_t Number(int col) { return sqlite3_column_int64(s, col); }
   sqlite3_stmt* s = nullptr; int code = SQLITE_DONE;
@@ -231,7 +235,10 @@ ZenImport ReadZenProfile(const std::filesystem::path& profile) {
   }
   std::map<std::string,int> positions; int favorites = 0;
   for (auto& n : out.tree.nodes) {
-    if (n.favorite && ++favorites > 12) { n.favorite = false; n.space = fallback; }
+    if (n.favorite) {
+      ++favorites;
+      if (favorites > 12) { n.favorite = false; n.space = fallback; }
+    }
     n.position = positions[n.parent]++;
   }
   out.tree.active_space = fallback;

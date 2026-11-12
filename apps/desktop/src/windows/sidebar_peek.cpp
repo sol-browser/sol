@@ -397,7 +397,12 @@ void SidebarPeek::Watch(unsigned generation) {
     }
   }
   const bool editing = s->ui_editing && s->keyboard_target == s->peek_id;
-  const bool busy = editing || resizing_ || (s->tab_dragging && PrimaryButtonDown()) || (s->sidebar_menu && s->sidebar_menu->is_open()) || (s->panel_popup && s->panel_popup->is_open());
+  // A tab dragged inside the sidebar keeps it open; carried clearly past its
+  // right edge toward the pages (a Split View drop), it slides away so it does
+  // not cover the drop targets. Back at the left edge it opens again.
+  RECT reach = peek; reach.right += std::lround(56 * scale);
+  const bool carrying = s->tab_dragging && PrimaryButtonDown() && PtInRect(&reach, cursor);
+  const bool busy = editing || resizing_ || carrying || (s->sidebar_menu && s->sidebar_menu->is_open()) || (s->panel_popup && s->panel_popup->is_open());
   const bool inside = edge || keep_outside || ((over_root || over_peek) && PtInRect(&peek, cursor));
   // Probe runs keep it open: the pointer is the person's, not the test's.
   away_ = inside || busy || Now() < opening_hold_until_ || s->sidebar_peek_probe ? 0 : away_ + 1;
@@ -482,8 +487,9 @@ void SidebarPeek::Hide() {
   if (auto s = state_.lock()) {
     if (s->keyboard_target == s->peek_id) s->ui_editing = false;
     s->Record("sidebar_peek_hidden");
-    // Give the browser window and its page the focus back if the sidebar had it.
-    if (host_ && s->window && (GetForegroundWindow() == host_ ||
+    // Give the browser window and its page the focus back if the sidebar had it
+    // (not while it still carries a tab: the drag keeps its pointer capture).
+    if (host_ && s->window && !(s->tab_dragging && PrimaryButtonDown()) && (GetForegroundWindow() == host_ ||
         (inline_host_ && browser_ && BrowserOwnsKeyboard(s, browser_)))) {
       if (!inline_host_) s->window->Activate();
       if (s->content) FocusBrowser(s->content);

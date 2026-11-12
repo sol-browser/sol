@@ -87,11 +87,17 @@ int wmain() {
     store.SaveFavicon("", "png", t); store.SaveFavicon("big.test", std::string(17 * 1024, 'x'), t);
     auto icons = store.Favicons(10);
     Check(icons.size() == 2 && icons[0].first == "other.test" && icons[1].second == std::string("PNG\0newer", 10), "favicons by host, binary-safe, newest first, bounded size");
+    const auto imported = store.ImportFavicons({{"example.com", "replacement"}, {"new.test", "new icon"}}, t + 3);
+    Check(imported && imported->size() == 1 && imported->contains("new.test"), "import adds missing favicons only");
+    const auto repeat = store.ImportFavicons({{"new.test", "different icon"}}, t + 4);
+    Check(repeat && repeat->empty(), "repeat favicon import is idempotent");
   }
   {
     red::HistoryStore again; Check(again.Open(path), "reopen existing history");
     Check(again.Visits(0, 10, "").size() == 1, "visits persist");
-    Check(again.Favicons(10).size() == 2, "favicons persist");
+    const auto icons = again.Favicons(10);
+    Check(icons.size() == 3 && icons[0] == std::pair<std::string, std::string>{"new.test", "new icon"} &&
+          icons[2].second == std::string("PNG\0newer", 10), "favicons persist without overwriting existing entries");
   }
   std::error_code ignored;
   for (const auto& file : {path, path + L"-wal", path + L"-shm", foreign}) std::filesystem::remove(file, ignored);

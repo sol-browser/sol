@@ -1,4 +1,5 @@
 #include "windows/browser_dialogs.h"
+#include "web_url.h"
 #include "workspace/controller.h"
 #include "app/session.h"
 #include "app/auto_archive.h"
@@ -40,10 +41,10 @@ bool WorkspaceController::UnloadKeepsPlace(const std::string& id) const {
   if (node==tree_.nodes.end() || node->folder || node->archived || !browser || crashed_.contains(browser->GetIdentifier())) return false;
   // Never the selected page or a selected split's panes, even while minimized.
   if (tree_.active_id==id) return false;
-  if (const auto* split=SelectedSplit(); split && (split->anchor==id || split->other==id)) return false;
+  if (const auto* split=SelectedSplit(); split && split->Contains(id)) return false;
   if (!node->pinned && !node->favorite) {  // Its current web address is saved on unload.
     const auto url=browser->GetMainFrame()->GetURL().ToString();
-    return url.starts_with("https://") || url.starts_with("http://");
+    return HasWebScheme(url);
   }
   return browser->GetMainFrame()->GetURL().ToString()==node->url;
 }

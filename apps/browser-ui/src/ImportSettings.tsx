@@ -77,9 +77,9 @@ export function ImportSettings({ disabled, profileName = 'Default' }: { disabled
     const next = parsePreview(raw); setPrimary('');
     setPreview(next ?? undefined); setStage(next && !next.needsPrimaryPassword ? 'preview' : 'choose');
   });
-  const readFile = (kind: 'passwords' | 'bookmarks') => run(() => importQuery({ method: 'import.chooseFile', kind, source }), 'reading', raw => {
+  const readFile = (kind: 'passwords' | 'bookmarks' | 'arcSidebar') => run(() => importQuery({ method: 'import.chooseFile', kind, source }), 'reading', raw => {
     const next = parsePreview(raw);
-    if (next) { setPreview(next); setStage('preview'); } else setStage(preview ? 'preview' : 'choose');
+    setPreview(next ?? undefined); setStage(next ? 'preview' : 'choose');
   });
   const commit = () => run(() => importQuery({ method: 'import.commit' }), 'importing', raw => {
     setReport(parseReport(raw)); setPreview(undefined); setStage('done');
@@ -99,7 +99,9 @@ export function ImportSettings({ disabled, profileName = 'Default' }: { disabled
       <span className="settings-category">FROM ANOTHER BROWSER</span>
       <h2 id="import-source-heading">Choose a browser</h2>
       <p>Bring your tabs, bookmarks, history and saved passwords into Sol. You’ll see everything before it’s imported.</p>
-      <p className="settings-note">Imported data is added to the "{profileName}" browsing profile.</p>
+      <p className="settings-note">{source === 'arc'
+        ? `Spaces bring their Arc profile assignments. History and passwords from the selected Arc profile go to "${profileName}" in Sol.`
+        : `Imported data is added to the "${profileName}" browsing profile.`}</p>
       <div className="import-sources" role="radiogroup" aria-label="Browser">
         {(['zen', 'chrome', 'edge', 'arc'] as const).map(id => {
           const found = sources.find(s => s.id === id)?.profiles.length ?? 0;
@@ -119,7 +121,9 @@ export function ImportSettings({ disabled, profileName = 'Default' }: { disabled
             <FolderOpen size={14} />Choose folder…</button>
         </div>
       </label>
-      {!current?.profiles.length && <p className="settings-note">If {name} keeps its data somewhere else, choose its “User Data” folder or one of its profiles.</p>}
+      {!current?.profiles.length && <p className="settings-note">{source === 'arc'
+        ? 'Choose the Arc data folder, or import a copy of StorableSidebar.json below.'
+        : `If ${name} keeps its data somewhere else, choose its “User Data” folder or one of its profiles.`}</p>}
       <fieldset className="import-types" disabled={busy}>
         <legend>What to import</legend>
         {DATA_TYPES[source].map(item => <label key={item.type} className="import-type">
@@ -158,7 +162,7 @@ export function ImportSettings({ disabled, profileName = 'Default' }: { disabled
           {stage === 'importing' ? 'Importing…' : 'Import into Sol'}<ArrowDownToLine size={15} /></button>
         <button type="button" className="settings-text" disabled={stage === 'importing'} onClick={cancel}>Cancel</button>
       </div>
-      <p className="settings-note">Nothing is replaced: tabs arrive in a new Space, unloaded, and existing passwords and cookies are kept.</p>
+      <p className="settings-note">Imported tabs start unloaded. Sol keeps your existing Spaces, passwords and cookies.</p>
     </section>}
 
     {report && stage === 'done' && <section className="settings-card" aria-labelledby="import-done-heading" role="status">
@@ -166,18 +170,18 @@ export function ImportSettings({ disabled, profileName = 'Default' }: { disabled
       <h2 id="import-done-heading">{report.errors.length ? `Imported from ${report.label}, with some problems` : `Imported from ${report.label}`}</h2>
       <ul className="import-lines">{reportLines(report).map(line => <li key={line}><Check size={13} />{line}</li>)}</ul>
       {report.errors.map(e => <p key={e} className="import-warning"><TriangleAlert size={14} />{e}</p>)}
-      {report.tabs !== undefined && <p className="settings-note">Switch to the new Space in the sidebar to see the imported tabs.</p>}
+      {!!report.spaces && <p className="settings-note">Find your imported {report.spaces === 1 ? 'Space' : 'Spaces'} in the sidebar.</p>}
       <div className="settings-card-actions"><button type="button" className="settings-text" onClick={() => { setReport(undefined); setStage('choose'); }}>Import something else</button></div>
     </section>}
 
     <section className="settings-card" aria-labelledby="import-files-heading">
       <span className="settings-category">FROM A FILE</span>
-      <h2 id="import-files-heading">Import an export file</h2>
-      <p>Use a password file when {name} keeps its passwords locked to itself (Chrome and Edge do this on newer versions), or a bookmarks file
-        for Arc’s Spaces and pinned tabs once you’ve exported them as bookmarks.</p>
+      <h2 id="import-files-heading">Import a file</h2>
+      {source === 'arc' && <p>Choose StorableSidebar.json to restore Spaces and their tabs from an Arc backup.</p>}
       <div className="settings-card-actions">
         <button type="button" className="settings-secondary" disabled={busy} onClick={() => void readFile('passwords')}><KeyRound size={14} />Password file (.csv)…</button>
         <button type="button" className="settings-secondary" disabled={busy} onClick={() => void readFile('bookmarks')}><FileText size={14} />Bookmarks file (.html)…</button>
+        {source === 'arc' && <button type="button" className="settings-secondary" disabled={busy} onClick={() => void readFile('arcSidebar')}><FileText size={14} />Arc sidebar (.json)…</button>}
       </div>
       <p className="settings-note">A password export is plain text. Delete it once the import is done.</p>
     </section>

@@ -8,7 +8,8 @@ export type TreeNode = { id: string; parentId: string; kind: 'folder' | 'tab'; t
   pageTitle?: string; customTitle?: boolean; favicon?: string; archivedAt?: number;
   mediaCamera?: boolean; mediaMicrophone?: boolean; muted?: boolean; audible?: boolean;
   xBadgeHidden?: boolean;
-  splitAnchor?: string; splitOther?: string; splitTitle?: string; splitHidden?: boolean; splitReversed?: boolean;
+  /** Split View membership: the group's row (anchor), its 2-4 pages in on-screen reading order, its name. */
+  splitAnchor?: string; splitPanes?: string[]; splitTitle?: string; splitHidden?: boolean;
   /** Space of a top-level Pinned/Today/archived entry; empty for Favorites and nested entries. */
   space?: string;
   /** The tab has a Link Peek (shown or parked with it): the preview's icon and title. */
@@ -41,8 +42,16 @@ export type MediaInfo = { id: string; title: string; artist: string; playing: bo
 export type LinkPeekInfo = { id: string; url: string; title: string; bounds: DockBounds; area: DockBounds;
   loading: boolean; closing: boolean; crashed: boolean; canGoBack: boolean; canGoForward: boolean;
   composed?: boolean; opening?: boolean; returning?: boolean; canSplit?: boolean; depthReady?: boolean };
-export type SplitViewInfo = { anchor: string; other: string; focused: string; expanded: string; vertical: boolean; reversed: boolean; resizing: boolean; ratio: number;
-  panes: { id: string; bounds: DockBounds; canGoBack: boolean; canGoForward: boolean; loading: boolean; borderColor: string }[] };
+export type SplitPreset = 'columns' | 'rows' | 'main-left' | 'main-top' | 'grid';
+export type SplitEdge = 'left' | 'right' | 'top' | 'bottom' | 'auto';
+/** A divider between children |index| and |index|+1 of the container at |path|; |cross| is a linked 2x2 intersection. */
+export type SplitDividerInfo = { path: number[]; index: number; axis: 'h' | 'v'; cross: boolean; share: number; bounds: DockBounds };
+export type SplitViewInfo = { anchor: string; focused: string; expanded: string; resizing: boolean; linked: boolean; layout: string;
+  canAdd: boolean; presets: SplitPreset[];
+  /** A pane carried over the sidebar by its header: it leaves the split on release. */
+  leaving?: string;
+  panes: { id: string; bounds: DockBounds; canGoBack: boolean; canGoForward: boolean; loading: boolean; borderColor: string }[];
+  dividers: SplitDividerInfo[] };
 export type DevToolsInfo = { id: number; side: 'right' | 'bottom' | 'left' | 'window'; extent: number; header: DockBounds; divider: DockBounds };
 export type DeviceSettings = { enabled: boolean; width: number; height: number; dpr: number; scale: number; mobile: boolean; touch: boolean };
 export type DevicePreview = DeviceSettings & { id: number; pending: boolean; error: string; effectiveScale: number; toolbar: DockBounds; viewport: DockBounds; area: DockBounds };
@@ -123,6 +132,8 @@ export type SettingsSnapshot = {
   /** available: Windows 11 22H2+ and an engine with patch 12; active: this window is translucent. */
   backdrop?: { available: boolean; active: boolean };
 };
+/** Keyboard shortcuts Sol has (and custom bindings): native preferences.cpp has the same limit. 42 in 0.4.1. */
+export const MAX_SHORTCUTS = 64;
 export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
   const value: unknown = JSON.parse(raw);
   if (object(value) && value.spaces !== undefined && (!Array.isArray(value.spaces) || value.spaces.length>24 ||
@@ -165,8 +176,8 @@ export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
   if (!object(prefs) || prefs.schema !== 1 || !['google', 'duckduckgo', 'bing', 'brave'].includes(String(prefs.searchEngine)) ||
       typeof prefs.downloadDirectory !== 'string' || prefs.downloadDirectory.length > 32767 || typeof prefs.askDownload !== 'boolean' ||
       !['restore', 'newTab', 'homepage'].includes(String(prefs.startup)) || typeof prefs.homepage !== 'string' || prefs.homepage.length > 4096 ||
-      !object(prefs.shortcuts) || Object.keys(prefs.shortcuts).length > 40 || typeof value.preferencesError !== 'string' ||
-      !Array.isArray(value.keyboard) || value.keyboard.length > 40) throw new Error('Invalid browser preferences');
+      !object(prefs.shortcuts) || Object.keys(prefs.shortcuts).length > MAX_SHORTCUTS || typeof value.preferencesError !== 'string' ||
+      !Array.isArray(value.keyboard) || value.keyboard.length > MAX_SHORTCUTS) throw new Error('Invalid browser preferences');
   for (const binding of Object.values(prefs.shortcuts)) if (!validKeyBinding(binding)) throw new Error('Invalid saved shortcut');
   for (const row of value.keyboard) if (!object(row) || typeof row.action !== 'string' || row.action.length > 32 ||
       typeof row.title !== 'string' || row.title.length > 80 || typeof row.label !== 'string' || row.label.length > 80 ||
@@ -201,12 +212,14 @@ export type DownloadState = 'in_progress' | 'paused' | 'complete' | 'canceled' |
 export type DownloadItem = { id: number; name: string; origin: string; state: DownloadState; received: number; total: number; speed: number };
 export type DownloadAction = 'cancel' | 'pause' | 'resume' | 'open' | 'show' | 'remove';
 export type ShortcutAction = 'address' | 'newTab' | 'closeTab' | 'nextTab' | 'previousTab' | 'sidebar' | 'pin' | 'back' | 'forward' | 'reload' | 'reloadBypass' | 'stop' | 'focusPage' | 'closeWindow' | 'devTools' | 'history' | 'downloads' | 'historyPage' | 'reopenClosed'
-  | 'space1' | 'space2' | 'space3' | 'space4' | 'space5' | 'space6' | 'space7' | 'space8' | 'space9' | 'fullscreen' | 'settings' | 'newWindow' | 'pictureInPicture' | 'newPrivateWindow' | 'print';
+  | 'space1' | 'space2' | 'space3' | 'space4' | 'space5' | 'space6' | 'space7' | 'space8' | 'space9' | 'fullscreen' | 'settings' | 'newWindow' | 'pictureInPicture' | 'newPrivateWindow' | 'print' | 'copyUrl' | 'recentTab' | 'recentTabBack' | 'screenshot' | 'fullPageScreenshot' | 'capture'
+  | 'splitFocusLeft' | 'splitFocusRight' | 'splitFocusUp' | 'splitFocusDown' | 'splitExpand';
 export type TreeMutation =
   | { method: 'split.create'; id: string; otherId: string; vertical: boolean }
-  | { method: 'split.remove' | 'split.swap'; id: string }
+  | { method: 'split.remove'; id: string }
+  | { method: 'split.swap'; id: string; a?: string; b?: string }
+  | { method: 'split.removePane'; id: string; page: string }
   | { method: 'split.rename'; id: string; title: string }
-  | { method: 'split.layout'; id: string; vertical: boolean; ratio: number }
   | { method: 'tree.createFolder'; parentId: string; title: string }
   | { method: 'tree.createTab'; parentId: string; title: string; url: string }
   | { method: 'tree.rename'; id: string; title: string }
@@ -230,10 +243,14 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'media.control'; id: string; action: 'toggle' | 'mute' | 'dismiss' | 'open' | 'pip' | 'previous' | 'next' }
   | { method: 'media.control'; id: string; action: 'seek'; value: number }
   | { method: 'linkPeek.control'; id: string; action: 'close' | 'promote' | 'split' | 'back' | 'forward' | 'reload' | 'stop' | 'hoverClose' | 'hoverSplit' | 'hoverPromote' | 'hoverNone' }
-  | { method: 'split.focus' | 'split.expand' | 'split.beginResize'; id: string }
+  | { method: 'split.focus' | 'split.expand' | 'split.beginMove'; id: string }
+  | { method: 'split.beginResize'; id: string; path: number[]; index: number; cross: boolean }
+  | { method: 'split.nudge'; id: string; path: number[]; index: number; delta: -1 | 0 | 1 }
+  /** |page| joins beside the pane |target| ('' for the whole area). */
+  | { method: 'split.add'; id: string; target: string; edge: SplitEdge; page: string }
+  | { method: 'split.preset'; id: string; preset: SplitPreset }
   | { method: 'split.navigate'; id: string; action: 'back' | 'forward' | 'reload' | 'stop' | 'address' | 'copy' }
-  | { method: 'split.site'; id: string; x: number; y: number; width: number; height: number }
-  | { method: 'split.preview'; id: string; ratio: number }
+  | { method: 'split.site' | 'split.menu'; id: string; x: number; y: number; width: number; height: number }
   | { method: 'browser.shortcut'; action: ShortcutAction }
   | { method: 'browser.restartToUpdate' }
   | { method: 'workspace.setSidebarVisible'; visible: boolean }
@@ -247,6 +264,7 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'downloads.control'; id: number; action: DownloadAction }
   | { method: 'downloads.clear' }
   | { method: 'menu.main'; x: number; y: number; width: number; height: number }
+  | { method: 'menu.copy'; x: number; y: number; width: number; height: number }
   | { method: 'extension.open' | 'extension.menu'; id: string; x: number; y: number; width: number; height: number }
   | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
   | { method: 'tab.dragStarted'; id: string; previousId: string | null }
@@ -293,16 +311,18 @@ function validDevicePreview(d: unknown) {
 export function parseSnapshotUpdate(raw:string, previous?:Snapshot):Snapshot {
   const delta:unknown=JSON.parse(raw);
   if(object(delta)&&delta.layoutOnly===true){
-    if(!integer(delta.revision)||Object.keys(delta).some(k=>!['layoutOnly','revision','sidebarWidth','sidebarResizing','contentBounds','devTools','devicePreview'].includes(k))
+    if(!integer(delta.revision)||Object.keys(delta).some(k=>!['layoutOnly','revision','sidebarWidth','sidebarResizing','contentBounds','devTools','devicePreview','splitView'].includes(k))
       ||(delta.sidebarWidth!==undefined&&(!integer(delta.sidebarWidth)||delta.sidebarWidth<150||delta.sidebarWidth>480))
       ||typeof delta.sidebarResizing!=='boolean'||(delta.contentBounds!==undefined&&!dockBounds(delta.contentBounds))
-      ||(delta.devTools!==undefined&&!validDevTools(delta.devTools))||(delta.devicePreview!==undefined&&!validDevicePreview(delta.devicePreview)))
+      ||(delta.devTools!==undefined&&!validDevTools(delta.devTools))||(delta.devicePreview!==undefined&&!validDevicePreview(delta.devicePreview))
+      ||(delta.splitView!==undefined&&!validSplitView(delta.splitView)))
       throw new Error('Invalid layout update');
     if(!previous)throw new Error('Layout update requires an initial snapshot');
     if(delta.revision<previous.revision)return previous;
     return {...previous,revision:delta.revision,sidebarWidth:(delta.sidebarWidth as number|undefined)??previous.sidebarWidth,sidebarResizing:delta.sidebarResizing,
       contentBounds:(delta.contentBounds as Snapshot['contentBounds'])??previous.contentBounds,
-      devTools:delta.devTools as Snapshot['devTools'],devicePreview:delta.devicePreview as Snapshot['devicePreview']};
+      devTools:delta.devTools as Snapshot['devTools'],devicePreview:delta.devicePreview as Snapshot['devicePreview'],
+      splitView:delta.splitView as Snapshot['splitView']};
   }
   if(!object(delta)||delta.themeOnly!==true)return parseSnapshot(raw);
   if(Object.keys(delta).length!==4||!integer(delta.revision)||typeof delta.activeSpace!=='string'||!validTheme(delta.theme))
@@ -327,11 +347,7 @@ export function parseArchive(value: unknown): TreeNode[] {
       || (n.customTitle !== undefined && typeof n.customTitle !== 'boolean')
       || (n.space !== undefined && (typeof n.space !== 'string' || (n.space !== '' && n.space.length !== 36)))
       || (n.favicon !== undefined && !isFaviconUrl(n.favicon))
-      || (n.splitAnchor !== undefined && (typeof n.splitAnchor !== 'string' || n.splitAnchor.length !== 36))
-      || (n.splitOther !== undefined && (typeof n.splitOther !== 'string' || n.splitOther.length !== 36))
-      || (n.splitTitle !== undefined && (typeof n.splitTitle !== 'string' || n.splitTitle.length > 240))
-      || (n.splitHidden !== undefined && typeof n.splitHidden !== 'boolean')
-      || (n.splitReversed !== undefined && typeof n.splitReversed !== 'boolean')) throw new Error('Invalid archived tab');
+      || !validSplitMembership(n)) throw new Error('Invalid archived tab');
     ids.add(n.id);
   }
   return value as TreeNode[];
@@ -369,16 +385,8 @@ export function parseSnapshot(raw: string): Snapshot {
           (m.artwork !== undefined && (typeof m.artwork !== 'string' || !m.artwork.startsWith('data:image/png;base64,') || m.artwork.length > 140000)))
         throw new Error('Invalid media session');
     }
-    if (s.splitView !== undefined) {
-      const v = s.splitView;
-      if (!object(v) || !['anchor','other','focused','expanded'].every(k => typeof v[k] === 'string' && (v[k] as string).length <= 36) ||
-          typeof v.vertical !== 'boolean' || typeof v.reversed !== 'boolean' || typeof v.resizing !== 'boolean' || !integer(v.ratio) || v.ratio < 1000 || v.ratio > 9000 ||
-          !Array.isArray(v.panes) || v.panes.length !== 2 || v.panes.some(p => !object(p) || typeof p.id !== 'string' || p.id.length !== 36 || !dockBounds(p.bounds) ||
-            typeof p.canGoBack !== 'boolean' || typeof p.canGoForward !== 'boolean' || typeof p.loading !== 'boolean' ||
-            typeof p.borderColor !== 'string' || !/^#[0-9a-f]{6}$/iu.test(p.borderColor)))
-        throw new Error('Invalid split view');
-    }
-    if (s.shortcutLabels !== undefined && (!object(s.shortcutLabels) || Object.keys(s.shortcutLabels).length > 40 ||
+    if (s.splitView !== undefined && !validSplitView(s.splitView)) throw new Error('Invalid split view');
+    if (s.shortcutLabels !== undefined && (!object(s.shortcutLabels) || Object.keys(s.shortcutLabels).length > 64 ||
         Object.values(s.shortcutLabels).some(value => typeof value !== 'string' || value.length > 80))) throw new Error('Invalid shortcut labels');
     if (s.windowKind !== undefined && s.windowKind !== 'workspace' && s.windowKind !== 'standalone') throw new Error('Invalid window kind');
     for (const field of ['windowClosing', 'activeCrashed', 'sidebarResizing']) if (s[field] !== undefined && typeof s[field] !== 'boolean') throw new Error('Invalid page lifecycle state');
@@ -442,10 +450,7 @@ export function parseSnapshot(raw: string): Snapshot {
     for (const n of s.nodes as unknown[]) {
       if (object(n) && n.crashed !== undefined && typeof n.crashed !== 'boolean') throw new Error('Invalid crashed page state');
       if (object(n) && ((n.mediaCamera !== undefined && typeof n.mediaCamera !== 'boolean') || (n.mediaMicrophone !== undefined && typeof n.mediaMicrophone !== 'boolean') || (n.muted !== undefined && typeof n.muted !== 'boolean') || (n.audible !== undefined && typeof n.audible !== 'boolean'))) throw new Error('Invalid media state');
-      if (object(n) && ((n.splitAnchor !== undefined && (typeof n.splitAnchor !== 'string' || n.splitAnchor.length !== 36)) ||
-          (n.splitOther !== undefined && (typeof n.splitOther !== 'string' || n.splitOther.length !== 36)) ||
-          (n.splitTitle !== undefined && (typeof n.splitTitle !== 'string' || n.splitTitle.length > 240)) ||
-          (n.splitHidden !== undefined && typeof n.splitHidden !== 'boolean') || (n.splitReversed !== undefined && typeof n.splitReversed !== 'boolean'))) throw new Error('Invalid split membership');
+      if (object(n) && !validSplitMembership(n)) throw new Error('Invalid split membership');
       if (object(n) && n.archivedAt !== undefined && !(typeof n.archivedAt === 'number' && Number.isSafeInteger(n.archivedAt) && n.archivedAt >= 0)) throw new Error('Invalid archive time');
       if (object(n) && n.pageTitle !== undefined && (typeof n.pageTitle !== 'string' || n.pageTitle.length > 240)) throw new Error('Invalid page title');
       if (object(n) && n.customTitle !== undefined && typeof n.customTitle !== 'boolean') throw new Error('Invalid custom title');
@@ -482,4 +487,31 @@ export function parseSnapshot(raw: string): Snapshot {
     if (s.activeId && (!ids.has(s.activeId) || ids.get(s.activeId)?.kind !== 'tab' || ids.get(s.activeId)?.archived)) throw new Error('Invalid active tab');
   }
   return s as Snapshot;
+}
+
+const splitPresets: readonly string[] = ['columns', 'rows', 'main-left', 'main-top', 'grid'];
+const splitId = (value: unknown) => typeof value === 'string' && value.length === 36;
+/** A row's Split View fields: an anchor id, 2-4 distinct pages that include it, a name, a flag. */
+function validSplitMembership(n: Record<string, unknown>): boolean {
+  if (n.splitAnchor === undefined) return n.splitPanes === undefined && n.splitTitle === undefined && n.splitHidden === undefined;
+  const panes = n.splitPanes;
+  return splitId(n.splitAnchor) && Array.isArray(panes) && panes.length >= 2 && panes.length <= 4 && panes.every(splitId) &&
+    new Set(panes).size === panes.length && panes.includes(n.splitAnchor) &&
+    typeof n.splitTitle === 'string' && n.splitTitle.length <= 240 && typeof n.splitHidden === 'boolean';
+}
+/** The split on screen: 2-4 panes with real bounds, dividers addressed by a short path, a known preset list. */
+function validSplitView(v: unknown): boolean {
+  if (!object(v) || !splitId(v.anchor) || !splitId(v.focused) || typeof v.expanded !== 'string' || (v.expanded !== '' && !splitId(v.expanded)) ||
+      typeof v.resizing !== 'boolean' || typeof v.linked !== 'boolean' || typeof v.canAdd !== 'boolean' ||
+      typeof v.layout !== 'string' || v.layout.length > 128 || !/^[hv0-9(),*]+$/u.test(v.layout) ||
+      !Array.isArray(v.presets) || v.presets.length > 5 || v.presets.some(p => typeof p !== 'string' || !splitPresets.includes(p)) ||
+      !Array.isArray(v.panes) || v.panes.length < 2 || v.panes.length > 4 || !Array.isArray(v.dividers) || v.dividers.length > 4) return false;
+  if (v.panes.some(p => !object(p) || !splitId(p.id) || !dockBounds(p.bounds) ||
+        typeof p.canGoBack !== 'boolean' || typeof p.canGoForward !== 'boolean' || typeof p.loading !== 'boolean' ||
+        typeof p.borderColor !== 'string' || !/^#[0-9a-f]{6}$/iu.test(p.borderColor))) return false;
+  if (new Set(v.panes.map(p => (p as Record<string, unknown>).id)).size !== v.panes.length) return false;
+  if (v.leaving !== undefined && !v.panes.some(p => (p as Record<string, unknown>).id === v.leaving)) return false;
+  return v.dividers.every(d => object(d) && Array.isArray(d.path) && d.path.length <= 3 && d.path.every(i => integer(i) && i >= 0 && i < 4) &&
+    integer(d.index) && d.index >= 0 && d.index < 3 && (d.axis === 'h' || d.axis === 'v') && typeof d.cross === 'boolean' &&
+    integer(d.share) && d.share >= 0 && d.share <= 100 && dockBounds(d.bounds));
 }

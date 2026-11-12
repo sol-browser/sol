@@ -35,6 +35,8 @@ export async function ipcProbe() {
     [{ method: 'panel.open', kind: 'archive', x: 1, y: 1, width: 99999, height: 10 }, 400],
     [{ method: 'panel.open', kind: 'downloads', x: -5, y: 1, width: 10, height: 10 }, 400],
     [{ method: 'menu.main', x: 1, y: 1, width: 99999, height: 10 }, 400],
+    [{ method: 'menu.copy', x: 1, y: 1, width: 99999, height: 10 }, 400],
+    [{ method: 'menu.copy', x: 1, y: 1, width: 10, height: 10, extra: true }, 400],
     [{ method: 'menu.main', x: 1, y: 1, width: 10, height: 10, extra: true }, 400],
     [{ method: 'menu.main', x: '1', y: 1, width: 10, height: 10 }, 400],
     [{ method: 'browser.shortcut', action: 'historyDelete' }, 400],

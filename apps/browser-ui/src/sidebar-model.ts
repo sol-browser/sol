@@ -139,7 +139,7 @@ export function crossProfileLiveMove(nodes: TreeNode[], spaces: { id: string; pr
     added = false;
     for (const n of nodes) if (!ids.has(n.id) && ids.has(n.parentId)) { ids.add(n.id); added = true; }
   }
-  for (const n of nodes) if (ids.has(n.id)) { if (n.splitAnchor) ids.add(n.splitAnchor); if (n.splitOther) ids.add(n.splitOther); }
+  for (const n of nodes) if (ids.has(n.id)) { if (n.splitAnchor) ids.add(n.splitAnchor); for (const pane of n.splitPanes ?? []) ids.add(pane); }
   return nodes.some(n => ids.has(n.id) && (n.live || n.peek === true));
 }
 /** What decides where rows are: which entries exist, their order and nesting,

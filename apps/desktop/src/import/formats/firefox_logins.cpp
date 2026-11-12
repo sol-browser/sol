@@ -5,7 +5,7 @@
 #include "import/formats/source_db.h"
 #include <map>
 
-namespace red::import {
+namespace red::importer {
 namespace {
 // Minimal DER reader: definite lengths only, as NSS writes them.
 struct Der {
@@ -156,4 +156,4 @@ FirefoxLogins ReadFirefoxLogins(const std::filesystem::path& profile, std::strin
   }
   return DecryptFirefoxLogins(json, salt, check, wrapped, primary);
 }
-}  // namespace red::import
+}  // namespace red::importer

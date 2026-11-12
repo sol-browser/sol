@@ -5,7 +5,7 @@
 #include <map>
 #include <set>
 
-namespace red::import {
+namespace red::importer {
 std::string StableId(const std::string& source, const std::string& key) {
   const auto data = source + "\n" + key; std::array<UCHAR, 32> hash{}; BCRYPT_ALG_HANDLE alg = nullptr;
   if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0) != 0) return "";
@@ -54,4 +54,4 @@ TreeOutput BuildImportTree(const TreeInput& in) {
   else if (!tree.nodes.empty() && !TreeStore::ValidateSnapshot(tree)) out.error = "The imported tabs and bookmarks could not be arranged. Nothing imported.";
   return out;
 }
-}  // namespace red::import
+}  // namespace red::importer

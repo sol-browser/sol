@@ -2,7 +2,7 @@
 #include "import/formats/import_types.h"
 #include "storage/tree_store.h"
 
-namespace red::import {
+namespace red::importer {
 // Stable RFC 4122-shaped id from SHA-256(source || key): re-importing the
 // same source yields the same ids, which TreeStore::Import refuses twice.
 std::string StableId(const std::string& source, const std::string& key);
@@ -17,4 +17,4 @@ struct TreeInput {
 };
 struct TreeOutput { TreeSnapshot tree; int tabs = 0, bookmarks = 0, folders = 0; std::string error; };
 TreeOutput BuildImportTree(const TreeInput& input);
-}  // namespace red::import
+}  // namespace red::importer

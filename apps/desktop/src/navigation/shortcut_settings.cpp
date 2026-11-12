@@ -9,14 +9,16 @@ const std::vector<Entry>& Defaults() {
   static const std::vector<Entry> entries = [] {
     std::vector<Entry> result = {
       {Shortcut::Address, {'L',true}}, {Shortcut::NewTab,{'T',true}}, {Shortcut::CloseTab,{'W',true}},
-      {Shortcut::NewWindow,{'N',true}}, {Shortcut::NewPrivateWindow,{'N',true,true}}, {Shortcut::NextTab,{9,true}}, {Shortcut::PreviousTab,{9,true,true}},
+      {Shortcut::NewWindow,{'N',true}}, {Shortcut::NewPrivateWindow,{'N',true,true}}, {Shortcut::RecentTab,{9,true}}, {Shortcut::RecentTabBack,{9,true,true}}, {Shortcut::NextTab,{34,true}}, {Shortcut::PreviousTab,{33,true}},
       {Shortcut::Sidebar,{'S',true}}, {Shortcut::Pin,{'D',true}}, {Shortcut::Back,{37,false,false,true}},
       {Shortcut::Forward,{39,false,false,true}}, {Shortcut::Reload,{'R',true}}, {Shortcut::Reload,{116}},
       {Shortcut::ReloadBypass,{'R',true,true}}, {Shortcut::ReloadBypass,{116,false,true}}, {Shortcut::Stop,{27}},
       {Shortcut::CloseWindow,{115,false,false,true}}, {Shortcut::DevTools,{123}}, {Shortcut::DevTools,{'I',true,true}},
       {Shortcut::Fullscreen,{122}}, {Shortcut::History,{'H',true}}, {Shortcut::Downloads,{'J',true}},
       {Shortcut::HistoryPage,{'H',true,true}}, {Shortcut::ReopenClosed,{'T',true,true}}, {Shortcut::Settings,{188,true}},
-      {Shortcut::PictureInPicture,{'P',false,false,true}}, {Shortcut::Print,{'P',true}},
+      {Shortcut::PictureInPicture,{'P',false,false,true}}, {Shortcut::Print,{'P',true}}, {Shortcut::CopyUrl,{'C',true,true}}, {Shortcut::Capture,{'5',true,true}},
+      {Shortcut::SplitFocusLeft,{37,true,false,true}}, {Shortcut::SplitFocusRight,{39,true,false,true}}, {Shortcut::SplitFocusUp,{38,true,false,true}},
+      {Shortcut::SplitFocusDown,{40,true,false,true}}, {Shortcut::SplitExpand,{13,true,false,true}},
     };
     for (int i = 0; i < 9; ++i) result.push_back({static_cast<Shortcut>(static_cast<int>(Shortcut::Space1)+i), {'1'+i,true}});
     return result;
@@ -49,7 +51,12 @@ std::string Title(Shortcut action) {
     case Shortcut::Downloads:return "Downloads"; case Shortcut::HistoryPage:return "Full history";
     case Shortcut::ReopenClosed:return "Reopen closed tab"; case Shortcut::Fullscreen:return "Fullscreen";
     case Shortcut::Settings:return "Settings"; case Shortcut::PictureInPicture:return "Picture-in-picture";
-    case Shortcut::Print:return "Print";
+    case Shortcut::Print:return "Print"; case Shortcut::CopyUrl:return "Copy address without trackers";
+    case Shortcut::Capture:return "Capture (area or element)"; case Shortcut::Screenshot:return "Screenshot"; case Shortcut::FullPageScreenshot:return "Full page screenshot";
+    case Shortcut::RecentTab:return "Recent tab"; case Shortcut::RecentTabBack:return "Recent tab (back)";
+    case Shortcut::SplitFocusLeft:return "Split View: pane to the left"; case Shortcut::SplitFocusRight:return "Split View: pane to the right";
+    case Shortcut::SplitFocusUp:return "Split View: pane above"; case Shortcut::SplitFocusDown:return "Split View: pane below";
+    case Shortcut::SplitExpand:return "Split View: expand or restore pane";
     default:return "Space " + std::to_string(static_cast<int>(action)-static_cast<int>(Shortcut::Space1)+1);
   }
 }
@@ -57,10 +64,11 @@ std::string Label(const KeyBinding& key) {
   std::string result = key.ctrl ? "Ctrl + " : ""; if (key.alt) result += "Alt + "; if (key.shift) result += "Shift + ";
   if ((key.key >= 'A' && key.key <= 'Z') || (key.key >= '0' && key.key <= '9')) result += static_cast<char>(key.key);
   else if (key.key >= 112 && key.key <= 123) result += "F" + std::to_string(key.key-111);
+  else if (key.key == 33) result += "Page Up"; else if (key.key == 34) result += "Page Down";
   else if (key.key == 9) result += "Tab"; else if (key.key == 27) result += "Esc";
   else if (key.key == 37) result += "Left"; else if (key.key == 39) result += "Right";
   else if (key.key == 38) result += "Up"; else if (key.key == 40) result += "Down";
-  else if (key.key == 188) result += ","; else if (key.key == 32) result += "Space";
+  else if (key.key == 188) result += ","; else if (key.key == 32) result += "Space"; else if (key.key == 13) result += "Enter";
   else result += "Key " + std::to_string(key.key);
   return result;
 }
@@ -93,6 +101,9 @@ bool ConfigureShortcut(Preferences& prefs, const std::string& name, const KeyBin
   }
   prefs.shortcuts[name] = key; return true;
 }
+// Settings rejects a longer list (MAX_SHORTCUTS in browser-contracts, the binding limit in preferences.cpp):
+// with 41 shortcuts its window never came up. Raise all three together.
+static_assert(std::size(kShortcutNames) <= 64, "more shortcuts than Settings accepts");
 CefRefPtr<CefListValue> DescribeShortcuts(const Preferences& prefs) {
   auto rows = CefListValue::Create(); const auto effective = Effective(prefs);
   size_t index = 0;

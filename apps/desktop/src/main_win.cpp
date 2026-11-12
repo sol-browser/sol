@@ -1,4 +1,6 @@
+#include "windows/capture_window.h"
 #include "windows/passwords_window.h"
+#include "web_url.h"
 #include "windows/sidebar_actions.h"
 #include <windows.h>
 #include <commctrl.h>
@@ -94,6 +96,7 @@
 #include "experiments/integration_live_check.h"
 #include "experiments/sidebar_perf_probe.h"
 #include "experiments/pip_probe.h"
+#include "experiments/split_probe.h"
 #include "windows/auto_pip.h"
 #include "experiments/capture_mute_probe.h"
 #include "experiments/theme_probe.h"
@@ -134,6 +137,7 @@
 #include "app/web_profile_repair.h"
 #include "extensions/install_notice.h"
 #include "downloads/download_manager.h"
+#include "include/cef_dialog_handler.h"
 #include "include/cef_download_handler.h"
 #include "experiments/toolbar_probe.h"
 
@@ -247,7 +251,7 @@ class UiResources final : public CefSchemeHandlerFactory {
     if (!browser || (browser->GetIdentifier() != state->shell_id.load() && browser->GetIdentifier() != state->welcome_id.load() && browser->GetIdentifier() != state->command_id.load() &&
                      browser->GetIdentifier() != state->panel_id.load() && browser->GetIdentifier() != state->integration_panel_id.load() &&
                      browser->GetIdentifier() != state->peek_id.load() &&
-                     browser->GetIdentifier() != state->settings_id.load() && browser->GetIdentifier() != state->boost_id.load() &&
+                     browser->GetIdentifier() != state->settings_id.load() && browser->GetIdentifier() != state->boost_id.load() && browser->GetIdentifier() != state->update_id.load() && browser->GetIdentifier() != state->capture_id.load() &&
                      browser->GetIdentifier() != state->menu_id[0].load() && browser->GetIdentifier() != state->menu_id[1].load() &&
                      browser->GetIdentifier() != state->menu_id[2].load() && !state->internal_pages.contains(browser->GetIdentifier()) &&
                      !state->IsDevToolsWindowUi(browser->GetIdentifier())) || !frame ||
@@ -292,6 +296,16 @@ class UiResources final : public CefSchemeHandlerFactory {
       headers.emplace("Cache-Control", "no-store");
       return new FaviconResource(bytes, stream, headers);
     }
+    if (path.starts_with("/capture-frame-") || path.starts_with("/capture-view-")) {
+      // The still picture of the page for the capture window's own document only.
+      const auto picture = red::CaptureFrame(browser->GetIdentifier(), path);
+      if (!picture) return nullptr;
+      auto body = std::make_shared<std::string>(*picture);
+      CefResponse::HeaderMap headers;
+      headers.emplace("X-Content-Type-Options", "nosniff");
+      headers.emplace("Cache-Control", "no-store");
+      return new ThemeResource(body, CefStreamReader::CreateForData(body->data(), body->size()), headers, "image/png");
+    }
     if (path == "/welcome-music.mp3") {
       // The welcome's track, for the welcome to read its rhythm (Windows plays it).
       const auto track = red::WelcomeMusic::Track();
@@ -302,7 +316,7 @@ class UiResources final : public CefSchemeHandlerFactory {
       headers.emplace("Cache-Control", "no-store");
       return new CefStreamResourceHandler(200, "OK", "audio/mpeg", headers, stream);
     }
-    auto found = assets_.find(path == "/command.html" || path == "/welcome.html" || path == "/panel.html" || path == "/peek.html" || path == "/settings.html" || path == "/boost.html" || path == "/menu.html" || path == "/history.html" || path == "/downloads.html" || path == "/devtools.html" ? "/index.html" : path);
+    auto found = assets_.find(path == "/command.html" || path == "/welcome.html" || path == "/panel.html" || path == "/peek.html" || path == "/settings.html" || path == "/boost.html" || path == "/update.html" || path == "/capture.html" || path == "/menu.html" || path == "/history.html" || path == "/downloads.html" || path == "/devtools.html" ? "/index.html" : path);
     if (found == assets_.end()) return nullptr;
     auto& asset = found->second;
     auto stream = CefStreamReader::CreateForData(asset.body.data(), asset.body.size());
@@ -310,10 +324,10 @@ class UiResources final : public CefSchemeHandlerFactory {
     headers.emplace("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
     headers.emplace("X-Content-Type-Options", "nosniff");
     headers.emplace("Cache-Control", "no-store");
-    if (path == "/panel.html" || path == "/welcome.html" || path == "/command.html" || path == "/settings.html" || path == "/boost.html" || path == "/menu.html" || path == "/history.html" || path == "/downloads.html") {
+    if (path == "/panel.html" || path == "/welcome.html" || path == "/command.html" || path == "/settings.html" || path == "/boost.html" || path == "/update.html" || path == "/capture.html" || path == "/menu.html" || path == "/history.html" || path == "/downloads.html") {
       auto body = std::make_shared<std::string>(asset.body);
       const auto html = body->find("<html");
-      if (html != std::string::npos) body->insert(html + 5, path == "/panel.html" ? " data-ui=\"panel\"" : path == "/welcome.html" ? " data-ui=\"welcome\"" : path == "/settings.html" ? " data-ui=\"settings\"" : path == "/boost.html" ? " data-ui=\"boost\"" : path == "/menu.html" ? " data-ui=\"menu\"" : path == "/history.html" || path == "/downloads.html" ? " data-ui=\"page\"" : " data-ui=\"command\"");
+      if (html != std::string::npos) body->insert(html + 5, path == "/panel.html" ? " data-ui=\"panel\"" : path == "/welcome.html" ? " data-ui=\"welcome\"" : path == "/settings.html" ? " data-ui=\"settings\"" : path == "/boost.html" ? " data-ui=\"boost\"" : path == "/update.html" ? " data-ui=\"update\"" : path == "/capture.html" ? " data-ui=\"capture\"" : path == "/menu.html" ? " data-ui=\"menu\"" : path == "/history.html" || path == "/downloads.html" ? " data-ui=\"page\"" : " data-ui=\"command\"");
       return new ThemeResource(body, CefStreamReader::CreateForData(body->data(), body->size()), headers, "text/html");
     }
     return new CefStreamResourceHandler(200, "OK", asset.mime, headers, stream);
@@ -345,7 +359,7 @@ std::map<int, Client*>& PageClients() { static std::map<int, Client*> clients; r
 class Client final : public CefClient, public CefLifeSpanHandler,
     public CefLoadHandler, public CefDisplayHandler, public CefRequestHandler,
     public CefFocusHandler, public CefJSDialogHandler, public CefKeyboardHandler,
-    public CefCommandHandler, public CefDragHandler, public CefResourceRequestHandler, public CefContextMenuHandler, public CefDownloadHandler, public CefPermissionHandler,
+    public CefCommandHandler, public CefDragHandler, public CefResourceRequestHandler, public CefContextMenuHandler, public CefDownloadHandler, public CefPermissionHandler, public CefDialogHandler,
     public CefMessageRouterBrowserSide::Handler {
  public:
   // |foreign|: a workspace browser that Chrome created itself (extension
@@ -407,6 +421,21 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     data->SetBool("allowed", allow); state_->Record("external_protocol", data);
   }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
+  // Only for the capture experiment: Windows' file dialogs stay as they are for websites and for Sol.
+  CefRefPtr<CefDialogHandler> GetDialogHandler() override { return state_->screenshot_ask_probe ? this : nullptr; }
+  bool OnFileDialog(CefRefPtr<CefBrowser>, FileDialogMode mode, const CefString& title, const CefString& default_file_path,
+                    const std::vector<CefString>&, const std::vector<CefString>&, const std::vector<CefString>&,
+                    CefRefPtr<CefFileDialogCallback> callback) override {
+    if (!state_->screenshot_ask_probe || mode != FILE_DIALOG_SAVE || state_->downloads_directory.empty()) return false;
+    // Answers as a person would: the name Sol suggested, in the folder it offered.
+    const std::filesystem::path suggested = default_file_path.ToWString();
+    auto data = CefDictionaryValue::Create();
+    data->SetString("title", title); data->SetString("name", suggested.filename().wstring());
+    data->SetBool("in_download_folder", suggested.parent_path() == state_->downloads_directory);
+    state_->Record("file_dialog", data);
+    callback->Continue({(state_->downloads_directory / (L"chosen " + suggested.filename().wstring())).wstring()});
+    return true;
+  }
   CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
   // Websites in the workspace download through our manager; the trusted shell never downloads.
   bool CanDownload(CefRefPtr<CefBrowser>, const CefString&, const CefString&) override {
@@ -464,7 +493,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       // A new Red window (private: docs/private-windows.md) instead of Chrome's own browser window,
       // which Red would otherwise turn into a tab. A private page's "new window" stays private.
       const auto url = params->GetLinkUrl().ToString();
-      if ((url.starts_with("https://") || url.starts_with("http://")) && url.size() <= 8192 && state_->session && state_->session->new_window_with_link) {
+      if (red::HasWebScheme(url) && url.size() <= 8192 && state_->session && state_->session->new_window_with_link) {
         const bool opened = state_->session->new_window_with_link(state_, url, private_link || state_->private_window);
         if (state_->probe) { auto d = CefDictionaryValue::Create(); d->SetBool("opened", opened); d->SetBool("private", private_link); state_->Record("link_window_opened", d); }
       }
@@ -540,6 +569,10 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     if (command == cef_id_for_command_id_name("IDC_DEV_TOOLS")) {
       red::ShowPageDevTools(state_, shell_ ? state_->content : browser, CefPoint(), true); return true;
     }
+    // F1 and Chrome's Help menu open support.google.com in a new tab. Sol has no
+    // such page; the key still reaches the website, only Chrome's command is dropped.
+    static const int help_key = cef_id_for_command_id_name("IDC_HELP_PAGE_VIA_KEYBOARD"), help_menu = cef_id_for_command_id_name("IDC_HELP_PAGE_VIA_MENU");
+    if (command == help_key || command == help_menu) return true;
     static const int zoom_in = cef_id_for_command_id_name("IDC_ZOOM_PLUS"), zoom_out = cef_id_for_command_id_name("IDC_ZOOM_MINUS"),
         zoom_reset = cef_id_for_command_id_name("IDC_ZOOM_NORMAL");
     if (command == zoom_in || command == zoom_out || command == zoom_reset) {
@@ -548,9 +581,9 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       // Sol's own pages (History, Downloads) never zoom: they share the sol://ui
       // origin and profile with the sidebar and top bar, and Chrome keeps zoom
       // per origin, so zooming them scaled the whole browser.
-      if (shell_ || internal_page_) return true;
-      ZoomPage(state_, browser, command == zoom_in ? CEF_ZOOM_COMMAND_IN : command == zoom_out ? CEF_ZOOM_COMMAND_OUT : CEF_ZOOM_COMMAND_RESET);
-      return true;
+      if (!shell_ && !internal_page_)
+        ZoomPage(state_, browser, command == zoom_in ? CEF_ZOOM_COMMAND_IN : command == zoom_out ? CEF_ZOOM_COMMAND_OUT : CEF_ZOOM_COMMAND_RESET);
+      return true;  // Handled either way: Chrome's own zoom must not run.
     }
     if (auto action = red::ChromeShortcut(command)) return red::ExecuteShortcut(state_, *action);
     // Sol's own pages (trusted UI): none of Chrome's page commands (view source,
@@ -998,6 +1031,20 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       }
       callback->Failure(400, "Invalid navigation command"); return true;
     }
+    if (method == "menu.copy") {
+      // Right click on the copy-link button: Copy Link / Super Copy, under the button (DIP).
+      const bool numbers = dict->GetType("x") == VTYPE_INT && dict->GetType("y") == VTYPE_INT &&
+          dict->GetType("width") == VTYPE_INT && dict->GetType("height") == VTYPE_INT;
+      const auto bounds = state_->window ? state_->window->GetClientAreaBoundsInScreen() : CefRect();
+      if (!state_->workspace || persistent || dict->GetSize() != 5 || !numbers || dict->GetInt("x") < 0 || dict->GetInt("y") < 0 ||
+          dict->GetInt("width") < 1 || dict->GetInt("height") < 1 ||
+          dict->GetInt("x") + dict->GetInt("width") > bounds.width || dict->GetInt("y") + dict->GetInt("height") > bounds.height) {
+        callback->Failure(400, "Invalid menu command"); return true;
+      }
+      red::ShowCopyMenu(state_, CefRect(dict->GetInt("x"), dict->GetInt("y"), dict->GetInt("width"), dict->GetInt("height")));
+      auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot());
+      callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
+    }
     if (method == "menu.main") {
       // The logo button: the browser menu, anchored under the button (DIP).
       const bool numbers = dict->GetType("x") == VTYPE_INT && dict->GetType("y") == VTYPE_INT &&
@@ -1401,6 +1448,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
         red::OnTabActionsProbeLoad(state_, url);
         red::OnAudibleProbeLoad(state_, browser, url);
         red::OnPipProbeLoad(state_, browser, url);
+        red::OnSplitProbeLoad(state_, url);
         red::OnCaptureMuteProbeLoad(state_, browser, url);
         red::OnThemeProbeLoad(state_, url);
         red::OnSpacesProbeLoad(state_, url);
@@ -1579,10 +1627,10 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   }
   // Decides once per foreign browser, then closes it. |final| turns a still
   // blank page into a visible rejection instead of waiting forever.
-  void ResolveForeign(CefRefPtr<CefBrowser> browser, const std::string& url, bool final = false) {
+  void ResolveForeign(CefRefPtr<CefBrowser> browser, const std::string& url, bool settled = false) {
     if (foreign_resolved_) return;
     auto kind = foreign_profile_rejected_ ? red::ForeignPage::Reject : red::ClassifyForeignPage(url);
-    if (kind == red::ForeignPage::Wait) { if (!final) return; kind = red::ForeignPage::Reject; }
+    if (kind == red::ForeignPage::Wait) { if (!settled) return; kind = red::ForeignPage::Reject; }
     foreign_resolved_ = true;
     CefPostTask(TID_UI, base::BindOnce([](std::shared_ptr<State> state, CefRefPtr<CefBrowser> browser,
                                           red::ForeignPage kind, std::string url, bool wrong_profile) {
@@ -1770,7 +1818,7 @@ class WindowDelegate final : public CefWindowDelegate {
       ResizeWorkspace(window);
       state_->workspace->AttachContent();
       state_->Record("window_shown");
-      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->sidebar_perf_probe ? 150000 : state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_peek_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe ? 30000 : 15000);
+      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->sidebar_perf_probe ? 150000 : state_->split_probe ? 105000 : state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_peek_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->split_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe ? 30000 : 15000);
       if (state_->input_probe) red::ObserveNativeInput(state_);
       if (!state_->import_probe.empty()) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
         if (auto s = weak.lock()) red::RunImportProbe(s);
@@ -1870,6 +1918,7 @@ class WindowDelegate final : public CefWindowDelegate {
         (!state_->google_integrations_probe || state_->google_integrations_checks) &&
         (!state_->sidebar_perf_probe || state_->sidebar_perf_done) &&
         (!state_->pip_probe || state_->pip_done) &&
+        (!state_->split_probe || state_->split_done) &&
         (!state_->capture_mute_probe || state_->capture_mute_done) &&
         (!state_->theme_probe || state_->theme_done) &&
         (!state_->theme_preview_probe || state_->theme_preview_checks) &&
@@ -2495,7 +2544,7 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
       CefRefPtr<CefV8Context> context) override {
     if (trusted_[browser->GetIdentifier()] && frame->IsMain() &&
         (frame->GetURL().ToString() == red::kUiUrl || frame->GetURL().ToString() == red::kCommandUrl ||
-         frame->GetURL().ToString() == red::kPanelUrl || frame->GetURL().ToString() == red::kPeekUrl || frame->GetURL().ToString() == red::kSettingsUrl || frame->GetURL().ToString() == red::kWelcomeUrl || frame->GetURL().ToString() == red::kBoostUrl || frame->GetURL().ToString() == red::kMenuUrl || frame->GetURL().ToString() == red::kDevToolsWindowUrl ||
+         frame->GetURL().ToString() == red::kPanelUrl || frame->GetURL().ToString() == red::kPeekUrl || frame->GetURL().ToString() == red::kSettingsUrl || frame->GetURL().ToString() == red::kWelcomeUrl || frame->GetURL().ToString() == red::kBoostUrl || frame->GetURL().ToString() == red::kUpdateUrl || frame->GetURL().ToString() == red::kCaptureUrl || frame->GetURL().ToString() == red::kMenuUrl || frame->GetURL().ToString() == red::kDevToolsWindowUrl ||
          red::IsInternalPageUrl(frame->GetURL().ToString())))
       renderer_router_->OnContextCreated(browser, frame, context);
     // Website frames only (the function checks http/https); never trusted UI.
@@ -2589,6 +2638,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->google_integrations_probe = command->HasSwitch("probe-google-integrations");
   state->sidebar_perf_probe = command->HasSwitch("probe-sidebar-perf");
   state->pip_probe = command->HasSwitch("probe-pip");
+  state->split_probe = command->HasSwitch("probe-split");
   state->capture_mute_probe = command->HasSwitch("probe-capture-mute");
   state->palette_probe=command->HasSwitch("probe-palette");
   state->theme_preview_probe=command->HasSwitch("probe-theme-preview");
@@ -2603,6 +2653,19 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->pin_probe = command->HasSwitch("probe-pin");
   state->menu_page = command->GetSwitchValue("probe-menu") == "page";
   state->menu_edges = command->GetSwitchValue("probe-menu") == "edges";
+  state->menu_update_restart = command->GetSwitchValue("probe-menu") == "update-restart";
+  state->menu_screenshot = command->GetSwitchValue("probe-menu") == "screenshot";
+  state->menu_recent = command->GetSwitchValue("probe-menu") == "recent";
+  state->menu_capture = command->GetSwitchValue("probe-menu") == "capture";
+  state->menu_capture_tiles = command->GetSwitchValue("probe-menu") == "capture-tiles";
+  state->menu_settings = command->GetSwitchValue("probe-menu") == "settings";
+  // The capture experiment: screenshots ask where to save, and the probe answers the dialog (Client::OnFileDialog).
+  state->screenshot_ask_probe = state->probe && command->HasSwitch("probe-screenshot-ask");
+  state->menu_copy = command->GetSwitchValue("probe-menu") == "copy";
+  state->menu_switcher = command->GetSwitchValue("probe-menu") == "switcher";
+  state->menu_switcher_empty = command->GetSwitchValue("probe-menu") == "switcher-empty";
+  state->menu_switcher_again = command->GetSwitchValue("probe-menu") == "switcher-again";
+  state->menu_update = command->GetSwitchValue("probe-menu") == "update" || state->menu_update_restart;
   state->boost_store = command->GetSwitchValue("probe-boost") == "store";
   state->boost_pick = command->GetSwitchValue("probe-boost") == "pick";
   state->ua_brand_probe = command->GetSwitchValue("probe-ua-brand").ToString().substr(0, 32);
@@ -2642,7 +2705,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   if (state->lifecycle_probe && state->lifecycle_mode != "full" && state->lifecycle_mode != "restore" && state->lifecycle_mode != "hold" && state->lifecycle_mode != "manual") return 11;
   state->workspace_probe = command->HasSwitch("probe-workspace") || state->organization_probe || state->browsing_probe;
   // The installed Sol is always the workspace browser; Velopack starts it with no arguments.
-  state->workspace_mode = installed || command->HasSwitch("workspace") || state->workspace_probe || state->lifecycle_probe || state->downloads_probe || state->fullscreen_probe || !state->permissions_probe.empty() || state->site_probe || !state->history_probe.empty() || state->tab_actions_probe || state->audible_probe || state->downloads_page_probe || state->extension_popup_probe || !state->protocols_probe.empty() || state->close_motion_probe || state->sidebar_peek_probe || state->sidebar_perf_probe || state->pip_probe || state->capture_mute_probe || state->theme_probe || state->spaces_probe || !state->ua_brand_probe.empty() || state->boost_probe || state->menu_probe || state->private_probe || state->pin_probe || state->link_headers_probe || !state->import_probe.empty();
+  state->workspace_mode = installed || command->HasSwitch("workspace") || state->workspace_probe || state->lifecycle_probe || state->downloads_probe || state->fullscreen_probe || !state->permissions_probe.empty() || state->site_probe || !state->history_probe.empty() || state->tab_actions_probe || state->audible_probe || state->downloads_page_probe || state->extension_popup_probe || !state->protocols_probe.empty() || state->close_motion_probe || state->sidebar_peek_probe || state->sidebar_perf_probe || state->pip_probe || state->split_probe || state->capture_mute_probe || state->theme_probe || state->spaces_probe || !state->ua_brand_probe.empty() || state->boost_probe || state->menu_probe || state->private_probe || state->pin_probe || state->link_headers_probe || !state->import_probe.empty();
   state->probe_tabs = state->probe_tabs || state->native_tabs_reference || state->embedded_tabs_probe;
   auto url = command->HasSwitch("probe-url") ? command->GetSwitchValue("probe-url").ToString() : "https://example.com";
   state->initial_url = url;

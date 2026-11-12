@@ -16,15 +16,15 @@ HICON big_icon = nullptr, small_icon = nullptr;
 // Sol's icon from this DLL's PNG resources (resources/red.rc), sized for the
 // system's big and small icon metrics.
 HICON LoadSolIcon(int id, int size) {
-  HMODULE module = nullptr;
+  HMODULE library = nullptr;
   if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                          reinterpret_cast<LPCWSTR>(&LoadSolIcon), &module)) return nullptr;
-  HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(id), MAKEINTRESOURCEW(10));  // RT_RCDATA
-  HGLOBAL data = resource ? LoadResource(module, resource) : nullptr;
+                          reinterpret_cast<LPCWSTR>(&LoadSolIcon), &library)) return nullptr;
+  HRSRC resource = FindResourceW(library, MAKEINTRESOURCEW(id), MAKEINTRESOURCEW(10));  // RT_RCDATA
+  HGLOBAL data = resource ? LoadResource(library, resource) : nullptr;
   auto* bytes = data ? static_cast<BYTE*>(LockResource(data)) : nullptr;
   if (!bytes) return nullptr;
   // PNG icon images are accepted since Windows Vista; the size scales the frame.
-  return CreateIconFromResourceEx(bytes, SizeofResource(module, resource), TRUE, 0x00030000, size, size, LR_DEFAULTCOLOR);
+  return CreateIconFromResourceEx(bytes, SizeofResource(library, resource), TRUE, 0x00030000, size, size, LR_DEFAULTCOLOR);
 }
 
 // Chromium labels its own windows with Chromium's AppUserModelID, so the

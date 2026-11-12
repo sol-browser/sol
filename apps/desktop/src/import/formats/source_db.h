@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <string>
 
-namespace red::import {
+namespace red::importer {
 // Read-only SQLite access to another browser's database, inside one read
 // transaction so the rows are consistent. The source file is never modified.
 class SourceDb {
@@ -25,10 +25,14 @@ class Query {
   ~Query() { sqlite3_finalize(s); }
   Query(const Query&) = delete;
   Query& operator=(const Query&) = delete;
-  bool Row() { return s && (code = sqlite3_step(s)) == SQLITE_ROW; }
+  bool Row() {
+    if (!s) return false;
+    code = sqlite3_step(s);
+    return code == SQLITE_ROW;
+  }
   bool Done() const { return s && code == SQLITE_DONE; }
   std::string Text(int col) { const auto* p = sqlite3_column_blob(s, col); return p ? std::string(static_cast<const char*>(p), sqlite3_column_bytes(s, col)) : ""; }
   int64_t Number(int col) { return sqlite3_column_int64(s, col); }
   sqlite3_stmt* s = nullptr; int code = SQLITE_DONE;
 };
-}  // namespace red::import
+}  // namespace red::importer

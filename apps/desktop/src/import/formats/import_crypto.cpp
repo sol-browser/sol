@@ -1,4 +1,5 @@
 #include "import/formats/import_crypto.h"
+#include "web_url.h"
 #include "import/formats/import_types.h"
 #include <windows.h>
 #include <bcrypt.h>
@@ -7,14 +8,14 @@
 #include <algorithm>
 #include <array>
 
-namespace red::import {
+namespace red::importer {
 void Wipe(std::string& secret) { if (!secret.empty()) SecureZeroMemory(secret.data(), secret.size()); secret.clear(); }
 void WipeAll(std::vector<Login>& logins) { for (auto& login : logins) Wipe(login.password); logins.clear(); }
 
 bool IsWebUrl(const std::string& url) {
   if (url.empty() || url.size() > 4096 || std::any_of(url.begin(), url.end(), [](unsigned char c) { return c <= 32 || c == 127; })) return false;
-  size_t start = 0;
-  if (url.starts_with("https://")) start = 8; else if (url.starts_with("http://")) start = 7; else return false;
+  const size_t start = WebSchemeLength(url);
+  if (!start) return false;
   const auto end = url.find_first_of("/?#", start);
   const auto authority = url.substr(start, end == std::string::npos ? std::string::npos : end - start);
   return !authority.empty() && authority.find('@') == std::string::npos && authority.find('\\') == std::string::npos && authority[0] != ':';
@@ -106,4 +107,4 @@ std::string HmacSha1(std::string_view key, std::string_view data) {
   if (!alg.handle || BCryptHash(alg.handle, Bytes(key), static_cast<ULONG>(key.size()), Bytes(data), static_cast<ULONG>(data.size()), digest.data(), static_cast<ULONG>(digest.size())) != 0) return "";
   return std::string(reinterpret_cast<const char*>(digest.data()), digest.size());
 }
-}  // namespace red::import
+}  // namespace red::importer

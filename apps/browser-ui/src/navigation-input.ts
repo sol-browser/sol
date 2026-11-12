@@ -6,6 +6,17 @@ export const searchEngines = {
   brave: { title: 'Brave Search', url: 'https://search.brave.com/search?q=' },
 } as const;
 
+function isLocalAuthority(authority: string): boolean {
+  const host = authority.replace(/:\d+$/u, '');
+  if (/^(?:localhost|\[::1\])$/iu.test(host)) return true;
+  // Use canonical decimal octets. URL also accepts octal IPv4, whose first
+  // component can resolve to a different network than its text suggests.
+  const octets = host.split('.');
+  if (octets.length !== 4 || !octets.every(octet => /^(?:0|[1-9]\d{0,2})$/u.test(octet) && Number(octet) <= 255)) return false;
+  const [first, second] = octets.map(Number);
+  return first === 127 || first === 10 || first === 172 && second >= 16 && second <= 31 || first === 192 && second === 168;
+}
+
 /** One user-input policy for the address bar and new-tab composer.
  * Native code separately authorizes the resulting destination. */
 export function resolveNavigationInput(raw: string, engine: keyof typeof searchEngines = 'google'): NavigationInput {
@@ -15,10 +26,11 @@ export function resolveNavigationInput(raw: string, engine: keyof typeof searchE
   const file = localFile(text);
   if (file) return file;
   const authority = text.split(/[/?#]/u, 1)[0];
-  const local = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?:[/?#]|$)/iu.test(text);
+  const local = isLocalAuthority(authority);
   const explicit = /^[a-z][a-z\d+.-]*:/iu.test(text) && !local && !/^[^\s/:]+:\d+(?:[/?#]|$)/u.test(text);
   if (explicit && !/^https?:\/\//iu.test(text)) throw new Error('Only HTTP and HTTPS addresses are supported.');
-  const address = explicit || (!/\s/u.test(text) && (local || authority.includes('.') || /^\[[\da-f:]+\](?::\d+)?$/iu.test(authority)));
+  const email = /^[^\s@:/\\]+@[\p{L}\p{N}][\p{L}\p{N}.-]*$/u.test(text);
+  const address = explicit || (!email && !/\s/u.test(text) && (local || authority.includes('.') || /^\[[\da-f:]+\](?::\d+)?$/iu.test(authority)));
   if (address) {
     let url: URL;
     try { url = new URL(explicit ? text : `${local ? 'http' : 'https'}://${text}`); }

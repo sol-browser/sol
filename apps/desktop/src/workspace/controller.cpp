@@ -1,4 +1,5 @@
 #include "windows/browser_dialogs.h"
+#include "web_url.h"
 #include "workspace/controller.h"
 #include "app/updates.h"
 #include "windows/pointer.h"
@@ -16,6 +17,7 @@
 #include <cmath>
 #include <chrono>
 #include <tuple>
+#include <cwctype>
 #include "include/base/cef_callback.h"
 #include "include/cef_image.h"
 #include "include/cef_navigation_entry.h"
@@ -85,6 +87,24 @@ void KeepWindowSelection(TreeSnapshot& incoming, const TreeSnapshot& local) {
   }
   const auto visible = OrderedTabsForSpace(incoming, incoming.active_space);
   if (std::find(visible.begin(), visible.end(), incoming.active_id) == visible.end()) incoming.active_id.clear();
+}
+// A split's members as the sidebar sees them: its row (the anchor), the pages
+// in the order they appear on screen, and whether this member's own row hides.
+void DescribeSplitMembership(CefRefPtr<CefDictionaryValue> row, const SplitGroup& split, bool hidden) {
+  row->SetString("splitAnchor",split.anchor); row->SetString("splitTitle",split.title); row->SetBool("splitHidden",hidden);
+  auto panes = CefListValue::Create();
+  for (const int slot : SplitReadingOrder(split.layout))
+    if (slot >= 0 && slot < static_cast<int>(split.pages.size())) panes->SetString(panes->GetSize(),split.pages[slot]);
+  row->SetList("splitPanes",panes);
+}
+// Tab order without the hidden (non-anchor, non-Favorite) members of splits shown in it.
+void WithoutHiddenSplitMembers(const TreeSnapshot& tree, std::vector<std::string>& order) {
+  for (const auto& split : tree.splits) if (std::find(order.begin(),order.end(),split.anchor) != order.end())
+    for (const auto& page : split.pages) {
+      if (page == split.anchor) continue;
+      const auto node = std::find_if(tree.nodes.begin(),tree.nodes.end(),[&](const auto& n) { return n.id == page; });
+      if (node != tree.nodes.end() && !node->favorite) std::erase(order,page);
+    }
 }
 }  // namespace
 void WorkspaceController::Start() {
@@ -235,6 +255,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::LayoutSnapshot() const {
   result->SetBool("sidebarResizing", state && state->sidebar_peek && state->sidebar_peek->is_resizing());
   if (state && state->devtools_dock) if (auto dock = state->devtools_dock->Describe()) result->SetDictionary("devTools", dock);
   if (state && state->devtools_dock) if (auto device = state->devtools_dock->DescribeDevice()) result->SetDictionary("devicePreview", device);
+  if (auto split = DescribeSplitView()) result->SetDictionary("splitView", split);
   return result;
 }
 CefRefPtr<CefDictionaryValue> WorkspaceController::ThemeSnapshot() const {
@@ -374,10 +395,9 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   auto nodes = CefListValue::Create();
   std::map<std::string,const SplitGroup*> split_members;
   const auto split_visible = OrderedTabsForSpace(tree_,tree_.active_space);
-  for (const auto& split : tree_.splits) if (std::find(split_visible.begin(),split_visible.end(),split.anchor) != split_visible.end()) {
-    split_members[split.anchor] = &split; split_members[split.other] = &split;
-  }
-  for (const auto& split:tree_.archived_splits) { split_members[split.anchor]=&split; split_members[split.other]=&split; }
+  for (const auto& split : tree_.splits) if (std::find(split_visible.begin(),split_visible.end(),split.anchor) != split_visible.end())
+    for (const auto& page : split.pages) split_members[page] = &split;
+  for (const auto& split:tree_.archived_splits) for (const auto& page : split.pages) split_members[page] = &split;
   if (auto split = DescribeSplitView()) result->SetDictionary("splitView",split);
   for (size_t i = 0; i < tree_.nodes.size(); ++i) {
     const auto& node = tree_.nodes[i]; auto row = CefDictionaryValue::Create();
@@ -387,11 +407,8 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     if (node.favorite && node.profile != BrowsingProfileId(tree_)) continue;
     row->SetString("id", node.id); row->SetString("parentId", node.parent); row->SetString("space", node.space);
     row->SetString("kind", node.folder ? "folder" : "tab"); row->SetString("title", node.title);
-    if (const auto member = split_members.find(node.id); member != split_members.end()) {
-      row->SetString("splitAnchor",member->second->anchor); row->SetString("splitOther",member->second->other);
-      row->SetString("splitTitle",member->second->title); row->SetBool("splitHidden",node.id != member->second->anchor && !node.favorite);
-      row->SetBool("splitReversed",member->second->reversed);
-    }
+    if (const auto member = split_members.find(node.id); member != split_members.end())
+      DescribeSplitMembership(row,*member->second,node.id != member->second->anchor && !node.favorite);
     row->SetString("url", node.url); row->SetInt("position", node.position);
     row->SetBool("pinned", node.pinned); row->SetBool("expanded", node.expanded);
     row->SetBool("favorite", node.favorite); row->SetBool("archived", node.archived); row->SetDouble("archivedAt", static_cast<double>(node.archived_at));
@@ -454,7 +471,7 @@ CefRefPtr<CefListValue> WorkspaceController::ArchiveSnapshot() const {
   const auto state = state_.lock();
   auto rows = CefListValue::Create();
   std::map<std::string,const SplitGroup*> split_members;
-  for (const auto& split : tree_.archived_splits) { split_members[split.anchor] = &split; split_members[split.other] = &split; }
+  for (const auto& split : tree_.archived_splits) for (const auto& page : split.pages) split_members[page] = &split;
   for (const auto& node : tree_.nodes) {
     if (!node.archived || node.folder) continue;
     auto row = CefDictionaryValue::Create();
@@ -464,11 +481,8 @@ CefRefPtr<CefListValue> WorkspaceController::ArchiveSnapshot() const {
     row->SetBool("favorite", false); row->SetBool("archived", true); row->SetDouble("archivedAt", static_cast<double>(node.archived_at));
     row->SetBool("live", false); row->SetBool("closing", false); row->SetString("currentUrl", node.url);
     row->SetBool("customTitle", node.custom_title); row->SetString("pageTitle", node.page_title);
-    if (const auto member = split_members.find(node.id); member != split_members.end()) {
-      row->SetString("splitAnchor", member->second->anchor); row->SetString("splitOther", member->second->other);
-      row->SetString("splitTitle", member->second->title); row->SetBool("splitHidden", node.id != member->second->anchor);
-      row->SetBool("splitReversed", member->second->reversed);
-    }
+    if (const auto member = split_members.find(node.id); member != split_members.end())
+      DescribeSplitMembership(row,*member->second,node.id != member->second->anchor);
     const auto profile = ProfileForNode(node.id);
     const auto favicons = profile ? profile->favicons : state ? state->favicons : nullptr;
     if (favicons) if (const auto icon = favicons->Url(IconHost(node.url))) row->SetString("favicon", *icon);
@@ -611,7 +625,7 @@ void WorkspaceController::Dispatch(TreeCommand command, Reply done, bool interna
   }
   if (command.action == TreeAction::Activate && !exact_activation) for (const auto& split : tree_.splits) if (split.anchor == command.id) {
     const auto remembered = split_focus_.find(split.anchor);
-    if (remembered != split_focus_.end() && (remembered->second == split.anchor || remembered->second == split.other)) command.id = remembered->second;
+    if (remembered != split_focus_.end() && split.Contains(remembered->second)) command.id = remembered->second;
     break;
   }
   const auto selection_started = command.action == TreeAction::Activate ? GetTickCount64() : 0;
@@ -672,7 +686,7 @@ void WorkspaceController::OnPageActivationRequested(int browser_id) {
   }
   // The native request names a specific page, including a split anchor whose
   // sidebar row would normally reopen the last focused pane instead.
-  if (const auto* split = SelectedSplit(); split && (id == split->anchor || id == split->other) &&
+  if (const auto* split = SelectedSplit(); split && split->Contains(id) &&
       !expanded_split_pane_.empty() && expanded_split_pane_ != id) expanded_split_pane_.clear();
   native_page_activation_pending_ = true;
   Dispatch(std::move(activate), [weak = weak_from_this()](int, const std::string&, CefRefPtr<CefDictionaryValue>) {
@@ -827,7 +841,7 @@ bool WorkspaceController::CanTransfer(const std::string& id) const {
   return browser && !shutting_down_ && !creating_.contains(id) && !closing_.contains(id) && !moving_unloads_.contains(id) &&
       !archiving_.contains(id) && !auto_closing_.contains(id) && !IsPeekPage(id) &&
       !(HasLinkPeek() && link_peek_opener_ == id && (link_peek_closing_ || link_peek_promoting_)) && !crashed_.contains(browser->GetIdentifier()) &&
-      std::none_of(tree_.splits.begin(), tree_.splits.end(), [&](const auto& split) { return split.anchor == id || split.other == id; });
+      std::none_of(tree_.splits.begin(), tree_.splits.end(), [&](const auto& split) { return split.Contains(id); });
 }
 CefRefPtr<CefBrowser> WorkspaceController::ReleaseForTransfer(const std::string& id, bool remove_entry) {
   if (!CanTransfer(id)) return nullptr;
@@ -836,7 +850,7 @@ CefRefPtr<CefBrowser> WorkspaceController::ReleaseForTransfer(const std::string&
   // The page leaves without unloading: forget it as OnClosed would, then show
   // another tab here.
   loaded_.erase(browser_id); last_urls_.erase(browser_id); media_sessions_.erase(browser_id);
-  sessions_.erase(id); browser_nodes_.erase(browser_id); std::erase(recent_, id);
+  sessions_.erase(id); browser_nodes_.erase(browser_id); std::erase(recent_, id); thumbnails_.Forget(id);
   auto_archive_media_.erase(browser_id);
   page_titles_.erase(id);
   if (tree_.active_id == id) {
@@ -886,6 +900,11 @@ void WorkspaceController::HandleTabDrag(CefRefPtr<CefDictionaryValue> request, R
       state->Record("organization_tab_drag", details);
     }
     ShowTabDragPreview(state, id);
+  } else if (method == "tab.dragCancel" && tab_drag_ && tab_drag_->id == id && PrimaryButtonDown() &&
+             state->sidebar_peek && !state->sidebar_peek->is_open()) {
+    // The floating sidebar slid away under a tab carried toward the pages and
+    // lost the pointer. The button is still down: the drag goes on natively and
+    // the drag preview finishes it at release (FinishTabDragAtRelease).
   } else if (method == "tab.dragEnded" || method == "tab.dragCancel") {
     FinishTabDrag(id, method == "tab.dragEnded");
   } else if (!MoveToNewWindow(id)) {
@@ -903,9 +922,18 @@ void WorkspaceController::FinishTabDrag(const std::string& id, bool dropped) {
   const auto split = released ? SplitDropAt(id, cursor) : std::nullopt;
   state->tab_dragging = false;
   tab_drag_.reset();
+  if (split && !split->neutral) {
+    // The layout preview stays over the pages until the drop is applied and the
+    // pages had a moment to paint at their new size (no flash of the old ones).
+    Dispatch(split->command,[weak = std::weak_ptr<State>(state)](int,const std::string&,CefRefPtr<CefDictionaryValue>) {
+      CefPostDelayedTask(TID_UI,base::BindOnce([](std::weak_ptr<State> weak) {
+        if (const auto state = weak.lock(); state && !state->tab_dragging) HideTabDragPreview(state);
+      },weak),160);
+    },true);
+    return;
+  }
   HideTabDragPreview(state);
-  if (!released) return;
-  if (split) { Dispatch(split->command,{},true); return; }
+  if (!released || split) return;
   RECT source{}; if (!GetWindowRect(state->window->GetWindowHandle(), &source)) return;
   InflateRect(&source, 12, 12);
   if (PtInRect(&source, cursor)) return;
@@ -941,25 +969,31 @@ void WorkspaceController::EnsureActive() {
   if (HasLinkPeek()) { if (state->embedded) state->embedded->RaiseActive(); return; }
   if (session_ && session_->auto_archive && !state->standalone_window && state->window && !state->window->IsMinimized() && IsWindowVisible(state->window->GetWindowHandle())) {
     session_->auto_archive->Activity(tree_.active_id);
-    if (const auto* split=SelectedSplit()) { session_->auto_archive->Activity(split->anchor); session_->auto_archive->Activity(split->other); }
+    if (const auto* split=SelectedSplit()) for (const auto& page : split->pages) session_->auto_archive->Activity(page);
   }
   if (const auto* split = SelectedSplit()) {
     split_focus_[split->anchor] = tree_.active_id;
-    if (expanded_split_pane_ != split->anchor && expanded_split_pane_ != split->other) expanded_split_pane_.clear();
-    EnsurePage(split->anchor); EnsurePage(split->other);
-    const auto first = LiveBrowser(split->anchor), second = LiveBrowser(split->other);
-    const int a = first ? first->GetIdentifier() : -1, b = second ? second->GetIdentifier() : -1;
+    if (!split->Contains(expanded_split_pane_)) expanded_split_pane_.clear();
+    std::vector<int> pages; CefRefPtr<CefBrowser> first;
+    for (const auto& page : split->pages) {
+      EnsurePage(page);
+      const auto browser = LiveBrowser(page);
+      pages.push_back(browser ? browser->GetIdentifier() : -1);
+      if (!first && browser) first = browser;
+    }
     const auto expanded = LiveBrowser(expanded_split_pane_);
-    state->embedded->SetSplitPages(a,b,split->vertical,split_preview_ && split_preview_->first == split->anchor ? split_preview_->second : split->ratio,
-      split->reversed,expanded_split_pane_.empty() ? -1 : expanded ? expanded->GetIdentifier() : -2,crashed_);
-    auto focus = LiveBrowser(tree_.active_id); if (!focus) focus = first ? first : second;
+    const bool previewing = split_preview_ && split_preview_->first == split->anchor &&
+                            ValidSplitLayout(split_preview_->second,static_cast<int>(split->pages.size()));
+    state->embedded->SetSplitPages(std::move(pages),previewing ? split_preview_->second : split->layout,split->linked,
+      expanded_split_pane_.empty() ? -1 : expanded ? expanded->GetIdentifier() : -2,crashed_);
+    auto focus = LiveBrowser(tree_.active_id); if (!focus) focus = first;
     if (focus) state->embedded->Activate(focus);
     if (focus) { std::erase(recent_,tree_.active_id); recent_.push_back(tree_.active_id); }
     return;
   }
   expanded_split_pane_.clear(); split_preview_.reset();
   const bool was_split = state->embedded->HasSplit();
-  state->embedded->SetSplitPages(-1,-1,false,5000,false);
+  state->embedded->ClearSplit();
   if (tree_.active_id.empty()) { state->embedded->HideAll(); return; }
   if (closing_.contains(tree_.active_id) || moving_unloads_.contains(tree_.active_id)) return;
   const auto live = sessions_.find(tree_.active_id);
@@ -1073,7 +1107,7 @@ void WorkspaceController::OnClosed(int browser_id, const std::string& last_url) 
   if (binding == browser_nodes_.end()) return;
   const auto id = binding->second;
   crashed_.erase(browser_id);
-  sessions_.erase(id); browser_nodes_.erase(binding); std::erase(recent_, id);
+  sessions_.erase(id); browser_nodes_.erase(binding); std::erase(recent_, id); thumbnails_.Forget(id);
   auto_archive_media_.erase(browser_id);
   if (closing_peeks_.erase(id) || std::erase_if(parked_peeks_, [&](const auto& entry) { return entry.second.id == id; })) {
     page_titles_.erase(id); Publish(); return;
@@ -1208,6 +1242,13 @@ void WorkspaceController::OnPageChanged(CefRefPtr<CefBrowser> browser) {
 }
 void WorkspaceController::OnLoadFinished(CefRefPtr<CefBrowser> browser) {
   loaded_.insert(browser->GetIdentifier());
+  // A picture for the Ctrl+Tab switcher once the page has settled, if it is the one in front.
+  if (const auto node = browser_nodes_.find(browser->GetIdentifier()); node != browser_nodes_.end())
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, CefRefPtr<CefBrowser> page, std::string id) {
+      const auto self = weak.lock();
+      const auto state = self ? self->state_.lock() : nullptr;
+      if (self && state && !self->shutting_down_ && self->tree_.active_id == id && state->content && state->content->IsSame(page)) self->thumbnails_.Capture(page, id);
+    }, weak_from_this(), browser, node->second), 1500);
   if (const auto state = state_.lock(); state && state->embedded) {
     if (IsLinkPeekBrowser(browser->GetIdentifier())) state->embedded->LinkPeekPageReady(browser);
     else state->embedded->OnPresentationLoadFinished(browser);
@@ -1424,20 +1465,165 @@ void WorkspaceController::CloseActive() {
 void WorkspaceController::CycleTab(bool reverse) {
   if (!ready_ || shutting_down_ || !closing_.empty() || closing_commits_) return;
   auto order = OrderedTabsForSpace(tree_, tree_.active_space);
-  for (const auto& split : tree_.splits) if (std::find(order.begin(),order.end(),split.anchor) != order.end()) {
-    const auto other = std::find_if(tree_.nodes.begin(),tree_.nodes.end(),[&](const auto& node) { return node.id == split.other; });
-    if (other != tree_.nodes.end() && !other->favorite) std::erase(order,split.other);
-  }
+  WithoutHiddenSplitMembers(tree_,order);
   if (order.empty()) return;
   auto current = pending_selections_ ? selection_cursor_ : tree_.active_id;
-  for (const auto& split : tree_.splits) if (current == split.other && std::find(order.begin(),order.end(),current) == order.end()) current = split.anchor;
+  for (const auto& split : tree_.splits) if (split.Contains(current) && std::find(order.begin(),order.end(),current) == order.end()) current = split.anchor;
   const auto found = std::find(order.begin(), order.end(), current);
   const auto index = found == order.end() ? (reverse ? 0 : order.size() - 1) : static_cast<size_t>(found - order.begin());
   selection_cursor_ = order[(index + (reverse ? order.size() - 1 : 1)) % order.size()];
   TreeCommand command{TreeAction::Activate}; command.id = selection_cursor_; ++pending_selections_;
   Dispatch(command, [weak = weak_from_this()](int, const std::string&, CefRefPtr<CefDictionaryValue>) {
-    if (auto self = weak.lock(); self && --self->pending_selections_ == 0) self->selection_cursor_.clear();
+    if (auto self = weak.lock()) {
+      --self->pending_selections_;
+      if (self->pending_selections_ == 0) self->selection_cursor_.clear();
+    }
   }, true);
+}
+void WorkspaceController::CycleRecentTab(bool reverse) {
+  if (!ready_ || shutting_down_ || !closing_.empty() || closing_commits_) {
+    if (const auto state = state_.lock()) {
+      auto details = CefDictionaryValue::Create();
+      details->SetBool("ready", ready_); details->SetBool("closing", !closing_.empty()); details->SetBool("commits", closing_commits_);
+      state->Record("recent_cycle_refused", details);
+    }
+    return;
+  }
+  auto order = OrderedTabsForSpace(tree_, tree_.active_space);
+  WithoutHiddenSplitMembers(tree_,order);
+  const bool starting = !recent_cycle_.active;
+  auto current = pending_selections_ ? selection_cursor_ : tree_.active_id;
+  for (const auto& split : tree_.splits) if (split.Contains(current) && std::find(order.begin(),order.end(),current) == order.end()) current = split.anchor;
+  std::vector<UsedAt> saved;
+  for (const auto& id : order) {
+    const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
+    if (node != tree_.nodes.end()) saved.push_back({id, node->last_active_at, node->closed_at});
+  }
+  const auto target = RecentCycleStep(recent_cycle_, RecentHistory(recent_, std::move(saved)), order, current, reverse);
+  if (target.empty()) { if (starting) recent_cycle_.active = false; return; }
+  const auto state = state_.lock();
+  if (state) {
+    auto details = CefDictionaryValue::Create();
+    details->SetBool("starting", starting); details->SetBool("reverse", reverse);
+    details->SetInt("index", static_cast<int>(recent_cycle_.index)); details->SetInt("count", static_cast<int>(recent_cycle_.order.size()));
+    state->Record("recent_cycle_step", details);
+  }
+  // Nothing is switched while Ctrl is down: the selection moves (on the strip, once it shows) and the tab
+  // changes when Ctrl is let go, as in Arc.
+  if (!starting) { if (strip_shown_ && state && state->embedded) state->embedded->SelectTabSwitcher(static_cast<int>(recent_cycle_.index)); return; }
+  recent_cycle_started_ = GetTickCount64();
+  strip_shown_ = false;
+  // A picture of the tab being left, for its card: it is still in front now.
+  if (state && state->content && !tree_.active_id.empty()) thumbnails_.Capture(state->content, tree_.active_id);
+  // The strip shows once Ctrl has been held a moment (a quick tap just switches); the cycle ends when Ctrl
+  // is let go (a key bound to something else ends it at once).
+  const auto poll = std::make_shared<std::function<void()>>();
+  *poll = [weak = weak_from_this(), poll] {
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, std::shared_ptr<std::function<void()>> poll) {
+      const auto self = weak.lock();
+      if (!self || !self->recent_cycle_.active) return;
+      const auto held = self->state_.lock();
+      if (!(GetAsyncKeyState(VK_CONTROL) & 0x8000) && !(held && held->probe_ctrl_held)) { self->EndRecentCycle(); return; }
+      if (!self->strip_shown_ && GetTickCount64() - self->recent_cycle_started_ >= 180) self->ShowRecentStrip();
+      (*poll)();
+    }, weak, poll), 30);
+  };
+  (*poll)();
+}
+std::vector<PageCorners::SwitcherCard> WorkspaceController::SwitcherCards() {
+  std::vector<PageCorners::SwitcherCard> cards;
+  const auto state = state_.lock();
+  for (const auto& id : recent_cycle_.order) {
+    PageCorners::SwitcherCard card;
+    const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
+    if (node != tree_.nodes.end()) {
+      const auto live = sessions_.find(id);
+      const auto url = live != sessions_.end() ? live->second->GetMainFrame()->GetURL().ToString() : node->url;
+      std::string title;
+      const auto page_title = page_titles_.find(id);
+      if (node->custom_title) title = node->title;
+      else if (live != sessions_.end() && page_title != page_titles_.end() && page_title->second.url == url) title = page_title->second.text;
+      else if (!node->page_title.empty() && (url.empty() || url == "about:blank" || SamePageUrl(url, node->url))) title = node->page_title;
+      if (title.empty()) title = node->title;
+      std::string host;
+      if (const size_t scheme = url.find("://"); scheme != std::string::npos) {
+        const auto end = url.find_first_of("/?#", scheme + 3);
+        host = url.substr(scheme + 3, end == std::string::npos ? std::string::npos : end - scheme - 3);
+        if (host.starts_with("www.")) host.erase(0, 4);
+      }
+      card.title = CefString(title.empty() ? host : title).ToWString();
+      const auto first = card.title.find_first_not_of(L" \t");
+      card.letter = first == std::wstring::npos ? L"?" : std::wstring(1, static_cast<wchar_t>(towupper(card.title[first])));
+      const auto profile = ProfileForNode(id);
+      const auto favicons = profile ? profile->favicons : state ? state->favicons : nullptr;
+      if (favicons) {
+        std::optional<std::string> icon;
+        if (live != sessions_.end()) icon = favicons->PageUrl(live->second->GetIdentifier());
+        if (!icon) icon = favicons->Url(IconHost(node->url));
+        constexpr std::string_view kUi = "sol://ui";
+        if (icon && icon->starts_with(kUi))
+          if (const auto png = favicons->PngForPath(std::string_view(*icon).substr(kUi.size()))) card.icon = *png;
+      }
+      card.thumb = thumbnails_.Get(id);
+    }
+    card.current = id == tree_.active_id;
+    cards.push_back(std::move(card));
+  }
+  return cards;
+}
+void WorkspaceController::ShowRecentStrip() {
+  const auto state = state_.lock();
+  if (!state || !state->embedded || !recent_cycle_.active) return;
+  strip_shown_ = true;  // Once per cycle: without composition there is no strip, and no retry every 30 ms.
+  state->embedded->ShowTabSwitcher(SwitcherCards(), static_cast<int>(recent_cycle_.index));
+}
+void WorkspaceController::EndRecentCycle() {
+  if (!recent_cycle_.active) return;
+  const auto state = state_.lock();
+  if (state) state->Record("recent_cycle_end");
+  if (state && state->embedded) state->embedded->HideTabSwitcher();
+  strip_shown_ = false;
+  const auto target = recent_cycle_.index < recent_cycle_.order.size() ? recent_cycle_.order[recent_cycle_.index] : std::string();
+  recent_cycle_ = {};
+  if (target.empty() || target == tree_.active_id) return;
+  // The picture of the tab being left (taken when the cycle began) needs no wait: a surface capture also
+  // answers for a page that is no longer in front.
+  CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, std::string target) {
+    const auto self = weak.lock();
+    if (!self || self->shutting_down_ || !self->closing_.empty() ||
+        std::none_of(self->tree_.nodes.begin(), self->tree_.nodes.end(), [&](const auto& n) { return n.id == target; })) return;
+    self->selection_cursor_ = target;
+    TreeCommand command{TreeAction::Activate}; command.id = target; ++self->pending_selections_;
+    self->Dispatch(command, [weak](int, const std::string&, CefRefPtr<CefDictionaryValue>) {
+      if (auto self = weak.lock()) {
+        --self->pending_selections_;
+        if (self->pending_selections_ == 0) self->selection_cursor_.clear();
+      }
+    }, true);
+  }, weak_from_this(), target));
+}
+bool WorkspaceController::CloseCycleSelection() {
+  const auto state = state_.lock();
+  if (!recent_cycle_.active || !strip_shown_ || !state || !state->embedded) return false;
+  const size_t index = recent_cycle_.index;
+  if (index >= recent_cycle_.order.size()) return true;
+  const auto id = recent_cycle_.order[index];
+  if (id == tree_.active_id) return true;  // The tab in front is closed the usual way, not from the strip.
+  recent_cycle_.order.erase(recent_cycle_.order.begin() + static_cast<std::ptrdiff_t>(index));
+  recent_cycle_.index = std::min(index, recent_cycle_.order.size() - 1);
+  Close(id, false);
+  state->embedded->ShowTabSwitcher(SwitcherCards(), static_cast<int>(recent_cycle_.index));
+  return true;
+}
+void WorkspaceController::CopyActiveLink() {
+  if (!ready_ || shutting_down_ || tree_.active_id.empty()) return;
+  std::string error;
+  if (const int code = CopyTabLink(tree_.active_id, error, false); code && !error.empty()) Notify(error);
+}
+void WorkspaceController::CopyCleanLink() {
+  if (!ready_ || shutting_down_ || tree_.active_id.empty()) return;
+  std::string error;
+  if (const int code = CopyTabLink(tree_.active_id, error, true); code && !error.empty()) Notify(error);
 }
 void WorkspaceController::SwitchSpaceAt(int index) {
   if (!ready_ || shutting_down_ || !closing_.empty() || closing_commits_ || index < 0) return;
@@ -1599,7 +1785,7 @@ void WorkspaceController::OpenPage(const std::string& url, const std::string& ti
   // Registered before the tab exists: a foreground page is created while the
   // command completes, before the reply below runs.
   // Both ends must be websites: LoadURLFromInitiator loads nothing otherwise.
-  const auto web = [](const std::string& value) { return value.starts_with("https://") || value.starts_with("http://"); };
+  const auto web = [](const std::string& value) { return HasWebScheme(value); };
   if (web(initiator) && web(url)) link_initiator_by_url_[url] = initiator;
   TreeCommand command{TreeAction::CreateTab}; command.url = url;
   command.title = title; command.value = foreground; command.after = after;
@@ -1651,14 +1837,14 @@ void WorkspaceController::SetSidebarVisible(bool visible, bool live) {
     state->Record("sidebar_visible_timing", data);
   }
 }
-void WorkspaceController::LayoutSidebar(double width, bool final) {
+void WorkspaceController::LayoutSidebar(double width, bool settled) {
   auto state = state_.lock();
   if (!state || !state->window || !state->embedded) return;
   const auto client = state->window->GetClientAreaBoundsInScreen();
   const int x = static_cast<int>(std::lround(width)) + kContentInset;
   state->embedded->Resize(CefRect(x, kToolbarHeight, std::max(1, client.width - x - kContentInset),
                                   std::max(1, client.height - kToolbarHeight - kContentInset)));
-  if (!final) return;
+  if (!settled) return;
   state->embedded->QueueRaise();
   // Probe evidence once the animation has settled and the page is revealed
   // (a cold page's input is held until its first frame; up to ~2 s).
@@ -1891,17 +2077,19 @@ void WorkspaceController::Handle(CefRefPtr<CefDictionaryValue> request, Reply do
     command.action = TreeAction::CreateSplit; fields = 5;
     if (!text("id",36,command.id) || !text("otherId",36,command.parent) || request->GetType("vertical") != VTYPE_BOOL) { reject(); return; }
     command.value = request->GetBool("vertical");
-  } else if (method == "split.remove" || method == "split.swap") {
-    command.action = method == "split.remove" ? TreeAction::RemoveSplit : TreeAction::SwapSplit; fields = 3;
+  } else if (method == "split.remove") {
+    command.action = TreeAction::RemoveSplit; fields = 3;
     if (!text("id",36,command.id)) { reject(); return; }
+  } else if (method == "split.swap") {
+    // Two panes swap without naming them; three or four name both pages.
+    command.action = TreeAction::SwapSplit; fields = request->HasKey("a") ? 5 : 3;
+    if (!text("id",36,command.id) || (fields == 5 && (!text("a",36,command.parent) || !text("b",36,command.split_pane)))) { reject(); return; }
+  } else if (method == "split.removePane") {
+    command.action = TreeAction::RemoveSplitPane; fields = 4;
+    if (!text("id",36,command.id) || !text("page",36,command.parent)) { reject(); return; }
   } else if (method == "split.rename") {
     command.action = TreeAction::RenameSplit; fields = 4;
     if (!text("id",36,command.id) || !text("title",240,command.title)) { reject(); return; }
-  } else if (method == "split.layout") {
-    command.action = TreeAction::LayoutSplit; fields = 5;
-    if (!text("id",36,command.id) || request->GetType("vertical") != VTYPE_BOOL || request->GetType("ratio") != VTYPE_INT) { reject(); return; }
-    command.position = request->GetInt("ratio"); command.value = request->GetBool("vertical"); split_preview_.reset();
-    split_resizing_ = false; ++split_resize_generation_;
   } else if (method == "profile.create" || method == "profile.rename") {
     if (const auto state = state_.lock(); !state || state->private_window || state->standalone_window) { done(409,"Profiles are managed in the main browser",nullptr); return; }
     command.action = method == "profile.create" ? TreeAction::CreateProfile : TreeAction::RenameProfile;
@@ -2024,10 +2212,9 @@ void WorkspaceController::Handle(CefRefPtr<CefDictionaryValue> request, Reply do
     } else if (!command.parent.empty()) destination = BrowsingProfileId(tree_,command.parent);
     if (destination != BrowsingProfileId(tree_,command.id)) {
       auto ids = FolderNodeIds(tree_,command.id); if (ids.empty()) ids.push_back(command.id);
-      for (const auto& split : tree_.splits) if (std::find(ids.begin(),ids.end(),split.anchor)!=ids.end() ||
-          std::find(ids.begin(),ids.end(),split.other)!=ids.end()) {
-        ids.push_back(split.anchor); ids.push_back(split.other);
-      }
+      for (const auto& split : tree_.splits) if (std::any_of(split.pages.begin(),split.pages.end(),[&](const auto& page) {
+            return std::find(ids.begin(),ids.end(),page) != ids.end(); }))
+        ids.insert(ids.end(),split.pages.begin(),split.pages.end());
       bool live = false;
       for (const auto& window : session_->Windows()) if (window->workspace_data == data_ && window->workspace)
         for (const auto& id : ids) live = live || window->workspace->LiveBrowser(id) || window->workspace->creating_.contains(id) || window->workspace->parked_peeks_.contains(id);

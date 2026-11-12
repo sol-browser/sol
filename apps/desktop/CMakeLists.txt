@@ -7,7 +7,7 @@ if(RED_RUNTIME_OUTPUT_DIR)
   set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CEF_TARGET_OUT_DIR}")
 endif()
 ADD_LOGICAL_TARGET(libcef_lib "${CEF_LIB_DEBUG}" "${CEF_LIB_RELEASE}")
-add_library(workspace_store STATIC src/storage/tree_store.cpp src/storage/history_store.cpp)
+add_library(workspace_store STATIC src/storage/tree_store.cpp src/storage/history_store.cpp src/workspace/split_layout.cpp)
 target_include_directories(workspace_store PUBLIC src)
 target_link_libraries(workspace_store PUBLIC sqlite bcrypt)
 target_compile_options(workspace_store PRIVATE /W4 /WX /utf-8)
@@ -16,7 +16,7 @@ set_property(TARGET workspace_store PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded
 # Other browsers' profile formats (CEF-free so the parsers are unit-tested).
 add_library(import_formats STATIC src/import/formats/json_lite.cpp src/import/formats/import_crypto.cpp
   src/import/formats/password_csv.cpp src/import/formats/chromium_profile.cpp src/import/formats/firefox_logins.cpp
-  src/import/formats/import_tree.cpp src/import/formats/favicons.cpp)
+  src/import/formats/import_tree.cpp src/import/formats/favicons.cpp src/import/formats/arc_sidebar.cpp)
 target_link_libraries(import_formats PUBLIC workspace_store crypt32)
 target_compile_options(import_formats PRIVATE /W4 /WX /utf-8)
 set_property(TARGET import_formats PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -59,6 +59,12 @@ target_sources(${CEF_TARGET} PRIVATE src/experiments/browsing_probe.cpp
   src/site/boost_store.cpp
   src/windows/boosts.cpp
   src/windows/boost_window.cpp
+  src/windows/update_window.cpp
+  src/windows/page_capture.cpp
+  src/windows/capture_window.cpp
+  src/windows/tab_thumbnails.cpp
+  src/windows/image_scale.cpp
+  src/windows/tab_switcher_strip.cpp
   src/windows/devtools_window.cpp
   src/windows/menu_popup.cpp
   src/windows/page_menu.cpp
@@ -78,6 +84,7 @@ target_sources(${CEF_TARGET} PRIVATE src/experiments/browsing_probe.cpp
   src/experiments/sidebar_peek_probe.cpp
   src/experiments/sidebar_perf_probe.cpp
   src/experiments/pip_probe.cpp
+  src/experiments/split_probe.cpp
   src/experiments/capture_mute_probe.cpp
   src/experiments/theme_probe.cpp
   src/experiments/spaces_probe.cpp
@@ -99,14 +106,14 @@ configure_file(resources/version.rc.in "${CMAKE_CURRENT_BINARY_DIR}/generated/ve
 target_sources(${CEF_TARGET} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc")
 target_include_directories(${CEF_TARGET} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_sources(${CEF_TARGET} PRIVATE src/windows/command_bar.cpp)
-target_sources(${CEF_TARGET} PRIVATE src/windows/split_view.cpp)
+target_sources(${CEF_TARGET} PRIVATE src/windows/split_view.cpp src/windows/split_overlay.cpp src/windows/split_layout_preview.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/workspace/split_controller.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/settings_window.cpp src/windows/default_browser.cpp src/navigation/external_launch.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/sidebar_menu.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/devtools.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/devtools_dock.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/device_emulation.cpp)
-target_sources(${CEF_TARGET} PRIVATE src/import/zen_reader.cpp src/import/zen_import.cpp src/import/browser_import.cpp src/import/cookie_writer.cpp src/import/password_sink.cpp)
+target_sources(${CEF_TARGET} PRIVATE src/import/zen_reader.cpp src/import/browser_import.cpp src/import/cookie_writer.cpp src/import/password_sink.cpp)
 target_link_libraries(${CEF_TARGET} PRIVATE comctl32 ole32 oleaut32 uuid)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/lifecycle_probe.cpp src/experiments/toolbar_probe.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/extensions/profile_guard.cpp src/extensions/shell_reset.cpp src/windows/tab_history_menu.cpp src/app/web_profile_repair.cpp src/extensions/install_notice.cpp src/extensions/pinned_extensions.cpp src/extensions/extension_catalog.cpp src/windows/extension_popup.cpp src/windows/sidebar_peek.cpp
@@ -161,6 +168,20 @@ target_include_directories(windows_locale_test PRIVATE src)
 target_compile_options(windows_locale_test PRIVATE /W4 /WX /EHsc)
 add_test(NAME windows_locale COMMAND windows_locale_test)
 
+add_executable(web_url_test "${CMAKE_SOURCE_DIR}/tests/native/web_url_test.cpp")
+target_include_directories(web_url_test PRIVATE src)
+target_compile_options(web_url_test PRIVATE /W4 /WX /EHsc)
+add_test(NAME web_url COMMAND web_url_test)
+add_executable(url_clean_test "${CMAKE_SOURCE_DIR}/tests/native/url_clean_test.cpp")
+target_include_directories(url_clean_test PRIVATE src)
+target_compile_options(url_clean_test PRIVATE /W4 /WX /EHsc)
+add_test(NAME url_clean COMMAND url_clean_test)
+
+add_executable(recent_cycle_test "${CMAKE_SOURCE_DIR}/tests/native/recent_cycle_test.cpp")
+target_include_directories(recent_cycle_test PRIVATE src)
+target_compile_options(recent_cycle_test PRIVATE /W4 /WX /EHsc)
+add_test(NAME recent_cycle COMMAND recent_cycle_test)
+
 add_executable(shell_reset_test "${CMAKE_SOURCE_DIR}/tests/native/shell_reset_test.cpp" src/extensions/shell_reset.cpp src/app/web_profile_repair.cpp)
 target_include_directories(shell_reset_test PRIVATE src)
 target_link_libraries(shell_reset_test PRIVATE sqlite)
@@ -200,6 +221,11 @@ target_link_libraries(workspace_store_test PRIVATE workspace_store)
 target_compile_options(workspace_store_test PRIVATE /W4 /WX /utf-8)
 set_property(TARGET workspace_store_test PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 add_test(NAME workspace_store COMMAND workspace_store_test)
+add_executable(split_layout_test "${CMAKE_SOURCE_DIR}/tests/native/split_layout_test.cpp")
+target_link_libraries(split_layout_test PRIVATE workspace_store)
+target_compile_options(split_layout_test PRIVATE /W4 /WX /utf-8)
+set_property(TARGET split_layout_test PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+add_test(NAME split_layout COMMAND split_layout_test)
 add_executable(folder_removal_test "${CMAKE_SOURCE_DIR}/tests/native/folder_removal_test.cpp")
 target_link_libraries(folder_removal_test PRIVATE workspace_store)
 target_compile_options(folder_removal_test PRIVATE /W4 /WX /utf-8)
@@ -216,7 +242,7 @@ target_compile_options(browser_import_test PRIVATE /W4 /WX /utf-8)
 target_compile_definitions(browser_import_test PRIVATE "RED_IMPORT_FIXTURES=L\"${CMAKE_SOURCE_DIR}/tests/fixtures/import\"")
 set_property(TARGET browser_import_test PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 add_test(NAME browser_import COMMAND browser_import_test)
-add_executable(navigation_test "${CMAKE_SOURCE_DIR}/tests/native/navigation_test.cpp")
+add_executable(navigation_test "${CMAKE_SOURCE_DIR}/tests/native/navigation_test.cpp" src/workspace/split_layout.cpp)
 target_include_directories(navigation_test PRIVATE src)
 target_compile_options(navigation_test PRIVATE /W4 /WX /utf-8)
 target_compile_definitions(navigation_test PRIVATE _HAS_EXCEPTIONS=0 NOMINMAX WIN32_LEAN_AND_MEAN)

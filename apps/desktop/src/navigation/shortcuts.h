@@ -6,9 +6,11 @@
 namespace red {
 struct State;
 enum class Shortcut { Suppressed = -1, Address = 0, NewTab, CloseTab, NextTab, PreviousTab, Sidebar, Pin, Back, Forward, Reload, ReloadBypass, Stop, FocusPage, CloseWindow, DevTools, History, Downloads, HistoryPage, ReopenClosed,
-  Space1, Space2, Space3, Space4, Space5, Space6, Space7, Space8, Space9, Fullscreen, Settings, NewWindow, PictureInPicture, NewPrivateWindow, Print };
+  Space1, Space2, Space3, Space4, Space5, Space6, Space7, Space8, Space9, Fullscreen, Settings, NewWindow, PictureInPicture, NewPrivateWindow, Print, CopyUrl, RecentTab, RecentTabBack, Screenshot, FullPageScreenshot, Capture,
+  SplitFocusLeft, SplitFocusRight, SplitFocusUp, SplitFocusDown, SplitExpand };
 inline constexpr std::string_view kShortcutNames[] = {"address", "newTab", "closeTab", "nextTab", "previousTab", "sidebar", "pin", "back", "forward", "reload", "reloadBypass", "stop", "focusPage", "closeWindow", "devTools", "history", "downloads", "historyPage", "reopenClosed",
-  "space1", "space2", "space3", "space4", "space5", "space6", "space7", "space8", "space9", "fullscreen", "settings", "newWindow", "pictureInPicture", "newPrivateWindow", "print"};
+  "space1", "space2", "space3", "space4", "space5", "space6", "space7", "space8", "space9", "fullscreen", "settings", "newWindow", "pictureInPicture", "newPrivateWindow", "print", "copyUrl", "recentTab", "recentTabBack", "screenshot", "fullPageScreenshot", "capture",
+  "splitFocusLeft", "splitFocusRight", "splitFocusUp", "splitFocusDown", "splitExpand"};
 inline std::optional<Shortcut> ShortcutNamed(std::string_view name) {
   for (int i = 0; i < static_cast<int>(std::size(kShortcutNames)); ++i) if (kShortcutNames[i] == name) return static_cast<Shortcut>(i);
   return std::nullopt;
@@ -20,12 +22,20 @@ inline std::optional<Shortcut> ShortcutKey(int key, bool ctrl, bool shift, bool 
     if (key == 39) return Shortcut::Forward;
     if (key == 'P') return Shortcut::PictureInPicture;
   }
+  // Ctrl+Alt+arrows: the neighbouring Split View pane; Ctrl+Alt+Enter: expand/restore it.
+  if (alt && ctrl && !shift) {
+    if (key >= 37 && key <= 40) return static_cast<Shortcut>(static_cast<int>(Shortcut::SplitFocusLeft) + (key == 37 ? 0 : key == 39 ? 1 : key == 38 ? 2 : 3));
+    if (key == 13) return Shortcut::SplitExpand;
+  }
   if (alt) return std::nullopt;
   if (ctrl) {
     if (shift && key == 'I') return Shortcut::DevTools;
     if (shift && key == 'H') return Shortcut::HistoryPage;
     if (shift && key == 'T') return Shortcut::ReopenClosed;
-    if (key == 9) return shift ? Shortcut::PreviousTab : Shortcut::NextTab;
+    if (key == 9) return shift ? Shortcut::RecentTabBack : Shortcut::RecentTab;
+    if (key == 33 || key == 34) return key == 33 ? Shortcut::PreviousTab : Shortcut::NextTab;  // Ctrl+PageUp / PageDown: sidebar order.
+    if (shift && key == 'C') return Shortcut::CopyUrl;
+    if (shift && key == '5') return Shortcut::Capture;
     if (key == 'R') return shift ? Shortcut::ReloadBypass : Shortcut::Reload;
     if (key == 'N') return shift ? Shortcut::NewPrivateWindow : Shortcut::NewWindow;
     if (shift) return std::nullopt;

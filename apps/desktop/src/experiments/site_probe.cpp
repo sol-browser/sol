@@ -58,6 +58,20 @@ bool ActiveNodeUsesCamera(const std::shared_ptr<State>& state) {
   }
   return false;
 }
+void WaitForExtensionStore(std::weak_ptr<State> weak, int attempts) {
+  auto state = weak.lock(); if (!state || !state->workspace) return;
+  const auto snapshot = state->workspace->Snapshot();
+  const auto nodes = snapshot->GetList("nodes");
+  for (size_t i = 0; i < nodes->GetSize(); ++i) {
+    const auto node = nodes->GetDictionary(i);
+    if (node->GetString("id") == snapshot->GetString("activeId") && node->GetString("url") == "https://chromewebstore.google.com/") {
+      state->Record("site_extension_store_opened");
+      return;
+    }
+  }
+  if (!attempts) { Fail(state, "extension_store"); return; }
+  CefPostDelayedTask(TID_UI, base::BindOnce(&WaitForExtensionStore, weak, attempts - 1), 100);
+}
 }  // namespace
 void StartSiteProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser>) {
   if (!state->site_probe || state->site_phase != 0) return;
@@ -86,6 +100,10 @@ void ObserveSiteProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser>
   } else if (state->site_phase == 4) {
     if (message != "RED_SITE:location:prompt") { Fail(state, "page_location_reset"); return; }
     state->site_checks = true; state->Record("site_checks_pass");
+    state->site_phase = 5;
+    state->panel_popup->ProbeClick("Back");
+    state->panel_popup->ProbeClick("Add extensions");
+    WaitForExtensionStore(state, 50);
   } else if (message == "RED_SITE:camera:on") {
     state->site_stream_ready = true; StopCameraWhenReady(state);
   } else if (message.starts_with("RED_SITE:camera:error")) {

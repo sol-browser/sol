@@ -39,6 +39,7 @@ def main():
         'camera_indicator_on_then_off': 'site_camera_indicator' in names and any(m['camera'] for m in media) and not media[-1]['camera'] if media else False,
         'reset_through_popover': 'site_settings_reset' in names,
         'page_saw_denied_then_prompt': 'site_checks_pass' in names,
+        'add_extensions_opens_chrome_web_store': 'site_extension_store_opened' in names,
         'no_probe_failure': 'site_probe_failed' not in names,
         'probe_passed': any(r['event'] == 'probe_result' and r['details']['pass'] for r in rows),
     }

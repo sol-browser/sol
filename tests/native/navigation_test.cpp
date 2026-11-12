@@ -150,7 +150,18 @@ int main() {
         red::FigmaUrlName("https://www.figma.com/design/QPMgAbc123/%D0%9C%D0%B0%D0%BA%D0%B5%D1%82") == "\xD0\x9C\xD0\xB0\xD0\xBA\xD0\xB5\xD1\x82" &&
         red::FigmaUrlName("https://www.figma.com/design/QPMgAbc123?fuid=1").empty(), "Figma file names come from the address slug");
   check(red::ShortcutKey('L', true, false, false) == Shortcut::Address, "Ctrl+L");
-  check(red::ShortcutKey(9, true, true, false) == Shortcut::PreviousTab, "reverse tab cycle");
+  check(red::ShortcutKey(9, true, false, false) == Shortcut::RecentTab, "Ctrl+Tab goes by recent use");
+  check(red::ShortcutKey(9, true, true, false) == Shortcut::RecentTabBack, "Ctrl+Shift+Tab goes back by recent use");
+  check(red::ShortcutKey(37, true, false, true) == Shortcut::SplitFocusLeft && red::ShortcutKey(40, true, false, true) == Shortcut::SplitFocusDown &&
+        red::ShortcutKey(38, true, false, true) == Shortcut::SplitFocusUp && red::ShortcutKey(39, true, false, true) == Shortcut::SplitFocusRight,
+        "Ctrl+Alt+arrows move between Split View panes");
+  check(red::ShortcutKey(13, true, false, true) == Shortcut::SplitExpand && red::ShortcutKey(37, false, false, true) == Shortcut::Back,
+        "Ctrl+Alt+Enter expands a pane; Alt+Left stays Back");
+  check(red::ShortcutKey(34, true, false, false) == Shortcut::NextTab && red::ShortcutKey(33, true, false, false) == Shortcut::PreviousTab,
+        "Ctrl+PageDown / PageUp keep the sidebar order");
+  check(red::ShortcutKey('C', true, true, false) == Shortcut::CopyUrl, "Ctrl+Shift+C copies the address without trackers");
+  check(!red::ShortcutKey('C', true, false, false), "Ctrl+C stays the page's copy");
+  check(red::ShortcutKey('5', true, true, false) == Shortcut::Capture, "Ctrl+Shift+5 opens the capture overlay");
   check(red::ShortcutKey(37, false, false, true) == Shortcut::Back, "history navigation");
   check(red::ShortcutKey(115, false, false, true) == Shortcut::CloseWindow, "Alt+F4 routes to root coordinator instead of closing one Chrome child");
   check(red::ShortcutKey('R', true, true, false) == Shortcut::ReloadBypass, "cache-bypassing reload");
@@ -229,7 +240,7 @@ int main() {
     check(red::TodayArchiveTargets(tree, "t0", false, true, "t2") == V{"t0", "t1", "t3"}, "Clear keeps the active Today tab");
     check(red::TodayArchiveTargets(tree, "t0", false, true, "pin") == V{"t0", "t1", "t2", "t3"}, "Clear archives every Today tab when a pinned page is active");
     check(red::TodayArchiveTargets(tree, "t0", false, true, "") == V{"t0", "t1", "t2", "t3"}, "Clear without an active page archives all");
-    tree.splits.push_back({"t1", "t3"});
+    tree.splits.push_back(red::SplitGroup::Pair("t1", "t3"));
     check(red::TodayArchiveTargets(tree, "t0", false, true, "t3") == V{"t0", "t2"}, "Clear keeps both panes of the active split");
     check(red::TodayArchiveTargets(tree, "t2", false, true, "t2") == V{"t0", "t1", "t3"}, "an inactive split is cleared");
     check(red::TodayArchiveTargets(tree, "pin", false, true, "t2").empty(), "a pinned tab is not a Today target");

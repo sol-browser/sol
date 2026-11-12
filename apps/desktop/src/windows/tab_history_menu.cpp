@@ -1,4 +1,5 @@
 #include "windows/tab_history_menu.h"
+#include "web_url.h"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -27,11 +28,11 @@ std::vector<Entry> Entries(CefRefPtr<CefBrowser> page) {
   if (page && page->IsValid()) page->GetHost()->GetNavigationEntries(new Collect(entries), false);
   return entries;
 }
-bool Website(const std::string& url) { return url.starts_with("https://") || url.starts_with("http://"); }
+bool Website(const std::string& url) { return HasWebScheme(url); }
 // A short, single-line label: the title, else the address without its scheme.
 std::string Label(const Entry& entry) {
   std::string label = entry.title.empty() ? entry.url : entry.title;
-  for (const char* scheme : {"https://", "http://"}) if (label.starts_with(scheme)) { label.erase(0, std::char_traits<char>::length(scheme)); break; }
+  label.erase(0, WebSchemeLength(label));  // The scheme, when the label is an address.
   for (auto& c : label) if (c == '\n' || c == '\r' || c == '\t') c = ' ';
   if (label.size() > 70) {
     size_t cut = 67;

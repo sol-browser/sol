@@ -37,10 +37,10 @@ void FadeStep(int fade, float volume) {
 
 std::filesystem::path WelcomeMusic::Track() {
   std::error_code error;
-  wchar_t module[MAX_PATH];
-  const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH);
+  wchar_t executable[MAX_PATH];
+  const DWORD length = GetModuleFileNameW(nullptr, executable, MAX_PATH);
   if (length && length < MAX_PATH) {
-    const auto shipped = std::filesystem::path(module).parent_path() / L"welcome.mp3";
+    const auto shipped = std::filesystem::path(executable).parent_path() / L"welcome.mp3";
     if (std::filesystem::is_regular_file(shipped, error)) return shipped;
   }
   wchar_t value[MAX_PATH]{};

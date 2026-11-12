@@ -10,7 +10,7 @@ export function LinkPeek({ peek, command }: { peek: LinkPeekInfo; command: (comm
   };
   const disabled=peek.closing || !!peek.opening;
   const hover=(action: Action) => { if (peek.composed) control(action); };
-  return <div className="link-peek-layer" style={{ left:peek.area.x,top:peek.area.y,width:peek.area.width,height:peek.area.height }}
+  return <div className="link-peek-layer" role="presentation" style={{ left:peek.area.x,top:peek.area.y,width:peek.area.width,height:peek.area.height }}
     data-composed={!!peek.composed} onClick={() => control('close')}>
     <section className="link-peek-card" role="dialog" aria-label={peek.title || 'Link preview'} aria-busy={peek.loading}
       style={{ left:peek.bounds.x-peek.area.x,top:peek.bounds.y-peek.area.y,width:peek.bounds.width,height:peek.bounds.height }}

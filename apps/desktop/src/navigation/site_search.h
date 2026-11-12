@@ -1,4 +1,5 @@
 #pragma once
+#include "web_url.h"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -21,7 +22,7 @@ inline bool ValidSiteSearchFields(const SiteSearch& site) {
   })) return false;
   const auto& url = site.url;
   const auto token = url.find("%s"), end = url.find('/', url.find("://") + 3);
-  if (url.size() > 2048 || (!url.starts_with("https://") && !url.starts_with("http://")) ||
+  if (url.size() > 2048 || !HasWebScheme(url) ||
       token == std::string::npos || end == std::string::npos || token <= end || url.find("%s", token + 2) != std::string::npos ||
       std::any_of(url.begin(), url.end(), [](unsigned char c) { return c < 33 || c > 126 || c == '\\'; })) return false;
   const auto hex = [](unsigned char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); };

@@ -80,8 +80,8 @@ bool AutoArchive::Safe() const {
     if (const auto activity=recent_.find(id); activity!=recent_.end() && activity->second>cutoff) return false;
   }
   // A newly-created/changed split must not be partly archived by a stale job.
-  for (const auto& split:tree.splits) if (std::find(ids_.begin(),ids_.end(),split.anchor)!=ids_.end() || std::find(ids_.begin(),ids_.end(),split.other)!=ids_.end())
-    if (ids_.size()!=2 || std::find(ids_.begin(),ids_.end(),split.anchor)==ids_.end() || std::find(ids_.begin(),ids_.end(),split.other)==ids_.end()) return false;
+  for (const auto& split:tree.splits) if (std::any_of(ids_.begin(),ids_.end(),[&](const auto& id) { return split.Contains(id); }))
+    if (ids_!=split.pages) return false;
   for (const auto& state:session->Windows()) if (state->workspace_data==session->workspace && state->workspace) {
     if (state->workspace->AutoArchiveBusy()) return false;
     for (const auto& id:ids_) if (state->workspace->AutoArchiveProtected(id)) return false;
@@ -95,7 +95,7 @@ void AutoArchive::Next() {
   if (hours && budget_>0) for (const auto& node:session->workspace->tree.nodes) {
     if (!Today(node) || node.last_active_at<=0 || node.last_active_at>cutoff_ || blocked_.contains(node.id)) continue;
     ids_={node.id};
-    for (const auto& split:session->workspace->tree.splits) if (split.anchor==node.id || split.other==node.id) { ids_={split.anchor,split.other}; break; }
+    for (const auto& split:session->workspace->tree.splits) if (split.Contains(node.id)) { ids_=split.pages; break; }
     if (!Safe()) continue;
     --budget_; close_index_=0; CloseNext(); return;
   }

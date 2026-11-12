@@ -17,6 +17,7 @@
 #include "windows/embedded_content.h"
 #include "site/site_settings.h"
 #include "windows/boost_window.h"
+#include "windows/page_capture.h"
 #include "windows/ui_context_menu.h"
 #include "windows/main_menu.h"
 #include "history/history_commands.h"
@@ -200,7 +201,7 @@ class SiteMenuDelegate final : public CefMenuModelDelegate {
     owner->MenuDone(); owner->Hide(command != kManageExtensions);
     if (command == kClearCache) ClearSiteCache(state);
     else if (command == kClearCookies) ClearSiteCookies(state);
-    else if (command == kAddExtension) state->workspace->OpenLink("https://chromewebstore.live.com/", true);
+    else if (command == kAddExtension) state->workspace->OpenLink(kChromeWebStoreUrl, true);
     else if (command == kManageExtensions) {
       if (!state->extensions_window) state->extensions_window = std::make_shared<ExtensionsWindow>(state);
       state->extensions_window->Show();
@@ -1108,6 +1109,14 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     else if (method == "site.reload" && d->GetSize() == 1 && s->content) {
       s->content->Reload(); cb->Success(Response()); Hide(true); return true;
     }
+    else if (method == "site.capture" && d->GetSize() == 1 && s->content) {
+      // The capture overlay opens on the page once this popup is gone.
+      cb->Success(Response()); Hide(false);
+      CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+        if (const auto state = weak.lock()) StartCapturePicker(state);
+      }, std::weak_ptr<State>(s)), 160);
+      return true;
+    }
     else if (method == "site.share" && d->GetSize() == 1) {
       // The visible page's address from the native snapshot, never from the UI.
       const auto snapshot = s->workspace->Snapshot();
@@ -1186,7 +1195,7 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     }
     else if (method == "extension.store" && d->GetSize() == 1) {
       cb->Success(Response()); Hide(false);
-      s->workspace->OpenLink("https://chromewebstore.live.com/", true); return true;
+      s->workspace->OpenLink(kChromeWebStoreUrl, true); return true;
     }
     if (code > 0) { cb->Failure(code, error); return true; }
     if (code == 0) { cb->Success(Response()); Publish(); return true; }

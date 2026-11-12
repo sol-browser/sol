@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "sidebar": {"containers": [
+    {"standalone": {"_0": "other-window"}}, {"spaces": [{"id": "standalone", "title": "Standalone"}], "items": []},
+    {"global": {}}, {
+      "spaces": [
+        "work", {"id": "work", "title": "Arc Work", "profile": {"custom": {"_0": {"directoryBasename": "Profile 1", "machineID": "desktop"}}},
+          "customInfo": {"iconType": {"emoji_v2": "🧪"}, "windowTheme": {"background": {"single": {"_0": {
+            "contentOverBackgroundAppearance": "light", "style": {"color": {"_0": {"blendedSingleColor": {"_0": {
+              "color": {"red": 0, "green": 0, "blue": 1}, "modifiers": {"intensityFactor": 0.75, "noiseFactor": 0.15}
+            }}}}}
+          }}}}}, "newContainerIDs": [{"unpinned": {"_0": {"shared": {}}}}, "work-today", {"pinned": {}}, "work-pins"]},
+        "home", {"id": "home", "title": "Arc Home", "profile": {"default": {}}, "customInfo": {"iconType": {"icon": "planet"}},
+          "containerIDs": ["pinned", "home-pins"]},
+        "empty", {"id": "empty", "title": "Arc Empty", "profile": {"custom": {"_0": {"directoryBasename": "Profile 1", "machineID": "desktop"}}}}
+      ],
+      "items": [
+        "work-pins", {"id": "work-pins", "childrenIds": ["folder", "project-home"], "data": {"itemContainer": {}}},
+        "project-home", {"id": "project-home", "data": {"tab": {"savedURL": "https://arc.example.test/project", "savedTitle": "Project"}}},
+        "folder", {"id": "folder", "title": "Projects", "childrenIds": ["nested", "missing"], "data": {"list": {}}},
+        "nested", {"id": "nested", "title": "Research", "childrenIds": ["paper", "folder"], "data": {"list": {}}},
+        "paper", {"id": "paper", "title": "My paper", "data": {"tab": {"savedURL": "https://arc.example.test/paper", "savedTitle": "Article"}}},
+        "work-today", {"id": "work-today", "childrenIds": ["temp", "split", "internal", "easel"], "data": {"itemContainer": {}}},
+        "temp", {"id": "temp", "data": {"tab": {"savedURL": "https://arc.example.test/temp", "savedTitle": "Today"}}},
+        "split", {"id": "split", "title": "Two pages", "childrenIds": ["second", "first"], "data": {"splitView": {"layoutOrientation": "vertical", "itemWidthFactors": [0.6, 0.4]}}},
+        "first", {"id": "first", "data": {"tab": {"savedURL": "https://arc.example.test/first", "savedTitle": "First"}}},
+        "second", {"id": "second", "data": {"tab": {"savedURL": "https://arc.example.test/second", "savedTitle": "Second"}}},
+        "internal", {"id": "internal", "data": {"tab": {"savedURL": "arc://settings"}}},
+        "easel", {"id": "easel", "data": {"easel": {}}},
+        "home-tab", {"id": "home-tab", "parentID": "home-pins", "data": {"tab": {"savedURL": "https://arc.example.test/home", "savedTitle": "Home"}}},
+        "home-apps", {"id": "home-apps", "childrenIds": ["home-fav"], "data": {"itemContainer": {"containerType": {"topApps": {"_0": {"default": true}}}}}},
+        "home-fav", {"id": "home-fav", "data": {"tab": {"savedURL": "https://arc.example.test/home-fav", "savedTitle": "Home favorite"}}},
+        "work-apps", {"id": "work-apps", "childrenIds": ["work-fav"], "data": {"itemContainer": {}}},
+        "work-fav", {"id": "work-fav", "data": {"tab": {"savedURL": "https://arc.example.test/work-fav", "savedTitle": "Work favorite"}}}
+      ],
+      "topAppsContainerIDs": [{"custom": {"_0": {"directoryBasename": "Profile 1", "machineID": "desktop"}}}, "work-apps"]
+    }
+  ]}
+}

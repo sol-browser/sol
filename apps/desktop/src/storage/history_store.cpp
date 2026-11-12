@@ -5,6 +5,10 @@ namespace red {
 namespace {
 constexpr int kApplicationId = 0x52454448;  // "REDH"
 constexpr int64_t kCollapseMs = 30LL * 60 * 1000;
+constexpr char kPruneFavicons[] = "DELETE FROM favicons WHERE host NOT IN (SELECT host FROM favicons ORDER BY updated_at DESC LIMIT 1000)";
+bool ValidFaviconRecord(const std::string& host, const std::string& png) {
+  return !host.empty() && host.size() <= 253 && !png.empty() && png.size() <= 16 * 1024;
+}
 class Statement {
  public:
   Statement(sqlite3* db, const char* sql) { sqlite3_prepare_v2(db, sql, -1, &value, nullptr); }
@@ -188,11 +192,29 @@ void HistoryStore::DeleteDownload(int64_t id) {
 }
 void HistoryStore::ClearDownloads() { if (db_) Exec("DELETE FROM downloads"); }
 void HistoryStore::SaveFavicon(const std::string& host, const std::string& png, int64_t now) {
-  if (!db_ || host.empty() || host.size() > 253 || png.empty() || png.size() > 16 * 1024) return;
+  if (!db_ || !ValidFaviconRecord(host, png)) return;
   Statement s(db_, "INSERT OR REPLACE INTO favicons(host, png, updated_at) VALUES(?1, ?2, ?3)");
   s.Text(1, host); sqlite3_bind_blob(s.value, 2, png.data(), static_cast<int>(png.size()), SQLITE_TRANSIENT); s.Int(3, now);
   if (!s.Done()) return;
-  Exec("DELETE FROM favicons WHERE host NOT IN (SELECT host FROM favicons ORDER BY updated_at DESC LIMIT 1000)");
+  Exec(kPruneFavicons);
+}
+std::optional<std::map<std::string, std::string>> HistoryStore::ImportFavicons(std::map<std::string, std::string> icons, int64_t now) {
+  if (!db_ || !Exec("BEGIN IMMEDIATE")) return std::nullopt;
+  Statement put(db_, "INSERT INTO favicons(host,png,updated_at) VALUES(?1,?2,?3) ON CONFLICT(host) DO NOTHING");
+  if (!put.value) { Exec("ROLLBACK"); return std::nullopt; }
+  for (auto it = icons.begin(); it != icons.end();) {
+    const auto& [host, png] = *it;
+    if (!ValidFaviconRecord(host, png)) { it = icons.erase(it); continue; }
+    put.Text(1, host);
+    sqlite3_bind_blob(put.value, 2, png.data(), static_cast<int>(png.size()), SQLITE_TRANSIENT);
+    put.Int(3, now);
+    if (!put.Done()) { Exec("ROLLBACK"); return std::nullopt; }
+    const bool added = sqlite3_changes(db_) != 0;
+    sqlite3_reset(put.value);
+    if (added) ++it; else it = icons.erase(it);
+  }
+  if ((!icons.empty() && !Exec(kPruneFavicons)) || !Exec("COMMIT")) { Exec("ROLLBACK"); return std::nullopt; }
+  return icons;
 }
 std::vector<std::pair<std::string, std::string>> HistoryStore::Favicons(int limit) {
   std::vector<std::pair<std::string, std::string>> out;

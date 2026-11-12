@@ -1,4 +1,5 @@
 #include "site/boost_store.h"
+#include "web_url.h"
 #include <algorithm>
 #include <cctype>
 
@@ -132,8 +133,8 @@ types.forEach(t=>addEventListener(t,block,true));g.__redPick=stop})())JS";
 }
 
 std::string BoostKeyFromOrigin(const std::string& origin) {
-  size_t start = 0;
-  if (origin.starts_with("https://")) start = 8; else if (origin.starts_with("http://")) start = 7; else return "";
+  const size_t start = WebSchemeLength(origin);
+  if (!start) return "";
   auto end = origin.find_first_of("/:?#", start);
   std::string host = origin.substr(start, end == std::string::npos ? std::string::npos : end - start);
   std::transform(host.begin(), host.end(), host.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });

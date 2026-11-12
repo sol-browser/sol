@@ -41,7 +41,7 @@ inline std::vector<std::string> OrderedTabs(const std::vector<TreeNode>& nodes, 
 // Today tabs that "Close Other Tabs" (|below| false), "Close Tabs Below"
 // (|below| true) or Clear (|all|) archive, in sidebar order, for the Today tab
 // |id|. Clear keeps the page on screen: |active| and, in Split View, the other
-// pane of its split. Empty when |id| is not a Today tab.
+// panes of its split. Empty when |id| is not a Today tab.
 inline std::vector<std::string> TodayArchiveTargets(const TreeSnapshot& tree, const std::string& id, bool below, bool all,
                                                     const std::string& active) {
   const auto node = std::find_if(tree.nodes.begin(), tree.nodes.end(), [&](const auto& n) { return n.id == id; });
@@ -54,7 +54,7 @@ inline std::vector<std::string> TodayArchiveTargets(const TreeSnapshot& tree, co
   if (all && !active.empty()) {
     keep.push_back(active);
     for (const auto& split : tree.splits)
-      if (split.anchor == active || split.other == active) { keep.push_back(split.anchor); keep.push_back(split.other); }
+      if (split.Contains(active)) keep.insert(keep.end(), split.pages.begin(), split.pages.end());
   }
   std::vector<std::string> ids;
   for (const auto* other : today)

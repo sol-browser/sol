@@ -24,6 +24,17 @@ void RunUpdateHooks();
 // a Velopack install it does nothing.
 void StartUpdateCheck(std::function<void(const std::string& version)> ready);
 
+// What the update window shows. Idle until a check has run in this process.
+enum class UpdatePhase { Idle, Checking, Downloading, Ready, UpToDate, Failed, NotInstalled };
+struct UpdateStatus { UpdatePhase phase; std::string current, version; int percent; };
+UpdateStatus CurrentUpdateStatus();  // Any thread.
+
+// "Check for Updates": one pass over the feed now, on a background thread, that
+// downloads a newer version. Progress is read with CurrentUpdateStatus(). Does
+// nothing when the periodic check is working (the status already shows it).
+struct State;
+void StartUpdateCheckNow(const std::shared_ptr<State>& state);
+
 // The version downloaded and waiting for a restart; empty when none (any thread).
 std::string ReadyUpdate();
 

@@ -35,7 +35,7 @@ class HeaderClient final : public CefClient, public CefLifeSpanHandler, public C
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
     if (auto state = state_.lock()) {
       state->browsers[browser->GetIdentifier()] = browser; RegisterSessionUi(state, browser->GetIdentifier());
-      std::lock_guard lock(state->devtools_window_ids_mutex); state->devtools_window_ids.insert(browser->GetIdentifier());
+      state->SetDevToolsWindowUi(browser->GetIdentifier(), true);
     }
     if (auto owner = owner_.lock()) owner->HeaderCreated(browser); else browser->GetHost()->CloseBrowser(true);
   }
@@ -43,7 +43,7 @@ class HeaderClient final : public CefClient, public CefLifeSpanHandler, public C
     router_->OnBeforeClose(browser);
     const int id = browser->GetIdentifier();
     if (auto state = state_.lock()) {
-      { std::lock_guard lock(state->devtools_window_ids_mutex); state->devtools_window_ids.erase(id); }
+      state->SetDevToolsWindowUi(id, false);
       UnregisterSessionUi(state, id); state->browsers.erase(id);
       if (state->window_close) state->window_close->OnClosed(id);
     }

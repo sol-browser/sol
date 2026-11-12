@@ -45,5 +45,22 @@ async () => {
   await type('wiki');await key('Tab');await type('query');fixture.snapshot.siteSearches=fixture.snapshot.siteSearches.map(s=>({...s,enabled:s.keyword!=='wiki'}));fixture.publish();await pause(60);
   const submitted=fixture.requests.filter(r=>r.method==='command.submit').length;input.form.requestSubmit();await pause(40);
   check(fixture.requests.filter(r=>r.method==='command.submit').length===submitted&&document.querySelector('[role="alert"]'),'deactivation never falls back to another search');
-  return {passed:true,checks:21,bridge:'simulated',arcHeader:true,actionIcons:true,modeTransitions:true,searchMagnifiers:true,settingsAction:true,inlineTab:true,spaceOrTab:true,tabOnly:true,noOrdinaryCompletions:true,encodedNavigation:true,scopeDraft:true,ime:true};
+  await key('Escape');
+  fixture.suggestions = { 'подска': ['подскажи', 'подскажи пожалуйста', 'подскажите'] };
+  await type('подска');
+  await until(()=>document.querySelectorAll('[data-kind="search"]').length===4,'search completions arrive');
+  await key('ArrowDown');await key('ArrowDown');
+  check(input.value==='подскажи пожалуйста'&&input.selectionStart===input.value.length&&input.selectionEnd===input.value.length,'selected query is editable with caret at the end');
+  await key('ArrowDown');check(input.value==='подскажите','arrows continue through the original list');
+  await key('ArrowUp');
+  document.execCommand('insertText',false,' как это работает');await pause(90);
+  check(input.value==='подскажи пожалуйста как это работает'&&document.querySelector('[role="option"][aria-selected="true"]')?.textContent.includes(input.value),'typing extends the suggestion and updates the selected search');
+  input.form.requestSubmit();await until(()=>!fixture.state.open,'edited suggestion submitted');
+  const edited=new URL(fixture.requests.filter(r=>r.method==='command.submit').at(-1).url);
+  check(edited.searchParams.get('q')==='подскажи пожалуйста как это работает','submit uses the edited query');
+  fixture.reopen();await pause(80);await type('подска');
+  await until(()=>document.querySelectorAll('[data-kind="search"]').length===4,'search completions return');
+  await key('ArrowDown');input.form.requestSubmit();await until(()=>!fixture.state.open,'unmodified suggestion submitted');
+  check(new URL(fixture.requests.filter(r=>r.method==='command.submit').at(-1).url).searchParams.get('q')==='подскажи','Enter executes an unmodified suggestion');
+  return {passed:true,checks:26,bridge:'simulated',arcHeader:true,actionIcons:true,modeTransitions:true,searchMagnifiers:true,settingsAction:true,inlineTab:true,spaceOrTab:true,tabOnly:true,noOrdinaryCompletions:true,encodedNavigation:true,scopeDraft:true,ime:true,editableSuggestions:true};
 }

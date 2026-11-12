@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppWindow, Archive, ArrowDown, ArrowDownToLine, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowUp, Braces, Check, ChevronRight, ClipboardPaste, Columns2, Copy,
-  Download, ExternalLink, FileCode, Folder, Globe, Heart, History, House, Image, Languages, Layers, Link, Palette, Pencil, PictureInPicture2, Pin, PinOff, Plus,
-  Printer, Puzzle, Redo2, RotateCw, Save, Scissors, Search, Settings, SlidersHorizontal, Smile, Star, TextSelect, Trash2, Type, Undo2, VenetianMask, Volume2, VolumeX, X,
+  Download, ExternalLink, FileCode, Folder, Globe, Heart, History, House, Image, Languages, Layers, LayoutGrid, Link, Palette, PanelLeft, PanelTop, Pencil, PictureInPicture2, Pin, PinOff, Plus,
+  Printer, Puzzle, Redo2, RotateCw, Rows2, Save, Scissors, Search, Settings, SlidersHorizontal, Smile, Star, TextSelect, Trash2, Type, Undo2, Unlink2, VenetianMask, Volume2, VolumeX, X,
   type LucideIcon } from 'lucide-react';
 import { usePopupPresentation } from './usePopupPresentation';
 import './menu.css';
@@ -20,7 +20,7 @@ const ICONS: Record<string, LucideIcon> = { heart: Heart, import: ArrowDownToLin
   palette: Palette, print: Printer, close: X, copy: Copy, volumeX: VolumeX, volume: Volume2, pinOff: PinOff, star: Star, columns: Columns2,
   swap: ArrowLeftRight, link: Link, trash: Trash2, home: House, text: Type, save: Save, source: FileCode, cut: Scissors, paste: ClipboardPaste,
   selectAll: TextSelect, redo: Redo2, externalLink: ExternalLink, image: Image, translate: Languages, emoji: Smile, pip: PictureInPicture2,
-  sliders: SlidersHorizontal, private: VenetianMask };
+  sliders: SlidersHorizontal, private: VenetianMask, rows: Rows2, grid: LayoutGrid, mainLeft: PanelLeft, mainTop: PanelTop, unlink: Unlink2 };
 
 const text = (value: unknown, max: number) => typeof value === 'string' && value.length <= max;
 function parseItems(value: unknown, depth = 0): MenuItem[] {

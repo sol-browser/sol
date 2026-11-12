@@ -86,7 +86,7 @@ function CalendarAgenda({ items, open, join, active }: { items: Card['items']; o
         {item.join && <button type="button" className="popover-text-button integration-join" onClick={() => join(index)}>Join meeting</button>}
       </li>)}</ul>
     </>}
-    <div className="integration-agenda" ref={viewport} aria-label="Hourly agenda" tabIndex={0}>
+    <div className="integration-agenda" ref={viewport} aria-label="Hourly agenda">
       <div className="integration-day" style={{ '--hour-height': `${hourHeight}px` } as CSSProperties}>
         <ol className="integration-hours" aria-hidden="true">
           {Array.from({ length: 24 }, (_, hour) => <li key={hour} className="integration-hour">{hourLabel.format(hour * 3600000)}</li>)}

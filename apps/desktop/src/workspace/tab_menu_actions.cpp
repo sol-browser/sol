@@ -1,4 +1,6 @@
 #include "workspace/controller.h"
+#include "web_url.h"
+#include "navigation/url_clean.h"
 #include "windows/clipboard.h"
 #include "windows/embedded_content.h"
 #include "workspace/tab_order.h"
@@ -14,22 +16,24 @@
 namespace red {
 namespace {
 bool WebAddress(const std::string& url) {
-  return url.size() <= 4096 && (url.starts_with("https://") || url.starts_with("http://") || url.starts_with("file:///"));
+  return url.size() <= 4096 && (HasWebScheme(url) || url.starts_with("file:///"));
 }
 }  // namespace
 
-int WorkspaceController::CopyTabLink(const std::string& id, std::string& error) {
+int WorkspaceController::CopyTabLink(const std::string& id, std::string& error, bool clean) {
   const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
   if (node == tree_.nodes.end() || node->folder || node->archived) { error = "Tab is unavailable"; return 404; }
   const auto browser = LiveBrowser(id);
   const auto url = browser ? browser->GetMainFrame()->GetURL().ToString() : node->url;
   if (url.empty()) { error = "No page address to copy"; return 409; }
   const auto state = state_.lock();
-  if (const int code = CopyLinkText(state && state->window ? state->window->GetWindowHandle() : nullptr, CefString(std::string(ShownAddress(url))).ToWString())) {
+  bool stripped = false;
+  const std::string text = clean ? StripTrackingParameters(ShownAddress(url), &stripped) : std::string(ShownAddress(url));
+  if (const int code = CopyLinkText(state && state->window ? state->window->GetWindowHandle() : nullptr, CefString(text).ToWString())) {
     error = code == 409 ? "The clipboard is busy. Try again." : "Could not copy the page address"; return code;
   }
-  if (state && state->embedded) state->embedded->Notify("copy", L"Copied current URL");
-  if (state) state->Record("tab_link_copied");
+  if (state && state->embedded) state->embedded->Notify("copy", stripped ? L"Copied link without trackers" : L"Copied current URL");
+  if (state) { auto details = CefDictionaryValue::Create(); details->SetBool("clean", clean); details->SetBool("stripped", stripped); state->Record("tab_link_copied", details); }
   return 0;
 }
 

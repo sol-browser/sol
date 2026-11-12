@@ -7,6 +7,7 @@
 #include <map>
 #include <algorithm>
 #include "app/theme_palette.h"
+#include "workspace/split_layout.h"
 
 struct sqlite3;
 namespace red {
@@ -29,6 +30,9 @@ struct TreeNode {
   // archived before schema v4 (unknown).
   int64_t archived_at = 0;
   int64_t last_active_at = 0;
+  // When the page was last closed (unloaded or archived), ms since the epoch; 0 = never, or before schema v15.
+  // Ctrl+Tab leaves out a tab closed after its last use (closed_at > last_active_at).
+  int64_t closed_at = 0;
   // Space of a top-level Pinned/Today/archived entry (schema v6). Empty for
   // Favorites (shared by Spaces of one profile) and nested entries (their root's space).
   std::string space;
@@ -51,10 +55,23 @@ struct BrowsingProfileInfo {
   bool operator==(const BrowsingProfileInfo&) const = default;
 };
 constexpr int kMaxSpaces = 24;
+// Split View: 2-4 pages shown together. The anchor is the group's sidebar row;
+// other non-Favorite members are hidden there and keep their own placement.
 struct SplitGroup {
-  std::string anchor, other, title;
-  int ratio = 5000;  // Basis points; relative pane allocation.
-  bool vertical = false, reversed = false;
+  std::string anchor, title;
+  std::vector<std::string> pages;  // Slot order (2-4 entries), including the anchor.
+  SplitNode layout;                // Slicing tree; its panes are slots of |pages|.
+  bool linked = false;             // 2x2: the inner dividers move together.
+  bool Contains(const std::string& id) const { return std::find(pages.begin(), pages.end(), id) != pages.end(); }
+  int Slot(const std::string& id) const {
+    const auto found = std::find(pages.begin(), pages.end(), id);
+    return found == pages.end() ? -1 : static_cast<int>(found - pages.begin());
+  }
+  // A two-page group as schema 15 stored it: |ratio| is the leading pane.
+  static SplitGroup Pair(std::string anchor, std::string other, bool vertical = false, bool reversed = false, int ratio = 5000) {
+    SplitGroup group; group.anchor = anchor; group.pages = {std::move(anchor), std::move(other)};
+    group.layout = TwoPaneSplitLayout(vertical, ratio, reversed); return group;
+  }
   bool operator==(const SplitGroup&) const = default;
 };
 struct TreeSnapshot {
@@ -75,7 +92,7 @@ std::vector<std::string> FolderNodeIds(const TreeSnapshot& tree, const std::stri
 
 enum class TreeAction { CreateFolder, CreateTab, Rename, AutomaticTitle, Move, Place, Pin, Expand, Activate, RemoveLeaf, RemoveFolder, SetUrl, Unload, Archive, Restore,
   CreateSpace, EditSpace, DeleteSpace, SwitchSpace, MoveSpace, MoveToSpace,
-  CreateSplit, RemoveSplit, RenameSplit, LayoutSplit, SwapSplit, AutoArchive, CreateProfile, RenameProfile, SetSpaceProfile, ExportSpace, SetXBadgeHidden };
+  CreateSplit, RemoveSplit, RenameSplit, LayoutSplit, AddSplitPane, RemoveSplitPane, SwapSplit, AutoArchive, CreateProfile, RenameProfile, SetSpaceProfile, ExportSpace, SetXBadgeHidden };
 struct TreeCommand {
   TreeAction action;
   std::int64_t expected_revision = 0;
@@ -93,6 +110,10 @@ struct TreeCommand {
   int position = -1;  // Append; otherwise index after removing the moved node.
   bool value = false;
   bool reversed = false;  // New split placement, independent of orientation.
+  // LayoutSplit/AddSplitPane: the complete canonical layout after the change (validated here).
+  std::string layout;
+  // SwapSplit: the second page (|parent| is the first); both empty swaps a two-page group.
+  std::string split_pane;
   int64_t not_after = 0;  // Native auto-archive eligibility cutoff.
 };
 struct TreeResult {

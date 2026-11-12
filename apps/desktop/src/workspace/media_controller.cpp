@@ -1,4 +1,5 @@
 #include "workspace/controller.h"
+#include "web_url.h"
 #include "app/session.h"
 #include "windows/auto_pip.h"
 #include "include/cef_devtools_message_observer.h"
@@ -76,7 +77,7 @@ void WorkspaceController::OnMediaSession(CefRefPtr<CefBrowser> browser, CefRefPt
     session.next = session.next || action == "nexttrack";
   }
   const auto url = info ? info->GetString("artwork").ToString() : "";
-  const bool web = (url.starts_with("https://") || url.starts_with("http://")) && url.size() <= 4096;
+  const bool web = HasWebScheme(url) && url.size() <= 4096;
   if (url != session.artwork_url) {
     session.artwork_url = url; session.artwork.clear();
     if (web) browser->GetHost()->DownloadImage(url, false, 128, false, new ArtworkDone(weak_from_this(), id, url));

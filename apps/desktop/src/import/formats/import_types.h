@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace red::import {
+namespace red::importer {
 // Overwrites a secret's bytes before the buffer is released. Best effort:
 // earlier reallocations of the same std::string are not reachable.
 void Wipe(std::string& secret);
@@ -47,4 +47,4 @@ struct PasswordCounts {
 bool IsWebUrl(const std::string& url);
 // Trims to max bytes on a UTF-8 boundary and removes control characters.
 std::string CleanLabel(std::string text, size_t max, const char* fallback);
-}  // namespace red::import
+}  // namespace red::importer

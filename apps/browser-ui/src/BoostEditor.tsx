@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Ban, Braces, Lightbulb, Scan, SlidersHorizontal, Sparkles, X, Zap } from 'lucide-react';
+import { focusOnMount } from './focus-on-mount';
 import { CASES, FONTS, MAX_BOOST_CSS, NEUTRAL_LOOK, accentDot, dotPosition, fromPadPoint, isEmpty, moveDot, parseBoostState, tintColor,
   type Boost, type BoostLook, type BoostState } from './boost-look.ts';
 import './boost.css';
@@ -166,7 +167,7 @@ export function BoostEditor() {
     <div className="boost-code-box">
       <button type="button" className="boost-wide" aria-expanded={open === 'code'} aria-pressed={boost.css.trim() !== ''} onClick={() => toggle('code')}>
         <span>Code</span><Braces size={17} /></button>
-      {open === 'code' && <textarea className="boost-css" spellCheck={false} aria-label={`CSS for ${state.host}`} value={boost.css} autoFocus
+      {open === 'code' && <textarea className="boost-css" spellCheck={false} aria-label={`CSS for ${state.host}`} value={boost.css} ref={focusOnMount}
         placeholder={`/* Applies to ${state.host} and its subdomains */\nbody { font-size: 110%; }`} maxLength={MAX_BOOST_CSS}
         onChange={event => change({ ...boost, enabled: true, css: event.target.value }, false)} onBlur={flush} />}
     </div>

@@ -4,7 +4,7 @@
 #include <map>
 #include <string_view>
 
-namespace red::import {
+namespace red::importer {
 // Chromium-family profile formats (Chrome, Edge, Arc): public, documented-by-
 // source formats only. Every reader opens files read-only and fails closed.
 
@@ -38,4 +38,4 @@ ChromiumSession ParseSnss(std::string_view bytes);
 ChromiumSession ReadChromiumSession(const std::filesystem::path& profile);
 
 bool ReadSmallFile(const std::filesystem::path& path, size_t max, std::string& out);
-}  // namespace red::import
+}  // namespace red::importer

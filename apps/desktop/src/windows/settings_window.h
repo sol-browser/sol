@@ -8,6 +8,7 @@ class SettingsWindow : public std::enable_shared_from_this<SettingsWindow> {
  public:
   explicit SettingsWindow(std::weak_ptr<State> state) : state_(std::move(state)) {}
   void Show();
+  void Console(const std::string& message);  // Probes record the page's console (why it did not come up).
   void Present();
   CefRefPtr<CefWindow> parent() const;
   void Created(CefRefPtr<CefWindow> window) { window_ = window; }

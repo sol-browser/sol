@@ -197,8 +197,9 @@ export function Panel() {
       <header><h2>Archive</h2>{archived.length > 0 && <span className="popover-count">{archived.length}</span>}</header>
       {archived.length ? <ul>{archived.map(node => {
         let host = ''; try { host = new URL(node.url).hostname.replace(/^www\./, ''); } catch { /* Displayed only. */ }
-        const other=node.splitAnchor===node.id ? payload.archive?.find(n => n.id===node.splitOther) : undefined;
-        const title=other ? `${displayTitle(node)} | ${displayTitle(other)}` : displayTitle(node);
+        // An archived split restores as a whole; its row names every page.
+        const members=node.splitAnchor===node.id ? (node.splitPanes ?? []).map(id => id===node.id ? node : payload.archive?.find(n => n.id===id)).filter((n): n is TreeNode => !!n) : [];
+        const title=members.length > 1 ? members.map(member => displayTitle(member)).join(' | ') : displayTitle(node);
         // Tabs closed in another Space say where they came from.
         const origin=node.space && node.space!==snapshot?.activeSpace ? snapshot?.spaces?.find(space => space.id===node.space)?.name : undefined;
         const detail=[host,origin].filter(Boolean).join(' · ');

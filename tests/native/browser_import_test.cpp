@@ -1,5 +1,6 @@
 // Parsers for other browsers' profiles, against synthetic fixtures made by
 // tests/fixtures/import/make_fixtures.mjs (no real profile data).
+#include "import/formats/arc_sidebar.h"
 #include "import/formats/chromium_profile.h"
 #include "import/formats/favicons.h"
 #include "import/formats/firefox_logins.h"
@@ -16,8 +17,8 @@ namespace {
 int failures = 0;
 void Check(bool test, const char* name) { if (!test) { ++failures; std::fprintf(stderr, "FAIL: %s\n", name); } }
 const std::filesystem::path kFixtures = RED_IMPORT_FIXTURES;
-std::string File(const std::filesystem::path& path) { std::string s; red::import::ReadSmallFile(path, 1 << 20, s); return s; }
-const red::import::Login* Find(const std::vector<red::import::Login>& logins, const char* url) {
+std::string File(const std::filesystem::path& path) { std::string s; red::importer::ReadSmallFile(path, 1 << 20, s); return s; }
+const red::importer::Login* Find(const std::vector<red::importer::Login>& logins, const char* url) {
   for (const auto& l : logins) if (l.url == url) return &l;
   return nullptr;
 }
@@ -32,7 +33,7 @@ std::string Base64(const std::string& bytes) {
 // profile's saved sign-ins as origin + username (never passwords) and whether
 // each password is one of the synthetic fixture values.
 int CountLogins(const std::filesystem::path& root) {
-  using namespace red::import;
+  using namespace red::importer;
   std::string json, key, error; bool app_bound = false;
   if (!ReadSmallFile(root / "Local State", 1 << 24, json) || !ChromiumMasterKey(json, key, app_bound, error)) { std::printf("{\"error\":\"no key\"}\n"); return 1; }
   const char* known[] = {"p,w\"1", "line1\nline2", "correct-horse-1", "p\xc3\xa4ssw\xc3\xb6rd \xe2\x9c\x93", "aes-secret", "des-\xc3\xabxtra", "ff-pass"};
@@ -51,8 +52,33 @@ int CountLogins(const std::filesystem::path& root) {
 }
 
 int wmain(int argc, wchar_t** argv) {
-  using namespace red::import;
+  using namespace red::importer;
   if (argc == 3 && std::wstring_view(argv[1]) == L"--count-logins") return CountLogins(argv[2]);
+  if (argc == 3 && std::wstring_view(argv[1]) == L"--check-arc-sidebar") {
+    const std::filesystem::path root = argv[2];
+    constexpr size_t max = 32 * 1024 * 1024;
+    std::string sidebar, windows, archive;
+    if (!ReadSmallFile(root / "StorableSidebar.json", max, sidebar)) return 1;
+    ReadSmallFile(root / "StorableWindows.json", max, windows);
+    ReadSmallFile(root / "StorableArchiveItems.json", max, archive);
+    const auto arc = ParseArcSidebar(sidebar, "arc-compatibility-check", windows, archive);
+    if (!arc.workspace.error.empty()) { std::puts(arc.workspace.error.c_str()); return 1; }
+    std::printf("Spaces: %zu, tabs: %d, folders: %d, Favorites: %d, splits: %d, archive: %d, skipped: %d, archive incomplete: %s\n",
+                arc.workspace.tree.spaces.size(), arc.workspace.tabs, arc.workspace.folders, arc.favorites, arc.splits, arc.archived,
+                arc.skipped, arc.archive_incomplete ? "yes" : "no");
+    std::error_code ec;
+    const auto arc_root = std::filesystem::canonical(root, ec);
+    if (ec) return 1;
+    int sidebar_icons = 0, archive_icons = 0;
+    for (const auto& node : arc.workspace.tree.nodes) {
+      const auto source = arc.favicon_item_ids.find(node.id);
+      if (source == arc.favicon_item_ids.end()) continue;
+      const auto cache = arc_root / (node.archived ? "ArchiveItemsFaviconCache" : "SidebarItemsFaviconCache");
+      if (ReadArcItemFavicon(cache, source->second)) ++(node.archived ? archive_icons : sidebar_icons);
+    }
+    std::printf("Readable Arc item icons: %d sidebar, %d archive\n", sidebar_icons, archive_icons);
+    return 0;
+  }
   {  // JSON reader
     Check(ParseJson(R"({"a":[1,"\u00e9\ud83d\ude00",true,null],"b":{"c":"13400000000000000"}})").has_value(), "json parses");
     const auto doc = ParseJson(R"({"a":"\u00e9\ud83d\ude00","n":"13400000000000000"})");
@@ -163,6 +189,39 @@ int wmain(int argc, wchar_t** argv) {
     Check(ico != zen.end() && ico->second.starts_with("\x89PNG") && ico->second.find("IHDR\0\0\0\x20", 0, 8) != std::string::npos, "PNG extracted from ICO, 32 px");
     Check(!IconPng("GIF89a").has_value() && !IconPng(std::string("\0\0\1\0\1\0", 6)).has_value(), "unsupported icon bytes refused");
     Check(ReadChromiumFavicons(kFixtures / "chromium" / "missing", {"docs.example.test"}).empty(), "absent icon DB");
+  }
+  {
+    const auto path = kFixtures / "arc";
+    const auto sidebar = File(path / "StorableSidebar.json");
+    const auto result = ParseArcSidebar(sidebar, "arc-test", File(path / "StorableWindows.json"));
+    const auto& tree = result.workspace.tree;
+    Check(result.workspace.error.empty() && red::TreeStore::ValidateSnapshot(tree), "Arc valid snapshot");
+    Check(result.workspace.tabs == 8 && result.workspace.folders == 2 && result.favorites == 2 && result.splits == 1 && result.skipped == 4,
+          "Arc sections, missing links, cycle and unsupported nodes counted");
+    if (tree.spaces.size() == 3 && tree.nodes.size() == 10 && tree.splits.size() == 1) {
+      Check(tree.spaces[0].name == "Arc Work" && tree.spaces[1].name == "Arc Home" && tree.spaces[2].name == "Arc Empty", "Arc ordered Spaces including empty Space");
+      Check(tree.profiles.size() == 3 && tree.spaces[0].profile == tree.spaces[2].profile && tree.spaces[0].profile != tree.spaces[1].profile &&
+            tree.spaces[1].profile != "default", "Arc profiles share Favorites only with their own Spaces");
+      Check(tree.spaces[0].icon == "🧪" && tree.spaces[1].icon == "🪐" && tree.spaces[0].theme_hue == 240 &&
+            tree.spaces[0].theme_intensity == 75 && tree.spaces[0].theme_mode == 1 && tree.spaces[0].theme_noise == 15, "Arc appearance translated");
+      const auto& nodes = tree.nodes;
+      Check(nodes[0].folder && nodes[0].expanded && nodes[1].folder && !nodes[1].expanded && nodes[1].parent == nodes[0].id &&
+            nodes[2].parent == nodes[1].id && nodes[2].custom_title && nodes[2].title == "My paper" && nodes[2].page_title == "Article" &&
+            nodes[3].position == 1 && nodes[3].pinned && !nodes[4].pinned, "Arc pinned hierarchy, ordering, titles and expansion");
+      Check(tree.splits[0].pages == std::vector{nodes[5].id, nodes[6].id} && red::FormatSplitLayout(tree.splits[0].layout) == "v(6000*0,4000*1)",
+            "Arc split tabs retain order, orientation and ratio");
+      Check(nodes[8].favorite && nodes[8].profile == tree.spaces[0].profile && nodes[9].favorite && nodes[9].profile == tree.spaces[1].profile,
+            "Arc Favorites from the index and from root metadata");
+    } else Check(false, "Arc expected tree size");
+    Check(ParseArcSidebar(sidebar, "arc-test").workspace.tree.spaces == tree.spaces, "Arc source identity stable across import routes");
+    const auto archived = ParseArcSidebar(sidebar, "arc-test", {}, File(path / "StorableArchiveItems.json"));
+    const auto& archive_tree = archived.workspace.tree;
+    Check(archived.archived == 2 && archived.archive_incomplete && archive_tree.nodes.size() == 12 && archive_tree.nodes[10].archived &&
+          archive_tree.nodes[10].archived_at == 1724733947510 && archive_tree.nodes[10].space == archive_tree.spaces[1].id &&
+          archive_tree.nodes[11].space == archive_tree.active_space, "Arc archive dates, Space assignment and invalid URL handling");
+    Check(!ParseArcSidebar("{", "bad").workspace.error.empty() &&
+          !ParseArcSidebar(R"({"sidebar":{"containers":[{"global":{}},{"spaces":[]}]}})", "empty").workspace.error.empty(),
+          "Arc malformed and empty sidebar rejected");
   }
   {  // Tree for the workspace import.
     TreeInput in; in.source = "c:\\profile|tabs,bookmarks"; in.label = "Chrome";

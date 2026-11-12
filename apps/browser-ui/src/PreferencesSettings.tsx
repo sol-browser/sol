@@ -98,7 +98,7 @@ export function PreferencesSettings({ section, preferences: prefs, keyboard, dis
         ['homepage','Open a specific page','Open your chosen page when starting Sol.'],
       ] as const).map(([value,title,description]) => <label key={value} className="settings-radio-row">
         <input type="radio" name="startup" value={value} checked={(prefs?.startup ?? 'restore') === value}
-          disabled={disabled} onChange={() => set('startup',value)} /><span><strong>{title}</strong><small>{description}</small></span>
+          disabled={disabled} onChange={() => set('startup',value)} /><strong>{title}</strong><small>{description}</small>
       </label>)}
     </div>
     {prefs?.startup === 'homepage' && <form className="settings-homepage" onSubmit={event => {

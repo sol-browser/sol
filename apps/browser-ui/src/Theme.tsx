@@ -148,7 +148,7 @@ export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,lab
         {Array.from({length:72},(_,i)=>{const a=i*Math.PI/36,inner=ring-(i%6===0?11:5);return <line key={i} x1={fieldSize.width/2+Math.cos(a)*inner} y1={fieldSize.height/2+Math.sin(a)*inner} x2={fieldSize.width/2+Math.cos(a)*ring} y2={fieldSize.height/2+Math.sin(a)*ring}/>;})}
         </g>
       </svg>
-      <canvas className="orbit-colors" ref={canvas} aria-hidden="true"/>
+      <canvas className="orbit-colors" ref={canvas} role="presentation"/>
       {p.circles.map((c,i)=>{const g=orbitGeometry(c,fieldSize.width,fieldSize.height,p.rotation);return <button key={i} type="button" className="palette-point orbit-disc" data-point={i} hidden={i>=p.count} aria-label={`${['Primary','Second','Third'][i]} color. Drag to change hue; drag exposed edge to resize.`} onKeyDown={e=>pointKey(e,i)} style={{left:g.x,top:g.y,width:g.radius*2,height:g.radius*2}}/>;})}
       {p.circles.map((c,i)=><input key={i} className="orbit-size" data-size={i} hidden={i>=p.count} type="range" min={18} max={62} value={c.size} aria-label={`${['Primary','Second','Third'][i]} color saturation`} aria-valuetext={`${Math.round(circleSaturation(c.size)*100)}%`}
         onChange={e=>circleUpdate(i,orbitResize(orbitPalette(latest.current).circles[i],Number(e.currentTarget.value),fieldSize.width,fieldSize.height))} onKeyUp={finish} onBlur={finish}/>)}

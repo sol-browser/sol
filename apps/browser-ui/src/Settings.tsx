@@ -58,7 +58,7 @@ export function Settings() {
     } catch (error) { if (alive.current && request === sequence.current) setError(String(error)); }
   }, []);
   useEffect(() => {
-    // The main menu's "Import Browser Data…" opens this page on Import.
+    // Native code opens this page on a section (Import, Search, Profiles…).
     const open = (event: Event) => {
       const target=(event as CustomEvent).detail;
       if(target==='import')setSection('import');
@@ -76,15 +76,16 @@ export function Settings() {
     return () => { alive.current = false; window.removeEventListener('focus', focus); };
   }, [refresh]);
   useLayoutEffect(() => {
-    if (!data) return;
+    // The window comes up with its data, or with the error that kept the data away (never stays hidden).
+    if (!data && !error) return;
     // The settings surfaces stay dark; the existing theme editor previews the
     // current space in the browser while retaining its authored controls.
-    applyTheme(data.theme);
+    if (data) applyTheme(data.theme);
     if (!readySent.current) {
       readySent.current = true;
       void query({ method: 'settings.ready' } satisfies SettingsCommand).catch(error => setError(String(error)));
     }
-  }, [data]);
+  }, [data, error]);
   async function action(command: SettingsCommand) {
     if (busy) return;
     const request = ++sequence.current;

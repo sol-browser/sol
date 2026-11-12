@@ -7,10 +7,16 @@
 #include <string_view>
 #include <vector>
 
-namespace red::import {
+namespace red::importer {
 // A small strict JSON reader for untrusted browser profile files (Bookmarks,
 // Local State, logins.json). CEF-free so the format parsers stay unit-testable.
 struct Json {
+  Json() = default;
+  Json(const Json&) = default;
+  Json(Json&&) noexcept = default;
+  Json& operator=(const Json&) = default;
+  Json& operator=(Json&&) noexcept = default;
+  ~Json() = default;
   enum class Type { Null, Bool, Number, String, Array, Object };
   Type type = Type::Null;
   bool boolean = false;
@@ -28,4 +34,4 @@ struct Json {
 };
 // Rejects trailing data, depth > 128 and invalid UTF-16 escapes.
 std::optional<Json> ParseJson(std::string_view source);
-}  // namespace red::import
+}  // namespace red::importer

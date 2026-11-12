@@ -17,6 +17,43 @@ One short line that sums up the release. Optional; the website shows it as the h
 New things first, smaller fixes under "### Fixes". Describe the result for the user, not the code.
 -->
 
+## 0.5.0 — 2026-11-12
+
+Your Arc comes with you: a full import from Arc, the Tab Switcher, Split View
+for up to four tabs and screenshots.
+
+- **Import from Arc:** Sol brings over your Arc Spaces with their Favorites,
+  pinned tabs and folders, Today tabs, Split Views and archived tabs, together
+  with each site's icon. Spaces keep their own Arc profiles. It works from the
+  welcome screen and from Settings, where you can also choose an Arc backup
+  folder or sidebar file.
+- **Tab Switcher:** Ctrl+Tab goes back to the tab you used before. Hold Ctrl to
+  see your five most recent tabs as cards with previews: Tab moves between
+  them, Ctrl+W closes one, and letting go of Ctrl switches. The order is kept
+  after a restart.
+- **Split View for up to four tabs:** put two, three or four tabs side by side
+  in any arrangement and drag the dividers to resize them. Drag a tab to the
+  edge of a page to add it, move a pane by its header, or drag it onto the
+  sidebar to take it out. Ctrl+Alt+arrows move between panes.
+- **Screenshots:** press Ctrl+Shift+5 or the camera in the site controls, point
+  at a part of the page or drag an area, adjust it, then copy or download it.
+  You can also save the visible part or the whole page. Screenshots are saved
+  to your download folder and show up in Downloads.
+- **Super Copy:** Ctrl+Shift+C copies the page address without tracking
+  parameters. Right-click the copy-link button for the same.
+- **Check for Updates:** the menu checks right away and shows the download in
+  its own window.
+
+### Fixes
+
+- **Add Extension:** the + in the site controls and Add Extension in the menu
+  open the Chrome Web Store again instead of Outlook.
+- **Command bar:** a suggestion picked with the arrow keys shows in the field,
+  so you can edit it. An email address is searched instead of opened as a site
+  and is not sent for search suggestions. Local network addresses such as
+  192.168.1.1 open over HTTP, like localhost.
+- **F1:** no longer opens Chrome's help page.
+
 ## 0.4.0 — 2026-11-11
 
 A big clean-up: lots of fixes, a lighter and faster Sol, and a Chromium update.

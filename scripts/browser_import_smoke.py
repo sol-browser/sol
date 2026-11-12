@@ -7,11 +7,13 @@
    Sessions and History (visit times moved to the last hour).
 3. Imports it into a fresh profile B, then repeats the import (nothing twice),
    then imports the synthetic Zen/Firefox logins (NSS key4.db).
-4. Decrypts B's Login Data and checks no fixture password reached any log.
+4. Imports Arc from an MSIX-shaped folder and from a file, checks profile-scoped
+   favicon caches and fills a missing icon when the workspace already exists.
+5. Decrypts B's Login Data and checks no fixture password reached any log.
 
 Usage: python scripts/browser_import_smoke.py [--exe path\\to\\sol.exe]
 """
-import argparse, json, os, shutil, sqlite3, subprocess, sys, time
+import argparse, hashlib, json, os, shutil, sqlite3, subprocess, sys, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +37,22 @@ def favicon_hosts(profile: Path) -> set[str]:
             if c.execute("SELECT 1 FROM sqlite_master WHERE name='favicons'").fetchone():
                 hosts |= {row[0] for row in c.execute('SELECT host FROM favicons')}
     return hosts
+
+
+def arc_favicon_db(profile: Path, shared_width: int) -> bytes:
+    db = profile / 'Favicons'
+    shutil.copy(FIXTURES / 'chromium' / 'Favicons', db)
+    with sqlite3.connect(db) as c:
+        c.execute("INSERT INTO icon_mapping(page_url,icon_id) VALUES('https://arc.example.test/',1)")
+        c.execute('DELETE FROM favicon_bitmaps WHERE icon_id=1 AND width<>?', (shared_width,))
+        return c.execute('SELECT image_data FROM favicon_bitmaps WHERE icon_id=1').fetchone()[0]
+
+
+def stored_favicons(db: Path) -> dict[str, bytes]:
+    if not db.is_file():
+        return {}
+    with sqlite3.connect(db.as_uri() + '?mode=ro', uri=True) as c:
+        return dict(c.execute('SELECT host,png FROM favicons'))
 
 
 def main() -> int:
@@ -98,6 +116,88 @@ def main() -> int:
     checks['zen_full'] = zen_full.get('tabs') == 4 and zen_full.get('bookmarks') == 1 and zen_full.get('spaces') == 2 and \
         zen_full.get('history') == 1 and zen_full.get('cookies', {}).get('written') == 2 and zen_full.get('passwords', {}).get('added') == 2 and zen_full.get('favicons') == 1
 
+    arc_root = out / 'Packages' / 'TheBrowserCompany.Arc_fixture' / 'LocalCache' / 'Local' / 'Arc'
+    shutil.copytree(FIXTURES / 'arc', arc_root)
+    arc_profile = arc_root / 'User Data' / 'Profile 1'
+    arc_profile.mkdir(parents=True)
+    arc_default = arc_profile.parent / 'Default'
+    arc_default.mkdir()
+    work_icon = arc_favicon_db(arc_profile, 32)
+    home_icon = arc_favicon_db(arc_default, 16)
+    sidebar_path = arc_root / 'StorableSidebar.json'
+    sidebar = json.loads(sidebar_path.read_text(encoding='utf-8'))
+    items = sidebar['sidebar']['containers'][3]['items']
+    for item in items[1::2]:
+        if item['id'] in ('paper', 'work-fav'):
+            host = 'sidebar-icon.example.test' if item['id'] == 'paper' else 'favorite-icon.example.test'
+            item['data']['tab']['savedURL'] = f'https://{host}/'
+    sidebar_path.write_text(json.dumps(sidebar, ensure_ascii=False), encoding='utf-8')
+    archive_path = arc_root / 'StorableArchiveItems.json'
+    archive = json.loads(archive_path.read_text(encoding='utf-8'))
+    archive['items'][1]['sidebarItem']['data']['tab']['savedURL'] = 'https://archive-icon.example.test/'
+    archive_path.write_text(json.dumps(archive), encoding='utf-8')
+    for folder, item, icon in [('SidebarItemsFaviconCache', 'paper', home_icon), ('SidebarItemsFaviconCache', 'work-fav', work_icon),
+                               ('ArchiveItemsFaviconCache', 'archived-one', home_icon)]:
+        cache = arc_root / folder
+        cache.mkdir(exist_ok=True)
+        (cache / hashlib.md5(item.encode(), usedforsecurity=False).hexdigest()).write_bytes(icon)
+    with sqlite3.connect(arc_profile / 'Favicons') as db:
+        db.execute("INSERT INTO icon_mapping(page_url,icon_id) VALUES('https://sidebar-icon.example.test/',1)")
+    shutil.copy(FIXTURES / 'chromium' / 'Bookmarks', arc_profile)
+    shutil.copytree(FIXTURES / 'chromium' / 'Sessions', arc_profile / 'Sessions')
+    arc = probe(exe, out / 'profileD', out / 'd1.jsonl', f'arc|{arc_profile}|tabs,bookmarks')
+    counts = dict(spaces=3, tabs=8, bookmarks=3, folders=2, favorites=2, splits=1, archived=2)
+    checks['arc_preview_and_commit'] = all(arc.get(stage, {}).get(key) == value for stage in ('preview', 'report')
+                                           for key, value in counts.items()) and not arc.get('report', {}).get('errors')
+    checks['arc_preview_reports_skipped'] = any(note.startswith('4 Arc sidebar entries') for note in arc.get('preview', {}).get('notes', []))
+    checks['arc_favicons_preview_and_commit'] = arc.get('preview', {}).get('favicons') == arc.get('report', {}).get('favicons') == 6
+    checks['arc_favicons_available_to_cold_tabs'] = arc.get('coldIcons', 0) >= 6
+    arc_file = probe(exe, out / 'profileE', out / 'e1.jsonl', f'arc-sidebar|{sidebar_path}|tabs').get('report', {})
+    checks['arc_file_import'] = arc_file.get('spaces') == 3 and arc_file.get('tabs') == 8 and arc_file.get('bookmarks') == 0 and arc_file.get('archived') == 0 and not arc_file.get('errors')
+    checks['arc_file_reads_no_adjacent_caches'] = arc_file.get('favicons') == 0
+    with sqlite3.connect(out / 'profileD' / 'BrowserData' / 'workspace.sqlite3') as db:
+        spaces = db.execute("SELECT name,profile_id,id FROM spaces WHERE name LIKE 'Arc %' ORDER BY position").fetchall()
+        checks['arc_persisted_spaces'] = ([row[0] for row in spaces] == ['Arc Work', 'Arc Home', 'Arc Empty'] and
+                                         spaces[0][1] == spaces[2][1] != spaces[1][1] and all(row[1] != 'default' for row in spaces))
+        checks['arc_persisted_tree'] = db.execute('''SELECT leaf.title, leaf.custom_title, leaf.page_title, parent.title, root.title, root.expanded
+            FROM nodes leaf JOIN nodes parent ON leaf.parent_id=parent.id JOIN nodes root ON parent.parent_id=root.id
+            WHERE leaf.title='My paper' ''').fetchall() == [('My paper', 1, 'Article', 'Research', 'Projects', 1)]
+        checks['arc_persisted_favorites'] = len(spaces) == 3 and db.execute('SELECT title,profile_id FROM nodes WHERE favorite ORDER BY position').fetchall() == [
+            ('Work favorite', spaces[0][1]), ('Home favorite', spaces[1][1])]
+        checks['arc_persisted_split'] = db.execute('SELECT title,layout FROM split_groups').fetchall() == [('Two pages', 'v(6000*0,4000*1)')]
+        checks['arc_persisted_archive'] = len(spaces) == 3 and db.execute('SELECT title,space_id,archived_at FROM nodes WHERE archived ORDER BY position').fetchall() == [
+            ('Closed page', spaces[1][2], 1724733947510), ('Closed again', spaces[0][2], 1724733950000)]
+        active = db.execute('''SELECT spaces.name FROM state JOIN spaces ON state.active_space=spaces.id
+                               WHERE singleton=1''').fetchone()
+        checks['arc_keeps_existing_space_active'] = bool(active) and not active[0].startswith('Arc ')
+    if checks['arc_persisted_spaces']:
+        history_root = out / 'profileD' / 'BrowserData'
+        work_db = history_root / f'Profile-{spaces[0][1]}' / 'history.sqlite3'
+        home_db = history_root / f'Profile-{spaces[1][1]}' / 'history.sqlite3'
+        work_icons, home_icons = stored_favicons(work_db), stored_favicons(home_db)
+        checks['arc_favicons_isolated_by_profile'] = work_icons.get('arc.example.test') == work_icon and home_icons.get('arc.example.test') == home_icon and \
+            'arc.example.test' not in favicon_hosts(out / 'profileD')
+        checks['arc_favicons_read_sidebar_and_archive_caches'] = work_icons == {'arc.example.test': work_icon, 'docs.example.test': work_icon,
+            'sidebar-icon.example.test': home_icon, 'favorite-icon.example.test': work_icon} and home_icons == {
+            'arc.example.test': home_icon, 'archive-icon.example.test': home_icon}
+        if work_db.is_file() and home_db.is_file():
+            with sqlite3.connect(work_db) as db:
+                db.execute("DELETE FROM favicons WHERE host='sidebar-icon.example.test'")
+            with sqlite3.connect(home_db) as db:
+                db.execute("UPDATE favicons SET png=? WHERE host='arc.example.test'", (work_icon,))
+            arc_repeat = probe(exe, out / 'profileD', out / 'd2.jsonl', f'arc|{arc_profile}|tabs,bookmarks')
+            report = arc_repeat.get('report', {})
+            checks['arc_repeat_fills_missing_icons_without_adding_spaces'] = report.get('favicons') == 1 and 'spaces' not in report and \
+                any('already imported' in error for error in report.get('errors', [])) and stored_favicons(work_db).get('sidebar-icon.example.test') == home_icon
+            checks['arc_repeat_keeps_existing_icon'] = stored_favicons(home_db).get('arc.example.test') == work_icon
+    for key in ('arc_favicons_isolated_by_profile', 'arc_favicons_read_sidebar_and_archive_caches',
+                'arc_repeat_fills_missing_icons_without_adding_spaces', 'arc_repeat_keeps_existing_icon'):
+        checks.setdefault(key, False)
+    empty_path = out / 'empty-arc-sidebar.json'
+    empty_path.write_text(json.dumps({'sidebar': {'containers': [{'global': {}}, {'spaces': ['empty', {'id': 'empty', 'title': 'Empty'}], 'items': []}]}}))
+    arc_empty = probe(exe, out / 'profileF', out / 'f1.jsonl', f'arc-sidebar|{empty_path}|tabs').get('report', {})
+    checks['arc_empty_space_commits'] = arc_empty.get('spaces') == 1 and arc_empty.get('tabs') == 0 and not arc_empty.get('errors')
+
     stored = json.loads(subprocess.run([str(counter), '--count-logins', str(out / 'profileB')], capture_output=True, text=True, encoding='utf-8').stdout)
     checks['store_has_4_synthetic'] = stored.get('count') == 4 and all(l['synthetic_password'] for l in stored['logins'])
 
@@ -108,7 +208,7 @@ def main() -> int:
             leaks += [f'{path.name}:{s}' for s in SECRETS if s in text]
     checks['no_password_in_logs'] = not leaks
 
-    result = {'directory': str(out), 'checks': checks, 'stored': stored, 'first': first, 'repeat': again, 'zen': zen, 'leaks': leaks}
+    result = {'directory': str(out), 'checks': checks, 'stored': stored, 'first': first, 'repeat': again, 'zen': zen, 'arc': arc, 'leaks': leaks}
     (out / 'result.json').write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding='utf-8')
     print(json.dumps({'directory': str(out), 'checks': checks}, indent=2))
     return 0 if all(checks.values()) else 1

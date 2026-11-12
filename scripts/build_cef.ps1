@@ -13,6 +13,14 @@ param([ValidatePattern('^[A-Za-z]:\\[^ ]+$')][string]$WorkDirectory = 'E:\cef-bu
       [string]$SourceLock = '')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+# Engine work queued for the next rebuild (docs/cef-patches.md, "Queued engine
+# work"; docs/cef-fork.md step 0). Shown on every run so none is forgotten.
+$queued = Select-String -LiteralPath (Join-Path $repoRoot 'docs/cef-patches.md') -Pattern '^### ' -Context 0, 3 |
+    Where-Object { ($_.Context.PostContext -join ' ') -match 'WAITING FOR THE NEXT ENGINE UPDATE' } |
+    ForEach-Object { $_.Line.Substring(4) }
+if ($queued) {
+    Write-Warning "Queued engine work waiting for this update (docs/cef-patches.md): $($queued -join '; '). Bring it onto the candidate branch first."
+}
 if (!$SourceLock) { $SourceLock = Join-Path $repoRoot 'cmake/cef-source.lock.json' }
 $sourceHelper = Join-Path $PSScriptRoot 'cef_source.py'
 function Read-SourceInfo([string]$Mode) {

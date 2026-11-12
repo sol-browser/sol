@@ -30,13 +30,14 @@ inline std::optional<Shortcut> CommandShortcut(std::string_view name) {
     case Shortcut::ReopenClosed: case Shortcut::Sidebar: case Shortcut::NewWindow:
     case Shortcut::NewPrivateWindow: case Shortcut::Reload: case Shortcut::ReloadBypass:
     case Shortcut::Pin: case Shortcut::Back: case Shortcut::Forward: case Shortcut::DevTools:
-    case Shortcut::Print: case Shortcut::Fullscreen: return action;
+    case Shortcut::Print: case Shortcut::Fullscreen: case Shortcut::CopyUrl: case Shortcut::Screenshot: case Shortcut::FullPageScreenshot: case Shortcut::Capture: return action;
     default: return std::nullopt;
   }
 }
 inline bool CommandNeedsPage(Shortcut action) {
   return action == Shortcut::Reload || action == Shortcut::ReloadBypass || action == Shortcut::Pin ||
-      action == Shortcut::Back || action == Shortcut::Forward || action == Shortcut::DevTools || action == Shortcut::Print;
+      action == Shortcut::Back || action == Shortcut::Forward || action == Shortcut::DevTools || action == Shortcut::Print ||
+      action == Shortcut::CopyUrl || action == Shortcut::Screenshot || action == Shortcut::FullPageScreenshot || action == Shortcut::Capture;
 }
 inline bool CommandAvailable(Shortcut action, bool page, bool standalone, bool back, bool forward) {
   return (!CommandNeedsPage(action) || page) &&

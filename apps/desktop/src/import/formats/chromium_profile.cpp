@@ -8,7 +8,7 @@
 #include <map>
 #include <set>
 
-namespace red::import {
+namespace red::importer {
 namespace {
 // Chromium times: microseconds since 1601-01-01 UTC.
 constexpr int64_t kWindowsToUnixMs = 11644473600000;
@@ -292,4 +292,4 @@ ChromiumSession ReadChromiumSession(const std::filesystem::path& profile) {
   }
   return last;
 }
-}  // namespace red::import
+}  // namespace red::importer

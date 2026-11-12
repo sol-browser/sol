@@ -1,4 +1,5 @@
 #include "storage/tree_store.h"
+#include "web_url.h"
 #include <windows.h>
 #include <bcrypt.h>
 #include <algorithm>
@@ -34,7 +35,7 @@ bool SafeText(const std::string& value, size_t maximum, bool allow_empty = false
 }
 bool SafeUrl(const std::string& url) {
   // Websites, extension pages, local files and exactly our own internal pages.
-  return SafeText(url, 4096) && (url.starts_with("https://") || url.starts_with("http://") || IsExtensionPageUrl(url) ||
+  return SafeText(url, 4096) && (HasWebScheme(url) || IsExtensionPageUrl(url) ||
                                  IsInternalPageUrl(url) || IsLocalFileUrl(url));
 }
 void SetDestination(TreeNode& node, const TreeCommand& command) {
@@ -112,7 +113,7 @@ bool Valid(const TreeSnapshot& tree) {
   std::map<std::string, std::set<int>> positions;
   std::map<std::string,int> favorites;
   for (const auto& n : tree.nodes) {
-    if (n.id.size() != 36 || !SafeText(n.title, 240) || !SafeText(n.page_title, 240, true) || n.position < 0 || n.last_active_at < 0 ||
+    if (n.id.size() != 36 || !SafeText(n.title, 240) || !SafeText(n.page_title, 240, true) || n.position < 0 || n.last_active_at < 0 || n.closed_at < 0 ||
         (!n.folder && !SafeUrl(n.url)) || (n.folder && !n.url.empty()) ||
         (n.folder && (!n.pinned || n.favorite || n.archived)) ||
         (!n.parent.empty() && (!n.pinned || n.favorite || n.archived)) ||
@@ -120,7 +121,10 @@ bool Valid(const TreeSnapshot& tree) {
         (n.archived && (n.pinned || n.favorite || n.folder || !n.parent.empty())) ||
         !profiles.contains(n.profile) || !nodes.emplace(n.id, &n).second || !positions[n.parent].insert(n.position).second) return false;
     if (n.parent.empty() && !n.favorite ? !space_ids.contains(n.space) : !n.space.empty()) return false;
-    if (n.favorite && ++favorites[n.profile] > 12) return false;
+    if (n.favorite) {
+      ++favorites[n.profile];
+      if (favorites[n.profile] > 12) return false;
+    }
   }
   for (const auto& [parent, slots] : positions) {
     if (!slots.empty() && *slots.rbegin() != static_cast<int>(slots.size()) - 1) return false;
@@ -134,22 +138,26 @@ bool Valid(const TreeSnapshot& tree) {
       current = current->parent.empty() ? nullptr : nodes.at(current->parent);
     }
   }
+  // Each page belongs to at most one live or archived group; members share the
+  // anchor's profile and (unless a Favorite) its space; the anchor is no Favorite.
   std::set<std::string> split_members;
-  for (const auto& split : tree.splits) {
-    const auto a = nodes.find(split.anchor), b = nodes.find(split.other);
-    if (a == nodes.end() || b == nodes.end() || a->second->folder || b->second->folder ||
-        a->second->archived || b->second->archived || a->second->favorite ||
-        !SafeText(split.title,240,true) || split.ratio < 1000 || split.ratio > 9000 ||
-        !split_members.insert(split.anchor).second || !split_members.insert(split.other).second ||
-        BrowsingProfileId(tree,split.anchor) != BrowsingProfileId(tree,split.other) ||
-        (!b->second->favorite && SpaceOf(tree,*a->second) != SpaceOf(tree,*b->second))) return false;
-  }
-  for (const auto& split:tree.archived_splits) {
-    const auto a=nodes.find(split.anchor),b=nodes.find(split.other);
-    if (a==nodes.end() || b==nodes.end() || !a->second->archived || !b->second->archived ||
-        !SafeText(split.title,240,true) || split.ratio<1000 || split.ratio>9000 ||
-        !split_members.insert(split.anchor).second || !split_members.insert(split.other).second || a->second->space!=b->second->space) return false;
-  }
+  auto valid_group = [&](const SplitGroup& split, bool archived) {
+    const int count = static_cast<int>(split.pages.size());
+    if (count < 2 || count > kMaxSplitPanes || !split.Contains(split.anchor) || !SafeText(split.title,240,true) ||
+        !ValidSplitLayout(split.layout,count) || (split.linked && !LinkableSplitGrid(split.layout))) return false;
+    const auto anchor = nodes.find(split.anchor);
+    if (anchor == nodes.end() || (!archived && anchor->second->favorite)) return false;
+    for (const auto& id : split.pages) {
+      const auto page = nodes.find(id);
+      if (page == nodes.end() || page->second->folder || !split_members.insert(id).second) return false;
+      if (archived ? !page->second->archived || page->second->space != anchor->second->space :
+          page->second->archived || BrowsingProfileId(tree,id) != BrowsingProfileId(tree,split.anchor) ||
+          (!page->second->favorite && SpaceOf(tree,*page->second) != SpaceOf(tree,*anchor->second))) return false;
+    }
+    return true;
+  };
+  for (const auto& split : tree.splits) if (!valid_group(split,false)) return false;
+  for (const auto& split : tree.archived_splits) if (!valid_group(split,true)) return false;
   if (tree.active_id.empty()) return true;
   if (!nodes.contains(tree.active_id) || nodes.at(tree.active_id)->folder || nodes.at(tree.active_id)->archived) return false;
   // The page on screen belongs to the space on screen (or is a Favorite).
@@ -176,6 +184,59 @@ bool MoveNode(TreeSnapshot& tree, TreeNode& node, const std::string& parent_id, 
   for (auto& other : tree.nodes) if (other.parent == parent_id && other.position >= target) ++other.position;
   node.parent = parent_id; node.position = target;
   if (parent) { node.pinned = true; node.favorite = false; }
+  return true;
+}
+// Where a Today page taken out of a split lands: directly below |row| when that
+// is a Today row too; at the top of Today (where new tabs open) when the group is
+// pinned or in a folder. Pinned pages and Favorites keep their own place.
+// split-model.ts (splitLanding) mirrors this for the sidebar's landing row.
+bool PlaceBelow(TreeSnapshot& tree, const std::string& id, const std::string& row) {
+  auto* page = Find(tree, id); const auto* anchor = FindConst(tree, row);
+  if (!page || !anchor || page->archived || page->pinned || page->favorite || !page->parent.empty() || anchor->favorite) return true;
+  if (anchor->pinned || !anchor->parent.empty()) return SpaceOf(tree, *anchor) != page->space || MoveNode(tree, *page, "", 0);
+  if (page->space != anchor->space) return true;
+  const int below = (anchor->position > page->position ? anchor->position - 1 : anchor->position) + 1;
+  return MoveNode(tree, *page, "", below);
+}
+// Takes |id| out of a live group of three or more; false when the group must
+// dissolve instead (two pages, or no other member can carry its sidebar row).
+// |place|: the page stays open in the sidebar, so a Today page lands directly
+// below the group, and a departing anchor hands its row to the next member.
+bool DropSplitMember(TreeSnapshot& tree, SplitGroup& group, const std::string& id, bool place) {
+  const int slot = group.Slot(id);
+  if (slot < 0) return true;
+  if (group.pages.size() <= 2) return false;
+  const auto layout = RemoveSplitPane(group.layout, slot);
+  if (!layout) return false;
+  group.pages.erase(group.pages.begin() + slot); group.layout = *layout;
+  group.linked = group.linked && LinkableSplitGrid(group.layout);
+  if (id == group.anchor) {
+    const auto next = std::find_if(group.pages.begin(), group.pages.end(), [&](const auto& page) {
+      const auto* node = FindConst(tree, page); return node && !node->favorite && !node->archived; });
+    if (next == group.pages.end()) return false;
+    auto* old_anchor = Find(tree, id); auto* new_anchor = Find(tree, *next);
+    // The group keeps its row: the next member takes the old anchor's place.
+    if (place && old_anchor && new_anchor && !old_anchor->archived && old_anchor->pinned == new_anchor->pinned) {
+      std::swap(old_anchor->parent, new_anchor->parent); std::swap(old_anchor->position, new_anchor->position);
+      std::swap(old_anchor->space, new_anchor->space);
+    }
+    group.anchor = *next;
+  }
+  if (place && !PlaceBelow(tree, id, group.anchor)) return false;
+  if (tree.active_id == id) tree.active_id = group.pages[std::min<size_t>(slot, group.pages.size() - 1)];
+  return true;
+}
+// Taking one page out of a two-page group dissolves it the same way: the page
+// that stays takes the group's row and the one taken out lands directly below.
+bool RemoveFromPair(TreeSnapshot& tree, std::vector<SplitGroup>::iterator group, const std::string& id) {
+  const auto other = group->pages[group->Slot(id) == 0 ? 1 : 0];
+  auto* leaving = Find(tree, id); auto* staying = Find(tree, other);
+  if (id == group->anchor && leaving && staying && !staying->favorite && !leaving->archived && leaving->pinned == staying->pinned) {
+    std::swap(leaving->parent, staying->parent); std::swap(leaving->position, staying->position); std::swap(leaving->space, staying->space);
+  }
+  tree.splits.erase(group);
+  if (!PlaceBelow(tree, id, other)) return false;
+  if (tree.active_id == id) tree.active_id = other;
   return true;
 }
 }  // namespace
@@ -224,7 +285,7 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
     return Error(500, "Cannot inspect workspace schema");
   const int schema = sqlite3_column_int(version.value, 0), application = sqlite3_column_int(app.value, 0);
   version.Finish(); app.Finish();
-  if (schema > 14 ||(application != 0 && application != kApplicationId)) return Error(500, "Unsupported workspace schema");
+  if (schema > 16 ||(application != 0 && application != kApplicationId)) return Error(500, "Unsupported workspace schema");
   if (schema == 0) {
     Statement tables(db_, "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'");
     if (!tables.value || sqlite3_step(tables.value) != SQLITE_ROW || sqlite3_column_int(tables.value, 0) != 0)
@@ -340,6 +401,28 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
       " SELECT singleton,revision,active_id,sidebar_width,theme_hue,theme_intensity,theme_mode,theme_noise,active_space FROM state;"
       "DROP TABLE state; ALTER TABLE state_v14 RENAME TO state;"
       "PRAGMA user_version=14; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"Sidebar width migration failed"); }
+  // v15: when a page was last closed, so Ctrl+Tab can leave out tabs closed since their last use.
+  if (schema < 15 && !Exec("BEGIN IMMEDIATE; ALTER TABLE nodes ADD COLUMN closed_at INTEGER NOT NULL DEFAULT 0 CHECK(closed_at>=0);"
+      "PRAGMA user_version=15; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"Closed time migration failed"); }
+  // v16: Split View holds 2-4 pages and a layout tree (workspace/split_layout.h).
+  // Two-page groups convert exactly: the schema-15 ratio is the leading pane and
+  // reversed puts the second page first. Older builds reject schema 16.
+#define RED_SPLIT_V15_LAYOUT "(CASE vertical WHEN 1 THEN 'v(' ELSE 'h(' END)||ratio||(CASE reversed WHEN 1 THEN '*1,' ELSE '*0,' END)" \
+    "||(10000-ratio)||(CASE reversed WHEN 1 THEN '*0)' ELSE '*1)' END)"
+  if (schema < 16 && !Exec("BEGIN IMMEDIATE;"
+      "CREATE TABLE split_groups(anchor TEXT PRIMARY KEY REFERENCES nodes(id) DEFERRABLE INITIALLY DEFERRED,"
+      "title TEXT NOT NULL DEFAULT '',layout TEXT NOT NULL CHECK(length(layout) BETWEEN 1 AND 128),"
+      "linked INTEGER NOT NULL DEFAULT 0 CHECK(linked IN(0,1)),archived INTEGER NOT NULL CHECK(archived IN(0,1)));"
+      "CREATE TABLE split_members(page TEXT PRIMARY KEY REFERENCES nodes(id) DEFERRABLE INITIALLY DEFERRED,"
+      "anchor TEXT NOT NULL REFERENCES split_groups(anchor) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,"
+      "slot INTEGER NOT NULL CHECK(slot BETWEEN 0 AND 3),UNIQUE(anchor,slot));"
+      "INSERT INTO split_groups SELECT anchor,title," RED_SPLIT_V15_LAYOUT ",0,0 FROM splits;"
+      "INSERT INTO split_groups SELECT anchor,title," RED_SPLIT_V15_LAYOUT ",0,1 FROM archived_splits;"
+      "INSERT INTO split_members SELECT anchor,anchor,0 FROM splits UNION ALL SELECT other,anchor,1 FROM splits;"
+      "INSERT INTO split_members SELECT anchor,anchor,0 FROM archived_splits UNION ALL SELECT other,anchor,1 FROM archived_splits;"
+      "DROP TABLE splits; DROP TABLE archived_splits;"
+      "PRAGMA user_version=16; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"Split View layout migration failed"); }
+#undef RED_SPLIT_V15_LAYOUT
   if (!Exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")) return Error(500, "Cannot configure workspace journal");
   Statement check(db_, "PRAGMA quick_check(1)");
   if (!check.value || sqlite3_step(check.value) != SQLITE_ROW || Text(check.value, 0) != "ok")
@@ -370,7 +453,7 @@ TreeResult TreeStore::Load() {
     space.profile = Text(spaces.value,10);
     result.snapshot.spaces.push_back(std::move(space));
   }
-  Statement nodes(db_, "SELECT id,coalesce(parent_id,''),kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id,x_badge_hidden FROM nodes ORDER BY coalesce(parent_id,''),position");
+  Statement nodes(db_, "SELECT id,coalesce(parent_id,''),kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id,x_badge_hidden,closed_at FROM nodes ORDER BY coalesce(parent_id,''),position");
   if (!nodes.value) return Error(500, "Workspace nodes unavailable");
   int code;
   while ((code = sqlite3_step(nodes.value)) == SQLITE_ROW) {
@@ -385,22 +468,36 @@ TreeResult TreeStore::Load() {
     node.space = Text(nodes.value, 13);
     node.last_active_at = sqlite3_column_int64(nodes.value,14);
     node.x_badge_hidden = sqlite3_column_int(nodes.value, 16) != 0;
+    node.closed_at = sqlite3_column_int64(nodes.value, 17);
     result.snapshot.nodes.push_back(std::move(node));
   }
   if (code != SQLITE_DONE) return Error(500,"Invalid workspace tree");
-  Statement splits(db_,"SELECT anchor,other,title,ratio,vertical,reversed FROM splits ORDER BY anchor");
+  struct StoredSplit { SplitGroup group; std::string layout; bool archived = false; };
+  std::map<std::string,StoredSplit> stored;
+  Statement splits(db_,"SELECT anchor,title,layout,linked,archived FROM split_groups ORDER BY anchor");
   if (!splits.value) return Error(500,"Split views unavailable");
   while ((code = sqlite3_step(splits.value)) == SQLITE_ROW) {
-    SplitGroup split; split.anchor = Text(splits.value,0); split.other = Text(splits.value,1); split.title = Text(splits.value,2);
-    split.ratio = sqlite3_column_int(splits.value,3); split.vertical = sqlite3_column_int(splits.value,4) != 0;
-    split.reversed = sqlite3_column_int(splits.value,5) != 0; result.snapshot.splits.push_back(std::move(split));
+    StoredSplit split; split.group.anchor = Text(splits.value,0); split.group.title = Text(splits.value,1);
+    split.layout = Text(splits.value,2); split.group.linked = sqlite3_column_int(splits.value,3) != 0;
+    split.archived = sqlite3_column_int(splits.value,4) != 0; stored[split.group.anchor] = std::move(split);
   }
   if (code != SQLITE_DONE) return Error(500,"Invalid split views");
-  Statement saved(db_,"SELECT anchor,other,title,ratio,vertical,reversed FROM archived_splits ORDER BY anchor");
-  if (!saved.value) return Error(500,"Archived split views unavailable");
-  while ((code=sqlite3_step(saved.value)) == SQLITE_ROW) result.snapshot.archived_splits.push_back({Text(saved.value,0),Text(saved.value,1),Text(saved.value,2),
-    sqlite3_column_int(saved.value,3),sqlite3_column_int(saved.value,4)!=0,sqlite3_column_int(saved.value,5)!=0});
-  if (code != SQLITE_DONE || !Valid(result.snapshot)) return Error(500, "Invalid workspace tree");
+  Statement members(db_,"SELECT page,anchor,slot FROM split_members ORDER BY anchor,slot");
+  if (!members.value) return Error(500,"Split view members unavailable");
+  while ((code = sqlite3_step(members.value)) == SQLITE_ROW) {
+    const auto group = stored.find(Text(members.value,1));
+    if (group == stored.end() || sqlite3_column_int(members.value,2) != static_cast<int>(group->second.group.pages.size()))
+      return Error(500,"Invalid split view members");
+    group->second.group.pages.push_back(Text(members.value,0));
+  }
+  if (code != SQLITE_DONE) return Error(500,"Invalid split view members");
+  for (auto& [anchor,split] : stored) {
+    const auto layout = ParseSplitLayout(split.layout,static_cast<int>(split.group.pages.size()));
+    if (!layout) return Error(500,"Invalid split view layout");
+    split.group.layout = *layout;
+    (split.archived ? result.snapshot.archived_splits : result.snapshot.splits).push_back(std::move(split.group));
+  }
+  if (!Valid(result.snapshot)) return Error(500, "Invalid workspace tree");
   return result;
 }
 TreeResult TreeStore::Read() {
@@ -420,8 +517,8 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
   const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
   if (command.action == TreeAction::AutoArchive) {
     std::vector<std::string> ids{command.id};
-    const auto group=std::find_if(tree.splits.begin(),tree.splits.end(),[&](const auto& s) { return s.anchor==command.id || s.other==command.id; });
-    if (group!=tree.splits.end()) ids={group->anchor,group->other};
+    const auto group=std::find_if(tree.splits.begin(),tree.splits.end(),[&](const auto& s) { return s.Contains(command.id); });
+    if (group!=tree.splits.end()) ids=group->pages;
     for (const auto& id:ids) {
       const auto* item=FindConst(tree,id);
       if (!item || item->folder || item->pinned || item->favorite || item->archived || !item->parent.empty() ||
@@ -499,18 +596,39 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
       if (!node || !other || node->folder || other->folder || node->archived || other->archived || node->favorite || node->id == other->id ||
           BrowsingProfileId(tree,node->id) != BrowsingProfileId(tree,other->id) ||
           (!other->favorite && SpaceOf(tree,*node) != SpaceOf(tree,*other))) return rollback(400,"Choose two distinct tabs in this space");
-      for (const auto& split : tree.splits) if (split.anchor == node->id || split.other == node->id || split.anchor == other->id || split.other == other->id)
+      for (const auto& split : tree.splits) if (split.Contains(node->id) || split.Contains(other->id))
         return rollback(409,"Separate an existing split before combining these tabs");
-      tree.splits.push_back({node->id,other->id,"",5000,command.value,command.reversed}); tree.active_id = node->id;
+      tree.splits.push_back(SplitGroup::Pair(node->id,other->id,command.value,command.reversed)); tree.active_id = node->id;
     } else {
       if (group == tree.splits.end()) return rollback(404,"Split view is unavailable");
+      const int panes = static_cast<int>(group->pages.size());
       if (command.action == TreeAction::RemoveSplit) tree.splits.erase(group);
       else if (command.action == TreeAction::RenameSplit) {
         if (!SafeText(command.title,240,true)) return rollback(400,"Invalid split title"); group->title = command.title;
       } else if (command.action == TreeAction::LayoutSplit) {
-        if (command.position < 1000 || command.position > 9000) return rollback(400,"Invalid split ratio");
-        group->ratio = command.position; group->vertical = command.value;
-      } else { group->reversed = !group->reversed; group->ratio = 10000 - group->ratio; }
+        const auto layout = ParseSplitLayout(command.layout,panes);
+        if (!layout || (command.value && !LinkableSplitGrid(*layout))) return rollback(400,"Invalid split layout");
+        group->layout = *layout; group->linked = command.value;
+      } else if (command.action == TreeAction::AddSplitPane) {
+        const auto* page = FindConst(tree,command.parent);
+        if (panes >= kMaxSplitPanes) return rollback(409,"A split view holds at most four tabs");
+        if (!page || page->folder || page->archived || BrowsingProfileId(tree,page->id) != BrowsingProfileId(tree,group->anchor) ||
+            (!page->favorite && SpaceOf(tree,*page) != SpaceOf(tree,*node))) return rollback(400,"Choose a tab in this space");
+        for (const auto& split : tree.splits) if (split.Contains(page->id)) return rollback(409,"This tab is already in a split view");
+        const auto layout = ParseSplitLayout(command.layout,panes+1);
+        if (!layout) return rollback(400,"Invalid split layout");
+        group->pages.push_back(page->id); group->layout = *layout; group->linked = false; tree.active_id = page->id;
+      } else if (command.action == TreeAction::RemoveSplitPane) {
+        if (group->Slot(command.parent) < 0) return rollback(404,"This tab is not in the split view");
+        if (panes == 2) { if (!RemoveFromPair(tree,group,command.parent)) return rollback(400,"Cannot place the tab"); }
+        else if (!DropSplitMember(tree,*group,command.parent,true)) tree.splits.erase(group);
+      } else {
+        const int a = command.parent.empty() ? 0 : group->Slot(command.parent);
+        const int b = command.parent.empty() ? 1 : group->Slot(command.split_pane);
+        if ((command.parent.empty() != command.split_pane.empty()) || (command.parent.empty() && panes != 2) || a < 0 || b < 0 || a == b)
+          return rollback(400,"Choose two panes of this split view");
+        group->layout = SwapSplitSlots(group->layout,a,b);
+      }
     }
   } else if (space_command) {
     auto* space = FindSpace(tree, command.id);
@@ -613,10 +731,10 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         TreeNode copy; copy.id=NewId(); copy.space=tree.active_space; copy.url=command.split_source_url; copy.title=command.split_source_title;
         copy.custom_title=source->custom_title; copy.last_active_at=now; copy.expanded=true; copy.position=0;
         for (auto& sibling:tree.nodes) if (sibling.parent.empty()) ++sibling.position;
-        tree.splits.push_back({copy.id,result.created_id,"",5000,false,false}); tree.nodes.push_back(std::move(copy));
+        tree.splits.push_back(SplitGroup::Pair(copy.id,result.created_id)); tree.nodes.push_back(std::move(copy));
       } else {
-        for (const auto& split:tree.splits) if (split.anchor==source->id || split.other==source->id) return rollback(409,"Source is already in a split");
-        tree.splits.push_back({source->id,result.created_id,"",5000,false,false});
+        for (const auto& split:tree.splits) if (split.Contains(source->id)) return rollback(409,"Source is already in a split");
+        tree.splits.push_back(SplitGroup::Pair(source->id,result.created_id));
       }
     }
   } else {
@@ -723,13 +841,14 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
           node->pinned = false; node->favorite = false; node->archived = true;
           node->archived_at = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         }
+        node->closed_at = now;
         if (tree.active_id == node->id) tree.active_id = command.next_active;
         break;
       case TreeAction::Restore:
         if (!node->archived) return rollback(400, "Tab is not archived");
-        if (const auto saved=std::find_if(tree.archived_splits.begin(),tree.archived_splits.end(),[&](const auto& s) { return s.anchor==node->id || s.other==node->id; }); saved!=tree.archived_splits.end()) {
+        if (const auto saved=std::find_if(tree.archived_splits.begin(),tree.archived_splits.end(),[&](const auto& s) { return s.Contains(node->id); }); saved!=tree.archived_splits.end()) {
           const auto split=*saved;
-          for (const auto& member:{split.anchor,split.other}) {
+          for (const auto& member:split.pages) {
             auto* page=Find(tree,member); page->archived=false; page->archived_at=0; page->space=tree.active_space; page->last_active_at=now;
           }
           tree.splits.push_back(split); tree.archived_splits.erase(saved);
@@ -742,7 +861,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         const std::set<std::string> scope(ids.begin(),ids.end());
         const auto parent=node->parent;
         for (const auto& split:tree.splits)
-          if (scope.contains(split.anchor) && scope.contains(split.other)) tree.archived_splits.push_back(split);
+          if (std::all_of(split.pages.begin(),split.pages.end(),[&](const auto& id) { return scope.contains(id); })) tree.archived_splits.push_back(split);
         for (auto& item:tree.nodes) if (scope.contains(item.id) && !item.folder) {
           if (!MoveNode(tree,item,"",-1)) return rollback(400,"Cannot archive folder tab");
           item.pinned=false; item.favorite=false; item.archived=true; item.archived_at=now; item.space=node_space;
@@ -770,10 +889,10 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
   }
   // Remember the page last shown in each space.
   if (command.action == TreeAction::MoveToSpace || command.action == TreeAction::Move || command.action == TreeAction::Place) {
-    for (const auto& split : tree.splits) {
+    for (const auto& split : tree.splits) for (const auto& member : split.pages) {
       const auto* old_anchor = FindConst(before,split.anchor);
-      const auto* anchor = FindConst(tree,split.anchor); auto* other = Find(tree,split.other);
-      if (!old_anchor || !anchor || !other || anchor->favorite || other->favorite || anchor->archived || other->archived) continue;
+      const auto* anchor = FindConst(tree,split.anchor); auto* other = Find(tree,member);
+      if (member == split.anchor || !old_anchor || !anchor || !other || anchor->favorite || other->favorite || anchor->archived || other->archived) continue;
       const auto destination = SpaceOf(tree,*anchor);
       if (destination == SpaceOf(before,*old_anchor) || destination == SpaceOf(tree,*other)) continue;
       if (!MoveNode(tree,*other,"",-1)) return rollback(400,"Cannot move split member to the destination space");
@@ -781,16 +900,23 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
     }
     if (const auto* active = FindConst(tree,tree.active_id); active && !active->favorite && SpaceOf(tree,*active) != tree.active_space) tree.active_id.clear();
   }
-  std::erase_if(tree.splits,[&](const auto& split) {
-    const auto* a = FindConst(tree,split.anchor); const auto* b = FindConst(tree,split.other);
-    return !a || !b || a->archived || b->archived || a->favorite ||
-      BrowsingProfileId(tree,a->id) != BrowsingProfileId(tree,b->id) ||
-      (!b->favorite && SpaceOf(tree,*a) != SpaceOf(tree,*b)) ||
-      (command.action == TreeAction::Unload && (split.anchor == command.id || split.other == command.id));
-  });
+  // A member that closed, left the space/profile or was archived alone leaves
+  // its group; a group with fewer than two pages dissolves.
+  for (auto group = tree.splits.begin(); group != tree.splits.end();) {
+    const auto* anchor = FindConst(tree,group->anchor);
+    bool keep = anchor && !anchor->archived && !anchor->favorite;
+    std::vector<std::string> leaving;
+    for (const auto& id : group->pages) {
+      const auto* page = FindConst(tree,id);
+      if (!page || page->archived || page->folder || (command.action == TreeAction::Unload && id == command.id) ||
+          (anchor && (BrowsingProfileId(tree,id) != BrowsingProfileId(tree,group->anchor) ||
+                      (!page->favorite && SpaceOf(tree,*page) != SpaceOf(tree,*anchor))))) leaving.push_back(id);
+    }
+    for (const auto& id : leaving) if (keep) keep = DropSplitMember(tree,*group,id,command.action == TreeAction::Unload);
+    group = keep ? std::next(group) : tree.splits.erase(group);
+  }
   std::erase_if(tree.archived_splits,[&](const auto& split) {
-    const auto* a=FindConst(tree,split.anchor); const auto* b=FindConst(tree,split.other);
-    return !a || !b || !a->archived || !b->archived;
+    return std::any_of(split.pages.begin(),split.pages.end(),[&](const auto& id) { const auto* page = FindConst(tree,id); return !page || !page->archived; });
   });
   if (auto* space = FindSpace(tree, tree.active_space); space && !tree.active_id.empty()) space->active_id = tree.active_id;
   if (!Valid(tree)) return rollback(400, "Tree limits or invariants violated (10000 nodes, 64 levels)");
@@ -808,28 +934,23 @@ TreeResult TreeStore::Save(TreeResult result, const TreeSnapshot& before) {
       sqlite3_reset(put.value);
     }
   }
-  if (tree.splits != before.splits) {
-    if (!Exec("DELETE FROM splits")) return rollback(500,"Cannot update split views");
-    Statement put(db_,"INSERT INTO splits(anchor,other,title,ratio,vertical,reversed) VALUES(?,?,?,?,?,?)");
-    if (!put.value) return rollback(500,"Cannot prepare split views");
-    for (const auto& split : tree.splits) {
-      put.Text(1,split.anchor); put.Text(2,split.other); put.Text(3,split.title);
-      sqlite3_bind_int(put.value,4,split.ratio); sqlite3_bind_int(put.value,5,split.vertical); sqlite3_bind_int(put.value,6,split.reversed);
-      if (sqlite3_step(put.value) != SQLITE_DONE) return rollback(500,"Cannot save split view"); sqlite3_reset(put.value);
+  if (tree.splits != before.splits || tree.archived_splits != before.archived_splits) {
+    if (!Exec("DELETE FROM split_members; DELETE FROM split_groups;")) return rollback(500,"Cannot update split views");
+    Statement group(db_,"INSERT INTO split_groups(anchor,title,layout,linked,archived) VALUES(?,?,?,?,?)");
+    Statement member(db_,"INSERT INTO split_members(page,anchor,slot) VALUES(?,?,?)");
+    if (!group.value || !member.value) return rollback(500,"Cannot prepare split views");
+    for (const bool archived : {false,true}) for (const auto& split : archived ? tree.archived_splits : tree.splits) {
+      group.Text(1,split.anchor); group.Text(2,split.title); group.Text(3,FormatSplitLayout(split.layout));
+      sqlite3_bind_int(group.value,4,split.linked); sqlite3_bind_int(group.value,5,archived);
+      if (sqlite3_step(group.value) != SQLITE_DONE) return rollback(500,"Cannot save split view"); sqlite3_reset(group.value);
+      for (size_t slot = 0; slot < split.pages.size(); ++slot) {
+        member.Text(1,split.pages[slot]); member.Text(2,split.anchor); sqlite3_bind_int(member.value,3,static_cast<int>(slot));
+        if (sqlite3_step(member.value) != SQLITE_DONE) return rollback(500,"Cannot save split view member"); sqlite3_reset(member.value);
+      }
     }
   }
-  if (tree.archived_splits!=before.archived_splits) {
-    if (!Exec("DELETE FROM archived_splits")) return rollback(500,"Cannot update archived splits");
-    Statement put(db_,"INSERT INTO archived_splits(anchor,other,title,ratio,vertical,reversed) VALUES(?,?,?,?,?,?)");
-    if (!put.value) return rollback(500,"Cannot save archived splits");
-    for (const auto& split:tree.archived_splits) {
-      put.Text(1,split.anchor); put.Text(2,split.other); put.Text(3,split.title);
-      sqlite3_bind_int(put.value,4,split.ratio); sqlite3_bind_int(put.value,5,split.vertical); sqlite3_bind_int(put.value,6,split.reversed);
-      if (sqlite3_step(put.value)!=SQLITE_DONE) return rollback(500,"Cannot save archived split"); sqlite3_reset(put.value);
-    }
-  }
-  Statement write(db_, "INSERT INTO nodes(id,parent_id,kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id,x_badge_hidden) VALUES(?,NULLIF(?,''),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
-      "ON CONFLICT(id) DO UPDATE SET parent_id=excluded.parent_id,title=excluded.title,url=excluded.url,position=excluded.position,pinned=excluded.pinned,expanded=excluded.expanded,favorite=excluded.favorite,archived=excluded.archived,page_title=excluded.page_title,custom_title=excluded.custom_title,archived_at=excluded.archived_at,space_id=excluded.space_id,last_active_at=excluded.last_active_at,profile_id=excluded.profile_id,x_badge_hidden=excluded.x_badge_hidden");
+  Statement write(db_, "INSERT INTO nodes(id,parent_id,kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id,x_badge_hidden,closed_at) VALUES(?,NULLIF(?,''),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+      "ON CONFLICT(id) DO UPDATE SET parent_id=excluded.parent_id,title=excluded.title,url=excluded.url,position=excluded.position,pinned=excluded.pinned,expanded=excluded.expanded,favorite=excluded.favorite,archived=excluded.archived,page_title=excluded.page_title,custom_title=excluded.custom_title,archived_at=excluded.archived_at,space_id=excluded.space_id,last_active_at=excluded.last_active_at,profile_id=excluded.profile_id,x_badge_hidden=excluded.x_badge_hidden,closed_at=excluded.closed_at");
   Statement erase(db_, "DELETE FROM nodes WHERE id=?");
   if (!write.value || !erase.value) return rollback(500, "Cannot prepare workspace update");
   for (const auto& old : before.nodes) {
@@ -846,6 +967,7 @@ TreeResult TreeStore::Save(TreeResult result, const TreeSnapshot& before) {
     sqlite3_bind_int64(write.value, 13, n.archived_at); write.Text(14, n.space);
     sqlite3_bind_int64(write.value,15,n.last_active_at);
     sqlite3_bind_int(write.value, 17, n.x_badge_hidden);
+    sqlite3_bind_int64(write.value, 18, n.closed_at);
     if (sqlite3_step(write.value) != SQLITE_DONE) return rollback(500, "Workspace write failed");
     sqlite3_reset(write.value);
   }
@@ -899,16 +1021,30 @@ TreeResult TreeStore::Import(const TreeSnapshot& incoming, const std::filesystem
   for (const auto& s : incoming.spaces) if (FindSpace(tree, s.id)) return rollback(409, "These tabs and bookmarks were already imported. Nothing added twice.");
   if (tree.spaces.size() + incoming.spaces.size() > kMaxSpaces) return rollback(409, "Not enough room for the imported Spaces (maximum 24)");
   if (tree.nodes.size() + incoming.nodes.size() > 10000) return rollback(409, "Import would exceed 10,000 entries");
+  std::set<std::string> profile_ids;
+  for (const auto& profile : tree.profiles) profile_ids.insert(profile.id);
+  for (const auto& profile : incoming.profiles) if (profile_ids.insert(profile.id).second) tree.profiles.push_back(profile);
+  if (tree.profiles.size() > 24) return rollback(409, "Not enough room for the imported profiles (maximum 24)");
   for (auto s : incoming.spaces) { s.position = static_cast<int>(tree.spaces.size()); tree.spaces.push_back(s); }
   int root_position = static_cast<int>(std::count_if(tree.nodes.begin(), tree.nodes.end(), [](const auto& n) { return n.parent.empty(); }));
   std::map<std::string,int> favorites;
   for (const auto& n : tree.nodes) if (n.favorite) ++favorites[n.profile];
   for (auto n : incoming.nodes) {
     if (Find(tree, n.id)) return rollback(409, "This profile contains entries that are already imported");
-    if (n.favorite && ++favorites[n.profile] > 12) { n.favorite = false; n.space = incoming.active_space; }
+    if (n.favorite) {
+      ++favorites[n.profile];
+      if (favorites[n.profile] > 12) {
+        const auto space = std::find_if(incoming.spaces.begin(), incoming.spaces.end(), [&](const auto& s) { return s.profile == n.profile; });
+        if (space == incoming.spaces.end()) return rollback(409, "Not enough room for the imported Favorites");
+        n.favorite = false;
+        n.space = space->id;
+      }
+    }
     if (n.parent.empty()) n.position = root_position++;
     tree.nodes.push_back(std::move(n));
   }
+  tree.splits.insert(tree.splits.end(), incoming.splits.begin(), incoming.splits.end());
+  tree.archived_splits.insert(tree.archived_splits.end(), incoming.archived_splits.begin(), incoming.archived_splits.end());
   if (!Valid(tree)) return rollback(400, "Imported hierarchy is invalid; nothing imported");
   return Save(std::move(result), before);
 }

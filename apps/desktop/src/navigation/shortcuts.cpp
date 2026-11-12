@@ -9,6 +9,7 @@
 #include "windows/main_menu.h"
 #include "windows/settings_window.h"
 #include "windows/panel_popup.h"
+#include "windows/page_capture.h"
 #include "windows/sidebar_peek.h"
 #include "include/cef_id_mappers.h"
 namespace red {
@@ -21,12 +22,24 @@ bool ExecuteShortcut(const std::shared_ptr<State>& state, Shortcut action) {
     case Shortcut::Suppressed: return true;
     case Shortcut::Address: state->workspace->FocusAddress(); break;
     case Shortcut::NewTab: state->workspace->OpenNewTab(); break;
-    case Shortcut::CloseTab: state->workspace->CloseActive(); break;
+    case Shortcut::CloseTab: if (!state->workspace->CloseCycleSelection()) state->workspace->CloseActive(); break;
     case Shortcut::NextTab: state->workspace->CycleTab(false); break;
     case Shortcut::Space1: case Shortcut::Space2: case Shortcut::Space3: case Shortcut::Space4: case Shortcut::Space5:
     case Shortcut::Space6: case Shortcut::Space7: case Shortcut::Space8: case Shortcut::Space9:
       state->workspace->SwitchSpaceAt(static_cast<int>(action) - static_cast<int>(Shortcut::Space1)); break;
     case Shortcut::PreviousTab: state->workspace->CycleTab(true); break;
+    case Shortcut::RecentTab: state->workspace->CycleRecentTab(false); break;
+    case Shortcut::RecentTabBack: state->workspace->CycleRecentTab(true); break;
+    // Outside a split these keys belong to the page.
+    case Shortcut::SplitFocusLeft: if (!state->workspace->FocusSplitNeighbour(-1,0)) return false; break;
+    case Shortcut::SplitFocusRight: if (!state->workspace->FocusSplitNeighbour(1,0)) return false; break;
+    case Shortcut::SplitFocusUp: if (!state->workspace->FocusSplitNeighbour(0,-1)) return false; break;
+    case Shortcut::SplitFocusDown: if (!state->workspace->FocusSplitNeighbour(0,1)) return false; break;
+    case Shortcut::SplitExpand: if (!state->workspace->ToggleSplitExpand()) return false; break;
+    case Shortcut::CopyUrl: state->workspace->CopyCleanLink(); break;
+    case Shortcut::Capture: StartCapturePicker(state); break;
+    case Shortcut::Screenshot: CapturePage(state, false); break;
+    case Shortcut::FullPageScreenshot: CapturePage(state, true); break;
     case Shortcut::Sidebar: state->workspace->SetSidebarVisible(!state->sidebar_visible); FocusBrowser(page); break;
     case Shortcut::Pin:
       if (state->workspace->HasLinkPeek()) state->workspace->Notify("Open the preview as a tab to pin it");

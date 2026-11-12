@@ -109,7 +109,7 @@ bool Decode(const std::string& json, Preferences& value) {
     value.auto_archive_hours=data->GetInt("autoArchiveHours");
   }
   const auto keys = data->GetDictionary("shortcuts"); CefDictionaryValue::KeyList names; keys->GetKeys(names);
-  if (names.size() > 40) return false;
+  if (names.size() > 64) return false;  // MAX_SHORTCUTS in browser-contracts: every shortcut may be rebound.
   for (const auto& name : names) {
     if (keys->GetType(name) != VTYPE_DICTIONARY || name.length() > 32) return false;
     const auto binding = keys->GetDictionary(name);

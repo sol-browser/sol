@@ -32,6 +32,8 @@ class HistoryService : public std::enable_shared_from_this<HistoryService> {
   void DownloadsBefore(int64_t before, int limit, std::function<void(std::vector<DownloadRecord>)> done);
   void Download(int64_t id, std::function<void(std::optional<DownloadRecord>)> done);
   void SaveFavicon(const std::string& host, const std::string& png);
+  void ImportFavicons(std::map<std::string, std::string> icons,
+      std::function<void(std::optional<std::map<std::string, std::string>>)> done);
   void LoadFavicons(std::function<void(std::vector<std::pair<std::string, std::string>>)> done);
  private:
   // Runs |work| with the store on the worker; |reply| (optional) on the UI thread.

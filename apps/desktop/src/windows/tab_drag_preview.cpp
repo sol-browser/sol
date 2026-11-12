@@ -7,6 +7,10 @@
 #include <cmath>
 #include "history/favicon_cache.h"
 #include "workspace/controller.h"
+#include "windows/page_corners.h"
+#include "windows/split_layout_preview.h"
+#include <algorithm>
+#include <map>
 #include "include/base/cef_callback.h"
 #include "include/cef_parser.h"
 #include "include/views/cef_display.h"
@@ -26,52 +30,16 @@ struct Dib {
   HBITMAP bitmap = nullptr; HGDIOBJ previous = nullptr;
   ~Dib() { if (previous) SelectObject(dc, previous); if (bitmap) DeleteObject(bitmap); if (dc) DeleteDC(dc); }
 };
-// Passive owned preview above native website children; never receives input.
-class SplitPreview {
- public:
-  ~SplitPreview() { if (window_) DestroyWindow(window_); }
-  void Hide() { if (window_) ShowWindow(window_,SW_HIDE); }
-  void Show(const std::shared_ptr<State>& state, const CefRect& rect, float scale) {
-    if (rect.width < 1 || rect.height < 1 || static_cast<unsigned long long>(rect.width)*rect.height > 16*1024*1024) { Hide(); return; }
-    if (!window_) {
-      static const ATOM atom = [] {
-        WNDCLASSW wc{}; wc.lpfnWndProc = PreviewProc; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"RedSplitDropPreview";
-        return RegisterClassW(&wc);
-      }();
-      if (!atom) return;
-      window_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TRANSPARENT,
-        L"RedSplitDropPreview",L"",WS_POPUP,0,0,1,1,state->window->GetWindowHandle(),nullptr,GetModuleHandleW(nullptr),nullptr);
-      if (!window_) return;
-    }
-    if (rect == bounds_ && scale == scale_) { ShowWindow(window_,SW_SHOWNA); return; }
-    bounds_ = rect; scale_ = scale;
-    ComPtr<IWICImagingFactory> images; ComPtr<IWICBitmap> image; ComPtr<ID2D1Factory> factory; ComPtr<ID2D1RenderTarget> target;
-    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&images))) ||
-        FAILED(images->CreateBitmap(rect.width,rect.height,GUID_WICPixelFormat32bppPBGRA,WICBitmapCacheOnLoad,&image)) ||
-        FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,factory.GetAddressOf()))) { Hide(); return; }
-    const auto props = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT,D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
-    if (FAILED(factory->CreateWicBitmapRenderTarget(image.Get(),props,&target))) { Hide(); return; }
-    const auto color = Themed({154,119,179},state->theme,state->theme_dark);
-    const auto rgb = D2D1::ColorF(color.r/255.f,color.g/255.f,color.b/255.f,.22f);
-    ComPtr<ID2D1SolidColorBrush> brush; if (FAILED(target->CreateSolidColorBrush(rgb,&brush))) { Hide(); return; }
-    target->BeginDraw(); target->Clear(D2D1::ColorF(0,0.f));
-    const float inset = 2*scale;
-    const auto box = D2D1::RoundedRect(D2D1::RectF(inset,inset,rect.width-inset,rect.height-inset),8*scale,8*scale);
-    target->FillRoundedRectangle(box,brush.Get()); brush->SetOpacity(1.f);
-    brush->SetColor(D2D1::ColorF(color.r/255.f,color.g/255.f,color.b/255.f,.85f)); target->DrawRoundedRectangle(box,brush.Get(),2*scale);
-    if (FAILED(target->EndDraw())) { Hide(); return; }
-    Dib dib; BITMAPINFO info{}; info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER); info.bmiHeader.biWidth = rect.width;
-    info.bmiHeader.biHeight = -rect.height; info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32; info.bmiHeader.biCompression = BI_RGB;
-    void* pixels = nullptr; dib.bitmap = CreateDIBSection(dib.dc,&info,DIB_RGB_COLORS,&pixels,nullptr,0);
-    if (!dib.bitmap || FAILED(image->CopyPixels(nullptr,rect.width*4,rect.width*rect.height*4,static_cast<BYTE*>(pixels)))) { Hide(); return; }
-    dib.previous = SelectObject(dib.dc,dib.bitmap); SIZE size{rect.width,rect.height}; POINT point{rect.x,rect.y}, origin{};
-    BLENDFUNCTION blend{AC_SRC_OVER,0,255,AC_SRC_ALPHA};
-    if (!UpdateLayeredWindow(window_,nullptr,&point,&size,dib.dc,&origin,0,&blend,ULW_ALPHA)) { Hide(); return; }
-    SetWindowPos(window_,HWND_TOP,rect.x,rect.y,0,0,SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-  }
- private:
-  HWND window_ = nullptr; CefRect bounds_; float scale_ = 0;
-};
+// The tab drop as a layout preview: each page's card now and after the drop.
+void ShowDrop(SplitLayoutPreview& preview, const std::shared_ptr<State>& state, const WorkspaceController::SplitDrop& drop,
+              const std::map<std::string, SplitPageLabel>& labels, float scale) {
+  const auto& c = drop.command;
+  const auto key = drop.neutral ? std::string("neutral") :
+      std::to_string(static_cast<int>(c.action)) + c.id + c.parent + c.layout + (c.value ? "v" : "h") + (c.reversed ? "r" : "");
+  std::vector<SplitPreviewCard> cards;
+  for (const auto& card : drop.cards) cards.push_back({card.id, card.from, card.to, card.added});
+  preview.Update(state, key, drop.area, cards, labels, scale);
+}
 class Preview : public std::enable_shared_from_this<Preview> {
  public:
   explicit Preview(std::weak_ptr<State> state) : state_(std::move(state)) {}
@@ -86,14 +54,19 @@ class Preview : public std::enable_shared_from_this<Preview> {
     auto rows = snapshot->GetList("nodes");
     auto diagnostic = CefDictionaryValue::Create(); diagnostic->SetInt("rows", static_cast<int>(rows->GetSize()));
     state->Record("tab_drag_preview_begin", diagnostic);
+    labels_ = SplitPageLabels(state);  // Every page's title and icon, for the layout preview's cards.
     for (size_t i = 0; i < rows->GetSize(); ++i) {
       auto row = rows->GetDictionary(i); if (row->GetString("id") != id) continue;
       title_ = row->GetString("title").ToWString();
       if (!row->GetBool("customTitle") && !row->GetString("pageTitle").empty()) title_ = row->GetString("pageTitle").ToWString();
-      if (row->GetString("splitAnchor") == id) for (size_t j = 0; j < rows->GetSize(); ++j) {
-        const auto other = rows->GetDictionary(j); if (other->GetString("id") != row->GetString("splitOther")) continue;
-        const auto name = (!other->GetBool("customTitle") && !other->GetString("pageTitle").empty() ? other->GetString("pageTitle") : other->GetString("title")).ToWString();
-        title_ = row->GetBool("splitReversed") ? name + L" | " + title_ : title_ + L" | " + name; break;
+      if (row->GetString("splitAnchor") == id && row->GetList("splitPanes")) {
+        const auto panes = row->GetList("splitPanes"); std::wstring joined;
+        for (size_t p = 0; p < panes->GetSize(); ++p) for (size_t j = 0; j < rows->GetSize(); ++j) {
+          const auto member = rows->GetDictionary(j); if (member->GetString("id") != panes->GetString(p)) continue;
+          const auto name = (!member->GetBool("customTitle") && !member->GetString("pageTitle").empty() ? member->GetString("pageTitle") : member->GetString("title")).ToWString();
+          joined += (joined.empty() ? L"" : L" | ") + name; break;
+        }
+        if (!joined.empty()) title_ = joined;
       }
       CefURLParts parts;
       if (state->favicons && CefParseURL(row->GetString("favicon"), parts))
@@ -196,14 +169,30 @@ class Preview : public std::enable_shared_from_this<Preview> {
   }
   void Tick() {
     auto state = state_.lock();
+    if (state && state->window && state->tab_dragging && !PrimaryButtonDown()) {
+      // Released. The document normally reports it at once; a drag whose sidebar
+      // slid away cannot, so finish it natively if it is still running shortly after.
+      CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+        if (const auto s = weak.lock(); s && s->tab_dragging && s->workspace) s->workspace->FinishTabDragAtRelease();
+      }, state_), 150);
+    }
     if (!state || !state->window || !state->tab_dragging || !PrimaryButtonDown()) {
+      // Released over a drop: the drop owns the preview until it is applied
+      // (FinishTabDrag); a release that never reports still clears it.
+      if (state && state->tab_dragging && drop_shown_) {
+        CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+          if (const auto s = weak.lock(); s && !s->tab_dragging) HideTabDragPreview(s);
+        }, state_), 800);
+        if (window_) ShowWindow(window_, SW_HIDE);
+        return;
+      }
       if (state) HideTabDragPreview(state); return;
     }
     POINT point{}; GetCursorPos(&point);
     const auto display = CefDisplay::GetDisplayNearestPoint(CefPoint(point.x, point.y), true);
     const float scale = display ? display->GetDeviceScaleFactor() : 1.f;
-    if (auto drop = state->workspace->SplitDropAt(id_,point)) drop_.Show(state,drop->preview,scale);
-    else drop_.Hide();
+    if (auto drop = state->workspace->SplitDropAt(id_,point)) { ShowDrop(drop_,state,*drop,labels_,scale); drop_shown_ = true; }
+    else { drop_.Hide(); drop_shown_ = false; }
     // Hold slightly left of center, with the card extending further right.
     // Include transparent shadow padding in the pointer offset.
     point.x -= static_cast<LONG>(116 * scale); point.y -= static_cast<LONG>(28 * scale);
@@ -220,7 +209,8 @@ class Preview : public std::enable_shared_from_this<Preview> {
   }
   std::weak_ptr<State> state_; HWND window_ = nullptr; float scale_ = 0;
   int paint_stage_ = 0;
-  std::string id_; SplitPreview drop_;
+  std::string id_; SplitLayoutPreview drop_; bool drop_shown_ = false;
+  std::map<std::string, SplitPageLabel> labels_;
   std::wstring title_; std::string icon_;
 };
 }

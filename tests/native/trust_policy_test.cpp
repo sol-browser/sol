@@ -84,10 +84,19 @@ int main() {
   check(!red::IsDevToolsWindowUi(13, 12, true, red::kDevToolsWindowUrl), "another browser cannot use the strip's IPC");
   check(!red::IsDevToolsWindowUi(12, 12, false, red::kDevToolsWindowUrl), "strip subframes denied");
   check(!red::IsDevToolsWindowUi(0, 0, true, red::kDevToolsWindowUrl), "unregistered strip denied");
+  check(red::IsUpdateUi(14, 14, true, red::kUpdateUrl), "registered update window");
+  check(!red::IsUpdateUi(15, 14, true, red::kUpdateUrl), "another browser cannot use the update window's IPC");
+  check(!red::IsUpdateUi(14, 14, false, red::kUpdateUrl), "update window subframes denied");
+  check(!red::IsUpdateUi(14, 14, true, red::kSettingsUrl), "the update window's IPC is for its own page only");
+  check(!red::IsUpdateUi(-1, -1, true, red::kUpdateUrl), "unregistered update window denied");
   check(!red::IsDevToolsWindowUi(12, 12, true, red::kUiUrl), "the shell document is not the strip");
   check(!red::IsTrustedUi(12, 12, true, red::kDevToolsWindowUrl), "the strip cannot call full shell IPC");
   check(!red::IsCommandUi(9, 9, true, red::kUiUrl), "shell document cannot call command IPC");
   check(!red::IsCommandUi(8, 9, true, red::kCommandUrl) && !red::IsCommandUi(9, 9, false, red::kCommandUrl), "browser and main frame required");
   check(!red::IsCommandUi(9, 9, true, "sol://ui/command.html?x") && !red::IsCommandUi(-1, -1, true, red::kCommandUrl), "exact URL and created browser required");
+  for (const char* method : {"split.add", "split.removePane", "split.preset", "split.nudge", "split.menu", "split.beginResize", "split.beginMove", "split.swap"})
+    check(red::IsTreeMethod(method), "Split View commands reach the trusted sidebar/shell route");
+  check(!red::IsTreeMethod("split.layout") && !red::IsTreeMethod("split.preview") && !red::IsTreeMethod("split.anything"),
+        "retired or unknown Split View methods are refused");
   return failures ? 1 : 0;
 }

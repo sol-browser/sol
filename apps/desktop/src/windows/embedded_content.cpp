@@ -346,6 +346,37 @@ bool EmbeddedContent::ExitBrowserFullscreen() {
   if (!browser_fullscreen_ || fullscreen_id_ != -1) return false;
   ToggleBrowserFullscreen(); return true;
 }
+bool EmbeddedContent::ShowTabSwitcher(const std::vector<PageCorners::SwitcherCard>& cards, int selected) {
+  const auto state = state_.lock();
+  if (!state || !state->window) return false;
+  // The page area, also when it shows no page (an empty tab); the whole window in full screen.
+  const auto area = IsFullscreen() ? FullClientBounds() : PhysicalBounds();
+  const auto scale = state->window->GetDisplay()->GetDeviceScaleFactor();
+  const bool painted = corners_.ShowTabSwitcher(state->window->GetWindowHandle(),
+      RECT{area.x, area.y, area.x + area.width, area.y + area.height}, scale, cards, selected);
+  auto data = CefDictionaryValue::Create();
+  data->SetBool("painted", painted); data->SetInt("cards", static_cast<int>(cards.size())); data->SetInt("selected", selected);
+  if (state->probe) {  // Probes compare which tabs the strip offers (fixture titles, never page data in a real profile).
+    auto titles = CefListValue::Create();
+    for (size_t i = 0; i < cards.size(); ++i) titles->SetString(i, CefString(cards[i].title));
+    data->SetList("titles", titles);
+  }
+  if (painted) {
+    const auto b = corners_.tab_switcher_bounds();
+    data->SetInt("x", b.left); data->SetInt("y", b.top); data->SetInt("width", b.right - b.left); data->SetInt("height", b.bottom - b.top);
+    data->SetInt("area_x", area.x); data->SetInt("area_y", area.y); data->SetInt("area_width", area.width); data->SetInt("area_height", area.height);
+  }
+  state->Record("tab_switcher_painted", data);
+  return painted;
+}
+void EmbeddedContent::SelectTabSwitcher(int selected) {
+  if (!corners_.SelectTabSwitcher(selected)) return;
+  if (const auto state = state_.lock()) {
+    auto data = CefDictionaryValue::Create(); data->SetInt("selected", selected);
+    state->Record("tab_switcher_selected", data);
+  }
+}
+void EmbeddedContent::HideTabSwitcher() { corners_.HideTabSwitcher(); }
 CefRect EmbeddedContent::NotificationArea() const {
   if (IsFullscreen()) return FullClientBounds();
   return notification_page_ != -1 && browsers_.contains(notification_page_) ? PagePhysicalBounds(notification_page_) : PhysicalBounds();

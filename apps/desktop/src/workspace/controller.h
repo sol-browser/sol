@@ -6,6 +6,9 @@
 #include "app/state.h"
 #include "trust_policy.h"
 #include "storage/tree_store.h"
+#include "workspace/recent_cycle.h"
+#include "windows/tab_thumbnails.h"
+#include "windows/page_corners.h"
 #include "include/cef_thread.h"
 
 namespace red {
@@ -48,7 +51,15 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   std::shared_ptr<WhatsAppUnread> whatsapp_unread() const { return whatsapp_unread_; }
   const std::string& ActiveNode() const { return tree_.active_id; }
   void HandleTabDrag(CefRefPtr<CefDictionaryValue> request, Reply done);
-  struct SplitDrop { TreeCommand command; CefRect preview; };
+  // The pointer was released during a tab drag that its document no longer
+  // reports (the floating sidebar slid away and lost the pointer): finish it here.
+  void FinishTabDragAtRelease() { if (tab_drag_) FinishTabDrag(tab_drag_->id, true); }
+  // A tab dropped here: the command, the new pane, and the whole layout it
+  // would produce (each page's card now and after the drop; screen pixels).
+  struct SplitDropCard { std::string id; CefRect from, to; bool added = false; };
+  // |neutral|: over the page area but not on a drop target: the preview stays
+  // up showing the layout as it is (no flicker), and a release does nothing.
+  struct SplitDrop { TreeCommand command; CefRect preview; CefRect area; std::vector<SplitDropCard> cards; bool neutral = false; };
   std::optional<SplitDrop> SplitDropAt(const std::string& id, POINT screen);
   void OpenMovedTab(const std::string& id, const std::string& url);
   // Live tab transfer between windows (docs/multi-window.md): the source lets
@@ -91,6 +102,14 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void RequestSidebar(const std::string& action);
   void CloseActive();
   void CycleTab(bool reverse);
+  // Ctrl+Tab: the recently used order (workspace/recent_cycle.h).
+  void CycleRecentTab(bool reverse);
+  // Ctrl+Shift+C: copies the active tab's address without tracking parameters.
+  void CopyCleanLink();
+  // Ctrl+W while the switcher strip is open: closes the selected tab (not the current one). False when not handled.
+  bool CloseCycleSelection();
+  // The same, as it is (the top bar's copy-link button).
+  void CopyActiveLink();
   void OnMediaResult(int browser, int id, const std::string& json);
   // CefDisplayHandler::OnMediaSessionChanged (engine patch 09) for a workspace page.
   void OnMediaSession(CefRefPtr<CefBrowser> browser, CefRefPtr<CefDictionaryValue> info);
@@ -119,7 +138,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   // session only). Return an HTTP-like status and an error for the shell.
   int Duplicate(const std::string& id, std::string& error);
   // Sidebar tab menu actions (tab_menu_actions.cpp).
-  int CopyTabLink(const std::string& id, std::string& error);
+  int CopyTabLink(const std::string& id, std::string& error, bool clean = false);
   int SetPinnedPage(const std::string& id, std::string url, const std::string& title, std::string& error, Reply done = {});  // Empty url: current page.
   void SetXBadgeHidden(const std::string& id, bool hidden, Reply done);
   // Archives the Today tabs of |id|'s space: the others, those below it, or (|all|, the divider's Clear) every one.
@@ -152,6 +171,10 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void Reload(bool bypass = false);
   void NavigateHistory(bool forward);
   bool SplitResizeHovered(const std::string& anchor) const;
+  // Ctrl+Alt+arrows: focus the neighbouring pane of the split on screen.
+  bool FocusSplitNeighbour(int dx, int dy);
+  // Ctrl+Alt+Enter: expand the focused pane or restore the split.
+  bool ToggleSplitExpand();
   bool AutoArchiveBusy() const;
   bool AutoArchiveProtected(const std::string& id) const;
   // Memory unloading: a page may close without losing where it is (Today
@@ -190,6 +213,10 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
     std::string id, previous, space;
     bool restored = false;
   };
+  // Adds |page| to the split |group| next to |target| (-1: the whole area) at |edge|.
+  std::optional<TreeCommand> SplitAddCommand(const SplitGroup& group, const std::string& page, int target, SplitEdge edge) const;
+  // Applies |layout| to the selected split now and saves it (keyboard, presets).
+  void CommitSplitLayout(const SplitGroup& group, const SplitNode& layout, bool linked, Reply done);
   std::optional<TabDrag> tab_drag_;
   void EnsurePage(const std::string& id);
   bool HandleSplit(CefRefPtr<CefDictionaryValue> request, Reply done);
@@ -203,7 +230,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void EnsureActive();
   void DrainExternalUrls();
   // Gives the page the space beside a docked sidebar of |width|.
-  void LayoutSidebar(double width, bool final);
+  void LayoutSidebar(double width, bool settled);
   // Probe only: sidebar layout evidence once no page is being revealed.
   static void RecordSidebarLayout(std::weak_ptr<State> weak, int attempts);
   void Publish();
@@ -256,6 +283,13 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   bool profile_changing_ = false;
   std::set<int> auto_archive_media_;
   std::vector<std::string> recent_;
+  RecentCycle recent_cycle_;
+  unsigned long long recent_cycle_started_ = 0;
+  TabThumbnails thumbnails_;
+  void EndRecentCycle();
+  void ShowRecentStrip();
+  std::vector<PageCorners::SwitcherCard> SwitcherCards();
+  bool strip_shown_ = false;  // This cycle has asked for its strip.
   std::vector<std::string> external_pending_;
   bool external_opening_ = false;
   std::function<void(CefRefPtr<CefDictionaryValue>)> observer_;
@@ -296,12 +330,29 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   std::map<int,MediaSessionState> media_sessions_;
   bool media_polling_=false;
   std::function<void(bool)> link_peek_after_;
-  std::optional<std::pair<std::string,int>> split_preview_;
+  // The layout being dragged (anchor, tree): shown at once, saved on release.
+  std::optional<std::pair<std::string,SplitNode>> split_preview_;
   std::map<std::string,std::string> split_focus_;
   unsigned split_resize_generation_ = 0;
   bool split_resizing_ = false;
   std::string split_resize_anchor_;
-  int split_resize_initial_ = 5000;
+  SplitNode split_resize_initial_;
+  SplitDivider split_resize_divider_;
+  // The layout a dragged divider points at, and when it last changed: the
+  // website windows resize once the pointer rests (kSplitSettleMs) and on release.
+  std::optional<SplitNode> split_drag_target_;
+  unsigned long long split_drag_moved_ = 0;
+  // A pane dragged by its header (split.beginMove): it stays a focus click
+  // until the pointer travels; then a layout preview shows where it lands.
+  struct SplitMove {
+    std::string anchor, page; SplitNode initial; POINT start{}; bool moving = false;
+    std::string key; std::optional<SplitNode> layout; bool linked = false;
+    bool unsplit = false;  // Over the sidebar: the pane leaves the split.
+  };
+  std::optional<SplitMove> split_move_;
+  unsigned split_move_generation_ = 0;
+  std::shared_ptr<struct SplitMoveVisual> split_move_visual_;
+  void MoveSplitTick(unsigned generation);
   bool ready_ = false, stopped_ = false;
   bool native_page_activation_pending_ = false;
   bool startup_applied_ = false;

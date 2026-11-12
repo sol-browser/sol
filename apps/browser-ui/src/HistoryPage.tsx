@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Icon } from './Icon';
+import { focusOnMount } from './focus-on-mount';
 import { extensionHue } from './downloads-model';
 import { CLEAR_LABELS, dayLabel, dayTime, groupByDay, host, parseHistoryDays, parseHistoryPage, timeLabel,
   type ClearRange, type HistoryDay, type VisitRow } from './history-model';
@@ -131,7 +132,7 @@ export function HistoryPage() {
           <button type="button" className="hp-danger" aria-label="Delete selected" onClick={() => void removeSelected()}><Icon name="trash" />Delete</button>
         </div>
       : <label className="hp-search"><Icon name="search" />
-          <input autoFocus value={search} placeholder="Search history" aria-label="Search history" spellCheck={false} autoComplete="off" maxLength={200}
+          <input ref={focusOnMount} value={search} placeholder="Search history" aria-label="Search history" spellCheck={false} autoComplete="off" maxLength={200}
             onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Escape' && search) { e.preventDefault(); setSearch(''); } }} />
           {search && <button type="button" className="hp-search-clear" aria-label="Clear search" onClick={() => setSearch('')}><Icon name="close" /></button>}
         </label>}</div>

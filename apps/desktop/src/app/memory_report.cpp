@@ -35,6 +35,8 @@ std::string RoleOf(const std::shared_ptr<State>& s, int id, const std::map<int, 
   if (id == s->settings_id) return "sol:settings";
   if (id == s->welcome_id) return "sol:welcome";
   if (id == s->boost_id) return "sol:boost-editor";
+  if (id == s->update_id) return "sol:update-window";
+  if (id == s->capture_id) return "sol:capture-window";
   if (s->devtools_targets.contains(id)) return "devtools";
   if (s->internal_pages.contains(id)) return "sol:internal-page";
   if (s->popup_browsers.contains(id)) return "website-popup";

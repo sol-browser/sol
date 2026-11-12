@@ -1,7 +1,7 @@
 import { Plus, Ellipsis, ChevronRight, Archive, Globe, Check, Pause, Play, FolderOpen,
   Video, Mic, MapPin, Bell, Clipboard, AppWindow, LockKeyhole,
   History, VolumeX, Volume2, Trash2, Search, CornerDownLeft, ArrowDown,
-  Settings, ListFilter, Undo2, VenetianMask, Zap, Pin, PinOff, SquareTerminal, Printer, Maximize, FilePlus, FileText, NotebookPen, Mail, CalendarDays, Palette, type LucideIcon } from 'lucide-react';
+  Settings, ListFilter, Undo2, VenetianMask, Zap, Pin, PinOff, SquareTerminal, Printer, Maximize, FilePlus, FileText, NotebookPen, Mail, CalendarDays, Palette, Camera, ScanLine, Crop, type LucideIcon } from 'lucide-react';
 import sidebar from '../../../icons/sidebar.svg?inline';
 import back from '../../../icons/back.svg?inline';
 import forward from '../../../icons/forward.svg?inline';
@@ -29,7 +29,7 @@ const icons = {
   filePlus: FilePlus, fileText: FileText,
   note: NotebookPen,
   mail: Mail, calendar: CalendarDays,
-  palette: Palette,
+  palette: Palette, shot: Camera, shotFull: ScanLine, crop: Crop,
 } satisfies Record<string, LucideIcon>;
 export type IconName = keyof typeof icons | keyof typeof authoredIcons;
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {

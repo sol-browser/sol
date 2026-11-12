@@ -2,13 +2,13 @@ import type { Snapshot, TreeNode } from '../../../packages/browser-contracts/src
 import { resolveNavigationInput, searchEngines } from './navigation-input.ts';
 import { normalizeInput, predictSites, predictionToken, websiteAddress } from './navigation-prediction.ts';
 import { displayTitle } from './sidebar-model.ts';
-import { internalPage } from './internal-pages.ts';
+import { internalPage, shownAddress } from './internal-pages.ts';
 import { commandActions, commandActionAvailable, type CommandActionId } from './command-actions.ts';
 import type { IconName } from './Icon';
 
 export type CommandRow = { key: string; title: string; detail: string; icon?: string; actionIcon?: IconName;
   action: { method: 'command.submit'; url: string } | { method: 'command.activate'; id: string } | { method: 'command.action'; action: CommandActionId };
-  kind: 'search' | 'visit' | 'tab' | 'current' | 'history' | 'action'; live?: boolean; shortcut?: string };
+  kind: 'search' | 'visit' | 'tab' | 'current' | 'history' | 'action'; live?: boolean; shortcut?: string; editText?: string };
 export type HistoryEntry = { url: string; title: string };
 
 // Native history replies are page-influenced (titles): validate before use.
@@ -48,9 +48,10 @@ export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'na
   const current = tabs.find(n => n.id === snapshot.activeId);
   let primary: CommandRow | undefined;
   const tabRow = (n: TreeNode): CommandRow => ({ key: n.id, title: displayTitle(n) || siteLabel(n.currentUrl || n.url),
-    detail: siteLabel(n.currentUrl || n.url), icon: n.favicon, kind: 'tab', live: n.live, action: { method: 'command.activate', id: n.id } });
+    detail: siteLabel(n.currentUrl || n.url), icon: n.favicon, kind: 'tab', live: n.live, editText: shownAddress(n.currentUrl || n.url),
+    action: { method: 'command.activate', id: n.id } });
   const unchanged = mode === 'navigate' && text === sourceUrl && !!current;
-  if (unchanged) primary = { ...tabRow(current), key: 'current', kind: 'current',
+  if (unchanged) primary = { ...tabRow(current), key: 'current', kind: 'current', editText: undefined,
     action: { method: 'command.submit', url: sourceUrl }, detail: siteLabel(sourceUrl) };
   else if (internalPage(text)) {
     const page = internalPage(text)!;
@@ -83,7 +84,7 @@ export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'na
   }).filter(m => m.score >= 0).map(({ node, ...match }) => ({ ...match, row: tabRow(node) }));
   const matchedOrigins = new Set(matches.map(m => m.origin));
   const suggestions = sites.filter(site => !matchedOrigins.has(websiteAddress(site.url)!.origin))
-    .map(site => ({ row: { key: site.url, title: site.title, detail: siteLabel(site.url), kind: 'visit',
+    .map(site => ({ row: { key: site.url, title: site.title, detail: siteLabel(site.url), kind: 'visit', editText: site.url,
       action: { method: 'command.submit', url: site.url } } as CommandRow, origin: websiteAddress(site.url)!.origin, score: site.score, position: 0 }));
   // Visited pages: below open tabs, never duplicating a tab, prediction or the typed address.
   const known = new Set([...tabs.map(n => n.currentUrl || n.url), ...sites.map(site => site.url),
@@ -93,7 +94,7 @@ export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'na
     const haystack = `${normalizeInput(entry.title)} ${normalizeInput(entry.url)}`;
     const hostPrefix = token && token.length >= 3 && address?.host.startsWith(token);
     const score = hostPrefix ? 104 - index : words.every(w => haystack.includes(w)) ? 6 - index * 0.1 : -1;
-    return { row: { key: `history:${entry.url}`, title: entry.title || siteLabel(entry.url), detail: siteLabel(entry.url), kind: 'history',
+    return { row: { key: `history:${entry.url}`, title: entry.title || siteLabel(entry.url), detail: siteLabel(entry.url), kind: 'history', editText: entry.url,
       action: { method: 'command.submit', url: entry.url } } as CommandRow, origin: address?.origin, score, position: 1000 + index };
   }).filter(m => m.score >= 0);
   const ranked = [...matches, ...suggestions, ...visited].sort((a, b) => b.score - a.score || a.position - b.position || a.row.key.localeCompare(b.row.key));
@@ -120,7 +121,7 @@ export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'na
     const normalized = normalizeInput(title);
     if (!normalized || seen.has(normalized)) continue;
     seen.add(normalized);
-    remote.push({ key: `suggest:${normalized}`, title, detail: '', kind: 'search',
+    remote.push({ key: `suggest:${normalized}`, title, detail: '', kind: 'search', editText: title,
       action: { method: 'command.submit', url: searchEngines.google.url + encodeURIComponent(title) } });
   }
   // Reserve local rows before remote completions: typing must still find tabs
@@ -143,13 +144,16 @@ export function inlineAddressCompletion(snapshot: Snapshot, input: string, first
   const url = action.method === 'command.submit' ? action.url : node?.currentUrl || node?.url;
   if (!url || !websiteAddress(url)) return;
   const parsed = new URL(url);
-  // Accepting a scheme-less address resolves as HTTPS. Do not silently change
-  // an HTTP-only saved site's protocol when accepting its suggested text.
-  if (parsed.protocol === 'http:' && !/^http:\/\//iu.test(input)) return;
   let value = parsed.href;
   if (!/^https?:\/\//iu.test(input)) {
     const host = /^www\./iu.test(input) ? parsed.host : parsed.host.replace(/^www\./iu,'');
     value = host + (parsed.pathname === '/' && !parsed.search && !parsed.hash ? '' : parsed.pathname+parsed.search+parsed.hash);
+    // A scheme-less public address defaults to HTTPS and a private IPv4
+    // address defaults to HTTP. Keep the proposal's original protocol.
+    try {
+      const destination = resolveNavigationInput(value);
+      if (destination.search || !destination.url.startsWith(parsed.protocol)) return;
+    } catch { return; }
   }
   if (value.length <= input.length || value.length > 4096 || !value.toLowerCase().startsWith(input.toLowerCase())) return;
   return input+value.slice(input.length);

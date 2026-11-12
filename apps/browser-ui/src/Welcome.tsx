@@ -165,7 +165,7 @@ export function Welcome() {
     void welcomeQuery({ method: 'welcome.makeDefault' }).then(raw => setState(parseState(raw))).catch(e => setError(String(e)));
 
   return <div ref={root} className="welcome" data-step={step} aria-label="Welcome to Sol">
-    <canvas ref={canvas} className="welcome-sky" aria-hidden="true" />
+    <canvas ref={canvas} className="welcome-sky" role="presentation" />
     <div className="welcome-drag" aria-hidden="true" />
     <span className="welcome-caption">
       <button className="caption-button" type="button" aria-label="Minimize" onClick={() => void welcomeQuery({ method: 'welcome.window', action: 'minimize' })}><WindowCaptionIcon name="minimize" /></button>

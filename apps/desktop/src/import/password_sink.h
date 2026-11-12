@@ -15,5 +15,5 @@ struct PasswordSinkResult {
   int added = 0, existing = 0, failed = 0;
   std::string error;  // Whole-sink failure (store unavailable, timeout...).
 };
-void SavePasswords(std::vector<import::Login> logins, std::function<void(PasswordSinkResult)> done);
+void SavePasswords(std::vector<importer::Login> logins, std::function<void(PasswordSinkResult)> done);
 }  // namespace red

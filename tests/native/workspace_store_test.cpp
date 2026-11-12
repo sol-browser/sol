@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <algorithm>
 #include <cstdio>
+#include <climits>
+#include <cstdlib>
 #include <vector>
 #include <chrono>
 #include <sqlite3.h>
@@ -47,7 +49,11 @@ int wmain(int argc, wchar_t** argv) {
         " sidebar_width INTEGER NOT NULL DEFAULT 256 CHECK(sidebar_width BETWEEN 200 AND 480), theme_hue INTEGER NOT NULL DEFAULT 307 CHECK(theme_hue BETWEEN 0 AND 359),"
         " theme_intensity INTEGER NOT NULL DEFAULT 100 CHECK(theme_intensity BETWEEN 0 AND 160), theme_mode INTEGER NOT NULL DEFAULT 0 CHECK(theme_mode IN(0,1,2)),"
         " theme_noise INTEGER NOT NULL DEFAULT 0 CHECK(theme_noise BETWEEN 0 AND 100), active_space TEXT NOT NULL DEFAULT '');"
-        "INSERT INTO state_old SELECT * FROM state; DROP TABLE state; ALTER TABLE state_old RENAME TO state; PRAGMA user_version=13; COMMIT;",
+        "INSERT INTO state_old SELECT * FROM state; DROP TABLE state; ALTER TABLE state_old RENAME TO state;"
+        "DROP TABLE split_members; DROP TABLE split_groups;"
+        "CREATE TABLE splits(anchor TEXT PRIMARY KEY,other TEXT NOT NULL UNIQUE,title TEXT NOT NULL DEFAULT '',ratio INTEGER NOT NULL,vertical INTEGER NOT NULL,reversed INTEGER NOT NULL);"
+        "CREATE TABLE archived_splits(anchor TEXT PRIMARY KEY,other TEXT NOT NULL UNIQUE,title TEXT NOT NULL,ratio INTEGER NOT NULL,vertical INTEGER NOT NULL,reversed INTEGER NOT NULL);"
+        "ALTER TABLE nodes DROP COLUMN closed_at; PRAGMA user_version=13; COMMIT;",
         nullptr, nullptr, nullptr) == SQLITE_OK, "downgrade fixture to the v13 state table");
     Check(sqlite3_exec(db, "UPDATE state SET sidebar_width=150", nullptr, nullptr, nullptr) != SQLITE_OK, "v13 fixture rejects 150");
     sqlite3_close(db);
@@ -59,7 +65,7 @@ int wmain(int argc, wchar_t** argv) {
     }
     sqlite3_open16(v13_path.c_str(), &db);
     sqlite3_stmt* version = nullptr; sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &version, nullptr);
-    Check(sqlite3_step(version) == SQLITE_ROW && sqlite3_column_int(version, 0) == 14, "schema version 14");
+    Check(sqlite3_step(version) == SQLITE_ROW && sqlite3_column_int(version, 0) == 16, "migrated to the current schema (16)");
     sqlite3_finalize(version); sqlite3_close(db);
     std::error_code error;
     for (const auto* suffix : {L"", L"-wal", L"-shm"}) std::filesystem::remove(v13_path + suffix, error);
@@ -88,7 +94,10 @@ int wmain(int argc, wchar_t** argv) {
     Check(sqlite3_exec(db, "UPDATE nodes SET page_title='Away title' WHERE pinned=1 AND kind=0;"
         "UPDATE nodes SET page_title='History title' WHERE pinned=0 AND kind=0;"
         "DROP TABLE browsing_profiles; ALTER TABLE nodes DROP COLUMN profile_id; ALTER TABLE spaces DROP COLUMN profile_id;"
-        "ALTER TABLE nodes DROP COLUMN x_badge_hidden; PRAGMA user_version=10;",
+        "DROP TABLE split_members; DROP TABLE split_groups;"
+        "CREATE TABLE splits(anchor TEXT PRIMARY KEY,other TEXT NOT NULL UNIQUE,title TEXT NOT NULL DEFAULT '',ratio INTEGER NOT NULL,vertical INTEGER NOT NULL,reversed INTEGER NOT NULL);"
+        "CREATE TABLE archived_splits(anchor TEXT PRIMARY KEY,other TEXT NOT NULL UNIQUE,title TEXT NOT NULL,ratio INTEGER NOT NULL,vertical INTEGER NOT NULL,reversed INTEGER NOT NULL);"
+        "ALTER TABLE nodes DROP COLUMN x_badge_hidden; ALTER TABLE nodes DROP COLUMN closed_at; PRAGMA user_version=10;",
         nullptr, nullptr, nullptr) == SQLITE_OK, "seed legacy titles before v11 migration");
     sqlite3_close(db);
     {
@@ -259,6 +268,16 @@ int wmain(int argc, wchar_t** argv) {
     Check(apply(c).code == 400, "navigation cannot overwrite persistent home URL");
     c = {red::TreeAction::Unload}; c.id = other;
     r = apply(c); Check(static_cast<bool>(r) && !Find(r.snapshot, other).archived && Find(r.snapshot, other).favorite, "unloading keeps favorite identity and home");
+    Check(Find(r.snapshot, other).closed_at > 1700000000000LL && Find(r.snapshot, other).closed_at >= Find(r.snapshot, other).last_active_at,
+          "closing records when (Ctrl+Tab leaves the tab out until it is used again)");
+    Check(Find(store.Read().snapshot, other).closed_at == Find(r.snapshot, other).closed_at, "the closing time is saved");
+    {
+      const auto closed = Find(r.snapshot, other).closed_at;
+      Sleep(5);
+      c = {red::TreeAction::Activate}; c.id = other; r = apply(c);
+      Check(static_cast<bool>(r) && Find(r.snapshot, other).last_active_at > closed, "using the tab again puts it after its closing");
+      c = {red::TreeAction::Unload}; c.id = other; r = apply(c);
+    }
     c = {red::TreeAction::Archive}; c.id = other;
     r = apply(c); Check(static_cast<bool>(r) && Find(r.snapshot, other).archived && !Find(r.snapshot, other).favorite, "explicit removal goes to recoverable archive");
     Check(Find(r.snapshot, other).archived_at > 1700000000000LL, "archiving records when it happened (epoch ms)");
@@ -389,7 +408,7 @@ int wmain(int argc, wchar_t** argv) {
     command.split_with=before.active_id;
     result=store.Apply(command);
     Check(result && result.snapshot.splits.size()==1 && result.snapshot.splits[0].anchor==before.active_id &&
-      result.snapshot.splits[0].other==command.id && result.snapshot.active_id==command.id,"Peek adoption and split creation commit together");
+      result.snapshot.splits[0].pages==std::vector<std::string>{before.active_id,command.id} && result.snapshot.active_id==command.id,"Peek adoption and split creation commit together");
     const auto split_before=store.Read().snapshot;
     command.expected_revision=split_before.revision; command.id="2270beb4-82bf-4f32-8d05-dd9300cbf006";
     Check(store.Apply(command).code==409 && store.Read().snapshot.nodes==split_before.nodes && store.Read().snapshot.revision==split_before.revision,
@@ -402,7 +421,7 @@ int wmain(int argc, wchar_t** argv) {
     command.split_source_url="https://example.com/current"; command.split_source_title="Pinned current"; result=store.Apply(command);
     Check(result && Find(result.snapshot,persistent).pinned && Find(result.snapshot,persistent).url=="https://example.com/home" &&
       result.snapshot.splits.back().anchor!=persistent && !Find(result.snapshot,result.snapshot.splits.back().anchor).pinned &&
-      Find(result.snapshot,result.snapshot.splits.back().anchor).url=="https://example.com/current" && result.snapshot.splits.back().other==command.id,
+      Find(result.snapshot,result.snapshot.splits.back().anchor).url=="https://example.com/current" && result.snapshot.splits.back().pages.back()==command.id,
       "Pinned Peek split creates two Today members and keeps the original home unchanged");
   }
   for (const auto& suffix:{L"",L"-wal",L"-shm"}) { std::error_code error; std::filesystem::remove(peek_path+suffix,error); }
@@ -421,17 +440,22 @@ int wmain(int argc, wchar_t** argv) {
     c = {red::TreeAction::CreateSplit}; c.id = split_first; c.parent = split_first;
     Check(apply(c).code == 400 && store.Read().snapshot.splits.empty(), "self split rejected without partial write");
     c.parent = split_second; c.reversed = true; r = apply(c);
-    Check(r && r.snapshot.splits.size() == 1 && r.snapshot.nodes == original && r.snapshot.splits[0].reversed,
+    Check(r && r.snapshot.splits.size() == 1 && r.snapshot.nodes == original && red::FormatSplitLayout(r.snapshot.splits[0].layout) == "h(5000*1,5000*0)",
           "split references original pages without moving or renaming them");
     Check(apply(c).code == 409, "duplicate split membership rejected");
-    c = {red::TreeAction::LayoutSplit}; c.id = split_first; c.position = 9999;
+    c = {red::TreeAction::LayoutSplit}; c.id = split_first;
     const auto before = store.Read().snapshot;
-    Check(apply(c).code == 400 && store.Read().snapshot.revision == before.revision && store.Read().snapshot.splits == before.splits,
-          "invalid split ratio rolls back atomically");
-    c.position = 2500; c.value = true; r = apply(c);
-    Check(r && r.snapshot.splits[0].ratio == 2500 && r.snapshot.splits[0].vertical, "split ratio and direction save together");
+    for (const char* bad : {"h(9999*0,1*1)", "h(5000*0,5000*1,0*2)", "v(5000*0,5000*0)", "h(5000*0, 5000*1)"}) {
+      c.layout = bad;
+      Check(apply(c).code == 400 && store.Read().snapshot.revision == before.revision && store.Read().snapshot.splits == before.splits,
+            "invalid split layout rolls back atomically");
+    }
+    c.layout = "v(2500*1,7500*0)"; c.value = true;
+    Check(apply(c).code == 400, "only a 2x2 grid can link its dividers");
+    c.value = false; r = apply(c);
+    Check(r && red::FormatSplitLayout(r.snapshot.splits[0].layout) == "v(2500*1,7500*0)", "split shares and direction save together");
     c = {red::TreeAction::SwapSplit}; c.id = split_first; r = apply(c);
-    Check(r && r.snapshot.splits[0].ratio == 7500 && !r.snapshot.splits[0].reversed, "swap preserves each page allocation");
+    Check(r && red::FormatSplitLayout(r.snapshot.splits[0].layout) == "v(2500*0,7500*1)", "swap exchanges the pages between the two places");
     c = {red::TreeAction::Rename}; c.id = split_first; c.title = "First renamed"; apply(c);
     c.id = split_second; c.title = "Second renamed"; r = apply(c);
     Check(r && Find(r.snapshot,split_first).title == "First renamed" && Find(r.snapshot,split_second).title == "Second renamed",
@@ -473,6 +497,119 @@ int wmain(int argc, wchar_t** argv) {
           "archiving one pane preserves its partner and removes invalid group");
   }
   for (const auto& suffix : {L"",L"-wal",L"-shm"}) { std::error_code error; std::filesystem::remove(split_path + suffix,error); }
+  // Up to four panes: add, refuse a fifth, linked grid, swap, anchor hand-over and closing one pane.
+  const auto four_path = path.wstring() + L"-split-four";
+  {
+    red::SplitGroup saved;
+    std::vector<std::string> t;
+    {
+      red::TreeStore store; Check(static_cast<bool>(store.Open(four_path)), "four-pane database opens");
+      auto apply = [&](red::TreeCommand c) { c.expected_revision = store.Read().snapshot.revision; return store.Apply(c); };
+      for (int i = 0; i < 5; ++i) {
+        red::TreeCommand c{red::TreeAction::CreateTab}; c.title = "Pane " + std::to_string(i); c.url = "https://example.com/" + std::to_string(i);
+        t.push_back(apply(c).created_id);
+      }
+      red::TreeCommand c{red::TreeAction::CreateSplit}; c.id = t[0]; c.parent = t[1]; auto r = apply(c);
+      auto layout = r.snapshot.splits[0].layout;
+      c = {red::TreeAction::AddSplitPane}; c.id = t[0]; c.parent = t[2]; c.layout = "h(5000*0,5000*1)";
+      const auto before_add = store.Read().snapshot;
+      Check(apply(c).code == 400 && store.Read().snapshot.splits == before_add.splits, "added pane needs a layout that places it");
+      c.layout = red::FormatSplitLayout(*red::InsertSplitPane(layout, 1, red::SplitEdge::Bottom, 2)); r = apply(c);
+      Check(r && r.snapshot.splits[0].pages == std::vector<std::string>{t[0], t[1], t[2]} && r.snapshot.active_id == t[2] &&
+            red::FormatSplitLayout(r.snapshot.splits[0].layout) == "h(5000*0,5000*v(5000*1,5000*2))", "a third pane joins with its layout");
+      Check(apply(c).code == 409, "a page cannot join twice");
+      layout = r.snapshot.splits[0].layout;
+      c.parent = t[3]; c.layout = red::FormatSplitLayout(*red::InsertSplitPane(layout, 0, red::SplitEdge::Bottom, 3)); r = apply(c);
+      Check(r && r.snapshot.splits[0].pages.size() == 4, "a fourth pane joins");
+      c.parent = t[4]; c.layout = "h(2000*0,2000*1,2000*2,2000*3,2000*4)";
+      Check(apply(c).code == 409 && store.Read().snapshot.splits[0].pages.size() == 4, "a fifth pane is refused");
+      c = {red::TreeAction::LayoutSplit}; c.id = t[0]; c.layout = red::FormatSplitLayout(*red::SplitPreset("columns", 4)); c.value = true;
+      Check(apply(c).code == 400, "columns cannot be linked");
+      c.layout = red::FormatSplitLayout(*red::SplitPreset("grid", 4)); r = apply(c);
+      Check(r && r.snapshot.splits[0].linked, "grid preset links its dividers");
+      c = {red::TreeAction::SwapSplit}; c.id = t[0]; c.parent = t[0]; c.split_pane = t[3]; r = apply(c);
+      Check(r && red::FormatSplitLayout(r.snapshot.splits[0].layout) == "v(5000*h(5000*3,5000*1),5000*h(5000*2,5000*0))", "swap two of four panes");
+      c.split_pane = t[4];
+      Check(apply(c).code == 400, "swap needs two members");
+      c = {red::TreeAction::RenameSplit}; c.id = t[0]; c.title = "Research"; r = apply(c);
+      saved = r.snapshot.splits[0];
+    }
+    red::TreeStore store; auto r = store.Open(four_path);
+    Check(r && r.snapshot.splits.size() == 1 && r.snapshot.splits[0] == saved, "four panes, layout, link and title survive reopen");
+    auto apply = [&](red::TreeCommand c) { c.expected_revision = store.Read().snapshot.revision; return store.Apply(c); };
+    const int anchor_position = Find(r.snapshot, t[0]).position;
+    red::TreeCommand c{red::TreeAction::RemoveSplitPane}; c.id = t[0]; c.parent = t[0]; r = apply(c);
+    Check(r && r.snapshot.splits.size() == 1 && r.snapshot.splits[0].anchor == t[1] && r.snapshot.splits[0].pages.size() == 3 &&
+          !r.snapshot.splits[0].linked, "removing the anchor hands the group to the next member");
+    Check(r && Find(r.snapshot, t[1]).position == anchor_position - 1 && Find(r.snapshot, t[0]).position == anchor_position &&
+          !Find(r.snapshot, t[0]).archived, "the group keeps its row and the removed tab sits directly below it");
+    {
+      // Taking a page out of a pair: the other keeps the row, the page lands below it.
+      red::TreeCommand pair{red::TreeAction::CreateSplit}; pair.id = t[4]; pair.parent = t[0]; r = apply(pair);
+      const int row = Find(r.snapshot, t[4]).position;
+      pair = {red::TreeAction::Activate}; pair.id = t[4]; apply(pair);
+      pair = {red::TreeAction::RemoveSplitPane}; pair.id = t[4]; pair.parent = t[4]; r = apply(pair);
+      Check(r && std::none_of(r.snapshot.splits.begin(), r.snapshot.splits.end(), [&](const auto& g) { return g.Contains(t[0]); }) &&
+            std::abs(Find(r.snapshot, t[0]).position - row) <= 1 && Find(r.snapshot, t[4]).position == Find(r.snapshot, t[0]).position + 1 &&
+            r.snapshot.active_id == t[0],
+            "a page taken out of a pair lands below the page that stays, which keeps the row and the focus");
+    }
+    {
+      // A pinned group: a Today page taken out opens Today at its top, not below the pin.
+      red::TreeCommand pin{red::TreeAction::CreateSplit}; pin.id = t[4]; pin.parent = t[0]; r = apply(pin);
+      pin = {red::TreeAction::Pin}; pin.id = t[4]; pin.value = true; r = apply(pin);
+      pin = {red::TreeAction::RemoveSplitPane}; pin.id = t[4]; pin.parent = t[0]; r = apply(pin);
+      int top = INT_MAX;
+      for (const auto& n : r.snapshot.nodes) if (!n.pinned && !n.favorite && !n.archived && n.parent.empty() && !n.folder) top = std::min(top, n.position);
+      Check(r && !Find(r.snapshot, t[0]).pinned && Find(r.snapshot, t[0]).position == top && Find(r.snapshot, t[4]).pinned,
+            "a Today page taken out of a pinned group lands at the top of Today");
+      pin = {red::TreeAction::Pin}; pin.id = t[4]; pin.value = false; apply(pin);
+    }
+    c = {red::TreeAction::Unload}; c.id = t[2]; c.next_active = t[1]; r = apply(c);
+    Check(r && r.snapshot.splits.size() == 1 && r.snapshot.splits[0].pages == std::vector<std::string>{t[1], t[3]},
+          "closing one of three panes keeps the other two together");
+    c.id = t[3]; r = apply(c);
+    Check(r && r.snapshot.splits.empty(), "closing one of two panes dissolves the group");
+  }
+  for (const auto& suffix : {L"",L"-wal",L"-shm"}) { std::error_code error; std::filesystem::remove(four_path + suffix,error); }
+  // Schema 15 -> 16: live and archived two-page groups convert exactly.
+  const auto legacy_path = path.wstring() + L"-split-v15";
+  {
+    std::vector<std::string> t;
+    {
+      red::TreeStore store; Check(static_cast<bool>(store.Open(legacy_path)), "legacy split database opens");
+      for (int i = 0; i < 4; ++i) {
+        red::TreeCommand c{red::TreeAction::CreateTab}; c.expected_revision = store.Read().snapshot.revision;
+        c.title = "Legacy " + std::to_string(i); c.url = "https://example.com/legacy" + std::to_string(i);
+        t.push_back(store.Apply(c).created_id);
+      }
+    }
+    sqlite3* db = nullptr; sqlite3_open16(legacy_path.c_str(), &db);
+    const std::string downgrade = "BEGIN; DROP TABLE split_members; DROP TABLE split_groups;"
+      "CREATE TABLE splits(anchor TEXT PRIMARY KEY REFERENCES nodes(id) DEFERRABLE INITIALLY DEFERRED,"
+      "other TEXT NOT NULL UNIQUE REFERENCES nodes(id) DEFERRABLE INITIALLY DEFERRED,title TEXT NOT NULL DEFAULT '',"
+      "ratio INTEGER NOT NULL CHECK(ratio BETWEEN 1000 AND 9000),vertical INTEGER NOT NULL,reversed INTEGER NOT NULL);"
+      "CREATE TABLE archived_splits(anchor TEXT PRIMARY KEY REFERENCES nodes(id) DEFERRABLE INITIALLY DEFERRED,"
+      "other TEXT NOT NULL UNIQUE REFERENCES nodes(id) DEFERRABLE INITIALLY DEFERRED,title TEXT NOT NULL,"
+      "ratio INTEGER NOT NULL,vertical INTEGER NOT NULL,reversed INTEGER NOT NULL);"
+      "INSERT INTO splits VALUES('" + t[0] + "','" + t[1] + "','Pair',6200,0,1);"
+      "UPDATE nodes SET archived=1,archived_at=1 WHERE id IN('" + t[2] + "','" + t[3] + "');"
+      "INSERT INTO archived_splits VALUES('" + t[2] + "','" + t[3] + "','',3000,1,0);"
+      "PRAGMA user_version=15; COMMIT;";
+    Check(sqlite3_exec(db, downgrade.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK, "schema 15 split fixture");
+    sqlite3_close(db);
+    red::TreeStore store; auto r = store.Open(legacy_path);
+    Check(r && r.snapshot.splits.size() == 1 && r.snapshot.splits[0].anchor == t[0] &&
+          r.snapshot.splits[0].pages == std::vector<std::string>{t[0], t[1]} && r.snapshot.splits[0].title == "Pair" &&
+          red::FormatSplitLayout(r.snapshot.splits[0].layout) == "h(6200*1,3800*0)", "schema 15 split keeps pages, title, ratio and order");
+    Check(r && r.snapshot.archived_splits.size() == 1 && r.snapshot.archived_splits[0].pages == std::vector<std::string>{t[2], t[3]} &&
+          red::FormatSplitLayout(r.snapshot.archived_splits[0].layout) == "v(3000*0,7000*1)", "schema 15 archived split converts");
+    sqlite3_open16(legacy_path.c_str(), &db); sqlite3_stmt* query = nullptr;
+    sqlite3_prepare_v2(db, "SELECT (SELECT user_version FROM pragma_user_version),(SELECT count(*) FROM sqlite_schema WHERE name IN('splits','archived_splits'))", -1, &query, nullptr);
+    Check(sqlite3_step(query) == SQLITE_ROW && sqlite3_column_int(query, 0) == 16 && sqlite3_column_int(query, 1) == 0, "schema 16 replaces the two-pane tables");
+    sqlite3_finalize(query); sqlite3_close(db);
+  }
+  for (const auto& suffix : {L"",L"-wal",L"-shm"}) { std::error_code error; std::filesystem::remove(legacy_path + suffix,error); }
   const auto archive_path=path.wstring()+L"-auto-archive";
   std::string archive_first,archive_second; red::SplitGroup archived_layout;
   const auto archive_now=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -482,7 +619,7 @@ int wmain(int argc, wchar_t** argv) {
     red::TreeCommand command{red::TreeAction::CreateTab}; command.title="Archive first"; command.url="https://example.com/first";
     archive_first=apply(command).created_id; command.title="Archive second"; command.url="https://example.com/second"; archive_second=apply(command).created_id;
     command={red::TreeAction::CreateSplit}; command.id=archive_first; command.parent=archive_second; command.reversed=true; apply(command);
-    command={red::TreeAction::LayoutSplit}; command.id=archive_first; command.position=3500; command.value=true;
+    command={red::TreeAction::LayoutSplit}; command.id=archive_first; command.layout="v(3500*1,6500*0)";
     auto result=apply(command); if (result && !result.snapshot.splits.empty()) archived_layout=result.snapshot.splits[0];
     const auto revision=result.snapshot.revision;
     result=store.TouchTabs({{archive_first,archive_now-13LL*3600000},{archive_second,archive_now-13LL*3600000}});
@@ -575,7 +712,7 @@ int wmain(int argc, wchar_t** argv) {
     Check(apply(command).code==400, "Split View cannot cross profile boundaries");
     auto invalid=store.Read().snapshot; invalid.active_id=personal_favorite;
     Check(!red::TreeStore::ValidateSnapshot(invalid), "snapshot rejects active Favorite from another profile");
-    invalid=store.Read().snapshot; invalid.splits.push_back({anchor,personal_favorite,"",5000,false,false});
+    invalid=store.Read().snapshot; invalid.splits.push_back(red::SplitGroup::Pair(anchor,personal_favorite));
     Check(!red::TreeStore::ValidateSnapshot(invalid), "snapshot rejects imported cross-profile Split View");
     command={red::TreeAction::SetSpaceProfile}; command.id=work_space; command.profile="../escape";
     Check(apply(command).code==400 && red::ValidBrowsingProfileId("default") && !red::ValidBrowsingProfileId("../escape"), "unknown/path-shaped profiles are rejected");

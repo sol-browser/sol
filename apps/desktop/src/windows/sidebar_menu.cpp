@@ -86,16 +86,22 @@ void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRe
       std::erase_if(item.children,[](const auto& child) { return child.action == "favorites"; });
       if (!item.children.empty()) movement = std::move(item);
     }
-    const auto first = entry->GetBool("splitReversed") ? entry->GetString("splitOther").ToString() : id;
-    const auto second = first == id ? entry->GetString("splitOther").ToString() : id;
-    items = {{"Open split view","activate","",true,{}},{"Rename first tab","renamePane",first,true,{}},{"Rename second tab","renamePane",second,true,{}},
-      {entry->GetBool("pinned") ? "Unpin split view" : "Pin split view",entry->GetBool("pinned") ? "today" : "pinned","",true,{}},
-      {"Swap panes","swapSplit","",true,{}},{"Separate tabs","unsplit","",true,{}}};
+    // One rename per pane, in the order they appear on screen.
+    const auto panes = entry->GetList("splitPanes");
+    const char* ordinals[] = {"first","second","third","fourth"};
+    items = {{"Open split view","activate","",true,{}}};
+    for (size_t pane = 0; panes && pane < panes->GetSize() && pane < 4; ++pane)
+      items.push_back({std::string("Rename ") + ordinals[pane] + " tab","renamePane",panes->GetString(pane).ToString(),true,{}});
+    items.push_back({entry->GetBool("pinned") ? "Unpin split view" : "Pin split view",entry->GetBool("pinned") ? "today" : "pinned","",true,{}});
+    if (panes && panes->GetSize() == 2) items.push_back({"Swap panes","swapSplit","",true,{}});
+    items.push_back({"Separate tabs","unsplit","",true,{}});
     if (movement) items.push_back(std::move(*movement));
     if (badge) items.push_back(std::move(*badge));
   } else if (entry && active && entry->GetString("kind") == "tab" && !entry->GetBool("archived") && !entry->GetBool("closing") &&
-      entry->GetString("id") != active->GetString("id") && !entry->HasKey("splitAnchor") && !active->HasKey("splitAnchor") &&
-      !(entry->GetBool("favorite") && active->GetBool("favorite"))) {
+      entry->GetString("id") != active->GetString("id") && !entry->HasKey("splitAnchor") &&
+      (!active->HasKey("splitAnchor") || (active->GetList("splitPanes") && active->GetList("splitPanes")->GetSize() < static_cast<size_t>(kMaxSplitPanes))) &&
+      !(entry->GetBool("favorite") && active->GetBool("favorite") && !active->HasKey("splitAnchor"))) {
+    // With the page on screen in a split of fewer than four, the tab joins it.
     for (auto& item : items) if (item.action == "split") item.target = active->GetString("id");
   }
   // Without another tab to pair with, the split item is unavailable.

@@ -40,7 +40,7 @@
       }
       if (request.method.startsWith('settings.')) { onSuccess(JSON.stringify(settings)); return; }
       if (request.method === 'command.history') { onSuccess(JSON.stringify({ text: request.text, visits: [] })); return; }
-      if (request.method === 'command.suggest') { onSuccess('{"suggestions":[]}'); return; }
+      if (request.method === 'command.suggest') { onSuccess(JSON.stringify({ suggestions: fixture.suggestions?.[request.text] ?? [] })); return; }
       if (['command.close','command.submit','command.action'].includes(request.method)) { state.open = false; fixture.publish(); }
       onSuccess(JSON.stringify({ request: state.request, width: innerWidth, height: innerHeight, motion: false }));
     }, 20);

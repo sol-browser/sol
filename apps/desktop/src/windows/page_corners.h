@@ -8,6 +8,7 @@
 #include <map>
 #include <span>
 #include <string>
+#include <vector>
 #include "app/theme.h"
 #include "windows/sidebar_shadow.h"
 #include "windows/link_peek_scene.h"
@@ -30,7 +31,7 @@ class PageCorners {
   // Returns false when composition is unavailable (caller falls back to a
   // window region).
   bool Show(HWND parent, const RECT& rect, int radius);
-  // One shared root composition target, up to two independently placed frames.
+  // One shared root composition target, up to four independently placed frames (Split View).
   bool ShowFrames(HWND parent, std::span<const RECT> frames, int radius,
                   std::span<const COLORREF> borders = {}, float border_width = 0);
   void Hide();
@@ -64,6 +65,14 @@ class PageCorners {
   // Returns the compositor exit duration, or zero when motion is disabled.
   int DismissNotification();
   bool notification_visible() const { return notification_visible_; }
+  // The Ctrl+Tab strip (tab_switcher_strip.cpp), centred over |area|, in this composition tree: drawn by the
+  // browser, never by a website. Card pictures are JPEG/PNG bytes (empty: the title's letter / a blank icon).
+  struct SwitcherCard { std::wstring title, letter; std::string thumb, icon; bool current = false; };
+  bool ShowTabSwitcher(HWND parent, const RECT& area, float scale, const std::vector<SwitcherCard>& cards, int selected);
+  bool SelectTabSwitcher(int selected);
+  void HideTabSwitcher();
+  bool tab_switcher_visible() const { return switcher_visible_; }
+  RECT tab_switcher_bounds() const { return switcher_bounds_; }
   RECT notification_bounds() const { return notification_bounds_; }
   // Live bitmap of our own layered popup, scaled by the notification compositor.
   // Does not resize its CEF viewport or request a screenshot.
@@ -102,6 +111,16 @@ class PageCorners {
   Microsoft::WRL::ComPtr<IDCompositionSurface> DecodePageSnapshot(const void* png, size_t size, int width, int height);
   bool Init(HWND parent);
   bool Paint(int corner, int radius, COLORREF color, COLORREF border, float border_width);
+  bool PaintTabSwitcher();
+  Microsoft::WRL::ComPtr<IDCompositionVisual> switcher_;
+  Microsoft::WRL::ComPtr<IDCompositionEffectGroup> switcher_opacity_;
+  Microsoft::WRL::ComPtr<IDCompositionSurface> switcher_surface_;
+  std::vector<SwitcherCard> switcher_cards_;
+  std::vector<Microsoft::WRL::ComPtr<ID2D1Bitmap1>> switcher_thumbs_, switcher_icons_;
+  RECT switcher_area_{}, switcher_bounds_{};
+  float switcher_scale_ = 1;
+  int switcher_selected_ = 0;
+  bool switcher_visible_ = false;
   Microsoft::WRL::ComPtr<ID3D11Device> d3d_;
   Microsoft::WRL::ComPtr<ID2D1Factory1> d2d_factory_;
   Microsoft::WRL::ComPtr<ID2D1DeviceContext> d2d_;
@@ -132,10 +151,10 @@ class PageCorners {
   std::vector<std::wstring> notification_keys_;
   Theme notification_theme_{};
   bool notification_dark_ = false;
-  std::array<Microsoft::WRL::ComPtr<IDCompositionVisual>, 8> visuals_;
-  std::array<Microsoft::WRL::ComPtr<IDCompositionSurface>, 8> surfaces_;
-  std::array<COLORREF, 8> colors_{};
-  std::array<COLORREF, 8> borders_{};
+  std::array<Microsoft::WRL::ComPtr<IDCompositionVisual>, 16> visuals_;
+  std::array<Microsoft::WRL::ComPtr<IDCompositionSurface>, 16> surfaces_;
+  std::array<COLORREF, 16> colors_{};
+  std::array<COLORREF, 16> borders_{};
   float border_width_ = 0;
   HWND parent_ = nullptr;
   int radius_ = 0;

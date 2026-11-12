@@ -11,7 +11,7 @@ export function createThemePreviewQueue<T>(
     if(sending||!pending.length)return;
     sending=true;const next=pending.shift()!;
     try{await send(next.value,next.save);lastError=undefined;if(next.id===latest)settled();}
-    catch(error){lastError=error;if(next.id===latest)settled(error);}
+    catch(error){lastError=error instanceof Error?error:new Error(String(error));if(next.id===latest)settled(error);}
     finally{sending=false;if(pending.length)void flush();else for(const waiter of waiting.splice(0)){if(lastError!==undefined)waiter.reject(lastError);else waiter.resolve();}}
   };
   const enqueue=(value:T,save:boolean)=>{

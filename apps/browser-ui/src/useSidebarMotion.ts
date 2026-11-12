@@ -162,7 +162,7 @@ export function useSidebarMotion(nodes: TreeNode[], hidden: boolean, dragging: b
         let start: FlightPose | undefined;
         if (outgoing) {
           start = readFlight(outgoing.element);
-          start.y += parseFloat(outgoing.element.style.top) + top - row.box.y;
+          start.y += Number.parseFloat(outgoing.element.style.top) + top - row.box.y;
           outgoing.animation.cancel(); outgoing.element.remove(); folderGhosts.current.delete(key);
         }
         if (flight) {

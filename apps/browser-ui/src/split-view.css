@@ -4,7 +4,9 @@
 .web-slot[data-split="true"] { background:transparent; box-shadow:none; }
 .split-pane { position:absolute; container-type:inline-size; border:1px solid color-mix(in oklch,currentColor 12%,transparent); border-radius:8px; overflow:hidden; background:color-mix(in oklch,currentColor 3%,transparent);
   box-shadow:0 3px 14px oklch(calc(0.4607 + var(--theme-dark, 0) * 0.2659) min(calc(0.0804 * var(--theme-chroma, 1)), 0.24) calc(var(--theme-hue, 307) - 1.5) / 0.082); }
-.split-pane-header { height:29px; display:flex; align-items:center; gap:3px; padding:0 3px; pointer-events:auto; }
+.split-pane-header { height:29px; display:flex; align-items:center; gap:3px; padding:0 3px; pointer-events:auto; cursor:grab; }
+/* Empty header space focuses the pane and drags it (split.beginMove); controls keep their own cursor. */
+.split-pane-header button { cursor:default; }
 .split-pane-header button { display:grid; place-items:center; flex:none; width:24px; height:24px; padding:0; border-radius:6px; }
 .split-pane-header button:hover { background:color-mix(in oklch,currentColor 10%,transparent); }
 .split-pane-header button:disabled { opacity:.3; }
@@ -19,12 +21,15 @@
 .topbar[data-split="true"]:not([data-peek="true"]) .page-toolbar,.topbar[data-split="true"]:not([data-peek="true"]) .toolbar-navigation,.topbar[data-split="true"]:not([data-peek="true"]) .toolbar-separator { display:none; }
 .topbar[data-split="true"]:not([data-peek="true"]) .window-side { grid-column:3; }
 .topbar[data-split="true"] .page-toolbar.notice { display:flex; }
-@container (max-width:420px) { .split-pane-actions .split-pane-secondary { display:none; } }
+@container (max-width:340px) { .split-pane-address-group .split-pane-copy { display:none; } }
 @container (max-width:300px) { .split-pane-navigation .split-pane-forward { display:none; } }
 .split-divider { position:absolute; pointer-events:auto; cursor:col-resize; touch-action:none; }
-.split-divider[data-vertical="true"] { cursor:row-resize; }
+.split-divider[data-axis="v"] { cursor:row-resize; }
 .split-divider::after { content:''; position:absolute; inset:12px 3px; border-radius:3px; background:var(--accent); opacity:0; transition:opacity 120ms ease; }
-.split-divider[data-vertical="true"]::after { inset:3px 12px; }
+.split-divider[data-axis="v"]::after { inset:3px 12px; }
+/* A linked 2x2 grid: the intersection moves both axes. It sits above the two lines it joins. */
+.split-divider[data-cross="true"] { z-index:1; cursor:move; }
+.split-divider[data-cross="true"]::after { inset:calc(50% - 5px); border-radius:50%; }
 .split-divider[data-hovered="true"]::after,.split-divider[data-keyboard-focus="true"]::after,.split-divider[data-dragging="true"]::after { opacity:.65; }
 .split-pane-placeholder { display:flex; flex-direction:column; gap:12px; align-items:center; justify-content:center; height:calc(100% - 30px); color:var(--muted); font-size:12px; }
 .split-pane-placeholder button { pointer-events:auto; padding:6px 12px; background:color-mix(in oklch,currentColor 10%,transparent); }
@@ -33,6 +38,24 @@
 /* Regular tabs center an 18px favicon in a 24px icon box: preserve its inset. */
 .tree-row[data-split="true"] > .split-row-content { padding-left:3px; }
 .split-row-part { position:relative; display:flex; align-items:center; gap:2px; flex:1; min-width:0; }
+/* Too narrow for every name (3-4 panes, or a narrow sidebar): the other panes keep
+   their icon and the pane in focus keeps its name (split-model SPLIT_SEGMENT_MIN_WIDTH). */
+.split-row-content { container:split-row / inline-size; }
+@container split-row (max-width:399px) {
+  .split-row-content[data-panes="4"] > .split-row-part:not([data-named="true"]) { flex:none; }
+  .split-row-content[data-panes="4"] > .split-row-part:not([data-named="true"]) .split-row-label,
+  .split-row-content[data-panes="4"] > .split-row-part:not([data-named="true"]):not(:hover):not(:focus-within) > .row-action { display:none; }
+}
+@container split-row (max-width:299px) {
+  .split-row-content[data-panes="3"] > .split-row-part:not([data-named="true"]) { flex:none; }
+  .split-row-content[data-panes="3"] > .split-row-part:not([data-named="true"]) .split-row-label,
+  .split-row-content[data-panes="3"] > .split-row-part:not([data-named="true"]):not(:hover):not(:focus-within) > .row-action { display:none; }
+}
+@container split-row (max-width:199px) {
+  .split-row-content[data-panes="2"] > .split-row-part:not([data-named="true"]) { flex:none; }
+  .split-row-content[data-panes="2"] > .split-row-part:not([data-named="true"]) .split-row-label,
+  .split-row-content[data-panes="2"] > .split-row-part:not([data-named="true"]):not(:hover):not(:focus-within) > .row-action { display:none; }
+}
 .split-row-part + .split-row-part::before { content:''; position:absolute; left:-4px; width:1px; height:15px; background:color-mix(in oklch,currentColor 24%,transparent); }
 .split-row-part + .split-row-part { padding-left:4px; }
 .split-row-title { display:flex; align-items:center; gap:6px; flex:1; min-width:0; padding:0; text-align:left; height:30px; }
@@ -44,4 +67,18 @@
 .split-row-edit input { width:0; flex:1; min-width:0; padding:0; margin:0; border:0; border-radius:0; outline:0; background:transparent; font:inherit; }
 .split-row-edit input:focus-visible { outline:0; }
 .split-row-part .site-mark { flex:none; }
+/* A pane carried over the sidebar by its header: its segment fades out of the
+   group and the row it becomes appears right below, in the accent. */
+/* Renaming one tab of a split row: its field takes the row, the others keep only their icon. */
+.split-row-content:has(.split-row-edit) > .split-row-part:not(:has(.split-row-edit)) { flex:none; }
+.split-row-content:has(.split-row-edit) > .split-row-part:not(:has(.split-row-edit)) .split-row-label,
+.split-row-content:has(.split-row-edit) > .split-row-part:not(:has(.split-row-edit)) > .row-action { display:none; }
+.split-row-part[data-leaving="true"] { opacity:.32; transition:opacity 140ms ease; }
+.split-landing { overflow:hidden; animation:split-landing-in 160ms cubic-bezier(.2,.7,.2,1); }
+.split-landing-row { display:flex; align-items:center; gap:9px; height:34px; margin:2px 0; padding:0 9px; border-radius:8px;
+  background:color-mix(in oklch,var(--accent) 16%,transparent); box-shadow:inset 0 0 0 1.5px color-mix(in oklch,var(--accent) 70%,transparent); }
+.split-landing-row .node-title { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.split-landing-hint { flex:none; font-size:11px; color:color-mix(in oklch,var(--accent) 80%,currentColor); }
+@keyframes split-landing-in { from { opacity:0; height:0; } to { opacity:1; height:38px; } }
+@media (prefers-reduced-motion:reduce) { .split-landing { animation:none; } }
 .split-row-separator { width:1px; height:15px; flex:none; background:color-mix(in oklch,currentColor 24%,transparent); }

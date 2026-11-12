@@ -55,7 +55,7 @@ export class SpaceTransition extends Component<Props, Record<string, never>, Fra
     if (previous.spaceId === this.props.spaceId || !previous.spaceId || previous.hidden || this.props.hidden || !scroll ||
         matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
     return { picture: scroll.cloneNode(true) as HTMLDivElement, scrollTop: scroll.scrollTop,
-      paddingRight: parseFloat(getComputedStyle(scroll).paddingRight) + scroll.offsetWidth - scroll.clientWidth,
+      paddingRight: Number.parseFloat(getComputedStyle(scroll).paddingRight) + scroll.offsetWidth - scroll.clientWidth,
       direction: this.props.position > previous.position ? 1 : -1 };
   }
 

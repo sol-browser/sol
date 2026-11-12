@@ -16,6 +16,12 @@ struct KeyBinding {
   bool operator==(const KeyBinding&) const = default;
 };
 struct Preferences {
+  Preferences() = default;
+  Preferences(const Preferences&) = default;
+  Preferences(Preferences&&) noexcept = default;
+  Preferences& operator=(const Preferences&) = default;
+  Preferences& operator=(Preferences&&) noexcept = default;
+  ~Preferences() = default;
   std::string search_engine = "google";
   std::string notes_provider = "googleDocs";
   IntegrationSettings integrations;

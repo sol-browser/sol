@@ -1,0 +1,31 @@
+:root[data-ui="capture"], :root[data-ui="capture"] body { margin: 0; overflow: hidden; background: #16131b; color-scheme: dark; user-select: none; }
+.capture { position: fixed; inset: 0; overflow: hidden; font: 13px/1.35 "Segoe UI", system-ui, sans-serif; color: #fff; touch-action: none; }
+.capture-frame { position: absolute; left: 0; top: 0; max-width: none; display: block; pointer-events: none; transform-origin: 0 0; will-change: transform; }
+.capture-veil { position: absolute; inset: 0; background: #16131b99; pointer-events: none; }
+.capture-selection { position: absolute; box-sizing: border-box; pointer-events: none; border: 2px solid #f9ca30; border-radius: 3px; box-shadow: 0 0 0 100vmax #16131b99; }
+.capture-selection.adjust { border: 1.5px dashed #fff; border-radius: 0; }
+/* Hovering glides from one element to the next; dragging and resizing follow the pointer at once. */
+.capture-selection.glide { transition: left .14s cubic-bezier(.2,.8,.2,1), top .14s cubic-bezier(.2,.8,.2,1), width .14s cubic-bezier(.2,.8,.2,1), height .14s cubic-bezier(.2,.8,.2,1); }
+.capture-size { position: absolute; z-index: 3; pointer-events: none; padding: 2px 7px; border-radius: 9px; background: #f9ca30; color: #1a1408; font: 600 11px/16px "Segoe UI", system-ui, sans-serif; white-space: nowrap; }
+.capture-size.glide { transition: left .14s cubic-bezier(.2,.8,.2,1), top .14s cubic-bezier(.2,.8,.2,1); }
+.capture-handle { position: absolute; z-index: 3; width: 10px; height: 10px; margin: -5px 0 0 -5px; box-sizing: border-box; pointer-events: none; background: #fff; border: 1px solid #1b1714; border-radius: 2px; }
+.capture-hint { position: absolute; z-index: 4; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 14px; width: min(420px, 80vw); text-align: center; color: #fff; font: 500 19px/1.35 "Segoe UI", system-ui, sans-serif; text-shadow: 0 1px 8px #0006; }
+.capture-hint p { margin: 0; }
+.capture-hint svg { width: 54px; height: 54px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.capture-hint svg circle { fill: currentColor; stroke: none; }
+.capture button { all: unset; box-sizing: border-box; cursor: pointer; color: #ffffffeb; font: 500 11px/1.2 "Segoe UI", system-ui, sans-serif; }
+.capture button:focus-visible { outline: 2px solid #f9ca30; outline-offset: 2px; }
+.capture .capture-cancel { padding: 7px 18px; border-radius: 5px; border: 1px solid #ffffffb3; font-size: 12px; }
+.capture .capture-cancel:hover { background: #ffffff26; }
+.capture-panel { position: absolute; z-index: 4; top: 10px; right: 12px; display: flex; gap: 6px; padding: 6px; border-radius: 14px; background: #2a2730f2; box-shadow: 0 8px 28px #0000008c, 0 0 0 1px #ffffff14; }
+.capture .capture-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 82px; padding: 10px 4px 8px; border-radius: 9px; background: #ffffff0f; }
+.capture .capture-tile:hover { background: #ffffff22; }
+.capture-tile svg { width: 30px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.capture-tools { position: absolute; z-index: 5; display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 12px; background: #1b1714f5; box-shadow: 0 8px 28px #0000008c, 0 0 0 1px #ffffff1a; }
+.capture .capture-act { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 8px; background: #ffffff14; font-size: 13px; font-weight: 500; }
+.capture .capture-act:hover { background: #ffffff26; }
+.capture-act svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.capture .capture-x { width: 34px; padding: 0; justify-content: center; }
+.capture .capture-go { background: #f9ca30; color: #1a1408; font-weight: 600; }
+.capture .capture-go:hover { background: #ffd652; }
+@media (prefers-reduced-motion: reduce) { .capture-selection.glide, .capture-size.glide { transition: none; } }

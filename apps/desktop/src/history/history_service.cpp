@@ -105,6 +105,13 @@ void HistoryService::SaveFavicon(const std::string& host, const std::string& png
   const auto now = Now();
   Post([host, png, now](HistoryStore& s) { s.SaveFavicon(host, png, now); });
 }
+void HistoryService::ImportFavicons(std::map<std::string, std::string> icons,
+    std::function<void(std::optional<std::map<std::string, std::string>>)> done) {
+  if (!worker_) { done(std::nullopt); return; }
+  Run<std::optional<std::map<std::string, std::string>>>([icons = std::move(icons)](HistoryStore& s) mutable {
+    return s.ImportFavicons(std::move(icons), Now());
+  }, std::move(done));
+}
 void HistoryService::LoadFavicons(std::function<void(std::vector<std::pair<std::string, std::string>>)> done) {
   Run<std::vector<std::pair<std::string, std::string>>>([](HistoryStore& s) { return s.Favicons(1000); }, std::move(done));
 }

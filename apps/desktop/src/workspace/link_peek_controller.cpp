@@ -79,7 +79,7 @@ bool WorkspaceController::IsLinkPeekBrowser(int browser) const {
 bool WorkspaceController::CanSplitLinkPeek() const {
   if (!HasLinkPeek()) return false;
   const auto source=std::find_if(tree_.nodes.begin(),tree_.nodes.end(),[&](const auto& node) { return node.id==link_peek_opener_ && !node.folder && !node.archived; });
-  return source!=tree_.nodes.end() && (source->pinned || std::none_of(tree_.splits.begin(),tree_.splits.end(),[&](const auto& split) { return split.anchor==source->id || split.other==source->id; }));
+  return source!=tree_.nodes.end() && (source->pinned || std::none_of(tree_.splits.begin(),tree_.splits.end(),[&](const auto& split) { return split.Contains(source->id); }));
 }
 bool WorkspaceController::RouteLinkPeek(CefRefPtr<CefBrowser> source,const std::string& url,bool force) {
   const auto state=state_.lock();
@@ -88,7 +88,7 @@ bool WorkspaceController::RouteLinkPeek(CefRefPtr<CefBrowser> source,const std::
   const auto binding=browser_nodes_.find(source->GetIdentifier());
   if (binding==browser_nodes_.end()) return false;
   const auto* split=SelectedSplit();
-  const bool visible_split=split && (split->anchor==binding->second || split->other==binding->second) &&
+  const bool visible_split=split && split->Contains(binding->second) &&
     (expanded_split_pane_.empty() || expanded_split_pane_==binding->second);
   if (tree_.active_id!=binding->second && !visible_split) return false;
   const auto node=std::find_if(tree_.nodes.begin(),tree_.nodes.end(),[&](const auto& n) { return n.id==binding->second; });
@@ -219,7 +219,7 @@ bool WorkspaceController::HandleLinkPeek(CefRefPtr<CefDictionaryValue> request,R
         if (!code) {
           self->link_peek_id_.clear(); self->link_peek_opener_.clear(); self->link_peek_url_.clear();
           if (const auto state=self->state_.lock(); state && state->embedded) {
-            state->embedded->ClearLinkPeek(true); state->embedded->SetSplitPages(-1,-1,false,5000,false);
+            state->embedded->ClearLinkPeek(true); state->embedded->ClearSplit();
             if (const auto browser=self->LiveBrowser(self->tree_.active_id)) state->embedded->Activate(browser);
           }
           self->EnsureActive(); self->Publish();

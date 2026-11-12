@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace red::import {
+namespace red::importer {
 namespace {
 constexpr size_t kMaxRows = 50000;
 // Returns false on an unterminated quote. Fields of the row land in `row`.
@@ -57,4 +57,4 @@ CsvResult ParsePasswordCsv(std::string_view text) {
   if (!out.counts.found) out.error = "This CSV file has no saved passwords";
   return out;
 }
-}  // namespace red::import
+}  // namespace red::importer

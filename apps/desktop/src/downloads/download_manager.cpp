@@ -222,6 +222,24 @@ void DownloadManager::ClearFinished(bool saved) {
   SchedulePublish();
 }
 
+void DownloadManager::AddFinishedFile(const std::filesystem::path& path, const std::string& url) {
+  std::error_code error;
+  const auto size = std::filesystem::file_size(path, error);
+  const uint32_t id = next_local_id_++;
+  auto& entry = entries_[id];
+  entry.id = id; entry.path = path; entry.name = CefString(path.filename().wstring()).ToString();
+  entry.origin = Origin(url); entry.state = "complete";
+  entry.received = entry.total = error ? 0 : static_cast<int64_t>(size);
+  order_.push_back(id);
+  ++started_;  // The toolbar's Downloads button appears (and pulses) as for a download.
+  Persist(entry);
+  SchedulePublish();
+  if (auto state = Owner()) {
+    auto details = CefDictionaryValue::Create(); details->SetInt("id", static_cast<int>(id));
+    if (state->probe) details->SetString("file", entry.name);
+    state->Record("download_added", details);
+  }
+}
 void DownloadManager::Persist(Entry& entry) {
   if (!history_) return;  // Only persistent profiles bind a history service.
   const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();

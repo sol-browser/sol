@@ -1,9 +1,14 @@
 #include "import/formats/favicons.h"
+#include "import/formats/chromium_profile.h"
+#include "web_url.h"
 #include "import/formats/source_db.h"
 #include "history/favicon_cache.h"
+#include <windows.h>
+#include <bcrypt.h>
+#include <array>
 #include <cstring>
 
-namespace red::import {
+namespace red::importer {
 namespace {
 constexpr size_t kMaxPng = 12 * 1024;  // Same cap as icons downloaded by pages.
 constexpr std::string_view kPngSignature("\x89PNG\r\n\x1a\n", 8);
@@ -20,11 +25,40 @@ Favicons Collect(std::map<std::string, Best>& best) {
   Favicons out; for (auto& [host, b] : best) if (!b.png.empty()) out[host] = std::move(b.png);
   return out;
 }
+
+// Arc uses this digest as a filename, with no security purpose.
+std::string ArcIconFilename(const std::string& id) {
+  if (id.empty() || id.size() > 256) return {};
+  BCRYPT_ALG_HANDLE algorithm = nullptr;
+  if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_MD5_ALGORITHM, nullptr, 0) != 0) return {};
+  std::array<UCHAR, 16> digest{};
+  const auto result = BCryptHash(algorithm, nullptr, 0, reinterpret_cast<PUCHAR>(const_cast<char*>(id.data())),
+                                static_cast<ULONG>(id.size()), digest.data(), static_cast<ULONG>(digest.size()));
+  BCryptCloseAlgorithmProvider(algorithm, 0);
+  if (result != 0) return {};
+  constexpr char hex[] = "0123456789abcdef";
+  std::string filename;
+  for (const auto byte : digest) { filename += hex[byte >> 4]; filename += hex[byte & 15]; }
+  return filename;
+}
 }  // namespace
 
+std::optional<std::string> ReadArcItemFavicon(const std::filesystem::path& directory, const std::string& item_id) {
+  const auto filename = ArcIconFilename(item_id);
+  if (filename.empty()) return std::nullopt;
+  const auto expected = directory / filename;
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(expected, ec)) return std::nullopt;
+  const auto resolved = std::filesystem::canonical(expected, ec);
+  if (ec || CompareStringOrdinal(resolved.c_str(), -1, expected.c_str(), -1, TRUE) != CSTR_EQUAL) return std::nullopt;
+  std::string bytes;
+  if (!ReadSmallFile(resolved, kMaxPng, bytes) || !bytes.starts_with(kPngSignature)) return std::nullopt;
+  return bytes;
+}
+
 std::string UrlHost(std::string_view url) {
-  size_t start = 0;
-  if (url.starts_with("https://")) start = 8; else if (url.starts_with("http://")) start = 7; else return "";
+  const size_t start = WebSchemeLength(url);
+  if (!start) return "";
   auto end = url.find_first_of("/?#", start); if (end == std::string_view::npos) end = url.size();
   auto authority = url.substr(start, end - start);
   if (authority.find('@') != std::string_view::npos || authority.starts_with('[')) return "";
@@ -73,4 +107,4 @@ Favicons ReadFirefoxFavicons(const std::filesystem::path& path, const std::set<s
   while (root.Row()) { const auto host = UrlHost(root.Text(0)); if (hosts.contains(host)) Offer(best, host, root.Text(1), static_cast<int>(root.Number(2))); }
   return Collect(best);
 }
-}  // namespace red::import
+}  // namespace red::importer

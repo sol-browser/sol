@@ -1,0 +1,5 @@
+{"version":1,"items":[
+  "archived-one",{"archivedAt":746426747.51,"source":{"space":{"_0":"home"}},"sidebarItem":{"title":"Closed page","data":{"tab":{"savedURL":"https://arc.example.test/closed","savedTitle":"Old page"}}}},
+  "archived-two",{"archivedAt":746426750,"source":{"unknown":{}},"sidebarItem":{"data":{"tab":{"savedURL":"https://arc.example.test/closed-again","savedTitle":"Closed again"}}}},
+  "unsupported",{"archivedAt":746426760,"source":{"unknown":{}},"sidebarItem":{"data":{"tab":{"savedURL":"file:///not-imported"}}}}
+]}

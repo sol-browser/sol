@@ -79,8 +79,8 @@ HWND CreateHost() {
 
 class Sink final : public CefClient, public CefLifeSpanHandler, public CefLoadHandler, public CefRequestHandler, public CefDevToolsMessageObserver {
  public:
-  Sink(std::vector<import::Login> logins, std::function<void(PasswordSinkResult)> done) : logins_(std::move(logins)), done_(std::move(done)) {}
-  ~Sink() override { import::WipeAll(logins_); }
+  Sink(std::vector<importer::Login> logins, std::function<void(PasswordSinkResult)> done) : logins_(std::move(logins)), done_(std::move(done)) {}
+  ~Sink() override { importer::WipeAll(logins_); }
   void Start() {
     host_ = CreateHost();
     if (!host_) { Finish("Could not prepare the password store"); return; }
@@ -152,12 +152,12 @@ class Sink final : public CefClient, public CefLifeSpanHandler, public CefLoadHa
     auto& login = logins_[next_++];
     std::string script = kAdd, password = Quote(login.password);
     Replace(script, "%URL%", Quote(login.url)); Replace(script, "%USER%", Quote(login.username)); Replace(script, "%PASSWORD%", password);
-    import::Wipe(password); import::Wipe(login.password);
-    Evaluate(browser, script); import::Wipe(script);
+    importer::Wipe(password); importer::Wipe(login.password);
+    Evaluate(browser, script); importer::Wipe(script);
   }
   void Finish(const std::string& error) {
     if (finished_) return;
-    finished_ = true; import::WipeAll(logins_);
+    finished_ = true; importer::WipeAll(logins_);
     if (!error.empty()) result_.error = error;
     else if (result_.failed && !first_error_.empty()) result_.error = "Some passwords were not saved (" + first_error_ + ")";
     // Finish can run inside a DevTools observer callback: tear down afterwards,
@@ -171,7 +171,7 @@ class Sink final : public CefClient, public CefLifeSpanHandler, public CefLoadHa
     else DestroyHost();
   }
   void DestroyHost() { if (host_) { DestroyWindow(host_); host_ = nullptr; } }
-  std::vector<import::Login> logins_;
+  std::vector<importer::Login> logins_;
   std::function<void(PasswordSinkResult)> done_;
   PasswordSinkResult result_;
   std::string first_error_;
@@ -186,7 +186,7 @@ class Sink final : public CefClient, public CefLifeSpanHandler, public CefLoadHa
 };
 }  // namespace
 
-void SavePasswords(std::vector<import::Login> logins, std::function<void(PasswordSinkResult)> done) {
+void SavePasswords(std::vector<importer::Login> logins, std::function<void(PasswordSinkResult)> done) {
   if (logins.empty()) { done({}); return; }
   CefRefPtr<Sink> sink = new Sink(std::move(logins), std::move(done));
   sink->Start();

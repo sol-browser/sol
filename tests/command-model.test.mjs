@@ -66,6 +66,16 @@ test('remote suggestions retain four matching local rows, including tabs', () =>
   assert.equal(onlyRemote.filter(row => row.key.startsWith('suggest:')).length, 3);
 });
 
+test('selected search completions offer editable queries and tabs offer their addresses', () => {
+  const rows = commandRows(snapshot, 'music', 'new', '', [], ['music for work']);
+  const remote = rows.find(row => row.key.startsWith('suggest:'));
+  assert.equal(remote.editText, 'music for work');
+  assert.equal(new URL(remote.action.url).searchParams.get('q'), remote.editText);
+  assert.equal(rows.find(row => row.key === 'music').editText, 'https://music.example/');
+  assert.equal(rows.find(row => row.key === 'destination').editText, undefined);
+  assert.equal(commandRows(snapshot, 'settings', 'new', '')[0].editText, undefined);
+});
+
 test('selection preserves identity across reordering and never falls back on disappearance', () => {
   const before = commandRows(snapshot, 'music', 'new', '');
   const key = before[0].key;
@@ -115,12 +125,18 @@ test('inline completion preserves the literal prefix and safely resolves saved-t
   assert.equal(inlineAddressCompletion(s,'chrome ',commandRows(s,'chrome ','new','')[0]),undefined);
   assert.equal(inlineAddressCompletion({},'yt',commandRows({},'yt','new','')[0]),undefined);
   assert.equal(inlineAddressCompletion({},'exa',{ kind:'visit',action:{ method:'command.submit',url:'http://example.com/' } }),undefined);
+  for (const [url, expected] of [['http://10.10.10.10:304/', '10.10.10.10:304'], ['https://10.10.10.10:304/', undefined]])
+    assert.equal(inlineAddressCompletion({}, '10.10', { kind: 'visit', action: { method: 'command.submit', url } }), expected);
   for (const url of ['javascript:alert(1)','file:///C:/a.pdf','https://user:pass@example.com/']) {
     assert.equal(inlineAddressCompletion({},'exa',{ kind:'visit',action:{ method:'command.submit',url } }),undefined);
   }
 });
 test('URL entry and saved lazy tab are different actions', () => {
   assert.equal(commandRows(snapshot, 'localhost:8042/a', 'new', '')[0].action.url, 'http://localhost:8042/a');
+  assert.equal(commandRows(snapshot, '10.10.10.10:304', 'new', '')[0].action.url, 'http://10.10.10.10:304/');
+  const email = commandRows(snapshot, 'first.last+tag@example.org', 'new', '')[0];
+  assert.equal(email.kind, 'search');
+  assert.equal(new URL(email.action.url).searchParams.get('q'), 'first.last+tag@example.org');
   assert.equal(commandRows(snapshot, 'saved', 'new', '')[0].live, false);
 });
 for (const [input, url] of [
@@ -220,6 +236,16 @@ test("Sol's own pages: short addresses typed and shown", async () => {
   assert.equal(shownAddress('https://a.test/'), 'https://a.test/');
   assert.equal(internalPage(' SOL://Downloads/ ')?.url, 'sol://ui/downloads.html');
   assert.equal(internalPage('sol://ui'), undefined);
+  // Trailing slashes of any number are ignored, nothing else is (the pattern this replaced was /\/+$/).
+  for (const typed of ['sol://history', 'sol://history/', 'sol://history///////', ' Sol://History// '])
+    assert.equal(internalPage(typed)?.url, 'sol://ui/history.html', typed);
+  for (const typed of ['sol://history/x', 'sol://history//x/', '/sol://history', 'sol:/history', '///', ''])
+    assert.equal(internalPage(typed), undefined, typed);
+  const long = 'sol://history' + '/'.repeat(200000);
+  const started = Date.now();
+  assert.equal(internalPage(long)?.url, 'sol://ui/history.html');
+  assert.ok(Date.now() - started < 1000);
+  assert.equal(internalPage('/'.repeat(200000) + 'x'), undefined);
   const rows = commandRows(snapshot, 'sol://history', 'new', '');
   assert.equal(rows[0].title, 'History');
   assert.deepEqual(rows[0].action, { method: 'command.submit', url: 'sol://history' });

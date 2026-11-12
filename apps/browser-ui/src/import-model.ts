@@ -8,10 +8,12 @@ export type ImportSource = { id: ImportSourceId; name: string; profiles: ImportP
 export type PasswordCounts = { found: number; ready: number; appBound: number; unreadable: number; skipped: number };
 export type ImportPreview = {
   label: string; tabs: number; bookmarks: number; spaces: number; history: number; cookies: number;
+  folders: number; favorites: number; splits: number; archived: number; favicons: number;
   passwords: PasswordCounts; notes: string[]; needsPrimaryPassword: boolean; wrongPrimaryPassword: boolean;
 };
 export type ImportReport = {
   label: string; tabs?: number; bookmarks?: number; spaces?: number; history?: number;
+  folders: number; favorites: number; splits: number; archived: number; favicons: number;
   cookies?: { written: number; kept: number; failed: number };
   passwords: { added: number; existing: number; failed: number }; errors: string[];
 };
@@ -26,7 +28,11 @@ export const DATA_TYPES: Record<ImportSourceId, readonly { type: DataType; label
     { type: 'cookies', label: 'Cookies and sign-ins', hint: 'Keeps you signed in on many sites' },
     { type: 'passwords', label: 'Saved passwords', hint: '' },
   ],
-  chrome: chromium('Chrome'), edge: chromium('Edge'), arc: chromium('Arc'),
+  chrome: chromium('Chrome'), edge: chromium('Edge'),
+  arc: [
+    { type: 'tabs', label: 'Spaces and sidebar tabs', hint: 'All Spaces, Favorites, folders, Pinned and Today tabs, Split Views and archived tabs' },
+    ...chromium('Arc').filter(item => item.type !== 'tabs'),
+  ],
 };
 function chromium(name: string) {
   return [
@@ -66,6 +72,7 @@ export function parsePreview(raw: string): ImportPreview | null {
   const p = isObject(v.passwords) ? v.passwords : {};
   return {
     label: text(v.label, 40), tabs: count(v.tabs), bookmarks: count(v.bookmarks), spaces: count(v.spaces), history: count(v.history), cookies: count(v.cookies),
+    folders: count(v.folders), favorites: count(v.favorites), splits: count(v.splits), archived: count(v.archived), favicons: count(v.favicons),
     passwords: { found: count(p.found), ready: count(p.ready), appBound: count(p.appBound), unreadable: count(p.unreadable), skipped: count(p.skipped) },
     notes: Array.isArray(v.notes) ? v.notes.slice(0, 12).map(n => text(n)).filter(Boolean) : [],
     needsPrimaryPassword: v.needsPrimaryPassword === true, wrongPrimaryPassword: v.wrongPrimaryPassword === true,
@@ -78,6 +85,7 @@ export function parseReport(raw: string): ImportReport {
   const p = isObject(v.passwords) ? v.passwords : {}, c = isObject(v.cookies) ? v.cookies : null;
   return {
     label: text(v.label, 40), tabs: optional(v.tabs), bookmarks: optional(v.bookmarks), spaces: optional(v.spaces), history: optional(v.history),
+    folders: count(v.folders), favorites: count(v.favorites), splits: count(v.splits), archived: count(v.archived), favicons: count(v.favicons),
     cookies: c ? { written: count(c.written), kept: count(c.kept), failed: count(c.failed) } : undefined,
     passwords: { added: count(p.added), existing: count(p.existing), failed: count(p.failed) },
     errors: Array.isArray(v.errors) ? v.errors.slice(0, 12).map(e => text(e)).filter(Boolean) : [],
@@ -87,8 +95,14 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString
 // Preview lines, only for data that was found.
 export function previewLines(p: ImportPreview): string[] {
   const lines: string[] = [];
-  if (p.tabs || p.spaces) lines.push(`${plural(p.tabs, 'tab')}${p.spaces > 1 ? ` in ${plural(p.spaces, 'Space')}` : ''}`);
+  if (p.spaces) lines.push(plural(p.spaces, 'Space'));
+  if (p.tabs) lines.push(plural(p.tabs, 'tab'));
+  if (p.folders) lines.push(plural(p.folders, 'folder'));
+  if (p.favorites) lines.push(plural(p.favorites, 'Favorite'));
+  if (p.splits) lines.push(plural(p.splits, 'Split View'));
+  if (p.archived) lines.push(plural(p.archived, 'archived tab'));
   if (p.bookmarks) lines.push(plural(p.bookmarks, 'bookmark'));
+  if (p.favicons) lines.push(plural(p.favicons, 'site icon'));
   if (p.history) lines.push(plural(p.history, 'history visit'));
   if (p.cookies) lines.push(plural(p.cookies, 'cookie'));
   if (p.passwords.ready) lines.push(plural(p.passwords.ready, 'saved password'));
@@ -96,7 +110,14 @@ export function previewLines(p: ImportPreview): string[] {
 }
 export function reportLines(r: ImportReport): string[] {
   const lines: string[] = [];
-  if (r.tabs !== undefined || r.bookmarks !== undefined) lines.push(`${plural(r.tabs ?? 0, 'tab')} and ${plural(r.bookmarks ?? 0, 'bookmark')} added`);
+  if (r.spaces) lines.push(`${plural(r.spaces, 'Space')} added`);
+  if (r.tabs) lines.push(`${plural(r.tabs, 'tab')} added`);
+  if (r.bookmarks) lines.push(`${plural(r.bookmarks, 'bookmark')} added`);
+  if (r.folders) lines.push(`${plural(r.folders, 'folder')} added`);
+  if (r.favorites) lines.push(`${plural(r.favorites, 'Favorite')} added`);
+  if (r.splits) lines.push(`${plural(r.splits, 'Split View')} added`);
+  if (r.archived) lines.push(`${plural(r.archived, 'archived tab')} added`);
+  if (r.favicons) lines.push(`${plural(r.favicons, 'site icon')} added`);
   if (r.history !== undefined) lines.push(`${plural(r.history, 'history visit')} added`);
   if (r.cookies) lines.push(`${plural(r.cookies.written, 'cookie')} added, ${r.cookies.kept.toLocaleString('en')} already in Sol`);
   const pw = r.passwords;

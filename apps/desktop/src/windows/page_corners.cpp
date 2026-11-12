@@ -174,7 +174,7 @@ bool PageCorners::Show(HWND parent, const RECT& rect, int radius) {
   return ShowFrames(parent,std::span<const RECT>(&rect,1),radius);
 }
 bool PageCorners::ShowFrames(HWND parent, std::span<const RECT> frames, int radius, std::span<const COLORREF> borders, float border_width) {
-  if (frames.size() > 2 || (!borders.empty() && borders.size() != frames.size()) || border_width < 0 || border_width >= radius) return false;
+  if (frames.size() > visuals_.size() / 4 || (!borders.empty() && borders.size() != frames.size()) || border_width < 0 || border_width >= radius) return false;
   if (frames.empty() || radius < 2) { Hide(); return true; }
   if (!Init(parent)) return false;
   RECT client{}; GetClientRect(parent, &client);

@@ -133,8 +133,9 @@ class GmailFeedClient final : public CefURLRequestClient {
 // The message time as the card shows it, in the user's Windows format: the time for today's
 // mail, the short weekday and time otherwise (the card only lists the last week).
 std::string MailTime(int64_t utc_ms) {
-  ULARGE_INTEGER t{}; t.QuadPart = static_cast<ULONGLONG>(utc_ms) * 10000ULL + 116444736000000000ULL;
-  FILETIME utc{}; utc.dwLowDateTime = t.LowPart; utc.dwHighDateTime = t.HighPart;
+  // 100 ns ticks since 1601, split into FILETIME's two halves by arithmetic (not through a union).
+  const ULONGLONG ticks = static_cast<ULONGLONG>(utc_ms) * 10000ULL + 116444736000000000ULL;
+  FILETIME utc{}; utc.dwLowDateTime = static_cast<DWORD>(ticks & 0xFFFFFFFFULL); utc.dwHighDateTime = static_cast<DWORD>(ticks >> 32);
   SYSTEMTIME universal{}, local{}, now{};
   if (!FileTimeToSystemTime(&utc, &universal) || !SystemTimeToTzSpecificLocalTime(nullptr, &universal, &local)) return {};
   GetLocalTime(&now);

@@ -17,8 +17,9 @@ export function parseReleaseNotes(changelog: string): ReleaseNotes[] {
     if (!current) continue;
     if (line.startsWith('- ')) {
       const item = line.slice(2).trim();
-      const titled = /^\*\*(.+?):\*\*\s*(.*)$/.exec(item);
-      current.changes.push(titled ? { title: titled[1], text: titled[2] } : { text: item });
+      // "**Title:** text": the title ends at the first ":**" after at least one character.
+      const close = item.startsWith('**') ? item.indexOf(':**', 3) : -1;
+      current.changes.push(close > 0 ? { title: item.slice(2, close), text: item.slice(close + 3).trimStart() } : { text: item });
     } else if (/^ {2,}\S/.test(line) && current.changes.length) {
       const last = current.changes[current.changes.length - 1];
       last.text = (last.text + ' ' + line.trim()).trim();

@@ -5,6 +5,7 @@ import { MediaStack } from './MediaPlayer';
 import { faviconColor } from './favicon-color';
 import { crossProfileLiveMove, descendant, inSpace, neighborSpace, ordered, placement, sectionOf, favoriteColumnLimit, favoriteColumns, displayTitle, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, withoutClosingTabs, sameRowNode, type Section } from './sidebar-model';
 import { swatchColor } from './theme-model';
+import { splitLanding, splitMembers, splitNamedMember } from './split-model';
 import { Icon } from './Icon';
 import { FolderIcon } from './FolderIcon';
 import { sidebarDropTarget, type DropTarget } from './sidebar-drop';
@@ -42,6 +43,8 @@ export type SidebarProps = { nodes: TreeNode[]; treeRevision: number; activeId: 
   tabCommand: (command: TabCommand) => void;
   /** A downloaded Sol version; the pill restarts Sol into it. */
   updateReady?: string;
+  /** A split pane carried over the sidebar by its header (native): where its tab will land. */
+  splitLeaving?: string;
   restartToUpdate?: () => void };
 type Props = SidebarProps;
 export type TabCommand = { method: 'split.focus'; id: string }
@@ -49,7 +52,7 @@ export type TabCommand = { method: 'split.focus'; id: string }
   | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
   | { method: 'tab.editPinned'; id: string } | { method: 'tab.mute'; id: string; muted: boolean }
   | { method: 'tab.confirmMoveToSpace'; id: string; space: string }
-  | Extract<Command, { method: 'media.control' | 'tab.setXBadgeHidden' | 'tab.setIntegration' }>;
+  | Extract<Command, { method: 'media.control' | 'tab.setXBadgeHidden' | 'tab.setIntegration' | 'split.add' }>;
 function UnreadBadge({ node, settings, xUnread, whatsappUnread }: { node: TreeNode; settings?: IntegrationSettings; xUnread?: number; whatsappUnread?: number }) {
   if (!node.pinned || node.closing) return null;
   // X: the native counter decides, loaded or not. WhatsApp: an unloaded pin shows the last hidden
@@ -78,14 +81,20 @@ type RowProps = {
    *  latest render's functions, so a row that skipped a render never calls a stale one. */
   api: React.RefObject<RowApi>;
   node: TreeNode; peek: boolean;
-  /** The other tab of this row's split (the row is the split's anchor). */
-  other?: TreeNode;
+  /** The pages of this row's split in on-screen order (the row is the split's anchor). */
+  members?: TreeNode[];
+  /** The member whose name stays when the split row is too narrow for every name. */
+  namedMember?: string;
+  /** The member being carried out of this split (its segment fades). */
+  leaving?: string;
   selected: boolean; busy: boolean; hidden: boolean; activeSurface: boolean;
   dragging: boolean; dragSource: boolean; dropInside: boolean;
   anyRenaming: boolean;
   /** The entry being renamed when it is in this row (the node or a split member), with its draft. */
   renaming?: string; draft?: string;
-  nodeAudio: boolean; otherAudio: boolean;
+  nodeAudio: boolean;
+  /** Split members with a sound indicator, as "id,id" (a string keeps the row's props comparable). */
+  membersAudio?: string;
   tint?: string;
   integrations?: IntegrationSettings; xUnread?: number; whatsappUnread?: number;
   /** This folder's removal confirmation, when open. */
@@ -96,18 +105,17 @@ type RowProps = {
  *  that keep unchanged nodes' identity (snapshot-sharing.ts) a change to one tab
  *  renders one row, not the whole list (docs/performance-audit.md). Every value
  *  it shows is a prop; every action goes through |api|. */
-const SidebarRow = memo(function SidebarRow({ api, node, peek, other, selected, busy, hidden, activeSurface, dragging, dragSource, dropInside,
-  anyRenaming, renaming, draft, nodeAudio, otherAudio, tint, integrations, xUnread, whatsappUnread, removal, removing, treeRevision, nested }: RowProps) {
+const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMembers, namedMember, leaving, selected, busy, hidden, activeSurface, dragging, dragSource, dropInside,
+  anyRenaming, renaming, draft, nodeAudio, membersAudio, tint, integrations, xUnread, whatsappUnread, removal, removing, treeRevision, nested }: RowProps) {
   ++renderCounts.rows;
   const folder = node.kind === 'folder';
   const showAudio = !!node.live && !node.closing && (node.muted || node.audible || nodeAudio);
   const group = node.splitAnchor === node.id;
   const away = !node.favorite && pinnedAway(node);
-  const title = group ? `${displayTitle(node)} / ${other ? displayTitle(other) : 'Split view'}` : sidebarTitle(node);
+  const members = group ? groupMembers ?? [node] : [];
+  const title = group ? members.map(member => displayTitle(member)).join(' / ') : sidebarTitle(node);
   const closeIcon = group ? 'close' as const : tabCloseIcon(node);
   const removePin = !group && node.pinned && !node.live && !node.favorite;
-  const members = group ? [node, other ?? node] : [];
-  if (node.splitReversed) members.reverse();
   async function focusMember(id: string) {
     if (!selected && !await api.current.perform({ method:'tree.activate',id:node.id })) return;
     api.current.tabCommand({ method:'split.focus',id });
@@ -136,7 +144,7 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, other, selected, 
     void api.current.perform(folder ? { method: 'tree.expand', id: node.id, value: !node.expanded } : { method: 'tree.activate', id: node.id });
   };
   return <li className={`tree-node ${peek ? 'active-peek' : ''}`} data-node-id={node.id} data-drag-source={dragSource}>
-    <div className="tree-row" data-tinted={tint !== undefined} style={tint ? { '--favorite-tint': tint } as CSSProperties : undefined} data-kind={node.kind} data-split={group} data-drop-inside={dropInside} data-motion-key={peek ? `peek-${node.id}` : node.id} data-favorite={node.favorite === true} data-live={node.live === true} data-peek={node.peek === true}
+    <div className="tree-row" role="presentation" data-tinted={tint !== undefined} style={tint ? { '--favorite-tint': tint } as CSSProperties : undefined} data-kind={node.kind} data-split={group} data-drop-inside={dropInside} data-motion-key={peek ? `peek-${node.id}` : node.id} data-favorite={node.favorite === true} data-live={node.live === true} data-peek={node.peek === true}
       onPointerEnter={event => {
         api.current.cancelIntegration();
         if (event.pointerType === 'touch' || !preview || busy || hidden || !activeSurface || dragging || anyRenaming) return;
@@ -169,7 +177,7 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, other, selected, 
         if (event.button !== 1 || folder) return;
         event.preventDefault(); event.stopPropagation();
         const member = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-tab-id]')?.dataset.tabId : undefined;
-        if (!busy && !anyRenaming) void api.current.perform({ method:tabCloseMethod(member && other && member === other.id ? other : node),id:member ?? node.id });
+        if (!busy && !anyRenaming) void api.current.perform({ method:tabCloseMethod(members.find(item => item.id === member) ?? node),id:member ?? node.id });
       }}
       onContextMenu={e => {
         if (e.target instanceof Element && e.target.closest('input,textarea')) return;
@@ -199,8 +207,8 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, other, selected, 
             spellCheck={false} autoComplete="off" onBlur={() => void api.current.saveRename(node.id)}
             onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); api.current.cancelRename(); } }} />
         </form> : <>
-        {group ? <div className="node-name split-row-content" role="group" aria-label={title} tabIndex={-1}>
-          {members.map(member => <span className="split-row-part" key={member.id} data-tab-id={member.id}>
+        {group ? <div className="node-name split-row-content" role="group" aria-label={title} tabIndex={-1} data-panes={members.length}>
+          {members.map(member => <span className="split-row-part" key={member.id} data-tab-id={member.id} data-named={member.id === namedMember} data-leaving={member.id === leaving}>
             {renaming === member.id ? <form className="split-row-edit" onSubmit={event => { event.preventDefault(); void api.current.saveRename(member.id); }}>
               <SiteMark node={member} /><input ref={api.current.renameInput} aria-label={`Rename ${displayTitle(member)}`} value={draft ?? ''} maxLength={80}
                 onChange={event => api.current.setDraft(event.target.value)} onBlur={() => void api.current.saveRename(member.id)} spellCheck={false} autoComplete="off"
@@ -219,7 +227,7 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, other, selected, 
               {(member.mediaCamera || member.mediaMicrophone) && <span className="tab-media" role="img" aria-label={member.mediaCamera ? 'Using camera' : 'Using microphone'}><Icon name={member.mediaCamera ? 'camera' : 'mic'} /></span>}
             </button>}
             {!member.favorite && <UnreadBadge node={member} settings={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} />}
-            {member.live && (member.muted || member.audible || (member === node ? nodeAudio : otherAudio)) && <button className="row-action tab-audio" data-muted={member.muted === true}
+            {member.live && (member.muted || member.audible || (membersAudio ?? '').split(',').includes(member.id)) && <button className="row-action tab-audio" data-muted={member.muted === true}
               aria-label={`${member.muted ? 'Unmute' : 'Mute'} ${displayTitle(member)}`} title={member.muted ? 'Unmute tab' : 'Mute tab'}
               onClick={() => api.current.tabCommand({ method:'tab.mute',id:member.id,muted:!member.muted })}><Icon name={member.muted ? 'muted' : 'speaker'} /></button>}
             <button className="row-action split-tab-close" disabled={busy || member.closing}
@@ -272,10 +280,10 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, other, selected, 
 }, (previous, next) => {
   // Nodes compare by what a row shows (sameRowNode); everything else by identity.
   const keys = Object.keys(next) as (keyof RowProps)[];
-  return keys.length === Object.keys(previous).length && keys.every(key => key === 'node' || key === 'other'
+  return keys.length === Object.keys(previous).length && keys.every(key => key === 'node'
     ? sameRowNode(previous[key], next[key]) : Object.is(previous[key], next[key]));
 });
-export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, activeSurface = true, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, newSpace, request, media, previewIntegration, integrations, xUnread, whatsappUnread, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate }: Props) {
+export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, activeSurface = true, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, newSpace, request, media, previewIntegration, integrations, xUnread, whatsappUnread, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate, splitLeaving }: Props) {
   ++renderCounts.sidebar;
   // Favorite tiles are tinted with their icon's color, read once per icon.
   const [, retint] = useReducer((n: number) => n + 1, 0);
@@ -571,7 +579,9 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       switch (choice.action) {
         case 'split': {
           const current = tree.find(n => n.id === choice.targetId);
-          if (current) await perform({ method: 'split.create', id: current.favorite ? id : current.id, otherId: current.favorite ? current.id : id, vertical: false });
+          // The page on screen is already in a split: this tab joins it (native picks the side).
+          if (current?.splitAnchor) tabCommand({ method: 'split.add', id: current.splitAnchor, target: '', edge: 'auto', page: id });
+          else if (current) await perform({ method: 'split.create', id: current.favorite ? id : current.id, otherId: current.favorite ? current.id : id, vertical: false });
           break;
         }
         case 'unsplit': await perform({ method: 'split.remove', id }); break;
@@ -623,11 +633,18 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   api.current = { perform, tabCommand, context, startRename, saveRename, cancelRename, setDraft, pointerDown, drag, finishDrag,
     hoverIntegration: (id, element) => { integrationTimer.current = window.setTimeout(() => { if (element.isConnected) previewIntegration(id, element); }, 400); },
     cancelIntegration, cancelRemoval, confirmFolderRemoval, pressActivated, dragRef, renameInput, cancelRemovalButton };
+  // A split row's member list keeps its identity while its members do, so the memoized row skips renders.
+  const memberCache = useRef(new Map<string, TreeNode[]>());
+  function stableMembers(anchor: string, members: TreeNode[]) {
+    const previous = memberCache.current.get(anchor);
+    if (previous && previous.length === members.length && previous.every((member, i) => member === members[i])) return previous;
+    memberCache.current.set(anchor, members); return members;
+  }
   function row(node: TreeNode, peek = false) {
     const folder = node.kind === 'folder';
     const group = node.splitAnchor === node.id;
-    const other = group ? tree.find(n => n.id === node.splitOther) : undefined;
-    const editing = renaming !== undefined && (renaming === node.id || renaming === other?.id);
+    const members = group ? stableMembers(node.id, splitMembers(node, tree)) : undefined;
+    const editing = renaming !== undefined && (renaming === node.id || !!members?.some(member => member.id === renaming));
     const confirming = folder && removal?.id === node.id ? removal : undefined;
     // Only folders have nested content; other rows keep identical props between renders.
     const nested = folder ? <>
@@ -635,11 +652,13 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       {folder && !node.expanded && drop?.targetId === node.id && drop.mode === 'inside' && <ul className="tree-children drop-folder-preview">{dropSlot('pinned')}</ul>}
       {folder && !node.expanded && active && descendant(nodes, active.id, node.id) && <ul className="tree-children collapsed-active">{row(active, true)}</ul>}
     </> : undefined;
-    return <SidebarRow key={peek ? `peek-${node.id}` : node.id} api={api} node={node} peek={peek} other={other}
-      selected={node.id === activeId || group && node.splitOther === activeId} busy={busy} hidden={hidden} activeSurface={activeSurface}
+    return <SidebarRow key={peek ? `peek-${node.id}` : node.id} api={api} node={node} peek={peek} members={members}
+      namedMember={group ? splitNamedMember(node, activeId, editing ? renaming : undefined) : undefined}
+      leaving={group && splitLeaving && node.splitPanes?.includes(splitLeaving) ? splitLeaving : undefined}
+      selected={node.id === activeId || group && !!node.splitPanes?.includes(activeId)} busy={busy} hidden={hidden} activeSurface={activeSurface}
       dragging={!!dragId} dragSource={dragId === node.id} dropInside={folder && drop?.targetId === node.id && drop.mode === 'inside'}
       anyRenaming={!!renaming} renaming={editing ? renaming : undefined} draft={editing ? draft : undefined}
-      nodeAudio={audioIndicators.has(node.id)} otherAudio={!!other && audioIndicators.has(other.id)}
+      nodeAudio={audioIndicators.has(node.id)} membersAudio={members ? members.filter(member => audioIndicators.has(member.id)).map(member => member.id).join(',') : undefined}
       tint={node.favorite ? faviconColor(node.favicon, retint) : undefined}
       integrations={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread}
       removal={confirming} removing={confirming ? removing : false} treeRevision={confirming ? treeRevision : 0} nested={nested} />;
@@ -649,22 +668,39 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     return <li key="drop-slot" className="drop-slot" data-drop-kind={section === 'favorites' ? 'tile' : 'line'}
       data-target-id={drop?.targetId ?? ''} data-mode={drop?.mode} aria-hidden="true"><span /></li>;
   }
+  function landingRow(id: string) {
+    const page = tree.find(n => n.id === id);
+    if (!page) return null;
+    return <li key={`landing-${id}`} className="tree-node split-landing" aria-live="polite">
+      <div className="tree-row split-landing-row"><SiteMark node={page} /><span className="node-title">{displayTitle(page)}</span>
+        <span className="split-landing-hint">Out of split</span></div>
+    </li>;
+  }
   function renderRows(rows: TreeNode[], parentId: string, section: Section) {
     const result: React.ReactNode[] = [];
     const relevant = drop?.section === section;
+    // A split pane carried here by its header: its row appears where it will land.
+    const landing = splitLeaving ? splitLanding(tree, splitLeaving) : undefined;
+    if (landing?.kind === 'todayTop' && section === 'today' && !parentId) result.push(landingRow(splitLeaving!));
+    let ownShown = false;
     for (const node of rows) {
+      if (landing?.kind === 'own' && !ownShown && landing.parentId === parentId && section !== 'today' && node.position > landing.position) {
+        result.push(landingRow(splitLeaving!)); ownShown = true;
+      }
       if (relevant && drop.targetId === node.id && drop.mode === 'before') result.push(dropSlot(section));
       result.push(row(node));
+      if (landing?.kind === 'below' && node.splitAnchor === node.id && node.splitPanes?.includes(splitLeaving!)) result.push(landingRow(splitLeaving!));
       if (relevant && drop.targetId === node.id && drop.mode === 'after') result.push(dropSlot(section));
     }
+    if (landing?.kind === 'own' && !ownShown && landing.parentId === parentId && section !== 'today') result.push(landingRow(splitLeaving!));
     if (relevant && drop.mode === 'inside' && drop.targetId === (parentId || null)) result.push(dropSlot(section));
     return result;
   }
   const todayTabs = ordered(visible.filter(n => !n.parentId && !n.archived && n.kind !== 'folder' && sectionOf(n) === 'today'));
   // Clear keeps the page on screen (native ArchiveTodayTabs): the active tab
-  // and the other pane of its split.
+  // and the other panes of its split.
   const activeNode = tree.find(n => n.id === activeId);
-  const kept = new Set([activeId, activeNode?.splitAnchor, activeNode?.splitOther].filter(Boolean));
+  const kept = new Set([activeId, ...(activeNode?.splitPanes ?? [])].filter(Boolean));
   const clearableTabs = todayTabs.filter(n => !kept.has(n.id));
   const zone = (section: Section, label: string) => {
     const rows = ordered(visible.filter(n => !n.parentId && !n.archived && sectionOf(n) === section));
@@ -747,7 +783,7 @@ function TodayDivider({ tabs, busy, confirming, setConfirming, clear }: {
   const cancel = useRef<HTMLButtonElement>(null);
   useEffect(() => { if (confirming) cancel.current?.focus(); }, [confirming]);
   useEffect(() => { if (!tabs.length) setConfirming(false); }, [tabs.length, setConfirming]);
-  return <div className="today-divider" data-motion-key="section-divider" data-confirming={confirming}
+  return <div className="today-divider" role="presentation" data-motion-key="section-divider" data-confirming={confirming}
     onKeyDown={event => { if (event.key === 'Escape' && confirming) { event.preventDefault(); event.stopPropagation(); setConfirming(false); } }}>
     {confirming ? <>
       <span className="today-clear-question" role="status">Close {tabs.length} {tabs.length === 1 ? 'tab' : 'tabs'}?</span>

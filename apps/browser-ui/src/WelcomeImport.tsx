@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
+import { focusOnMount } from './focus-on-mount';
 import {
   DATA_TYPES, defaultTypes, parsePreview, parseReport, parseSources, previewLines, reportLines,
   type DataType, type ImportPreview, type ImportReport, type ImportSource, type ImportSourceId,
@@ -72,11 +73,11 @@ export function WelcomeImport({ query, ready, onDone }: { query: Query; ready: b
   const anyType = Object.values(types).some(Boolean);
 
   if (stage === 'browsers') return <div className="welcome-import-flow">
-    <div className="welcome-browsers" role="list">
+    <div className="welcome-browsers" role="group" aria-label="Browsers to import from">
       {ORDER.map(id => {
         const found = sources.find(s => s.id === id);
         const count = found?.profiles.length ?? 0;
-        return <button key={id} type="button" role="listitem" className="welcome-browser" disabled={!ready || !count} onClick={() => choose(id)}>
+        return <button key={id} type="button" className="welcome-browser" disabled={!ready || !count} onClick={() => choose(id)}>
           <BrowserIcon id={id} icons={icons} />
           <strong>{NAMES[id]}</strong>
           <small>{!sources.length ? 'Looking…' : count ? (count === 1 ? 'Found on this PC' : `${count} profiles`) : 'Not on this PC'}</small>
@@ -100,9 +101,10 @@ export function WelcomeImport({ query, ready, onDone }: { query: Query; ready: b
         <span className="welcome-check" aria-hidden="true">{types[item.type as DataType] && <Check size={14} strokeWidth={3} />}</span>
         <span className="welcome-type-text"><strong>{item.label}</strong>{item.hint && <small>{item.hint}</small>}</span>
       </label>)}
+      {source === 'arc' && <p>Spaces bring their Arc profile assignments. History and passwords come from the selected Arc profile and go to Sol’s Default profile.</p>}
     </div> : <label className="welcome-password">
       <span>{NAMES[source]} keeps its passwords behind a Primary Password. Enter it to bring them; it is used once and not kept.</span>
-      <input type="password" value={primary} autoFocus onChange={e => setPrimary(e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Enter' && primary) void start(); }} />
+      <input type="password" value={primary} ref={focusOnMount} onChange={e => setPrimary(e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Enter' && primary) void start(); }} />
     </label>}
     {error && <p className="welcome-error" role="alert">{error}</p>}
     <div className="welcome-actions">
@@ -124,6 +126,7 @@ export function WelcomeImport({ query, ready, onDone }: { query: Query; ready: b
       {(report ? reportLines(report) : []).map(line => <li key={line}><Check size={15} aria-hidden="true" />{line}</li>)}
     </ul>
     {report?.errors.map(e => <p key={e} className="welcome-error">{e}</p>)}
+    {preview?.notes.map(note => <p key={note} className="welcome-error">{note}</p>)}
     <div className="welcome-actions">
       <button type="button" className="welcome-secondary" onClick={() => { setReport(undefined); setStage('browsers'); }}>Another browser</button>
       <button type="button" className="welcome-primary" onClick={onDone}>Continue<ArrowRight size={16} aria-hidden="true" /></button>

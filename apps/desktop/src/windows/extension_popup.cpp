@@ -1,4 +1,5 @@
 #include "windows/extension_popup.h"
+#include "web_url.h"
 #include <dwmapi.h>
 #include <algorithm>
 #include "experiments/capture_mute_probe.h"
@@ -17,7 +18,7 @@ namespace {
 const CefSize kMinimum(25, 25), kMaximum(800, 600);
 
 std::string Origin(const std::string& id) { return "chrome-extension://" + id + "/"; }
-bool IsWebLink(const std::string& url) { return url.starts_with("https://") || url.starts_with("http://"); }
+bool IsWebLink(const std::string& url) { return HasWebScheme(url); }
 
 class PopupClient final : public CefClient, public CefLifeSpanHandler, public CefRequestHandler, public CefDisplayHandler,
     public CefKeyboardHandler, public CefContextMenuHandler, public CefLoadHandler {

@@ -15,7 +15,7 @@
 #include "windows/passwords_window.h"
 #include "include/cef_id_mappers.h"
 #include "workspace/controller.h"
-#include "import/zen_import.h"
+#include "windows/update_window.h"
 
 namespace red {
 namespace {
@@ -68,6 +68,24 @@ void ShowExtensionMenu(const std::shared_ptr<State>& state, const std::string& i
   state->menu_popup->Open(menu, at, "extension:" + std::to_string(++openings), std::move(dismissed), return_to);
 }
 
+void ShowCopyMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
+  if (!state->window || !state->workspace) return;
+  if (!state->menu_popup) state->menu_popup = std::make_shared<MenuPopup>(state);
+  const std::weak_ptr<State> weak = state;
+  const auto run = [weak](std::function<void(const std::shared_ptr<State>&)> body) {
+    return [weak, body = std::move(body)] { if (const auto s = weak.lock(); s && s->window && s->workspace && !s->workspace->WindowClosing()) body(s); };
+  };
+  const auto prefs = state->session && state->session->preferences ? state->session->preferences->Get() : Preferences{};
+  const auto labels = ShortcutLabels(prefs);
+  const auto origin = state->window->GetClientAreaBoundsInScreen();
+  const CefPoint below(origin.x + anchor.x, origin.y + anchor.y + anchor.height + 6);
+  MenuPopup::Builder menu;
+  menu.Add("Copy Link", "copy", run([](const std::shared_ptr<State>& s) { s->workspace->CopyActiveLink(); }));
+  menu.Add("Super Copy (without trackers)", "link", run([](const std::shared_ptr<State>& s) { s->workspace->CopyCleanLink(); }), Chord(labels, "copyUrl"));
+  state->menu_popup->Open(menu, below, "copy");
+  state->Record("copy_menu_shown");
+}
+
 void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
   if (!state->window || !state->workspace) return;
   if (!state->menu_popup) state->menu_popup = std::make_shared<MenuPopup>(state);
@@ -90,7 +108,7 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
     menu.Add("Set Sol as Default Browser", "heart", run([](const std::shared_ptr<State>& s) {
       std::string error; OpenDefaultBrowserSettings(s->window->GetWindowHandle(), error);
     }));
-  if (!standalone) menu.Add("Import Browser Data…", "import", run([](const std::shared_ptr<State>& s) { ShowZenImport(s); }));
+  menu.Add("Check for Updates", "reload", run([](const std::shared_ptr<State>& s) { ShowUpdateWindow(s); }));
   menu.Separator();
   menu.Add("New Tab", "plus", shortcut(Shortcut::NewTab), Chord(labels, "newTab"));
   menu.Add("New Window", "window", shortcut(Shortcut::NewWindow), Chord(labels, "newWindow"));
@@ -131,6 +149,7 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
   tabs.Add("Pin Tab", "pin", shortcut(Shortcut::Pin), Chord(labels, "pin"), state->content != nullptr && !standalone);
   tabs.Add("New Folder", "folder", run([](const std::shared_ptr<State>& s) { s->workspace->RequestSidebar("newFolder"); }), "", sidebar);
   tabs.Separator();
+  tabs.Add("Recent Tab", "history", shortcut(Shortcut::RecentTab), Chord(labels, "recentTab"));
   tabs.Add("Next Tab", "arrowDown", shortcut(Shortcut::NextTab), Chord(labels, "nextTab"));
   tabs.Add("Previous Tab", "arrowUp", shortcut(Shortcut::PreviousTab), Chord(labels, "previousTab"));
   tabs.Separator();
@@ -139,7 +158,7 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
 
   // Extensions: the web profile's installed list, each opened as from a toolbar button.
   auto& extensions = menu.Submenu("Extensions", "puzzle");
-  extensions.Add("Add Extension", "plus", run([](const std::shared_ptr<State>& s) { s->workspace->OpenLink("https://chromewebstore.google.com/", true); }));
+  extensions.Add("Add Extension", "plus", run([](const std::shared_ptr<State>& s) { s->workspace->OpenLink(kChromeWebStoreUrl, true); }));
   extensions.Add("Manage Extensions", "settings", run([](const std::shared_ptr<State>& s) {
     if (!s->extensions_window) s->extensions_window = std::make_shared<ExtensionsWindow>(s);
     s->extensions_window->Show();
@@ -185,6 +204,11 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
   if (!standalone) menu.Add("Theme", "palette", run([anchor](const std::shared_ptr<State>& s) { if (s->panel_popup) s->panel_popup->Toggle("theme", anchor); }));
   menu.Add("Settings", "settings", run([](const std::shared_ptr<State>& s) { ShowSettings(s); }), Chord(labels, "settings"));
   menu.Add("Print…", "print", shortcut(Shortcut::Print), Chord(labels, "print"), state->content != nullptr);
+  menu.Add("Copy Link Without Trackers", "link", shortcut(Shortcut::CopyUrl), Chord(labels, "copyUrl"), state->content != nullptr);
+  auto& capture = menu.Submenu("Screenshot", "image", state->content != nullptr);
+  capture.Add("Select Area or Element…", "image", shortcut(Shortcut::Capture), Chord(labels, "capture"));
+  capture.Add("Visible Area", "image", shortcut(Shortcut::Screenshot), Chord(labels, "screenshot"));
+  capture.Add("Full Page", "image", shortcut(Shortcut::FullPageScreenshot), Chord(labels, "fullPageScreenshot"));
   menu.Separator();
   menu.Add("Close Window", "close", run([](const std::shared_ptr<State>& s) { s->window->Close(); }), Chord(labels, "closeWindow"));
 
