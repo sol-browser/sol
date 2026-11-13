@@ -17,6 +17,40 @@ One short line that sums up the release. Optional; the website shows it as the h
 New things first, smaller fixes under "### Fixes". Describe the result for the user, not the code.
 -->
 
+## 0.6.0 — 2026-11-13
+
+Little Sol: a quick look at any link in a small window of its own, from Sol or from any app.
+
+- **Little Sol:** a compact window for a single page, like Arc's Little Arc.
+  Links from chats and email open in it instead of piling up as tabs, and so
+  does Ctrl+Alt+click on a link or Open link in Little Sol in the link menu.
+  To keep the page, click Open in *Space*: it moves to that Space as it is,
+  without reloading. Otherwise just close the window.
+- **Ctrl+Alt+N from any app:** a command bar opens right away wherever you
+  are. Type an address or a search, with Google's suggestions as in Sol's own
+  command bar, and it opens in Little Sol.
+- **Sol in the notification area:** while Ctrl+Alt+N is on, Sol keeps its icon
+  in the notification area after you close its windows and starts there when
+  you sign in to Windows. Only a small helper runs, using about 3 MB of memory,
+  until you open Sol. Click the icon to open Sol, or right-click it for New
+  Little Sol and Quit Sol.
+- **Settings > Links:** turn Ctrl+Alt+N, Ctrl+Alt+click and Little Sol for
+  links from other apps on or off.
+- **New installs start with integrations off:** turn on the ones you want in
+  Settings > Integrations. Your current settings stay as they are.
+
+### Fixes
+
+- **Shortcuts and websites:** a website now gets the keys it uses itself, as
+  in Chrome. Ctrl+D duplicates in Figma again, and a key you moved to another
+  shortcut in Settings is no longer taken by Sol. New tab, close tab, new
+  window, reopen closed tab and switching tabs stay Sol's on every site.
+- **Extension popups:** a popup that kept getting narrower, such as
+  Bitwarden's, now opens at a readable width.
+- **Sign in with Google:** Chrome's own sign-in prompt no longer appears. It
+  could hold the mouse, so nothing on the screen could be clicked until it was
+  closed.
+
 ## 0.5.0 — 2026-11-12
 
 Your Arc comes with you: a full import from Arc, the Tab Switcher, Split View

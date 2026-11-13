@@ -4,6 +4,14 @@
 
 namespace red::importer {
 struct ArcSidebar {
+  ArcSidebar() = default;
+  ArcSidebar(const ArcSidebar&) = default;
+  ArcSidebar& operator=(const ArcSidebar&) = default;
+  // Moved, never copied, on the way out of the parser. MSVC's std::map move allocates a sentinel
+  // and is not declared noexcept; running out of memory there ends the process anyway.
+  ArcSidebar(ArcSidebar&&) noexcept = default;
+  ArcSidebar& operator=(ArcSidebar&&) noexcept = default;
+  ~ArcSidebar() = default;
   TreeOutput workspace;
   std::map<std::string, std::string> profile_directories;  // Sol profile id -> Arc's directory basename.
   std::map<std::string, std::string> favicon_item_ids;      // Sol tab id -> Arc sidebar or archive item id.

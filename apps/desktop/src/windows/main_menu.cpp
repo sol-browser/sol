@@ -86,6 +86,24 @@ void ShowCopyMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
   state->Record("copy_menu_shown");
 }
 
+void ShowLittleSpaces(const std::shared_ptr<State>& state, const CefRect& anchor) {
+  if (!state->little_window || !state->window || !state->workspace || !state->session) return;
+  const auto& spaces = state->session->workspace->tree.spaces;
+  if (spaces.empty()) return;
+  if (!state->menu_popup) state->menu_popup = std::make_shared<MenuPopup>(state);
+  const auto origin = state->window->GetClientAreaBoundsInScreen();
+  MenuPopup::Builder menu;
+  for (const auto& space : spaces) {
+    const auto label = space.name + (space.profile == state->active_profile ? "" : " (another profile)");
+    menu.Add(label, "externalLink", [weak = std::weak_ptr<WorkspaceController>(state->workspace), id = space.id] {
+      if (const auto workspace = weak.lock()) workspace->SendLittlePage(id, [weak](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
+        if (code) if (const auto source = weak.lock()) source->Notify(error);
+      });
+    });
+  }
+  state->menu_popup->Open(menu, CefPoint(origin.x + anchor.x, origin.y + anchor.y + anchor.height + 6), "little-spaces");
+}
+
 void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
   if (!state->window || !state->workspace) return;
   if (!state->menu_popup) state->menu_popup = std::make_shared<MenuPopup>(state);

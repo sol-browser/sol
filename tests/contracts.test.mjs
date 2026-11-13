@@ -57,6 +57,17 @@ const fixture = () => ({ revision: 4, canGoBack: false, canGoForward: false, pro
     { id: tab, parentId: folder, kind: 'tab', title: 'Tab', url: 'https://example.com/', position: 0, pinned: true, expanded: true, live: true, favorite: false, archived: false, currentUrl: 'https://example.com/current', closing: false },
   ] });
 
+test('only a non-private standalone window can expose Little Sol destinations', () => {
+  const littleWindow = { preferredSpace: folder, destinations: [{ id: folder, name: 'Work', sameProfile: true }] };
+  const state = { ...fixture(), windowKind: 'standalone', sidebarVisible: false, littleWindow };
+  assert.deepEqual(parseSnapshot(JSON.stringify(state)).littleWindow, littleWindow);
+  for (const bad of [{ ...state, windowKind: 'workspace' }, { ...state, privateWindow: true },
+    { ...state, littleWindow: { ...littleWindow, destinations: [{ id: 'missing', name: 'Work', sameProfile: true }] } },
+    { ...state, littleWindow: { ...littleWindow, destinations: [{ id: folder, name: 'Work', sameProfile: 'yes' }] } }]) {
+    assert.throws(() => parseSnapshot(JSON.stringify(bad)), /Little Sol destinations/);
+  }
+});
+
 test('browsing profiles validate identities and Space references', () => {
   const state = {...fixture(), activeProfile:tab, profiles:[{id:'default',name:'Default'},{id:tab,name:'Work'}],
     activeSpace:folder, spaces:[{id:folder,name:'Work',icon:'',position:0,hue:0,intensity:40,profileId:tab}]};

@@ -104,6 +104,9 @@
 #include "experiments/boost_probe.h"
 #include "experiments/menu_probe.h"
 #include "experiments/private_probe.h"
+#include "experiments/little_window_probe.h"
+#include "windows/background_host.h"
+#include "windows/start_with_windows.h"
 #include "experiments/pin_probe.h"
 #include "windows/page_menu.h"
 #include "windows/ui_context_menu.h"
@@ -456,7 +459,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   // Red's own UI (the shell) gets no browser page menu; website pages get Chrome's, drawn as Red's.
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { if (shell_) return new red::UiContextMenu(state_); return this; }
   void OnBeforeContextMenu(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>,
-      CefRefPtr<CefContextMenuParams>, CefRefPtr<CefMenuModel> model) override {
+      CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> model) override {
     if (shell_ || foreign_ || !state_->workspace) return;
     if (internal_page_) { model->Clear(); return; }  // Trusted UI: no inspector, no page menu.
     if (state_->probe) { auto d = CefDictionaryValue::Create(); d->SetInt("items", static_cast<int>(model->GetCount())); state_->Record("page_context_menu", d); }
@@ -476,6 +479,10 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       if (state_->private_window) model->Remove(private_link);  // Already private: "new window" opens one.
       else model->SetLabel(private_link, "Open link in private window");
     }
+    if (!state_->private_window && !state_->little_window && red::HasWebScheme(params->GetLinkUrl().ToString())) {
+      const int next_to = model->GetIndexOf(cef_id_for_command_id_name("IDC_CONTENT_CONTEXT_OPENLINKNEWWINDOW"));
+      if (next_to >= 0) model->InsertItemAt(next_to + 1, red::kOpenLittleWindowMenu, "Open link in Little Sol");
+    }
     if (model->GetCount()) model->AddSeparator();
     model->AddItem(red::kInspectElementMenu, "Inspect element");
   }
@@ -488,6 +495,13 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame>,
       CefRefPtr<CefContextMenuParams> params, int command, EventFlags) override {
     if (red::OpensLinkInProfile(command)) return true;  // Removed above; never run it either.
+    if (command == red::kOpenLittleWindowMenu && !shell_ && !foreign_ && !internal_page_) {
+      const auto url = params->GetLinkUrl().ToString();
+      if (!state_->private_window && !state_->little_window && red::HasWebScheme(url) && url.size() <= 8192 &&
+          state_->session && state_->session->new_little_window)
+        state_->session->new_little_window(state_, url);
+      return true;
+    }
     const bool private_link = command == cef_id_for_command_id_name("IDC_CONTENT_CONTEXT_OPENLINKOFFTHERECORD");
     if ((private_link || command == cef_id_for_command_id_name("IDC_CONTENT_CONTEXT_OPENLINKNEWWINDOW")) && !shell_ && !foreign_ && !internal_page_) {
       // A new Red window (private: docs/private-windows.md) instead of Chrome's own browser window,
@@ -528,11 +542,30 @@ class Client final : public CefClient, public CefLifeSpanHandler,
         event.windows_key_code == 'M' && (event.modifiers & EVENTFLAG_CONTROL_DOWN) && (event.modifiers & EVENTFLAG_SHIFT_DOWN) &&
         !(event.modifiers & (EVENTFLAG_ALT_DOWN | EVENTFLAG_COMMAND_DOWN)))
       return state_->devtools_dock->ToggleDevice(state_->content->GetIdentifier());
-    if (!popup_ && state_->workspace && event.type == KEYEVENT_RAWKEYDOWN && !(event.modifiers & EVENTFLAG_COMMAND_DOWN))
-      if (auto action = red::ShortcutKeyFor(state_, event.windows_key_code, (event.modifiers & EVENTFLAG_CONTROL_DOWN) != 0,
-          (event.modifiers & EVENTFLAG_SHIFT_DOWN) != 0, (event.modifiers & EVENTFLAG_ALT_DOWN) != 0))
-        return red::ExecuteShortcut(state_, *action);
+    // Reserved shortcuts only; the rest wait for the page (OnKeyEvent).
+    if (const auto action = SolShortcut(event); action && red::ShortcutReserved(ShortcutKind(event, *action)))
+      return red::ExecuteShortcut(state_, *action);
     return false;
+  }
+  // The page had the key and left it alone (no preventDefault): Sol's shortcut runs now. A chord that
+  // was moved to another key (Suppressed) is swallowed here, after the page, so Chrome's own
+  // command on it (Ctrl+D: bookmark) does not run either.
+  bool OnKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& event, CefEventHandle) override {
+    if (const auto action = SolShortcut(event); action && !red::ShortcutReserved(ShortcutKind(event, *action)))
+      return red::ExecuteShortcut(state_, *action);
+    return false;
+  }
+  std::optional<red::Shortcut> SolShortcut(const CefKeyEvent& event) const {
+    if (popup_ || !state_->workspace || event.type != KEYEVENT_RAWKEYDOWN || (event.modifiers & EVENTFLAG_COMMAND_DOWN)) return std::nullopt;
+    return red::ShortcutKeyFor(state_, event.windows_key_code, (event.modifiers & EVENTFLAG_CONTROL_DOWN) != 0,
+        (event.modifiers & EVENTFLAG_SHIFT_DOWN) != 0, (event.modifiers & EVENTFLAG_ALT_DOWN) != 0);
+  }
+  // What a key stands for: a Suppressed chord counts as the action it used to have, so Chrome's
+  // reserved Ctrl+T stays blocked before the page after New tab moved elsewhere.
+  static red::Shortcut ShortcutKind(const CefKeyEvent& event, red::Shortcut action) {
+    if (action != red::Shortcut::Suppressed) return action;
+    return red::ShortcutKey(event.windows_key_code, (event.modifiers & EVENTFLAG_CONTROL_DOWN) != 0,
+        (event.modifiers & EVENTFLAG_SHIFT_DOWN) != 0, (event.modifiers & EVENTFLAG_ALT_DOWN) != 0).value_or(action);
   }
   bool OnBeforeUnloadDialog(CefRefPtr<CefBrowser> browser, const CefString&, bool is_reload,
       CefRefPtr<CefJSDialogCallback> callback) override {
@@ -710,6 +743,19 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     if (state_->window_close) state_->window_close->OnClosed(browser->GetIdentifier());
     if (state_->browsers.empty() && (!state_->window_close || !state_->window)) red::QuitIfLastWindow(state_);
   }
+  // Ctrl+Alt+click on a website link (Settings > Links): Little Sol instead of a background tab.
+  bool OpenInLittleSol(const std::string& url, cef_window_open_disposition_t disposition, bool gesture) {
+    if (!gesture || shell_ || foreign_ || internal_page_ || state_->private_window || state_->little_window || !state_->session) return false;
+    // Blink turns Ctrl+Alt+click (and Alt+middle click) into its own "open in split view"
+    // disposition (navigation_policy.cc), not a background tab.
+    if (disposition != CEF_WOD_NEW_SPLIT_VIEW) return false;
+    if (!red::HasWebScheme(url) || url.size() > 8192) return false;
+    const auto& preferences = state_->session->preferences;
+    if ((preferences && !preferences->Get().little_sol_click) || !state_->session->new_little_window) return false;
+    const bool opened = state_->session->new_little_window(state_, url);
+    state_->Record(opened ? "little_sol_click" : "little_sol_click_failed");
+    return opened;
+  }
   bool OnBeforePopup(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int popup_id,
       const CefString& target_url, const CefString& frame_name, cef_window_open_disposition_t disposition, bool gesture,
       const CefPopupFeatures& features, CefWindowInfo& window_info, CefRefPtr<CefClient>& client,
@@ -719,12 +765,15 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     const bool website = CefParseURL(target_url, parts) && parts.host.length && !parts.username.length && !parts.password.length &&
         (CefString(&parts.scheme) == "https" || CefString(&parts.scheme) == "http");
     if (!website && target_url != "about:blank") return true;
+    if (website && !features.isPopup && OpenInLittleSol(target_url.ToString(), disposition, gesture)) return true;
     const bool shift=(GetAsyncKeyState(VK_SHIFT)&0x8000)!=0, explicit_tab=(GetAsyncKeyState(VK_CONTROL)&0x8000) || (GetAsyncKeyState(VK_MENU)&0x8000);
     if (website && !features.isPopup && !explicit_tab && (frame_name.empty() || frame_name=="_blank") &&
         (disposition==CEF_WOD_NEW_FOREGROUND_TAB || (shift && disposition==CEF_WOD_NEW_WINDOW))) {
       if (state_->workspace->IsLinkPeekBrowser(browser->GetIdentifier())) { browser->GetMainFrame()->LoadURL(target_url); return true; }
       if (state_->workspace->RouteLinkPeek(browser,target_url,shift)) return true;
     }
+    // Ctrl+Alt+click with Little Sol links off: a background tab, as Ctrl+click.
+    if (disposition == CEF_WOD_NEW_SPLIT_VIEW) disposition = CEF_WOD_NEW_BACKGROUND_TAB;
     const bool tab = website && !features.isPopup &&
         (disposition == CEF_WOD_NEW_FOREGROUND_TAB || disposition == CEF_WOD_NEW_BACKGROUND_TAB);
     const bool foreground = disposition != CEF_WOD_NEW_BACKGROUND_TAB;
@@ -736,7 +785,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     }
     if (state_->popup_pending.size() + state_->popup_browsers.size() >= 8) return true;
     const auto key = std::make_pair(browser->GetIdentifier(), popup_id);
-    if (tab && state_->window && state_->embedded && browser->GetHost()->GetRequestContext()->IsSharingWith(state_->WebContext())) {
+    if (tab && !state_->little_window && state_->window && state_->embedded && browser->GetHost()->GetRequestContext()->IsSharingWith(state_->WebContext())) {
       // Keep Chromium's browsing context for a named target. Cancelling and
       // loading its URL in a fresh tab loses target reuse, the opener and POST.
       CefRefPtr<Client> named = new Client(state_, false, "", false, key);
@@ -789,6 +838,9 @@ class Client final : public CefClient, public CefLifeSpanHandler,
                        cef_window_open_disposition_t disposition, bool gesture) override {
     if (foreign_) return true;
     if (shell_ || !state_->workspace || disposition == CEF_WOD_CURRENT_TAB) return false;
+    if (OpenInLittleSol(url.ToString(), disposition, gesture)) return true;
+    // Ctrl+Alt+click with Little Sol links off: a background tab, as Ctrl+click.
+    if (disposition == CEF_WOD_NEW_SPLIT_VIEW) disposition = CEF_WOD_NEW_BACKGROUND_TAB;
     const bool shift=(GetAsyncKeyState(VK_SHIFT)&0x8000)!=0, explicit_tab=(GetAsyncKeyState(VK_CONTROL)&0x8000) || (GetAsyncKeyState(VK_MENU)&0x8000);
     if (gesture && !explicit_tab && (disposition==CEF_WOD_NEW_FOREGROUND_TAB || (shift && disposition==CEF_WOD_NEW_WINDOW))) {
       CefURLParts parts;
@@ -1045,17 +1097,20 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot());
       callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
     }
-    if (method == "menu.main") {
+    if (method == "menu.main" || method == "menu.littleSpaces") {
+      const bool little_spaces = method == "menu.littleSpaces";
       // The logo button: the browser menu, anchored under the button (DIP).
       const bool numbers = dict->GetType("x") == VTYPE_INT && dict->GetType("y") == VTYPE_INT &&
           dict->GetType("width") == VTYPE_INT && dict->GetType("height") == VTYPE_INT;
       const auto bounds = state_->window ? state_->window->GetClientAreaBoundsInScreen() : CefRect();
-      if (!state_->workspace || persistent || dict->GetSize() != 5 || !numbers || dict->GetInt("x") < 0 || dict->GetInt("y") < 0 ||
+      if (!state_->workspace || (little_spaces && !state_->little_window) || persistent || dict->GetSize() != 5 || !numbers || dict->GetInt("x") < 0 || dict->GetInt("y") < 0 ||
           dict->GetInt("width") < 1 || dict->GetInt("height") < 1 ||
           dict->GetInt("x") + dict->GetInt("width") > bounds.width || dict->GetInt("y") + dict->GetInt("height") > bounds.height) {
         callback->Failure(400, "Invalid menu command"); return true;
       }
-      red::ShowMainMenu(state_, CefRect(dict->GetInt("x"), dict->GetInt("y"), dict->GetInt("width"), dict->GetInt("height")));
+      const CefRect anchor(dict->GetInt("x"), dict->GetInt("y"), dict->GetInt("width"), dict->GetInt("height"));
+      if (little_spaces) red::ShowLittleSpaces(state_, anchor);
+      else red::ShowMainMenu(state_, anchor);
       auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot());
       callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
     }
@@ -1107,6 +1162,20 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot());
       callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT));
       if (action == "close") state_->window->Close();
+      return true;
+    }
+    if (method == "window.sendToSpace") {
+      if (!state_->little_window || !state_->workspace || persistent || dict->GetSize() != 2 ||
+          dict->GetType("space") != VTYPE_STRING || dict->GetString("space").length() != 36) {
+        callback->Failure(400, "Invalid Little Sol destination");
+        return true;
+      }
+      state_->workspace->SendLittlePage(dict->GetString("space").ToString(),
+          [callback](int code, const std::string& error, CefRefPtr<CefDictionaryValue> snapshot) {
+        if (code) { callback->Failure(code, error); return; }
+        auto value = CefValue::Create(); value->SetDictionary(snapshot);
+        callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT));
+      });
       return true;
     }
     if (method == "workspace.setTheme") {
@@ -1444,6 +1513,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
         const auto history = profile ? profile->history : state_->history;
         if (!state_->private_window) { history->RecordVisit(url, url == title_url_ ? title_ : ""); visit_url_ = url; }
         red::OnPrivateProbeLoad(state_, url);
+        red::OnLittleWindowProbeLoad(state_, url);
         red::OnHistoryProbeLoad(state_, browser, url);
         red::OnTabActionsProbeLoad(state_, url);
         red::OnAudibleProbeLoad(state_, browser, url);
@@ -1721,14 +1791,17 @@ class ContentBoundsDelegate final : public CefPanelDelegate {
   IMPLEMENT_REFCOUNTING(ContentBoundsDelegate);
 };
 
+void FinishBackgroundStart(const std::shared_ptr<State>& root, int attempts);
 class WindowDelegate final : public CefWindowDelegate {
  public:
   WindowDelegate(std::shared_ptr<State> state, CefRefPtr<CefBrowserView> shell,
                  CefRefPtr<CefBrowserView> content) : state_(state), shell_(shell), content_(content) {
     // Ordinary workspace sessions remember the window; probes keep fixed sizes.
-    if (state_->workspace_mode && !state_->probe && !state_->secondary_window) {
+    if (state_->workspace_mode && !state_->probe && (!state_->secondary_window || state_->remember_placement)) {
       placement_file_ = state_->profile / "BrowserData" / "window.json";
       placement_ = red::LoadWindowPlacement(placement_file_);
+      // Kept if the window closes before it is ever shown (a start from the notification area).
+      last_maximized_ = placement_ && placement_->maximized;
     }
   }
   CefRect GetInitialBounds(CefRefPtr<CefWindow>) override {
@@ -1793,10 +1866,10 @@ class WindowDelegate final : public CefWindowDelegate {
       state_->command_bar = std::make_shared<red::CommandBar>(state_);
       state_->panel_popup = std::make_shared<red::PanelPopup>(state_);
       state_->extension_popup = std::make_shared<red::ExtensionPopup>(state_);
-      state_->sidebar_peek = std::make_shared<red::SidebarPeek>(state_);
+      if (!state_->little_window) state_->sidebar_peek = std::make_shared<red::SidebarPeek>(state_);
       if (!state_->extensions) state_->extensions = std::make_shared<red::ExtensionCatalog>(state_->profile / "Default");
       state_->sidebar_menu = std::make_shared<red::SidebarMenu>(state_);
-      window->SetTitle("Sol");
+      window->SetTitle(state_->little_window ? "Little Sol" : "Sol");
       const auto icon = red::RedWindowIcon();
       window->SetWindowIcon(icon); window->SetWindowAppIcon(icon);
       // Start in the last theme (window, caption, page corners and covers) so
@@ -1813,12 +1886,15 @@ class WindowDelegate final : public CefWindowDelegate {
       // A first run from an OS link opens the requested page immediately.
       if (state_->fresh_profile && state_->external_urls.empty() && !state_->secondary_window &&
           !state_->private_window && !state_->standalone_window) red::ShowWelcome(state_);
-      else window->Show();
+      // A launcher shows once its command bar opens a page; a start from the notification area
+      // shows only its Little Sol (FinishBackgroundStart).
+      else if (state_->background_start != State::BackgroundStart::None) FinishBackgroundStart(state_, 200);
+      else if (!state_->little_launcher) window->Show();
       red::RefreshShortcuts(state_);
       ResizeWorkspace(window);
       state_->workspace->AttachContent();
       state_->Record("window_shown");
-      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->sidebar_perf_probe ? 150000 : state_->split_probe ? 105000 : state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_peek_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->split_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe ? 30000 : 15000);
+      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->sidebar_perf_probe ? 150000 : state_->split_probe ? 105000 : state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_peek_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->split_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->little_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe ? 30000 : 15000);
       if (state_->input_probe) red::ObserveNativeInput(state_);
       if (!state_->import_probe.empty()) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
         if (auto s = weak.lock()) red::RunImportProbe(s);
@@ -1926,7 +2002,8 @@ class WindowDelegate final : public CefWindowDelegate {
         (!state_->spaces_probe || state_->spaces_done) &&
         (state_->ua_brand_probe.empty() || state_->ua_brand_done) &&
         (!state_->boost_probe || state_->boost_done) && (!state_->menu_probe || state_->menu_done) &&
-        (!state_->private_probe || state_->private_done) && (!state_->pin_probe || state_->pin_done) &&
+        (!state_->private_probe || state_->private_done) && (!state_->little_probe || state_->little_done) &&
+        (!state_->pin_probe || state_->pin_done) &&
         (!state_->link_headers_probe || state_->link_headers_done) &&
         (state_->import_probe.empty() || state_->import_done) &&
         (!state_->probe_navigation || (state_->navigation_command && state_->content_loads >= 2));
@@ -1966,7 +2043,7 @@ class WindowDelegate final : public CefWindowDelegate {
       if (!browser->GetHost()->TryCloseBrowser()) ready = false;
     return ready;
   }
-  CefSize GetMinimumSize(CefRefPtr<CefView>) override { return CefSize(700, 420); }
+  CefSize GetMinimumSize(CefRefPtr<CefView>) override { return state_->little_window ? CefSize(390, 290) : CefSize(700, 420); }
   void OnWindowBoundsChanged(CefRefPtr<CefWindow> window, const CefRect&) override {
     // Minimized, the client area is empty: laying out would shrink the pages
     // (to 14x14), and restoring would make them repaint from scratch, showing
@@ -2097,7 +2174,8 @@ class WindowDelegate final : public CefWindowDelegate {
   // Normal (restored) bounds and maximized state; fullscreen and minimized
   // states are not remembered. Saved shortly after changes settle.
   void RememberPlacement(CefRefPtr<CefWindow> window) {
-    if (placement_file_.empty() || window->IsMinimized() || window->IsFullscreen()) return;
+    // A hidden window (a start from the notification area) has no placement of its own yet.
+    if (placement_file_.empty() || !window->IsVisible() || window->IsMinimized() || window->IsFullscreen()) return;
     const bool maximized = window->IsMaximized();
     const auto normal = maximized ? last_normal_ : window->GetBounds();
     if (maximized == last_maximized_ && normal == last_normal_) return;
@@ -2201,15 +2279,17 @@ bool TransferPage(const std::shared_ptr<State>& from, const std::shared_ptr<Stat
 }
 
 bool CreateWorkspaceWindow(const std::shared_ptr<State>& source, const fs::path& directory, const std::string& tab, bool private_window = false,
-                           const std::string& link = "") {
+                           const std::string& link = "", bool little_window = false, bool launcher = false) {
   if (!source->session || !source->ui_context) return false;
   // A private page never moves into a normal window (its cookies and storage live in the private context).
-  if (source->private_window && !tab.empty()) return false;
+  if ((source->private_window && (!tab.empty() || little_window)) || (little_window && !source->workspace)) return false;
   const auto seed = !tab.empty() && source->workspace ? source->workspace->DetachedSeed(tab) : std::optional<red::TreeNode>{};
   if (!tab.empty() && !seed) return false;
   auto state = std::make_shared<State>();
   state->session = source->session; state->secondary_window = true;
-  state->standalone_window = seed.has_value();
+  state->standalone_window = seed.has_value() || little_window;
+  state->little_window = little_window;
+  state->little_launcher = little_window && launcher && link.empty();
   state->workspace_data = source->session->workspace;
   if (seed) {
     GUID guid{}; wchar_t identifier[40]{};
@@ -2234,6 +2314,20 @@ bool CreateWorkspaceWindow(const std::shared_ptr<State>& source, const fs::path&
         return false;
       };
     } else if (today) state->detached_ready = ready;
+  } else if (little_window) {
+    state->sidebar_visible = false;
+    state->initial_space = source->workspace->ActiveSpaceId();
+    state->workspace_data = std::make_shared<red::WorkspaceData>();
+    state->workspace_data->path = ":memory:";
+    state->session->AddWorkspace(state->workspace_data);
+    POINT cursor{};
+    if (GetCursorPos(&cursor)) if (const auto display = CefDisplay::GetDisplayNearestPoint(CefPoint(cursor.x, cursor.y), true)) {
+      const auto area = display->GetWorkArea();
+      // 1230 x 930 DIP, at most 85% of the display's work area (a laptop screen keeps a margin).
+      const auto width = std::min(1230, area.width * 85 / 100);
+      const auto height = std::min(930, area.height * 85 / 100);
+      state->initial_window_bounds = CefRect(area.x + (area.width - width) / 2, area.y + (area.height - height) / 2, width, height);
+    }
   } else if (private_window) {
     // Local tabs only, kept in memory; an empty cache path makes CEF create an isolated
     // off-the-record context (Chrome's OffTheRecordProfileImpl), destroyed with this window.
@@ -2279,11 +2373,19 @@ bool CreateWorkspaceWindow(const std::shared_ptr<State>& source, const fs::path&
     state->downloads = std::make_shared<red::DownloadManager>(state, red::DownloadManager::DefaultDirectory());
     state->favicons = std::make_shared<red::FaviconCache>(); state->extensions = nullptr;
   }
+  // With no window keeping the saved size and position (the first one closed, Sol stayed in the
+  // notification area), an ordinary window takes them over.
+  const auto windows = state->session->Windows();
+  state->remember_placement = !state->standalone_window && !state->private_window &&
+      std::none_of(windows.begin(), windows.end(), [](const auto& window) {
+        return window->window && window->workspace_mode && (!window->secondary_window || window->remember_placement);
+      });
   state->session->Register(state);
   state->workspace = std::make_shared<red::WorkspaceController>(state);
   // Opened once the window is ready, like a link from another app (no seed or startup tab first).
   if (!link.empty()) state->workspace->QueueExternalUrls({link});
   state->workspace->Start();
+  if (state->little_launcher) state->workspace->StartLittleSolLauncher();
   ChooseBackdrop(state);
   CefBrowserSettings settings;
   const auto background = red::Themed({231, 222, 237}, state->theme, state->theme_dark, true);
@@ -2296,6 +2398,145 @@ bool CreateWorkspaceWindow(const std::shared_ptr<State>& source, const fs::path&
   shell->SetBackgroundColor(settings.background_color);
   const auto window = CefWindow::CreateTopLevelWindow(new WindowDelegate(state, shell, nullptr));
   return window != nullptr;
+}
+
+// A window that can be the source of a new window (its profile and Space): never a private one.
+bool CanSourceWindows(const std::shared_ptr<State>& window) {
+  return window && !window->private_window && window->window && window->workspace && !window->workspace->WindowClosing();
+}
+// A window that takes tabs from other apps: an ordinary workspace window.
+bool TakesTabs(const std::shared_ptr<State>& window) {
+  return CanSourceWindows(window) && !window->little_window && !window->standalone_window;
+}
+// The active matching window, else any; null when none. |root| is the first window's state,
+// alive for the whole run even after its window closed.
+std::shared_ptr<State> FindWindow(const std::shared_ptr<State>& root, bool (*accepts)(const std::shared_ptr<State>&)) {
+  if (!root->session) return accepts(root) ? root : nullptr;
+  if (auto active = root->session->active_window.lock(); accepts(active)) return active;
+  for (const auto& window : root->session->Windows()) if (accepts(window)) return window;
+  return nullptr;
+}
+// The source for a new window: a live window, else |root| (Sol in the background has none).
+std::shared_ptr<State> WindowSource(const std::shared_ptr<State>& root) {
+  if (auto window = FindWindow(root, CanSourceWindows)) return window;
+  return root;
+}
+void BringForward(const std::shared_ptr<State>& state) {
+  if (!state || !state->window) return;
+  // Restore also unmaximizes a visible window: only a minimized one is restored.
+  if (state->window->IsMinimized()) state->window->Restore();
+  state->window->Show(); state->window->Activate();
+}
+// "Open Sol": the workspace window to the front, or a new one.
+void OpenSol(const std::shared_ptr<State>& root) {
+  if (auto window = FindWindow(root, TakesTabs)) { BringForward(window); return; }
+  if (root->session && root->session->new_window) root->session->new_window(WindowSource(root), "");
+}
+// Ctrl+Alt+N: the command bar of a new Little Sol (docs/little-sol.md).
+bool OpenLittleSolLauncher(const std::shared_ptr<State>& root) {
+  if (!root->session || !root->session->new_little_sol_launcher) return false;
+  // Pressed again while its bar is still up: that bar comes back to the front.
+  for (const auto& window : root->session->Windows())
+    if (window->little_launcher) {
+      if (window->command_bar && window->command_bar->window()) window->command_bar->window()->Activate();
+      return true;
+    }
+  if (root->session->new_little_sol_launcher(WindowSource(root))) return true;
+  root->Record("little_sol_launcher_failed");
+  return false;
+}
+// sol-tray.exe holds the tray icon and Ctrl+Alt+N while Sol is not running (src/tray/sol_tray.cpp).
+bool StartTrayHelper(const std::shared_ptr<State>& root) {
+  wchar_t path[MAX_PATH]{};
+  const DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
+  if (!length || length >= MAX_PATH) return false;
+  const fs::path helper = fs::path(path).parent_path() / L"sol-tray.exe";
+  std::error_code error;
+  if (!fs::is_regular_file(helper, error)) return false;
+  std::wstring line = L"\"" + helper.wstring() + L"\"";
+  // Its command bar searches with Sol's engine (one of a fixed set, preferences.cpp).
+  if (root->session && root->session->preferences) {
+    const auto engine = root->session->preferences->Get().search_engine;
+    if (!engine.empty() && std::all_of(engine.begin(), engine.end(), [](char c) { return c >= 'a' && c <= 'z'; }))
+      line += L" --search-engine=" + std::wstring(engine.begin(), engine.end());
+    // Google completions in its bar only when Sol's own bar would ask for them (Settings).
+    if (root->session->preferences->Get().search_suggestions) line += L" --search-suggestions=1";
+  }
+  const auto command = CefCommandLine::GetGlobalCommandLine();
+  if (command->HasSwitch("profile-dir")) {
+    const std::wstring profile = command->GetSwitchValue("profile-dir").ToWString();
+    if (profile.find(L'"') != std::wstring::npos) return false;
+    line += L" \"--profile-dir=" + profile + L"\"";
+  }
+  // Ctrl+Alt+N goes to the helper now; Sol's own icon leaves with this process.
+  if (root->session && root->session->background) root->session->background->SetEnabled(false);
+  STARTUPINFOW startup{sizeof(startup)};
+  PROCESS_INFORMATION process{};
+  if (!CreateProcessW(helper.c_str(), line.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS, nullptr,
+                      helper.parent_path().c_str(), &startup, &process)) {
+    if (root->session && root->session->background) root->session->background->SetEnabled(true);
+    return false;
+  }
+  CloseHandle(process.hThread); CloseHandle(process.hProcess);
+  root->Record("tray_helper_started");
+  return true;
+}
+// A start from the notification area (sol-tray.exe's command bar, or a link while it ran): the
+// first window stays hidden and closes once the Little Sol it was started for is there.
+void FinishBackgroundStart(const std::shared_ptr<State>& root, int attempts) {
+  if (!root->window || !root->workspace || root->workspace->WindowClosing()) return;
+  const auto little = [&] {
+    for (const auto& window : root->session->Windows()) if (window->little_window && window->window) return true;
+    return false;
+  };
+  const bool ready = root->workspace->Snapshot()->GetBool("ready");
+  if (ready && little()) {
+    root->background_start = State::BackgroundStart::None;
+    red::CloseTrayHelper();  // Its bar stayed up until this Little Sol was there.
+    root->window->Close(); return;
+  }
+  if (attempts <= 0) {
+    // Nothing came: show Sol rather than leave it running unseen.
+    root->background_start = State::BackgroundStart::None;
+    red::CloseTrayHelper();
+    root->window->Show(); root->window->Activate(); return;
+  }
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, int attempts) {
+    if (const auto root = weak.lock()) FinishBackgroundStart(root, attempts - 1);
+  }, std::weak_ptr<State>(root), attempts), 50);
+}
+// Sol in the notification area with Ctrl+Alt+N (docs/little-sol.md); follows Settings > Links.
+void StartBackground(const std::shared_ptr<State>& root) {
+  const auto session = root->session;
+  if (!session || session->background) return;
+  const std::weak_ptr<State> weak = root;
+  session->hand_to_tray = [weak] { const auto root = weak.lock(); return root && StartTrayHelper(root); };
+  session->background = std::make_shared<red::BackgroundHost>(red::BackgroundHost::Actions{
+    [weak] { if (const auto root = weak.lock()) OpenLittleSolLauncher(root); },
+    [weak] { if (const auto root = weak.lock()) OpenSol(root); },
+    [weak] {
+      const auto root = weak.lock(); if (!root || !root->session) return;
+      root->session->quitting = true;
+      bool open = false;
+      for (const auto& window : root->session->Windows()) if (window->window) { open = true; window->window->Close(); }
+      if (!open) CefQuitMessageLoop();
+    }});
+  session->apply_background = [weak] {
+    const auto root = weak.lock(); if (!root || !root->session || !root->session->background) return;
+    const auto& session = root->session;
+    session->background->SetEnabled(!session->preferences || session->preferences->Get().little_sol_hotkey);
+    // Start with Windows follows Ctrl+Alt+N: only sol-tray.exe starts (installed Sol only).
+    if (session->preferences) {
+      const auto& prefs = session->preferences->Get();
+      const auto command = CefCommandLine::GetGlobalCommandLine();
+      const std::wstring profile = command->HasSwitch("profile-dir") ? command->GetSwitchValue("profile-dir").ToWString() : std::wstring();
+      red::ApplyStartWithWindows(prefs.little_sol_hotkey, prefs.search_engine, prefs.search_suggestions, profile);
+    }
+    // Only while the icon is there: without it, nothing could quit Sol.
+    session->keep_running = session->background->enabled() && session->background->icon_visible();
+    if (!session->keep_running && !session->HasOpenWindows()) CefQuitMessageLoop();
+  };
+  session->apply_background();
 }
 
 class UiContextReady final : public CefRequestContextHandler {
@@ -2313,6 +2554,14 @@ class UiContextReady final : public CefRequestContextHandler {
     if (state_->session)
       state_->session->new_window_with_link = [directory = directory_](const std::shared_ptr<State>& from, const std::string& url, bool private_window) {
         return CreateWorkspaceWindow(from, directory, "", private_window, url);
+      };
+    if (state_->session)
+      state_->session->new_little_window = [directory = directory_](const std::shared_ptr<State>& from, const std::string& url) {
+        return CreateWorkspaceWindow(from, directory, "", false, url, true);
+      };
+    if (state_->session)
+      state_->session->new_little_sol_launcher = [directory = directory_](const std::shared_ptr<State>& from) {
+        return CreateWorkspaceWindow(from, directory, "", false, "", true, true);
       };
     if (state_->session) state_->session->transfer_page = TransferPage;
     ChooseBackdrop(state_);
@@ -2400,6 +2649,14 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
       if (existing.find("OverlayScrollbar") == std::string::npos)
         command->AppendSwitchWithValue("enable-features", existing.empty() ?
             "OverlayScrollbar:mode/overlay" : existing + ",OverlayScrollbar:mode/overlay");
+      // No FedCM ("Sign in with Google" as a Chrome bubble). Its bubble is a window of its own,
+      // owned by Sol's window; it re-showed itself, taking activation, whenever that window moved.
+      // A title-bar drag then never ended and held the mouse for the whole desktop (user report,
+      // 2026-11-13, a Little Sol on a shop's site; focus_watch.py: GUI_INMOVESIZE for minutes).
+      // Without the API, Google's sign-in falls back to its in-page prompt, as in Firefox.
+      const auto disabled = command->GetSwitchValue("disable-features").ToString();
+      if (disabled.find("FedCm") == std::string::npos)
+        command->AppendSwitchWithValue("disable-features", disabled.empty() ? "FedCm" : disabled + ",FedCm");
     }
     // Probe only: fake camera/microphone so tests never open real devices.
     if (type.empty() && state_->site_probe) command->AppendSwitch("use-fake-device-for-media-stream");
@@ -2462,8 +2719,45 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
       if (!state_->probe && !state_->private_window && !state_->standalone_window)
         if (auto notes = red::ReleaseNotesAfterUpdate(state_->profile / "BrowserData", RED_APP_VERSION, state_->fresh_profile))
           state_->workspace->QueueExternalUrls({*notes});
-      state_->workspace->QueueExternalUrls(state_->external_urls);
+      {
+        // Links from other apps at launch: website links open in Little Sol once this window is ready.
+        // That follows Settings > Links, so the session and its settings come first.
+        state_->workspace->PrepareSession();
+        // A new profile starts with every integration off; each one is turned on in Settings (the
+        // user's choice, 2026-11-13). A missing entry means on, so existing profiles keep theirs.
+        if (state_->fresh_profile && state_->session && state_->session->preferences && state_->session->preferences->error().empty()) {
+          auto next = state_->session->preferences->Get();
+          for (const auto& provider : red::kIntegrationSettings)
+            if (provider.available && provider.listed) next.integrations.try_emplace(std::string(provider.id), false);
+          state_->session->preferences->Save(std::move(next), [weak = std::weak_ptr<State>(state_)](const std::string& error) {
+            if (const auto state = weak.lock(); state && !error.empty()) LOG(WARNING) << "Integrations default: " << error;
+          });
+        }
+        auto urls = state_->external_urls;
+        std::vector<std::string> little;
+        if (state_->session && !state_->private_window && !state_->standalone_window)
+          std::erase_if(urls, [&](const std::string& url) {
+            if (!red::WorkspaceController::OpensInLittleSol(*state_->session, url)) return false;
+            little.push_back(url); return true;
+          });
+        state_->workspace->QueueExternalUrls(urls);
+        state_->workspace->QueueLittleSolLinks(little);
+        // sol-tray.exe kept the icon and Ctrl+Alt+N while Sol was closed; this Sol takes them back.
+        const HWND tray = state_->probe ? nullptr : ::FindWindowW(L"SolTrayHelper", nullptr);
+        // sol-tray.exe's own command bar (Ctrl+Alt+N while Sol was closed): what was entered there.
+        const auto command = CefCommandLine::GetGlobalCommandLine();
+        const bool from_bar = !state_->probe && command->HasSwitch("little-sol-url");
+        if (from_bar && !state_->private_window && !state_->standalone_window) {
+          const std::string entered = command->GetSwitchValue("little-sol-url").ToString();
+          if (red::HasWebScheme(entered) && entered.size() <= 8192) { little.push_back(entered); state_->workspace->QueueLittleSolLinks({entered}); }
+        }
+        if (urls.empty() && (tray || from_bar) && !little.empty() && !state_->private_window && !state_->standalone_window && !state_->fresh_profile)
+          state_->background_start = State::BackgroundStart::Links;
+        // From the notification area its bar stays up until the Little Sol shows (FinishBackgroundStart).
+        if (tray && state_->background_start == State::BackgroundStart::None) red::CloseTrayHelper();
+      }
       state_->workspace->Start();
+      if (!state_->probe) StartBackground(state_);
       state_->extension_install_watch = red::WatchExtensionInstalls(state_, CefRequestContext::GetGlobalContext());
       state_->downloads = std::make_shared<red::DownloadManager>(state_,
           state_->downloads_directory.empty() ? red::DownloadManager::DefaultDirectory() : state_->downloads_directory);
@@ -2515,20 +2809,42 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
     }
     // CEF's profile singleton forwards OS launches to our existing workspace.
     if (!state_->workspace_mode) return false;
-    auto target = state_;
-    if (state_->session) {
-      if (auto active = state_->session->active_window.lock(); active && active->window && active->workspace && !active->workspace->WindowClosing()) target = active;
-      else for (const auto& window : state_->session->Windows())
-        if (window->window && window->workspace && !window->workspace->WindowClosing()) { target = window; break; }
-    }
-    if (target->workspace && !target->workspace->WindowClosing()) {
-      target->workspace->QueueExternalUrls(red::ExternalLaunchUrls(command));
-      if (target->window) {
-        // Restore also unmaximizes a visible window. External links should
-        // bring Red forward without changing its current size/state.
-        if (target->window->IsMinimized()) target->window->Restore();
-        target->window->Show(); target->window->Activate();
+    auto urls = red::ExternalLaunchUrls(command);
+    // Started again without a link (Start menu, taskbar): show Sol, also from the background.
+    // sol-tray.exe's command bar reached a Sol that was already starting.
+    if (command->HasSwitch("little-sol-url") && state_->session && state_->session->new_little_window) {
+      const std::string entered = command->GetSwitchValue("little-sol-url").ToString();
+      if (red::HasWebScheme(entered) && entered.size() <= 8192) {
+        if (const auto source = FindWindow(state_, CanSourceWindows)) state_->session->new_little_window(source, entered);
+        else state_->workspace->QueueLittleSolLinks({entered});
+        red::CloseTrayHelper();
       }
+      state_->Record("external_launch_received"); return true;
+    }
+    if (urls.empty()) { OpenSol(state_); state_->Record("external_launch_received"); return true; }
+    // Arc: a website link from another app opens in Little Sol (Settings > Links).
+    if (state_->session) {
+      std::vector<std::string> little;
+      std::erase_if(urls, [&](const std::string& url) {
+        if (!red::WorkspaceController::OpensInLittleSol(*state_->session, url)) return false;
+        little.push_back(url); return true;
+      });
+      if (!little.empty()) {
+        // A live window opens them once it is ready; with none (Sol in the background), right away.
+        if (const auto source = FindWindow(state_, CanSourceWindows)) source->workspace->QueueLittleSolLinks(little);
+        else for (const auto& url : little)
+          if (!state_->session->new_little_window || !state_->session->new_little_window(state_, url)) urls.push_back(url);
+        state_->Record("external_launch_little_sol");
+      }
+    }
+    if (urls.empty()) return true;
+    auto target = FindWindow(state_, TakesTabs);
+    if (!target && state_->session && state_->session->new_window && state_->session->new_window(WindowSource(state_), ""))
+      target = FindWindow(state_, TakesTabs);
+    if (!target) target = state_;
+    if (target->workspace && !target->workspace->WindowClosing()) {
+      target->workspace->QueueExternalUrls(urls);
+      BringForward(target);
       state_->Record("external_launch_received");
     }
     return true;
@@ -2647,6 +2963,10 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->boost_probe = command->HasSwitch("probe-boost");
   state->menu_probe = command->HasSwitch("probe-menu");
   state->private_probe = command->HasSwitch("probe-private");
+  state->little_probe = command->HasSwitch("probe-little-window");
+  state->little_external = command->GetSwitchValue("probe-little-window") == "external";
+  state->little_click_probe = command->GetSwitchValue("probe-little-window") == "click";
+  state->little_launcher_probe = command->GetSwitchValue("probe-little-window") == "launcher";
 #if defined(RED_CEF_TRANSLUCENT)
   if (const auto value = command->GetSwitchValue("probe-backdrop").ToString(); red::ValidBackdrop(value)) state->backdrop_switch = value;
 #endif
@@ -2705,7 +3025,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   if (state->lifecycle_probe && state->lifecycle_mode != "full" && state->lifecycle_mode != "restore" && state->lifecycle_mode != "hold" && state->lifecycle_mode != "manual") return 11;
   state->workspace_probe = command->HasSwitch("probe-workspace") || state->organization_probe || state->browsing_probe;
   // The installed Sol is always the workspace browser; Velopack starts it with no arguments.
-  state->workspace_mode = installed || command->HasSwitch("workspace") || state->workspace_probe || state->lifecycle_probe || state->downloads_probe || state->fullscreen_probe || !state->permissions_probe.empty() || state->site_probe || !state->history_probe.empty() || state->tab_actions_probe || state->audible_probe || state->downloads_page_probe || state->extension_popup_probe || !state->protocols_probe.empty() || state->close_motion_probe || state->sidebar_peek_probe || state->sidebar_perf_probe || state->pip_probe || state->split_probe || state->capture_mute_probe || state->theme_probe || state->spaces_probe || !state->ua_brand_probe.empty() || state->boost_probe || state->menu_probe || state->private_probe || state->pin_probe || state->link_headers_probe || !state->import_probe.empty();
+  state->workspace_mode = installed || command->HasSwitch("workspace") || state->workspace_probe || state->lifecycle_probe || state->downloads_probe || state->fullscreen_probe || !state->permissions_probe.empty() || state->site_probe || !state->history_probe.empty() || state->tab_actions_probe || state->audible_probe || state->downloads_page_probe || state->extension_popup_probe || !state->protocols_probe.empty() || state->close_motion_probe || state->sidebar_peek_probe || state->sidebar_perf_probe || state->pip_probe || state->split_probe || state->capture_mute_probe || state->theme_probe || state->spaces_probe || !state->ua_brand_probe.empty() || state->boost_probe || state->menu_probe || state->private_probe || state->little_probe || state->pin_probe || state->link_headers_probe || !state->import_probe.empty();
   state->probe_tabs = state->probe_tabs || state->native_tabs_reference || state->embedded_tabs_probe;
   auto url = command->HasSwitch("probe-url") ? command->GetSwitchValue("probe-url").ToString() : "https://example.com";
   state->initial_url = url;

@@ -18,7 +18,7 @@ $Version = $releaseVersion
 python (Join-Path $repoRoot 'scripts/check_release_notes.py')
 if ($LASTEXITCODE) { throw 'Release history is invalid or does not match VERSION' }
 $source = Join-Path $repoRoot "build/$BuildDirectory/apps/desktop/$Configuration"
-foreach ($required in 'sol.exe', 'sol.dll', 'libcef.dll', 'ui/index.html') {
+foreach ($required in 'sol.exe', 'sol.dll', 'sol-tray.exe', 'libcef.dll', 'ui/index.html') {
     if (!(Test-Path -LiteralPath (Join-Path $source $required))) { throw "Build is missing $required`: $source" }
 }
 if ((Get-Item -LiteralPath (Join-Path $source 'sol.dll')).VersionInfo.ProductVersion -ne $Version) {
@@ -68,6 +68,8 @@ $notices = Join-Path $stage 'licenses'
 New-Item -ItemType Directory -Force -Path $notices | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot 'third_party/cef/LICENSE.txt') -Destination (Join-Path $notices 'CEF-LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'third_party/cef/CREDITS.html') -Destination (Join-Path $notices 'Chromium-CREDITS.html')
+# Velopack (setup, Update.exe, velopack_libc.dll) is MIT: its notice goes with every copy.
+Copy-Item -LiteralPath (Join-Path $repoRoot 'licenses/Velopack-LICENSE.txt') -Destination (Join-Path $notices 'Velopack-LICENSE.txt')
 python (Join-Path $repoRoot 'scripts/brand_exe.py') (Join-Path $stage 'sol.exe') `
     (Join-Path $repoRoot 'apps/desktop/resources/red.ico') $Version
 if ($LASTEXITCODE) { throw 'Stamping sol.exe failed' }

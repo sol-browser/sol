@@ -3,7 +3,7 @@ import { FolderOpen, RotateCcw } from 'lucide-react';
 import type { BrowserPreferences, KeyboardSetting, SettingsCommand } from '../../../packages/browser-contracts/src';
 import { resolveNavigationInput, searchEngines } from './navigation-input';
 
-type Props = { section: 'search' | 'downloads' | 'startup' | 'keyboard' | 'tabs'; preferences?: BrowserPreferences;
+type Props = { section: 'search' | 'downloads' | 'startup' | 'links' | 'keyboard' | 'tabs'; preferences?: BrowserPreferences;
   keyboard: KeyboardSetting[]; disabled: boolean; save: (command: SettingsCommand) => Promise<void>; onError: (error: string) => void; manageSiteSearch: () => void };
 export function PreferencesSettings({ section, preferences: prefs, keyboard, disabled, save, onError, manageSiteSearch }: Props) {
   const [homepage, setHomepage] = useState(prefs?.homepage ?? '');
@@ -88,6 +88,24 @@ export function PreferencesSettings({ section, preferences: prefs, keyboard, dis
         onClick={() => void save({ method: 'settings.set', key: 'askDownload', value: !prefs?.askDownload })}><span /></button>
     </section>
   </>;
+  if (section === 'links') {
+    const options = [
+      ['littleSolHotkey', 'Open Little Sol with Ctrl+Alt+N in any app',
+        'Type an address or a search and it opens in Little Sol. Sol stays in the notification area after you close its windows and starts there when you sign in to Windows, using little memory until you open it; quit it from there.'],
+      ['littleSolClick', 'Open links in Little Sol with Ctrl+Alt held', 'Hold Ctrl+Alt while you click a link on a page.'],
+      ['littleSolLinks', 'Links from other apps open in Little Sol',
+        'A link from a chat or an email opens in a small window of its own. When this is off, it opens as a tab in your Sol window.'],
+    ] as const;
+    return <section className="settings-card">
+      <span className="settings-category">LITTLE SOL</span><h2>Quick looks without new tabs</h2>
+      <p>Keep a page with Open in Space, or close the window when you are done.</p>
+      {options.map(([key, title, description]) => <div key={key} className="settings-option-row"><div><h2>{title}</h2><p>{description}</p></div>
+        <button type="button" className="settings-switch" role="switch" aria-label={title}
+          aria-checked={prefs?.[key] ?? true} disabled={disabled}
+          onClick={() => void save({ method: 'settings.set', key, value: !(prefs?.[key] ?? true) })}><span /></button>
+      </div>)}
+    </section>;
+  }
   if (section === 'startup') return <section className="settings-card">
     <span className="settings-category">WHEN SOL STARTS</span><h2>Start your way</h2>
     <p>Your saved tabs, folders and spaces are kept with every option.</p>

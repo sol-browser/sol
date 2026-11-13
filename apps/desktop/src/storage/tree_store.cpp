@@ -700,12 +700,18 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
     if (created.id.size()!=36 || FindConst(tree,created.id)) return rollback(400,"Invalid or duplicate node identity");
     created.parent = command.parent; created.folder = command.action == TreeAction::CreateFolder;
     if (command.parent.empty()) created.space = tree.active_space;
+    const auto* destination = command.space.empty() ? nullptr : FindSpace(tree, command.space);
+    if (!command.space.empty()) {
+      if (!destination || created.folder || !created.parent.empty() || !command.split_with.empty())
+        return rollback(400, "Invalid new tab destination");
+      created.space = destination->id;
+    }
     created.pinned = created.folder || !command.parent.empty();
     created.title = command.title; created.url = created.folder ? "" : command.url; created.last_active_at=now;
-    created.profile = BrowsingProfileId(tree);
+    created.profile = destination ? destination->profile : BrowsingProfileId(tree);
     const auto* after = command.after.empty() ? nullptr : FindConst(tree, command.after);
     if (!created.folder && command.parent.empty() && after && after->parent.empty() && !after->folder && !after->pinned &&
-        !after->favorite && !after->archived && after->space == tree.active_space) {
+        !after->favorite && !after->archived && after->space == created.space) {
       // A link's tab opens right below the Today tab it came from (Chrome). Root siblings share one
       // position space with Pinned/Favorites; shifting those after it keeps every relative order.
       const int at = after->position + 1;
@@ -720,7 +726,10 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
       created.position = static_cast<int>(std::count_if(tree.nodes.begin(), tree.nodes.end(), [&](const auto& n) { return n.parent == command.parent; }));
     }
     result.created_id = created.id;
-    if (!created.folder && command.value) tree.active_id = created.id;
+    if (!created.folder && command.value) {
+      if (destination) tree.active_space = destination->id;
+      tree.active_id = created.id;
+    }
     tree.nodes.push_back(std::move(created));
     if (!command.split_with.empty()) {
       const auto* source=FindConst(tree,command.split_with);

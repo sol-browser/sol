@@ -34,6 +34,9 @@ struct Preferences {
   bool auto_pip = false;  // Video pops out when you leave its tab (default off).
   std::map<std::string, bool> auto_pip_sites;  // Per-site override (origin -> on/off).
   bool pip_button = true;  // Picture-in-picture button over website videos.
+  bool little_sol_links = true;  // Website links from other apps open in Little Sol (Arc default).
+  bool little_sol_click = true;  // Ctrl+Alt+click on a link opens it in Little Sol.
+  bool little_sol_hotkey = true;  // Ctrl+Alt+N from any app; Sol stays in the notification area.
   int unload_minutes = 60;  // Idle tabs leave memory (0: never).
   // Times on History and Downloads: "system" (the Windows short time format), "12" or "24".
   std::string clock = "system";

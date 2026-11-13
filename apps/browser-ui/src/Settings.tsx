@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { integrationEnabled, integrationSettingsCatalog, unlistedIntegrations, parseSettingsSnapshot, type Backdrop, type Clock, type SettingsCommand, type SettingsSnapshot } from '../../../packages/browser-contracts/src';
-import { Settings2, Palette, ArrowDownToLine, ArrowUpRight, Check, Puzzle, NotebookPen, Search, Power, Keyboard, Archive, UserRound, KeyRound } from 'lucide-react';
+import { Settings2, Palette, ArrowDownToLine, ArrowUpRight, Check, Puzzle, NotebookPen, Search, Power, Keyboard, Archive, UserRound, KeyRound, AppWindow } from 'lucide-react';
 import { PreferencesSettings } from './PreferencesSettings';
 import { Icon } from './Icon';
 import { ThemePanel } from './Theme';
@@ -32,6 +32,7 @@ const sections = [
   { id: 'siteSearch', title: 'Manage search engines and site search', icon: Search },
   { id: 'downloads', title: 'Downloads', icon: ArrowDownToLine },
   { id: 'startup', title: 'On startup', icon: Power },
+  { id: 'links', title: 'Links', icon: AppWindow },
   { id: 'tabs', title: 'Tabs', icon: Archive },
   { id: 'integrations', title: 'Integrations', icon: Puzzle },
   { id: 'profiles', title: 'Profiles', icon: UserRound },
@@ -125,6 +126,7 @@ export function Settings() {
             section === 'search' ? 'Find things with your preferred search engine.' : section === 'siteSearch' ? 'Search your sites directly from the command bar.' :
             section === 'downloads' ? 'Keep new downloads where you want them.' :
             section === 'startup' ? 'Choose what opens when you start Sol.' :
+            section === 'links' ? 'Little Sol is a small window for quick looks at a link.' :
             section === 'tabs' ? 'Keep Today tidy without losing your saved tabs.' :
             section === 'integrations' ? 'Choose which services Sol integrates with across all tabs and windows.' :
             section === 'keyboard' ? 'Make familiar actions feel natural.' :
@@ -187,7 +189,7 @@ export function Settings() {
           })}
         </section> : section === 'passwords' ? <PasswordsSettings profiles={data?.profiles ?? []} activeProfile={data?.activeProfile} ready={!!data?.ready} busy={busy} onOpen={(profile, settings)=>void action({method:'settings.passwords',profile,settings})} /> : section === 'profiles' ? <ProfilesSettings profiles={data?.profiles ?? []} spaces={data?.spaces ?? []}
           activeProfile={data?.activeProfile} createRequest={profileCreateRequest} suggestedSpace={data?.spaceId} onCreateRequestHandled={()=>setProfileCreateRequest(0)}
-          command={async command=>{const next=await query(command);++sequence.current;if(alive.current)setData(next);}} /> : section === 'search' || section === 'downloads' || section === 'startup' || section === 'keyboard' || section === 'tabs' ?
+          command={async command=>{const next=await query(command);++sequence.current;if(alive.current)setData(next);}} /> : section === 'search' || section === 'downloads' || section === 'startup' || section === 'links' || section === 'keyboard' || section === 'tabs' ?
           <PreferencesSettings section={section} preferences={data?.preferences} keyboard={data?.keyboard ?? []}
             disabled={busy || !data?.ready || !!data.preferencesError} save={action} onError={setError} manageSiteSearch={() => setSection('siteSearch')} /> :
           section === 'siteSearch' ? <SiteSearchSettings sites={data?.preferences.siteSearches} activation={data?.preferences.siteSearchActivation}

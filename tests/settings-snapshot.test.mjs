@@ -14,3 +14,15 @@ test('settings accept every shortcut Sol has, up to the shared limit', () => {
   for (const rows of [42, MAX_SHORTCUTS]) assert.equal(parseSettingsSnapshot(JSON.stringify(settings(rows))).keyboard.length, rows);
   assert.throws(() => parseSettingsSnapshot(JSON.stringify(settings(MAX_SHORTCUTS + 1))));
 });
+
+test('the Little Sol preferences are booleans', () => {
+  for (const key of ['littleSolLinks', 'littleSolClick', 'littleSolHotkey']) {
+    const value = settings(1);
+    for (const flag of [true, false]) {
+      value.preferences[key] = flag;
+      assert.equal(parseSettingsSnapshot(JSON.stringify(value)).preferences[key], flag);
+    }
+    value.preferences[key] = 'yes';
+    assert.throws(() => parseSettingsSnapshot(JSON.stringify(value)), /Little Sol preference/);
+  }
+});

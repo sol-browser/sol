@@ -107,7 +107,7 @@ void WithoutHiddenSplitMembers(const TreeSnapshot& tree, std::vector<std::string
     }
 }
 }  // namespace
-void WorkspaceController::Start() {
+void WorkspaceController::PrepareSession() {
   const auto state = state_.lock();
   if (!state) return;
   session_ = state->session;
@@ -115,8 +115,13 @@ void WorkspaceController::Start() {
     session_ = state->session = std::make_shared<AppSession>();
     session_->Register(state);
   }
-  data_ = state->workspace_data ? state->workspace_data : (state->workspace_data = session_->workspace);
   if (!session_->preferences) session_->preferences = std::make_shared<BrowserPreferences>(state->profile / "BrowserData" / "settings.sqlite3");
+}
+void WorkspaceController::Start() {
+  const auto state = state_.lock();
+  if (!state) return;
+  PrepareSession();
+  data_ = state->workspace_data ? state->workspace_data : (state->workspace_data = session_->workspace);
   if (!session_->auto_archive) session_->auto_archive=AutoArchive::Start(session_);
   LoadBoosts(*session_, state->profile / "BrowserData" / "boosts.json");
   if (!session_->pinned_extensions) {
@@ -149,12 +154,13 @@ void WorkspaceController::Start() {
           }
           if (result && standalone) result = self->data_->store->SetTheme(theme.hue, theme.intensity, static_cast<int>(theme.mode), theme.noise,"",theme.palette);
         }
-        // A private window starts empty (its first tab is a new tab) in its own colours.
+        // A private window starts empty (its first tab is a new tab) in its own colours; so does the
+        // hidden Little Sol behind Ctrl+Alt+N, whose page comes from its command bar.
         if (result && path == ":memory:") result = self->data_->store->SetTheme(theme.hue, theme.intensity, static_cast<int>(theme.mode), theme.noise,"",theme.palette);
         CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, TreeResult result) {
           if (auto owner = weak.lock()) owner->Complete(std::move(result), {});
         }, std::weak_ptr<WorkspaceController>(self), std::move(result)));
-      }, shared_from_this(), path, state->initial_url, external_pending_.empty() && !state->private_window &&
+      }, shared_from_this(), path, state->initial_url, external_pending_.empty() && !state->private_window && !state->little_launcher &&
           (state->probe || state->secondary_window || session_->preferences->Get().startup == "restore"),
       state->standalone_window ? state->initial_title : "Start", state->initial_custom_title, state->standalone_window, state->theme)));
 }
@@ -304,6 +310,20 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     result->SetDictionary("shortcutLabels", ShortcutLabels(state->session->preferences->Get()));
   }
   result->SetString("windowKind", state && state->standalone_window ? "standalone" : "workspace");
+  if (state && state->little_window && session_) {
+    auto destinations = CefListValue::Create();
+    for (const auto& space : session_->workspace->tree.spaces) {
+      auto item = CefDictionaryValue::Create();
+      item->SetString("id", space.id);
+      item->SetString("name", space.name);
+      item->SetBool("sameProfile", space.profile == state->active_profile);
+      destinations->SetDictionary(destinations->GetSize(), item);
+    }
+    auto little = CefDictionaryValue::Create();
+    little->SetList("destinations", destinations);
+    little->SetString("preferredSpace", state->initial_space);
+    result->SetDictionary("littleWindow", little);
+  }
   if (const auto update = ReadyUpdate(); !update.empty() && update.size() <= 40) result->SetString("updateReady", update);
   if (state && state->private_window) result->SetBool("privateWindow", true);
   if (state && state->translucent && state->backdrop != "none") result->SetString("backdrop", state->backdrop);
@@ -605,6 +625,7 @@ void WorkspaceController::ImportZen(const TreeSnapshot& incoming, Reply done) {
   }, shared_from_this(), incoming, backup, std::move(done))));
 }
 void WorkspaceController::Dispatch(TreeCommand command, Reply done, bool internal, bool exact_activation) {
+  if (LittleWindowRejects(command)) { if (done) done(409, "Little Sol holds one page", nullptr); return; }
   if (command.action == TreeAction::SwitchSpace || command.action == TreeAction::DeleteSpace) {
     // A space opens on a page that is already loaded, or on the empty tab: after a cold start
     // nothing is loaded from the saved sidebar until you select it.
@@ -1443,6 +1464,7 @@ void WorkspaceController::NavigateHistory(bool forward) {
 void WorkspaceController::OpenNewTab() {
   if (!ready_ || shutting_down_ || !closing_.empty() || closing_commits_) return;
   if (auto state = state_.lock()) {
+    if (state->little_window) { FocusAddress(); return; }
     if (state->command_bar) state->command_bar->Open(true);
   }
   ++new_tab_request_; Publish();
@@ -1459,6 +1481,7 @@ void WorkspaceController::RequestSidebar(const std::string& action) {
   sidebar_action_ = action; ++sidebar_request_; Publish();
 }
 void WorkspaceController::CloseActive() {
+  if (auto state = state_.lock(); state && state->little_window && state->window) { state->window->Close(); return; }
   if (HasLinkPeek()) { DismissLinkPeek(); return; }
   if (!tree_.active_id.empty()) Close(tree_.active_id, false);
 }
@@ -1641,6 +1664,7 @@ void WorkspaceController::QueueExternalUrls(const std::vector<std::string>& urls
   DrainExternalUrls();
 }
 void WorkspaceController::DrainExternalUrls() {
+  DrainLittleSolLinks();
   const auto state = state_.lock();
   if (external_opening_ || external_pending_.empty() || !CanOpen() || !state || !state->embedded || !state->window) return;
   auto url = std::move(external_pending_.front()); external_pending_.erase(external_pending_.begin());
@@ -1780,15 +1804,17 @@ void WorkspaceController::RegisterNamedTab(CefRefPtr<CefBrowser> browser, const 
   }, true);
 }
 void WorkspaceController::OpenPage(const std::string& url, const std::string& title, bool foreground, Reply done, const std::string& initiator,
-                                   const std::string& after) {
+                                   const std::string& after, const std::string& space) {
   if (!CanOpen()) { if (done) done(409, "Cannot open this link now", nullptr); return; }
+  // Little Sol keeps its one page: a link, an internal page or an extension page goes to a Space.
+  if (LittleWindowHasPage()) { OpenFromLittleWindow(url, title, foreground, std::move(done), initiator); return; }
   // Registered before the tab exists: a foreground page is created while the
   // command completes, before the reply below runs.
   // Both ends must be websites: LoadURLFromInitiator loads nothing otherwise.
   const auto web = [](const std::string& value) { return HasWebScheme(value); };
   if (web(initiator) && web(url)) link_initiator_by_url_[url] = initiator;
   TreeCommand command{TreeAction::CreateTab}; command.url = url;
-  command.title = title; command.value = foreground; command.after = after;
+  command.title = title; command.value = foreground; command.after = after; command.space = space;
   ++opening_links_;
   Dispatch(command, [weak = weak_from_this(), foreground, url, done = std::move(done)](int code, const std::string& error, CefRefPtr<CefDictionaryValue> snapshot) {
     if (auto self = weak.lock()) {
@@ -1812,6 +1838,7 @@ void WorkspaceController::OpenPage(const std::string& url, const std::string& ti
 void WorkspaceController::SetSidebarVisible(bool visible, bool live) {
   auto state = state_.lock();
   if (!state || !state->window || !state->embedded || shutting_down_) return;
+  if (state->little_window) visible = false;
   state->sidebar_visible = visible;
   // The page changes width once, never per frame (resizing a Chrome page every
   // frame shows unrendered strips). Showing docks the shape at once and the

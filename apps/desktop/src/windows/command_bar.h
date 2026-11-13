@@ -12,6 +12,9 @@ class CommandBar : public std::enable_shared_from_this<CommandBar> {
   explicit CommandBar(std::weak_ptr<State> state) : state_(std::move(state)) {}
   ~CommandBar();
   void Open(bool new_tab);
+  // Little Sol launcher (Ctrl+Alt+N): an unowned bar centred on the display under the cursor. What
+  // it opens goes into its hidden Little Sol, which then shows; dismissing it closes that window.
+  void OpenDetached();
   void Hide(bool restore_focus);
   void Shutdown();
   void Reposition();
@@ -31,7 +34,12 @@ class CommandBar : public std::enable_shared_from_this<CommandBar> {
   // Fixed DOM driver, reachable only from the explicit organization/browsing probes.
   void ProbeInput(const std::string& input, int attempts = 100, bool actions_checked = false);
   void ProbeCancel();
+  // --probe-little-window=launcher only: submits |url| in the detached bar, or closes it when empty.
+  void ProbeLauncher(const std::shared_ptr<State>& prober, const std::string& url);
+  bool detached() const { return detached_; }
   bool shutting_down() const { return shutdown_; }
+  // Drops a closed bar page from its window (also for a bar that was already replaced).
+  static void Forget(const std::shared_ptr<State>& state, int id);
   bool is_open() const { return open_; }
   bool is_presented() const { return presented_; }
   CefRefPtr<CefWindow> parent() const;
@@ -60,6 +68,8 @@ class CommandBar : public std::enable_shared_from_this<CommandBar> {
   bool site_probe_started_ = false;
   bool new_tab_ = true, open_ = false, ready_ = false, shutdown_ = false, submitting_ = false;
   std::string source_id_, source_url_;
+  bool detached_ = false, launcher_keep_ = false;
+  CefRect detached_area_;
   HWND owner_handle_ = nullptr;
   bool owner_moving_ = false;
   bool gesture_pending_ = false, gesture_dragged_ = false;

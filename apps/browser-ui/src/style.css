@@ -418,6 +418,26 @@ kbd { margin-left: auto; font-family: inherit; font-size: 10px; color: oklch(cal
 .workspace .toolbar-rail { min-width: calc(var(--sidebar-width) + 2px + var(--nav-width)); }
 .workspace .toolbar-spacer { flex: 1 1 0; }
 .workspace .toolbar-navigation { flex: 0 0 auto; height: 24px; }
+.little-space-actions {
+  display: flex; flex: 0 0 auto; align-items: center; border-radius: 6px;
+  background: oklch(calc(.989 - var(--theme-dark, 0) * .69) calc(.008 * var(--theme-chroma, 1)) var(--theme-hue, 307));
+  box-shadow: 0 0 0 1px color-mix(in oklch, currentColor 9%, transparent), 0 1px 2px #0001;
+}
+.little-space-actions .little-space-button { width: auto; gap: 4px; padding: 0 6px; font-size: 12px; white-space: nowrap; border-radius: 6px 0 0 6px; }
+.little-space-button strong { max-width: 104px; overflow: hidden; text-overflow: ellipsis; font-weight: 650; }
+.little-space-picker { position: relative; border-radius: 0 6px 6px 0; }
+.little-space-picker::before { content: ''; position: absolute; inset: 5px auto 5px 0; width: 1px; background: currentColor; opacity: .15; }
+.little-space-picker .icon { width: 14px; height: 14px; transform: rotate(90deg); }
+.little-space-actions button:focus-visible { outline-offset: -2px; }
+/* 23px in the 31px title bar: 4px above and below (24px sat half a pixel low). */
+.little-space-actions .icon-button { height: 23px; }
+.workspace[data-little-window="true"] .toolbar-rail { min-width: 0; }
+.workspace[data-little-window="true"] .page-toolbar { max-width: 100%; }
+@media (max-width: 480px) {
+  .workspace[data-little-window="true"] .chrome-controls { gap: 8px; }
+  .workspace[data-little-window="true"] .address-trigger { padding-inline: 2px; }
+  .little-space-button strong { max-width: 50px; }
+}
 /* Pressed, Back/Forward lean their way and Reload turns a little; released, they come back. */
 .toolbar-navigation [data-nav] .icon { transition: transform .2s cubic-bezier(.3,.7,.3,1); }
 .toolbar-navigation [data-nav]:active:enabled .icon { transition-duration: .09s; }

@@ -58,6 +58,7 @@ export type DevicePreview = DeviceSettings & { id: number; pending: boolean; err
 export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boolean; probeMode: boolean;
   workspaceEnabled?: boolean; schemaVersion?: number; treeRevision?: number; ready?: boolean; error?: string; browserFullscreen?: boolean;
   windowKind?: 'workspace' | 'standalone';
+  littleWindow?: { preferredSpace: string; destinations: { id: string; name: string; sameProfile: boolean }[] };
   /** The active page's zoom in percent when it is not 100 (the address bar's badge). */
   zoom?: number;
   /** A downloaded Sol version waiting for "Restart to update". */
@@ -101,7 +102,7 @@ export type Backdrop = 'none' | 'mica' | 'acrylic';
 /** Times on History and Downloads: the Windows short time format, or a fixed clock. */
 export type Clock = 'system' | '12' | '24';
 export type KeyBinding = { key: number; ctrl: boolean; shift: boolean; alt: boolean };
-export type BrowserPreferences = { schema: 1; searchEngine: SearchEngine; searchSuggestions?: boolean; siteSearches?: SiteSearch[]; siteSearchActivation?: SiteSearchActivation; autoArchiveHours?: number; autoPictureInPicture?: boolean; autoPipSites?: Record<string, boolean>; pipButton?: boolean; unloadMinutes?: number; clock?: Clock; backdrop?: Backdrop; downloadDirectory: string; askDownload: boolean;
+export type BrowserPreferences = { schema: 1; searchEngine: SearchEngine; searchSuggestions?: boolean; siteSearches?: SiteSearch[]; siteSearchActivation?: SiteSearchActivation; autoArchiveHours?: number; autoPictureInPicture?: boolean; autoPipSites?: Record<string, boolean>; pipButton?: boolean; littleSolLinks?: boolean; littleSolClick?: boolean; littleSolHotkey?: boolean; unloadMinutes?: number; clock?: Clock; backdrop?: Backdrop; downloadDirectory: string; askDownload: boolean;
   notesProvider?: 'googleDocs' | 'word'; integrations?: IntegrationSettings; startup: 'restore' | 'newTab' | 'homepage'; homepage: string; shortcuts: Record<string, KeyBinding> };
 export type KeyboardSetting = { action: string; title: string; label: string; defaultLabel: string; custom: boolean; editable: boolean };
 export type SettingsCommand = { method: 'settings.get' | 'settings.ready' | 'settings.makeDefault' | 'settings.extensions' | 'settings.whatsNew'
@@ -113,7 +114,7 @@ export type SettingsCommand = { method: 'settings.get' | 'settings.ready' | 'set
   | { method: 'settings.set'; key: 'siteSearchActivation'; value: SiteSearchActivation }
   | { method: 'settings.set'; key: 'backdrop'; value: Backdrop }
   | { method: 'settings.set'; key: 'clock'; value: Clock }
-  | { method: 'settings.set'; key: 'askDownload' | 'searchSuggestions' | 'autoPictureInPicture' | 'pipButton'; value: boolean }
+  | { method: 'settings.set'; key: 'askDownload' | 'searchSuggestions' | 'autoPictureInPicture' | 'pipButton' | 'littleSolLinks' | 'littleSolClick' | 'littleSolHotkey'; value: boolean }
   | { method: 'settings.set'; key: 'autoArchiveHours' | 'unloadMinutes'; value: number }
   | { method: 'settings.shortcut'; action: string; binding: KeyBinding | null }
   | { method: 'settings.passwords'; profile: string; settings: boolean }
@@ -171,6 +172,8 @@ export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
   if (value.backdrop !== undefined && (!object(value.backdrop) || typeof value.backdrop.available !== 'boolean' ||
       typeof value.backdrop.active !== 'boolean')) throw new Error('Invalid backdrop status');
   if (object(prefs) && prefs.pipButton !== undefined && typeof prefs.pipButton !== 'boolean') throw new Error('Invalid picture-in-picture button preference');
+  for (const key of ['littleSolLinks', 'littleSolClick', 'littleSolHotkey'] as const)
+    if (object(prefs) && prefs[key] !== undefined && typeof prefs[key] !== 'boolean') throw new Error('Invalid Little Sol preference');
   if (object(prefs) && prefs.autoPictureInPicture !== undefined && typeof prefs.autoPictureInPicture !== 'boolean') throw new Error('Invalid picture-in-picture preference');
   if (object(prefs) && prefs.autoArchiveHours !== undefined && (typeof prefs.autoArchiveHours!=='number' || ![0,12,24,48,168].includes(prefs.autoArchiveHours))) throw new Error('Invalid archive preference');
   if (!object(prefs) || prefs.schema !== 1 || !['google', 'duckduckgo', 'bing', 'brave'].includes(String(prefs.searchEngine)) ||
@@ -261,10 +264,11 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | ({ method: 'devtools.emulate'; id: number } & DeviceSettings)
   | ThemeCommand
   | { method: 'window.control'; action: 'minimize' | 'toggleMaximize' | 'close' }
+  | { method: 'window.sendToSpace'; space: string }
   | { method: 'downloads.control'; id: number; action: DownloadAction }
   | { method: 'downloads.clear' }
   | { method: 'menu.main'; x: number; y: number; width: number; height: number }
-  | { method: 'menu.copy'; x: number; y: number; width: number; height: number }
+  | { method: 'menu.copy' | 'menu.littleSpaces'; x: number; y: number; width: number; height: number }
   | { method: 'extension.open' | 'extension.menu'; id: string; x: number; y: number; width: number; height: number }
   | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
   | { method: 'tab.dragStarted'; id: string; previousId: string | null }
@@ -389,6 +393,15 @@ export function parseSnapshot(raw: string): Snapshot {
     if (s.shortcutLabels !== undefined && (!object(s.shortcutLabels) || Object.keys(s.shortcutLabels).length > 64 ||
         Object.values(s.shortcutLabels).some(value => typeof value !== 'string' || value.length > 80))) throw new Error('Invalid shortcut labels');
     if (s.windowKind !== undefined && s.windowKind !== 'workspace' && s.windowKind !== 'standalone') throw new Error('Invalid window kind');
+    if (s.littleWindow !== undefined) {
+      const little = s.littleWindow;
+      if (s.windowKind !== 'standalone' || s.privateWindow || !object(little) || typeof little.preferredSpace !== 'string' ||
+          ![0, 36].includes(little.preferredSpace.length) || !Array.isArray(little.destinations) || little.destinations.length > 24 ||
+          little.destinations.some(item => !object(item) || typeof item.id !== 'string' || item.id.length !== 36 ||
+            typeof item.name !== 'string' || !item.name || item.name.length > 80 || typeof item.sameProfile !== 'boolean')) {
+        throw new Error('Invalid Little Sol destinations');
+      }
+    }
     for (const field of ['windowClosing', 'activeCrashed', 'sidebarResizing']) if (s[field] !== undefined && typeof s[field] !== 'boolean') throw new Error('Invalid page lifecycle state');
     if (s.lifecycleMode !== undefined && (typeof s.lifecycleMode !== 'string' || !['full', 'restore', 'hold', 'manual'].includes(s.lifecycleMode))) throw new Error('Invalid lifecycle probe mode');
     for (const field of ['lifecycleArmedCount', 'lifecycleInspections', 'windowCloseCancelled']) if (s[field] !== undefined && !integer(s[field])) throw new Error('Invalid lifecycle counter');

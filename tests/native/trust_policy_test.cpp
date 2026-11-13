@@ -25,6 +25,9 @@ int main() {
   const auto minimum = red::WorkspaceContentArea(1, 1, true);
   check(minimum.width == 1 && minimum.height == 1, "transient small bounds never produce invalid native sizes");
   check(red::WorkspaceContentArea(1200, 820, true, 336).x == 344, "resized sidebar moves the native page");
+  const auto little = red::WorkspaceContentArea(660, 490, false);
+  check(little.x == 8 && little.y == expanded.y && little.width == 644 && little.height == 451,
+        "Little Sol keeps the canvas inset below the shared title bar");
   check(red::SidebarWidth(480, 700) == 300 && red::SidebarWidth(0, 1200) == red::kSidebarMinWidth &&
         red::SidebarWidth(9999, 1200) == 480, "sidebar limits reserve page space at minimum window size");
   check(!red::IsAllowedMethod("eval"), "code execution denied");
@@ -45,6 +48,8 @@ int main() {
   check(red::IsAllowedBrowserSwitch("load-extension", true), "owned extension experiment allowed");
   check(red::IsAllowedBrowserSwitch("probe-palette",true)&&!red::IsAllowedBrowserSwitch("probe-palette",false),"palette experiment requires probe mode");
   check(red::IsAllowedBrowserSwitch("probe-theme-preview",true)&&!red::IsAllowedBrowserSwitch("probe-theme-preview",false),"theme preview experiment requires probe mode");
+  check(red::IsAllowedBrowserSwitch("probe-little-window",true)&&!red::IsAllowedBrowserSwitch("probe-little-window",false),"Little Sol experiment requires probe mode");
+  check(red::IsAllowedBrowserSwitch("little-sol-url",false)&&!red::IsAllowedBrowserSwitch("little-sol-url",true),"sol-tray.exe's Little Sol address is for real runs only");
   check(!red::IsAllowedBrowserSwitch("probe-native-tabs", false), "native reference requires probe mode");
   check(!red::IsAllowedBrowserSwitch("probe-organization", false), "organization input automation requires probe mode");
   check(!red::IsAllowedBrowserSwitch("probe-lifecycle", false), "renderer crash automation requires explicit probe mode");

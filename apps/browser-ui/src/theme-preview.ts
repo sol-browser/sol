@@ -5,8 +5,8 @@ export function createThemePreviewQueue<T>(
 ) {
   const pending:{value:T;save:boolean;id:number}[]=[];
   let sending=false,latest=0;
-  let lastError:unknown;
-  const waiting:{resolve:()=>void;reject:(error:unknown)=>void}[]=[];
+  let lastError:Error|undefined;
+  const waiting:{resolve:()=>void;reject:(error:Error)=>void}[]=[];
   const flush=async()=>{
     if(sending||!pending.length)return;
     sending=true;const next=pending.shift()!;

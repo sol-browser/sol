@@ -57,6 +57,20 @@ inline std::optional<Shortcut> ShortcutKey(int key, bool ctrl, bool shift, bool 
   }
   return std::nullopt;
 }
+// Chrome's reserved commands (BrowserCommandController::IsReservedCommandOrKey) and Sol's own tab
+// switcher: handled before the page sees the key, so a site cannot keep them. Every other shortcut
+// goes to the page first and runs only if the page leaves the key alone (Figma's Ctrl+D duplicates,
+// Docs' Ctrl+K inserts a link), as in Chrome.
+inline bool ShortcutReserved(Shortcut action) {
+  switch (action) {
+    case Shortcut::NewTab: case Shortcut::CloseTab: case Shortcut::NewWindow: case Shortcut::NewPrivateWindow:
+    case Shortcut::ReopenClosed: case Shortcut::NextTab: case Shortcut::PreviousTab: case Shortcut::RecentTab:
+    case Shortcut::RecentTabBack: case Shortcut::CloseWindow:
+      return true;
+    default:
+      return false;
+  }
+}
 bool ExecuteShortcut(const std::shared_ptr<State>& state, Shortcut action);
 std::optional<Shortcut> ShortcutKeyFor(const std::shared_ptr<State>& state, int key, bool ctrl, bool shift, bool alt);
 void RefreshShortcuts(const std::shared_ptr<State>& state);

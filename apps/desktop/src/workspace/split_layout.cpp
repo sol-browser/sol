@@ -71,6 +71,7 @@ void Append(const SplitNode& node, std::string& out) {
 }
 
 void Rebalance(std::vector<SplitNode>& children) {
+  if (children.empty()) return;  // Nothing to share out (and no division by zero).
   long long total = 0;
   for (const auto& child : children) total += std::max(1, child.weight);
   int sum = 0;

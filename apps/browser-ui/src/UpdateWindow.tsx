@@ -44,7 +44,7 @@ function Mark({ target }: { target: MarkTarget }) {
     frame = requestAnimationFrame(tick);
     return () => { cancelAnimationFrame(frame); removeEventListener('resize', resize); };
   }, []);
-  return <canvas ref={canvas} className="update-canvas" aria-hidden="true" />;
+  return <canvas ref={canvas} className="update-canvas" aria-hidden="true" tabIndex={-1} />;
 }
 
 /** "Check for Updates" (sol://ui/update.html): the check, the download as it happens, and the restart. */

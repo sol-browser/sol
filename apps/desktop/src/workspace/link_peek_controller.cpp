@@ -83,7 +83,7 @@ bool WorkspaceController::CanSplitLinkPeek() const {
 }
 bool WorkspaceController::RouteLinkPeek(CefRefPtr<CefBrowser> source,const std::string& url,bool force) {
   const auto state=state_.lock();
-  if (!state || !state->embedded || !source || !ready_ || stopped_ || shutting_down_ || HasLinkPeek() ||
+  if (!state || state->little_window || !state->embedded || !source || !ready_ || stopped_ || shutting_down_ || HasLinkPeek() ||
       !closing_.empty() || closing_commits_ || state->embedded->IsPageFullscreen() || url.size()>4096 || Site(url).empty()) return false;
   const auto binding=browser_nodes_.find(source->GetIdentifier());
   if (binding==browser_nodes_.end()) return false;

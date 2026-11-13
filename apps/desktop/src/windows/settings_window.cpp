@@ -210,6 +210,7 @@ void SettingsWindow::SavePreferences(Preferences next, CefRefPtr<CefMessageRoute
         if (window->workspace) window->workspace->Refresh();
         if (window->command_bar) window->command_bar->Refresh();
       }
+      if (state->session->apply_background) state->session->apply_background();
       state->Record("settings_preferences_saved");
     }
     callback->Success(owner->Response());
@@ -313,6 +314,12 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
       next.unload_minutes = data->GetInt("value"); valid = true;
     } else if (key == "pipButton" && data->GetType("value") == VTYPE_BOOL) {
       next.pip_button = data->GetBool("value"); valid = true;
+    } else if (key == "littleSolLinks" && data->GetType("value") == VTYPE_BOOL) {
+      next.little_sol_links = data->GetBool("value"); valid = true;
+    } else if (key == "littleSolClick" && data->GetType("value") == VTYPE_BOOL) {
+      next.little_sol_click = data->GetBool("value"); valid = true;
+    } else if (key == "littleSolHotkey" && data->GetType("value") == VTYPE_BOOL) {
+      next.little_sol_hotkey = data->GetBool("value"); valid = true;
     } else if (key == "autoPictureInPicture" && data->GetType("value") == VTYPE_BOOL) {
       next.auto_pip = data->GetBool("value"); valid = true;
     } else if (key == "autoArchiveHours" && data->GetType("value")==VTYPE_INT && ValidAutoArchiveHours(data->GetInt("value"))) {

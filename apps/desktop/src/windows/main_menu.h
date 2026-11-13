@@ -10,6 +10,7 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor);
 // Right click on the top bar's copy-link button: "Copy Link" and "Super Copy" (the address without
 // tracking parameters, Ctrl+Shift+C). |anchor| is that button in root client DIP coordinates.
 void ShowCopyMenu(const std::shared_ptr<State>& state, const CefRect& anchor);
+void ShowLittleSpaces(const std::shared_ptr<State>& state, const CefRect& anchor);
 // Pins or unpins an installed extension on every window's top bar.
 void PinExtension(const std::shared_ptr<State>& state, const std::string& id, bool pinned);
 // An extension's menu (Open, Pin/Unpin, Manage Extensions) with its top-left at |at|; |popup| is

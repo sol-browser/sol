@@ -50,6 +50,9 @@ struct State {
   std::shared_ptr<AppSession> session;
   std::shared_ptr<WorkspaceData> workspace_data;
   bool standalone_window = false;
+  bool little_window = false;
+  // Ctrl+Alt+N: this Little Sol stays hidden while its command bar asks for an address.
+  bool little_launcher = false;
   // Private (incognito) window (docs/private-windows.md): its own off-the-record web context, an
   // in-memory sidebar, and no history, favicon, download record or session written to disk.
   bool private_window = false;
@@ -71,6 +74,13 @@ struct State {
   bool initial_custom_title = false;
   std::function<void()> detached_ready;
   bool secondary_window = false;
+  // A later window that took over the saved size and position (window.json): the one opened while
+  // no other window had it, e.g. Sol reopened from the notification area.
+  bool remember_placement = false;
+  // A first window started from the notification area (main_win.cpp FinishBackgroundStart):
+  // hidden, closed once the Little Sol it was started for is open.
+  enum class BackgroundStart { None, Links };
+  BackgroundStart background_start = BackgroundStart::None;
   std::string initial_tab;
   // Set on a window opened for a tab moved live: called with the entry the
   // window would load, it moves the source's live page in (true) instead.
@@ -205,6 +215,7 @@ struct State {
   std::string pin_id;
   CefRefPtr<CefDictionaryValue> pin_result;
   bool private_probe = false, private_started = false, private_done = false;
+  bool little_probe = false, little_external = false, little_launcher_probe = false, little_click_probe = false, little_started = false, little_links_started = false, little_done = false;
   bool menu_probe = false, menu_probe_started = false, menu_done = false, menu_page = false, menu_edges = false, menu_update = false, menu_update_restart = false, menu_screenshot = false, menu_recent = false, menu_capture = false, menu_capture_tiles = false, menu_settings = false, screenshot_ask_probe = false, menu_copy = false, menu_switcher = false, menu_switcher_empty = false, menu_switcher_again = false;
   int menu_loads = 0;
   bool boost_probe = false, boost_done = false, boost_store = false, boost_pick = false;

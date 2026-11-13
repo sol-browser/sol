@@ -19,6 +19,9 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
  public:
   using Reply = std::function<void(int, const std::string&, CefRefPtr<CefDictionaryValue>)>;
   explicit WorkspaceController(std::weak_ptr<State> state) : state_(std::move(state)) {}
+  // The session and its settings, before Start (cold start: links from other apps are sorted
+  // into Little Sol or tabs by Settings > Links before the workspace loads).
+  void PrepareSession();
   void Start();
   void Stop();
   void Handle(CefRefPtr<CefDictionaryValue> request, Reply done);
@@ -39,6 +42,8 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   std::string ActiveSpaceName() const {
     const auto* space=tree_.ActiveSpace();return space?space->name:"Your space";
   }
+  const std::string& ActiveSpaceId() const { return tree_.active_space; }
+  void SendLittlePage(const std::string& space_id, Reply done);
   void SetObserver(std::function<void(CefRefPtr<CefDictionaryValue>)> observer);
   void ReceiveSharedTree(const TreeSnapshot& tree);
   std::shared_ptr<BrowsingProfile> ProfileForNode(const std::string& id) const;
@@ -122,6 +127,15 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void OpenLink(const std::string& url, bool foreground, Reply done = {}, const std::string& initiator = "",
                 CefRefPtr<CefBrowser> opener = nullptr);
   void QueueExternalUrls(const std::vector<std::string>& urls);
+  // Website links from other apps (Settings > Links): each opens in its own Little Sol, with this
+  // window as its source, once this window is ready. A link that cannot open there becomes a tab.
+  void QueueLittleSolLinks(const std::vector<std::string>& urls);
+  // Whether a link from another app opens in Little Sol rather than as a tab.
+  static bool OpensInLittleSol(const AppSession& session, const std::string& url);
+  // Ctrl+Alt+N: opens this hidden Little Sol's command bar on its own, once the window is ready.
+  // Finish shows the window with the page the bar opened, or closes it when nothing was opened.
+  void StartLittleSolLauncher(int attempts = 100);
+  void FinishLittleSolLauncher(bool opened);
   // A local file the person opened (dropped on a page): file:/// only.
   void OpenFile(const std::string& url, bool foreground);
   // A new tab for an address the person typed: a website or a local file.
@@ -252,8 +266,15 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   struct FolderRemoval;
   std::shared_ptr<FolderRemoval> folder_removal_;
   std::set<std::string> removing_folder_nodes_;
+  // |space|: create the tab in that Space of this window's tree instead of the active one.
   void OpenPage(const std::string& url, const std::string& title, bool foreground, Reply done, const std::string& initiator = "",
-                const std::string& after = "");
+                const std::string& after = "", const std::string& space = "");
+  // Little Sol (workspace/little_window_controller.cpp): one page; other pages open in a workspace window.
+  bool LittleWindowHasPage() const;
+  bool LittleWindowRejects(const TreeCommand& command) const;
+  std::shared_ptr<State> LittleTargetWindow(const std::string& space_id);
+  std::string LittleLinkSpace() const;
+  void OpenFromLittleWindow(const std::string& url, const std::string& title, bool foreground, Reply done, const std::string& initiator);
   // Creates the live page for |id|; a page opened from a website's link starts
   // empty and then loads |url| with that page as initiator (engine patch 02).
   bool CreateLive(const std::string& url, const std::string& id);
@@ -272,6 +293,9 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   std::set<std::string> moving_unloads_;
   std::set<std::string> detached_removals_;
   std::map<std::string, std::function<void()>> tab_ready_;
+  bool sending_little_page_ = false;
+  std::vector<std::string> little_pending_;
+  void DrainLittleSolLinks();
   std::map<std::string, std::string> next_urls_;
   std::set<int> loaded_;
   std::set<int> crashed_;

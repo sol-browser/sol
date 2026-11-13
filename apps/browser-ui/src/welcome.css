@@ -6,7 +6,7 @@
   font-family: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", sans-serif;
   user-select: none; cursor: default;
 }
-.welcome-sky { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.welcome-sky { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 /* Without WebGL: a warm glow in place of the orb, no stars. */
 .welcome[data-fallback="true"] .welcome-sky { display: none; }
 .welcome[data-fallback="true"] { background: radial-gradient(circle at 50% 42%, rgba(249, 202, 48, .22), rgba(255, 140, 50, .06) 22%, #030204 48%); }

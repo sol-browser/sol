@@ -1,4 +1,5 @@
 #include "app/updates.h"
+#include "windows/start_with_windows.h"
 #include "red_version.h"
 #include "app/session.h"
 #include "app/release_notes.h"
@@ -104,7 +105,7 @@ void AfterInstall(void* data, const char* version) {
   if (IsMainInstall()) RemoveInnoInstall();
 }
 
-void BeforeUninstall(void*, const char*) { if (IsMainInstall()) Unregister(); }
+void BeforeUninstall(void*, const char*) { if (IsMainInstall()) { Unregister(); RemoveStartWithWindows(); } }
 
 std::unique_ptr<Velopack::UpdateManager> Manager() {
   wchar_t feed[1024]{};
@@ -127,7 +128,7 @@ struct Found { bool feed_failed = false; bool downloaded = false; };
 
 // The periodic thread and a manual check never run together: two downloads of
 // one version would write the same files.
-std::mutex& CheckMutex() { static auto* mutex = new std::mutex; return *mutex; }
+std::mutex& CheckMutex() { static std::mutex mutex; return mutex; }
 
 Check CheckOnce(const std::function<void(const std::string&)>& ready, Found& found) {
   std::unique_ptr<Velopack::UpdateManager> manager;
@@ -267,6 +268,7 @@ bool PrepareRestartToUpdate() {
 bool RequestUpdateRestart(const std::shared_ptr<State>& state) {
   if (!state || !state->session || !state->workspace || state->workspace->WindowClosing() || ReadyUpdate().empty()) return false;
   if (!PrepareRestartToUpdate()) return false;
+  state->session->quitting = true;  // Sol must exit even when it runs in the background.
   CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
     if (const auto owner=weak.lock(); owner && owner->session)
       for (const auto& window:owner->session->Windows()) if(window->window)window->window->Close();

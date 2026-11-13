@@ -22,6 +22,7 @@
 #include "include/views/cef_fill_layout.h"
 #include "include/base/cef_callback.h"
 #include "include/wrapper/cef_closure_task.h"
+#include "include/views/cef_display.h"
 namespace red {
 namespace {
 constexpr int kMaxRows = 6, kBaseHeight = 66, kRowHeight = 48, kErrorHeight = 34;
@@ -71,7 +72,11 @@ class CommandClient final : public CefClient, public CefLifeSpanHandler, public 
   void OnAfterCreated(CefRefPtr<CefBrowser> b) override { if (auto o = owner_.lock()) o->Created(b); }
   void OnBeforeClose(CefRefPtr<CefBrowser> b) override {
     capture_ = nullptr;
-    router_->OnBeforeClose(b); if (auto o = owner_.lock()) o->Closed(b->GetIdentifier());
+    router_->OnBeforeClose(b);
+    if (auto o = owner_.lock()) { o->Closed(b->GetIdentifier()); return; }
+    // A bar replaced while its page was still closing (Little Sol's Ctrl+Alt+N bar): its window
+    // must still forget the page, or Sol never sees its last window close.
+    if (auto s = state_.lock()) CommandBar::Forget(s, b->GetIdentifier());
   }
   bool OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, int, const CefString&, const CefString&,
       cef_window_open_disposition_t, bool, const CefPopupFeatures&, CefWindowInfo&, CefRefPtr<CefClient>&,
@@ -134,6 +139,10 @@ class CommandWindow final : public CefWindowDelegate {
     w->SetTitle("Sol — Command bar"); w->SetBackgroundColor(CefColorSetARGB(255, 16, 16, 18));
     const DWM_WINDOW_CORNER_PREFERENCE corners = DWMWCP_ROUND;
     DwmSetWindowAttribute(w->GetWindowHandle(), DWMWA_WINDOW_CORNER_PREFERENCE, &corners, sizeof(corners));
+    // One outline only: the page draws it (command-bar.css, 8px like DWM's rounding). Windows' own
+    // border followed another radius, and grey showed in the corners between the two.
+    const COLORREF no_border = DWMWA_COLOR_NONE;
+    DwmSetWindowAttribute(w->GetWindowHandle(), DWMWA_BORDER_COLOR, &no_border, sizeof(no_border));
     w->SetToFillLayout(); w->AddChildView(view_);
     if (auto o = owner_.lock()) o->Attach(w, view_);
   }
@@ -148,7 +157,20 @@ class CommandWindow final : public CefWindowDelegate {
   IMPLEMENT_REFCOUNTING(CommandWindow);
 };
 }
-CefRefPtr<CefWindow> CommandBar::parent() const { auto s = state_.lock(); return s ? s->window : nullptr; }
+CefRefPtr<CefWindow> CommandBar::parent() const {
+  if (detached_) return nullptr;
+  auto s = state_.lock(); return s ? s->window : nullptr;
+}
+void CommandBar::OpenDetached() {
+  POINT cursor{};
+  GetCursorPos(&cursor);
+  const auto display = CefDisplay::GetDisplayNearestPoint(CefPoint(cursor.x, cursor.y), false);
+  if (!display) return;
+  detached_area_ = display->GetWorkArea();
+  detached_ = true; launcher_keep_ = false;
+  Open(true);
+  if (!open_) detached_ = false;
+}
 CommandBar::~CommandBar() {
   if (owner_handle_) RemoveWindowSubclass(owner_handle_, OwnerMessage, reinterpret_cast<UINT_PTR>(this));
   if (suggestions_) suggestions_->Cancel();
@@ -246,24 +268,32 @@ void CommandBar::FollowOwnerGesture(int request) {
     if (const auto self = weak.lock()) self->FollowOwnerGesture(request);
   },weak_from_this(),request), 16);
 }
-void CommandBar::Attach(CefRefPtr<CefWindow> w, CefRefPtr<CefBrowserView> v) { window_ = w; view_ = v; presentation_.Attach(w, state_); Reposition(); }
+void CommandBar::Attach(CefRefPtr<CefWindow> w, CefRefPtr<CefBrowserView> v) {
+  window_ = w; view_ = v; presentation_.Attach(w, state_);
+  // Without an owner the bar would get a taskbar button of its own.
+  if (detached_) if (const HWND handle = w->GetWindowHandle())
+    SetWindowLongPtrW(handle, GWL_EXSTYLE, GetWindowLongPtrW(handle, GWL_EXSTYLE) | WS_EX_TOOLWINDOW);
+  Reposition();
+}
 void CommandBar::Created(CefRefPtr<CefBrowser> b) {
   browser_ = b;
   if (auto s = state_.lock()) { s->command_id = b->GetIdentifier(); RegisterSessionUi(s, b->GetIdentifier()); s->browsers[b->GetIdentifier()] = b; s->Record("command_created"); }
 }
 void CommandBar::Closed(int id) {
   observer_ = nullptr; browser_ = nullptr;
-  if (auto s = state_.lock()) {
-    UnregisterSessionUi(s, id); s->browsers.erase(id); s->command_id = -1; s->Record("command_closed");
-    if (s->window_close) s->window_close->OnClosed(id);
-    if (!s->window && s->browsers.empty()) QuitIfLastWindow(s);
-  }
+  if (auto s = state_.lock()) Forget(s, id);
+}
+void CommandBar::Forget(const std::shared_ptr<State>& s, int id) {
+  UnregisterSessionUi(s, id); s->browsers.erase(id); if (s->command_id == id) s->command_id = -1;
+  s->Record("command_closed");
+  if (s->window_close) s->window_close->OnClosed(id);
+  if (!s->window && s->browsers.empty()) QuitIfLastWindow(s);
 }
 void CommandBar::Destroyed() { presentation_.Reset(); window_ = nullptr; view_ = nullptr; ready_ = prepared_ = presented_ = false; }
 void CommandBar::Reposition() {
-  auto p = parent(); if (!p || !window_) return;
-  TrackOwnerGesture();
-  const auto b = p->GetClientAreaBoundsInScreen();
+  auto p = parent(); if ((!p && !detached_) || !window_) return;
+  if (!detached_) TrackOwnerGesture();
+  const auto b = detached_ ? detached_area_ : p->GetClientAreaBoundsInScreen();
   const int reference = AnchorHeight(b.height);
   const int width = std::max(1, std::min(720, b.width - 32)), height = std::clamp(height_, 1, reference);
   const CefRect target(b.x + (b.width - width) / 2, b.y + (b.height - reference) / 2, width, height);
@@ -280,7 +310,7 @@ void CommandBar::Open(bool new_tab) {
   auto s = state_.lock(); if (!s || !s->window || !s->workspace || s->workspace->WindowClosing() || shutdown_ || submitting_) return;
   auto snap = s->workspace->Snapshot(); if (!snap->GetBool("ready")) return;
   if (open_ && presented_ && new_tab_ == new_tab) { window_->Activate(); FocusBrowser(browser_); return; }
-  if (!owner_handle_) {
+  if (!owner_handle_ && !detached_) {
     const auto handle = s->window->GetWindowHandle();
     if (SetWindowSubclass(handle,OwnerMessage,reinterpret_cast<UINT_PTR>(this),reinterpret_cast<DWORD_PTR>(this))) owner_handle_ = handle;
     auto details = CefDictionaryValue::Create(); details->SetBool("attached",owner_handle_ != nullptr);
@@ -313,6 +343,15 @@ void CommandBar::Hide(bool restore_focus) {
   suggestion_query_ = -1;
   prepared_ = presented_ = false; presentation_.Conceal();
   if (observer_) observer_->Success(Response());
+  if (detached_) {
+    // The launcher's Little Sol shows with its page, or closes; there is no owner to refocus.
+    detached_ = false;
+    const bool keep = launcher_keep_; launcher_keep_ = false;
+    if (auto s = state_.lock()) CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, bool keep) {
+      if (const auto state = weak.lock(); state && state->workspace) state->workspace->FinishLittleSolLauncher(keep);
+    }, std::weak_ptr<State>(s), keep));
+    return;
+  }
   if (auto s = state_.lock()) {
     auto data = CefDictionaryValue::Create(); data->SetBool("restore_focus", restore_focus); s->Record("command_hidden", data);
     if (restore_focus && s->window) {
@@ -468,6 +507,17 @@ void CommandBar::ProbeInput(const std::string& input, int attempts, bool actions
     i.dispatchEvent(new Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,80));i.form.requestSubmit();})())JS";
   browser_->GetMainFrame()->ExecuteJavaScript(script, std::string(kCommandUrl), 0);
 }
+void CommandBar::ProbeLauncher(const std::shared_ptr<State>& prober, const std::string& url) {
+  if (!prober || !prober->probe || !prober->little_launcher_probe || !detached_ || !open_ || !ready_ || !browser_) return;
+  // The same trusted UI commands the bar sends for Enter and Escape.
+  auto request = CefDictionaryValue::Create();
+  request->SetString("method", url.empty() ? "command.close" : "command.submit");
+  if (!url.empty()) request->SetString("url", url);
+  auto value = CefValue::Create(); value->SetDictionary(request);
+  auto text = CefValue::Create(); text->SetString(CefWriteJSON(value, JSON_WRITER_DEFAULT));
+  browser_->GetMainFrame()->ExecuteJavaScript("cefQuery({request:" + CefWriteJSON(text, JSON_WRITER_DEFAULT).ToString() +
+      ",onSuccess:()=>{},onFailure:(code,message)=>console.error(message)})", std::string(kCommandUrl), 0);
+}
 void CommandBar::ProbeCancel() {
   const auto s = state_.lock();
   if (!s || !s->probe || !s->browsing_probe || !open_ || !ready_ || !browser_) return;
@@ -491,7 +541,7 @@ bool CommandBar::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
   }
   if (method == "command.resize" && !persistent && d->GetSize() == 4 && d->GetType("rows") == VTYPE_INT &&
       d->GetType("error") == VTYPE_BOOL && d->GetInt("rows") >= 0 && d->GetInt("rows") <= kMaxRows) {
-    if (!presented_ && !PopupOwnerIsForeground(s->window)) { Hide(false); cb->Failure(409, "Command owner is inactive"); return true; }
+    if (!presented_ && !detached_ && !PopupOwnerIsForeground(s->window)) { Hide(false); cb->Failure(409, "Command owner is inactive"); return true; }
     const int requested = kBaseHeight + std::max(1, d->GetInt("rows")) * kRowHeight + (d->GetBool("error") ? kErrorHeight : 0);
     // Keep the viewport from shrinking/regrowing between local and async rows.
     height_ = presented_ ? std::max(height_,requested) : requested;
@@ -500,7 +550,7 @@ bool CommandBar::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     cb->Success(PopupViewport(window_, request_)); return true;
   }
   if (method == "command.present" && !persistent && d->GetSize() == 3 && d->GetType("reducedMotion") == VTYPE_BOOL && prepared_) {
-    if (!PopupOwnerIsForeground(s->window)) { Hide(false); cb->Failure(409, "Command owner is inactive"); return true; }
+    if (!detached_ && !PopupOwnerIsForeground(s->window)) { Hide(false); cb->Failure(409, "Command owner is inactive"); return true; }
     if (!presented_) {
       presented_ = true; window_->Show(); window_->Activate(); FocusBrowser(browser_);
       presentation_.Reveal(d->GetBool("reducedMotion"), false);
@@ -560,6 +610,7 @@ bool CommandBar::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     if (d->GetSize() != 3 || d->GetType("action") != VTYPE_STRING || d->GetType("request") != VTYPE_INT) {
       cb->Failure(400, "Invalid action shape"); return true;
     }
+    if (detached_) { cb->Failure(409, "Open Sol to use this command"); return true; }
     const auto action = CommandShortcut(d->GetString("action").ToString());
     if (!action) { cb->Failure(400, "Unsupported command action"); return true; }
     if (!open_ || submitting_ || d->GetInt("request") != request_ || s->workspace->WindowClosing()) {
@@ -597,7 +648,12 @@ bool CommandBar::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
   if (method == "command.close") { cb->Success(Response()); Hide(true); return true; }
   if (!open_ || submitting_ || s->workspace->WindowClosing()) { cb->Failure(409, "Command bar is not ready"); return true; }
   auto done = [weak = weak_from_this(), cb](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
-    if (auto o = weak.lock()) { o->submitting_ = false; if (code) cb->Failure(code, error); else { cb->Success(o->Response()); o->Hide(true); } }
+    if (auto o = weak.lock()) {
+      o->submitting_ = false;
+      if (code) { cb->Failure(code, error); return; }
+      o->launcher_keep_ = o->detached_;  // The launcher's page opened: its Little Sol shows.
+      cb->Success(o->Response()); o->Hide(true);
+    }
   };
   if (method == "command.submit" && d->GetType("url") == VTYPE_STRING) {
     auto url = d->GetString("url").ToString(); auto current = s->workspace->Snapshot();
@@ -607,6 +663,7 @@ bool CommandBar::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     // History and Downloads keep one tab each: switch to it (or open it).
     if (IsInternalPageUrl(url)) {
       if (url == kHistoryUrl) s->workspace->OpenHistoryPage(); else s->workspace->OpenDownloadsPage();
+      launcher_keep_ = detached_;
       cb->Success(Response()); Hide(true); return true;
     }
     submitting_ = true;

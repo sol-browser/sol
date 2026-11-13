@@ -63,6 +63,7 @@ void AppSession::PublishTree(const std::shared_ptr<WorkspaceData>& data, const T
   data->tree = incoming; data->ready = true;
   for (const auto& state : Windows())
     if (state->workspace_data == data && state->workspace && state->workspace.get() != origin) state->workspace->ReceiveSharedTree(data->tree);
+    else if (data == workspace && state->little_window && state->workspace) state->workspace->Refresh();
 }
 void AppSession::AddWorkspace(const std::shared_ptr<WorkspaceData>& data) { data_scopes_.push_back(data); }
 void AppSession::StopWorkspaces() {
@@ -82,7 +83,15 @@ void AppSession::ReleaseUnusedWorkspaces() {
 }
 void QuitIfLastWindow(const std::shared_ptr<State>& state) {
   if (state->session) state->session->ReleaseUnusedWorkspaces();
-  if (!state->session || !state->session->HasOpenWindows()) CefQuitMessageLoop();
+  if (state->session && state->session->HasOpenWindows()) return;
+  // In the notification area Sol outlives its windows (background_host.cpp). sol-tray.exe takes
+  // the icon and Ctrl+Alt+N over, so the browser, GPU and extension processes can exit; without it
+  // Sol stays in memory.
+  if (state->session && state->session->keep_running && !state->session->quitting) {
+    if (!state->session->hand_to_tray || !state->session->hand_to_tray()) return;
+    state->session->quitting = true;
+  }
+  CefQuitMessageLoop();
 }
 void RegisterSessionUi(const std::shared_ptr<State>& state, int browser) {
   if (state->session) state->session->RegisterUi(browser, state);

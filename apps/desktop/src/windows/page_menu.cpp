@@ -26,6 +26,7 @@ const std::map<int, std::string>& Icons() {
       {"IDC_CONTENT_CONTEXT_LOOP", "reload"}, {"IDC_CONTENT_CONTEXT_CONTROLS", "sliders"}, {"IDC_CONTENT_CONTEXT_COPYLINKTEXT", "copy"}};
     std::map<int, std::string> result;
     for (const auto& [name, icon] : kNames) if (const int id = cef_id_for_command_id_name(name); id >= 0) result[id] = icon;
+    result[kOpenLittleWindowMenu] = "window";
     return result;
   }();
   return icons;

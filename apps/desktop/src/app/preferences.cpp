@@ -83,6 +83,13 @@ bool Decode(const std::string& json, Preferences& value) {
     if (data->GetType("pipButton") != VTYPE_BOOL) return false;
     value.pip_button = data->GetBool("pipButton");
   }
+  for (const auto& [key, field] : {std::pair{"littleSolLinks", &Preferences::little_sol_links},
+                                    std::pair{"littleSolClick", &Preferences::little_sol_click},
+                                    std::pair{"littleSolHotkey", &Preferences::little_sol_hotkey}}) {
+    if (!data->HasKey(key)) continue;
+    if (data->GetType(key) != VTYPE_BOOL) return false;
+    value.*field = data->GetBool(key);
+  }
   if (data->HasKey("autoPipSites")) {
     if (data->GetType("autoPipSites") != VTYPE_DICTIONARY) return false;
     const auto sites = data->GetDictionary("autoPipSites"); CefDictionaryValue::KeyList origins; sites->GetKeys(origins);
@@ -234,6 +241,9 @@ CefRefPtr<CefDictionaryValue> BrowserPreferences::ToDictionary(const Preferences
   for (const auto& [origin, on] : value.auto_pip_sites) sites->SetBool(origin, on);
   data->SetDictionary("autoPipSites", sites);
   data->SetBool("pipButton", value.pip_button);
+  data->SetBool("littleSolLinks", value.little_sol_links);
+  data->SetBool("littleSolClick", value.little_sol_click);
+  data->SetBool("littleSolHotkey", value.little_sol_hotkey);
   data->SetInt("unloadMinutes", value.unload_minutes);
   data->SetString("backdrop", value.backdrop);
   data->SetString("clock", value.clock);

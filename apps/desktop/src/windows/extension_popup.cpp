@@ -14,8 +14,8 @@
 
 namespace red {
 namespace {
-// Chrome's extension popup limits.
-const CefSize kMinimum(25, 25), kMaximum(800, 600);
+// Chrome's extension popup limits and Sol's initial window size.
+const CefSize kMinimum(25, 25), kMaximum(800, 600), kInitialSize(320, 120);
 
 std::string Origin(const std::string& id) { return "chrome-extension://" + id + "/"; }
 bool IsWebLink(const std::string& url) { return HasWebScheme(url); }
@@ -50,8 +50,26 @@ class PopupClient final : public CefClient, public CefLifeSpanHandler, public Ce
     if (gesture) OpenAsTab(url);
     return true;
   }
-  bool OnAutoResize(CefRefPtr<CefBrowser>, const CefSize& size) override {
-    if (auto owner = owner_.lock()) owner->Resize(size); return true;
+  bool OnAutoResize(CefRefPtr<CefBrowser> browser, const CefSize& size) override {
+    const auto owner = owner_.lock();
+    if (!owner || !owner->Owns(browser->GetIdentifier()) || auto_resize_disabled_) return true;
+    // A fluid extension page can keep getting narrower while its height is
+    // already capped. Recover when it hits the width floor after requesting
+    // a larger width at that height. A stable, deliberately narrow popup still
+    // uses its requested dimensions.
+    if (size.height == kMaximum.height && size.width == kMinimum.width &&
+        previous_size_.height == size.height && previous_size_.width > size.width &&
+        previous_size_.width < kInitialSize.width) {
+      auto_resize_disabled_ = true;
+      // Lay out this popup in a fixed viewport. Intrinsic sizing is what made
+      // its fluid page collapse, so keep it off for this popup's lifetime.
+      browser->GetHost()->SetAutoResizeEnabled(false, CefSize(), CefSize());
+      owner->Resize(CefSize(kInitialSize.width, size.height));
+      return true;
+    }
+    previous_size_ = size;
+    owner->Resize(size);
+    return true;
   }
   bool OnPreKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& event, CefEventHandle, bool*) override {
     if (event.type != KEYEVENT_RAWKEYDOWN || event.windows_key_code != VK_ESCAPE) return false;
@@ -90,6 +108,8 @@ class PopupClient final : public CefClient, public CefLifeSpanHandler, public Ce
   std::weak_ptr<ExtensionPopup> owner_;
   std::weak_ptr<State> state_;
   std::string id_;
+  CefSize previous_size_;
+  bool auto_resize_disabled_ = false;
   IMPLEMENT_REFCOUNTING(PopupClient);
 };
 class PopupView final : public CefBrowserViewDelegate {
@@ -108,7 +128,7 @@ class PopupWindow final : public CefWindowDelegate {
   CefRefPtr<CefWindow> GetParentWindow(CefRefPtr<CefWindow>, bool* modal, bool*) override {
     *modal = false; auto state = state_.lock(); return state ? state->window : nullptr;
   }
-  CefSize GetPreferredSize(CefRefPtr<CefView>) override { return CefSize(320, 120); }
+  CefSize GetPreferredSize(CefRefPtr<CefView>) override { return kInitialSize; }
   void OnWindowCreated(CefRefPtr<CefWindow> window) override {
     window->SetTitle("Extension");
     const DWM_WINDOW_CORNER_PREFERENCE corners = DWMWCP_ROUND;
@@ -145,7 +165,8 @@ void ExtensionPopup::Open(const std::string& id, const std::string& path, const 
     Close();
     if (same) return;  // A second click on the same extension closes it.
   }
-  id_ = id; anchor_ = anchor; size_ = CefSize(320, 120);
+  id_ = id; anchor_ = anchor;
+  size_ = kInitialSize;
   auto view = CefBrowserView::CreateBrowserView(new PopupClient(weak_from_this(), state_, id), Origin(id) + path,
       CefBrowserSettings(), nullptr, state->WebContext(), new PopupView());
   CefWindow::CreateTopLevelWindow(new PopupWindow(weak_from_this(), state_, view));
@@ -156,6 +177,7 @@ void ExtensionPopup::Created(CefRefPtr<CefWindow> window) { window_ = window; Pl
 void ExtensionPopup::Close(CefRefPtr<CefWindow> which) {
   if (!window_ || (which && !which->IsSame(window_))) return;
   auto window = window_; window_ = nullptr;
+  browser_id_ = -1;
   window->Close();
 }
 void ExtensionPopup::Resize(const CefSize& size) {

@@ -38,6 +38,7 @@ import { UpdateWindow } from './UpdateWindow';
 import { CaptureOverlay } from './CaptureOverlay';
 import { Menu } from './Menu';
 import { internalPage } from './internal-pages';
+import { LittleWindowSpaceButton } from './LittleWindowSpaceButton';
 // After every component stylesheet: popovers and menus share the Orbit look.
 import './popup.css';
 
@@ -176,13 +177,15 @@ function Shell() {
   const connected = snapshot !== undefined;
   const activeNode = snapshot?.nodes?.find(node => node.id === snapshot.activeId);
   const workspace = snapshot?.workspaceEnabled === true;
+  const little = workspace ? snapshot.littleWindow : undefined;
   const ready = workspace ? snapshot.ready && !snapshot.windowClosing : connected;
   const notice = workspace && snapshot.notice && snapshot.noticeId !== dismissedNotice ? snapshot.notice : '';
+  const toolbarNotice = notice || (little ? error : '');
   const status = error || snapshot?.error || (workspace ? snapshot.ready ? busy ? 'Saving…' : snapshot.isLoading ? 'Loading page…' : 'Saved locally' : 'Loading workspace…' : connected ? 'Native connected · architecture experiment' : 'Connecting to native host…');
   return <main className={workspace ? 'workspace' : 'legacy'} style={{ '--sidebar-size': `${snapshot?.sidebarWidth ?? 256}px`,
     '--peek-center-x':`${snapshot?.linkPeek ? snapshot.linkPeek.area.x+snapshot.linkPeek.area.width/2 : 0}px`,
     '--peek-center-y':`${snapshot?.linkPeek ? snapshot.linkPeek.area.y+snapshot.linkPeek.area.height/2 : 0}px` } as CSSProperties}
-    data-peek={!!snapshot?.linkPeek?.depthReady} data-peek-returning={!!snapshot?.linkPeek?.returning} data-sidebar-visible={snapshot?.sidebarVisible !== false} data-window-maximized={snapshot?.windowMaximized === true} onKeyDown={event => {
+    data-peek={!!snapshot?.linkPeek?.depthReady} data-peek-returning={!!snapshot?.linkPeek?.returning} data-sidebar-visible={snapshot?.sidebarVisible !== false} data-window-maximized={snapshot?.windowMaximized === true} data-little-window={!!little} onKeyDown={event => {
     if (!workspace || event.metaKey || event.nativeEvent.isComposing) return;
     if (event.key==='Escape' && snapshot.linkPeek) { event.preventDefault(); void send({method:'linkPeek.control',id:snapshot.linkPeek.id,action:'close'}); return; }
     if (event.ctrlKey && event.shiftKey && !event.altKey && event.code === 'KeyM' && snapshot.devicePreview) {
@@ -209,6 +212,7 @@ function Shell() {
     <header className="topbar" data-split={!!snapshot?.splitView} data-peek={!!snapshot?.linkPeek} data-fullscreen={!!snapshot?.browserFullscreen}>
       <form className="chrome-controls" onSubmit={navigate}>
         <div className="toolbar-rail">
+          {little ? <LittleWindowSpaceButton littleWindow={little} ready={!!ready && !!snapshot?.activeId && !!snapshot?.url} command={send} /> : <>
           {/* Arc: the logo is the browser menu (History, Downloads, Archive…). */}
           {workspace ? <button type="button" className="brand-mark brand-button" data-action="menu" aria-label="Browser menu" aria-haspopup="menu"
             disabled={!ready} onClick={e => { const r = e.currentTarget.getBoundingClientRect();
@@ -241,40 +245,41 @@ function Shell() {
             {/* The turn finishes on the reload arrow before Stop's cross replaces it. */}
             <Icon name={snapshot?.isLoading && !spinning ? 'close' : 'reload'} /></button>
           </div>
+          </>}
         </div>
         {/* The page area below belongs to a native window, so notices stay in the toolbar. */}
-        {notice ? <div className="page-toolbar notice" role="alert"><Icon name="globe" /><span>{notice}</span>
-          <button type="button" className="notice-dismiss" onClick={() => setDismissedNotice(snapshot?.noticeId ?? 0)}>Dismiss</button></div> :
+        {toolbarNotice ? <div className="page-toolbar notice" role="alert"><Icon name="globe" /><span>{toolbarNotice}</span>
+          <button type="button" className="notice-dismiss" onClick={() => { setDismissedNotice(snapshot?.noticeId ?? 0); setError(''); }}>Dismiss</button></div> :
         <div className="page-toolbar">
           {workspace && <><button type="button" className="icon-button copy-link" data-action="copy-link" aria-label="Copy link"
             disabled={!ready || !snapshot.activeId || !snapshot.url || copyingLink} onClick={() => void copyLink()}
             onContextMenu={event => { event.preventDefault(); const r = event.currentTarget.getBoundingClientRect();
               void send({ method: 'menu.copy', x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) }); }}><Icon name="link" /></button>
             <span className="sr-only" role="status">{copiedUrl && copiedUrl === snapshot.url ? `Copied Current URL ${copiedUrl}` : ''}</span></>}
-          {workspace ? <span className="address-wrap" data-zoom={snapshot.zoom ? 'true' : undefined}>
+          {workspace ? <span className="address-wrap" data-zoom={!little && snapshot.zoom ? 'true' : undefined}>
             <button type="button" className="address address-trigger" aria-label="Website address" disabled={!ready}
               onClick={() => void send({ method: 'browser.shortcut', action: 'address' })}>
               <AddressLoading loading={!!snapshot.activeId && !!snapshot.isLoading && !snapshot.activeCrashed} />
               <span className="address-text">{compactAddress(snapshot.url ?? '') || 'Search or enter address'}</span>
             </button>
             {/* The page's zoom when it is not 100%; a click resets it (Ctrl+0). */}
-            {snapshot.zoom && <button type="button" className="address-zoom" disabled={!ready} aria-label={`Zoom ${snapshot.zoom}%, reset to 100%`}
+            {!little && snapshot.zoom && <button type="button" className="address-zoom" disabled={!ready} aria-label={`Zoom ${snapshot.zoom}%, reset to 100%`}
               onClick={e => { e.currentTarget.blur(); void send({ method: 'navigation.resetZoom' }); }}>{snapshot.zoom}%</button>}
           </span> : <label className="address"><Icon name="globe" /><span className="sr-only">Website address</span><input ref={address} aria-label="Website address" placeholder="Search or enter address" value={url} onChange={e => setUrl(e.target.value)} spellCheck={false} autoComplete="off"
             onFocus={e => { const field = e.currentTarget; setTimeout(() => field.select()); }}
             onBlur={() => setUrl(latest.current?.url ?? url)}
             onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setUrl(latest.current?.url ?? ''); void send({ method: 'browser.shortcut', action: 'focusPage' }); } }} /></label>}
           {/* Arc: site controls instead of a Go arrow; live camera/microphone use shows here too. */}
-          {workspace ? <button className="icon-button site-button" type="button" data-action="site" disabled={!ready}
+          {workspace && (!little || activeNode?.mediaCamera || activeNode?.mediaMicrophone) && <button className="icon-button site-button" type="button" data-action="site" disabled={!ready}
             data-live={activeNode?.mediaCamera || activeNode?.mediaMicrophone ? 'true' : undefined}
             aria-label={siteLabel(activeNode)} onClick={e => openPanel('site', e.currentTarget)}>
             {/* Square button: a live camera/microphone replaces the sliders glyph. */}
-            {activeNode?.mediaCamera ? <Icon name="camera" className="media-live" /> : activeNode?.mediaMicrophone ? <Icon name="mic" className="media-live" /> : <Icon name="sliders" />}</button> :
-          <button className="icon-button go-button" disabled={!connected} type="submit" aria-label="Go"><Icon name="arrow" /></button>}
+            {activeNode?.mediaCamera ? <Icon name="camera" className="media-live" /> : activeNode?.mediaMicrophone ? <Icon name="mic" className="media-live" /> : <Icon name="sliders" />}</button>}
+          {!workspace && <button className="icon-button go-button" disabled={!connected} type="submit" aria-label="Go"><Icon name="arrow" /></button>}
         </div>}
         <div className="window-side">
           {/* Pinned extensions (browser menu > Extensions > Pin to Top Bar, or right click in the site popover). */}
-          {workspace && (snapshot.pinnedExtensions?.length ?? 0) > 0 && <div className="toolbar-extensions" role="group" aria-label="Pinned extensions">
+          {workspace && !little && (snapshot.pinnedExtensions?.length ?? 0) > 0 && <div className="toolbar-extensions" role="group" aria-label="Pinned extensions">
             {snapshot.pinnedExtensions!.map(item => {
               const rect = (element: HTMLElement) => { const r = element.getBoundingClientRect();
                 return { x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) }; };
@@ -297,8 +302,10 @@ function Shell() {
       </form>
     </header>
     {workspace && <>
-      <WorkspaceSidebar snapshot={snapshot} surface="docked" command={send} mutate={action} panel={openPanel} />
-      <SidebarResizer width={snapshot.sidebarWidth ?? 256} hidden={snapshot.sidebarVisible === false} disabled={!ready} apply={apply} onError={setError} />
+      {!little && <>
+        <WorkspaceSidebar snapshot={snapshot} surface="docked" command={send} mutate={action} panel={openPanel} />
+        <SidebarResizer width={snapshot.sidebarWidth ?? 256} hidden={snapshot.sidebarVisible === false} disabled={!ready} apply={apply} onError={setError} />
+      </>}
       {snapshot.splitView && <SplitView view={snapshot.splitView} nodes={snapshot.nodes ?? []} disabled={!ready || busy} command={send} action={action} />}
       {snapshot.devTools && <DevToolsDock key={`${snapshot.devTools.id}-${snapshot.devTools.side}`} dock={snapshot.devTools} deviceEnabled={!!snapshot.devicePreview?.enabled} apply={apply} onError={setError} />}
       {snapshot.devicePreview?.enabled && <DeviceToolbar key={snapshot.devicePreview.id} device={snapshot.devicePreview} apply={apply} onError={setError} />}

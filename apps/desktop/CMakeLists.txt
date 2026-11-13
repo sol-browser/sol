@@ -38,7 +38,7 @@ target_sources(${CEF_TARGET} PRIVATE src/integrations/live_reader.cpp src/integr
 target_sources(${CEF_TARGET} PRIVATE src/experiments/google_integrations_probe.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/integration_live_check.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/auto_archive.cpp src/workspace/auto_archive_controller.cpp)
-target_sources(${CEF_TARGET} PRIVATE src/windows/link_peek_layout.cpp src/windows/link_peek_scene.cpp src/windows/auto_pip.cpp src/windows/video_pip_button.cpp src/windows/link_peek_close.cpp src/windows/link_peek_readiness.cpp src/workspace/link_peek_controller.cpp src/workspace/media_controller.cpp src/workspace/tab_menu_actions.cpp)
+target_sources(${CEF_TARGET} PRIVATE src/windows/link_peek_layout.cpp src/windows/link_peek_scene.cpp src/windows/auto_pip.cpp src/windows/video_pip_button.cpp src/windows/link_peek_close.cpp src/windows/link_peek_readiness.cpp src/workspace/link_peek_controller.cpp src/workspace/little_window_controller.cpp src/windows/background_host.cpp src/workspace/media_controller.cpp src/workspace/tab_menu_actions.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/preferences.cpp src/app/updates.cpp src/app/windows_locale.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/release_notes.cpp src/app/widevine.cpp src/app/memory_report.cpp src/integrations/x_unread.cpp src/integrations/whatsapp_unread.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/tab_drag_preview.cpp)
@@ -91,6 +91,7 @@ target_sources(${CEF_TARGET} PRIVATE src/experiments/browsing_probe.cpp
   src/experiments/boost_probe.cpp
   src/experiments/menu_probe.cpp
   src/experiments/private_probe.cpp
+  src/experiments/little_window_probe.cpp
   src/experiments/pin_probe.cpp
   src/experiments/ua_brand_probe.cpp
   src/experiments/link_headers_probe.cpp src/experiments/page_background_probe.cpp)
@@ -128,6 +129,7 @@ target_sources(${CEF_TARGET} PRIVATE src/windows/page_link_status.cpp src/window
 target_sources(${CEF_TARGET} PRIVATE src/experiments/page_load_trace.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/platform_codecs_probe.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/devtools_probe.cpp)
+target_sources(${CEF_TARGET} PRIVATE src/windows/start_with_windows.cpp)
 target_link_libraries(${CEF_TARGET} PRIVATE workspace_store import_formats libcef_dll_wrapper libcef_lib ${CEF_STANDARD_LIBS} advapi32 dwmapi dcomp d3d11 d2d1 dwrite dxgi dxguid windowscodecs)
 COPY_SINGLE_FILE(${CEF_TARGET} "${CEF_BINARY_DIR}/bootstrap.exe" "${CEF_TARGET_OUT_DIR}/${CEF_TARGET}.exe")
 # Velopack (app/updates.cpp) runs only in the browser process: delay-load it so
@@ -156,6 +158,16 @@ add_custom_target(browser_ui_assets ALL
   COMMENT "Staging built browser UI"
   VERBATIM)
 add_dependencies(${CEF_TARGET} browser_ui_assets)
+# sol-tray.exe: the tray icon and Ctrl+Alt+N while no Sol window is open, without CEF
+# (src/tray/sol_tray.cpp, docs/little-sol.md). Next to sol.exe, so packages carry it.
+add_executable(sol_tray WIN32 src/tray/sol_tray.cpp)
+target_include_directories(sol_tray PRIVATE src)
+target_compile_definitions(sol_tray PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(sol_tray PRIVATE /W4 /WX /utf-8 /permissive-)
+target_link_libraries(sol_tray PRIVATE user32 gdi32 gdiplus shell32 dwmapi shcore winhttp)
+set_target_properties(sol_tray PROPERTIES OUTPUT_NAME "sol-tray" RUNTIME_OUTPUT_DIRECTORY "${CEF_TARGET_OUT_DIR}"
+  MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+add_dependencies(${CEF_TARGET} sol_tray)
 SET_LPAC_ACLS(${CEF_TARGET})
 
 add_executable(trust_policy_test "${CMAKE_SOURCE_DIR}/tests/native/trust_policy_test.cpp")
@@ -172,6 +184,17 @@ add_executable(web_url_test "${CMAKE_SOURCE_DIR}/tests/native/web_url_test.cpp")
 target_include_directories(web_url_test PRIVATE src)
 target_compile_options(web_url_test PRIVATE /W4 /WX /EHsc)
 add_test(NAME web_url COMMAND web_url_test)
+
+add_executable(tray_input_test "${CMAKE_SOURCE_DIR}/tests/native/tray_input_test.cpp")
+target_include_directories(tray_input_test PRIVATE src)
+target_compile_definitions(tray_input_test PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(tray_input_test PRIVATE /W4 /WX /EHsc /utf-8)
+add_test(NAME tray_input COMMAND tray_input_test)
+
+add_executable(start_with_windows_test "${CMAKE_SOURCE_DIR}/tests/native/start_with_windows_test.cpp")
+target_include_directories(start_with_windows_test PRIVATE src)
+target_compile_options(start_with_windows_test PRIVATE /W4 /WX /EHsc /utf-8)
+add_test(NAME start_with_windows COMMAND start_with_windows_test)
 add_executable(url_clean_test "${CMAKE_SOURCE_DIR}/tests/native/url_clean_test.cpp")
 target_include_directories(url_clean_test PRIVATE src)
 target_compile_options(url_clean_test PRIVATE /W4 /WX /EHsc)

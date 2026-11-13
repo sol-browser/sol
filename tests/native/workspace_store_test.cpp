@@ -690,6 +690,15 @@ int wmain(int argc, wchar_t** argv) {
     command={red::TreeAction::Place}; command.id=personal_favorite; command.section="favorites"; result=apply(command);
     Check(result && Find(result.snapshot,personal_favorite).profile=="default", "Favorite captures originating profile");
     command={red::TreeAction::CreateSpace}; command.title="Work"; command.profile=work; result=apply(command); work_space=result.created_id;
+    command={red::TreeAction::SwitchSpace}; command.id=personal; result=apply(command);
+    command={red::TreeAction::CreateTab}; command.title="Little Window"; command.url="https://example.com/little"; command.space=work_space;
+    result=apply(command); const auto sent=result.created_id;
+    Check(result && result.snapshot.active_space==personal && Find(result.snapshot,sent).space==work_space &&
+        red::BrowsingProfileId(result.snapshot,sent)==work, "an inactive tab can be sent directly to a different Space and profile");
+    command.space="ffffffff-ffff-ffff-ffff-ffffffffffff";
+    Check(apply(command).code==400, "sending a tab to a missing Space is rejected");
+    command={red::TreeAction::RemoveLeaf}; command.id=sent; result=apply(command);
+    command={red::TreeAction::SwitchSpace}; command.id=work_space; result=apply(command);
     Check(result && result.snapshot.ActiveSpace()->profile==work && red::OrderedTabsForSpace(result.snapshot,work_space).empty(), "different profile hides personal Favorites");
     command={red::TreeAction::Activate}; command.id=personal_favorite;
     Check(apply(command).code==400, "cannot activate another profile's Favorite");

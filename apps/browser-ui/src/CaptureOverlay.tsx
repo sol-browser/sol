@@ -63,12 +63,12 @@ export function CaptureOverlay() {
     const pull = (after: number) => query({ method: 'capture.full', after }).then(next => {
       if (!open) return;
       setFrame(next); live.current = next;
-      if (next.more) pull(next.generation);
+      if (next.more) void pull(next.generation);
     }, () => {});
     query({ method: 'capture.ready' }).then(first => {
       scrollNow.current = scrollTarget.current = first.view.y; setScrollY(first.view.y);
       setFrame(first); live.current = first;
-      if (first.more) pull(first.generation);
+      if (first.more) void pull(first.generation);
     }, () => {});
     const resize = () => setWidth(innerWidth);
     addEventListener('resize', resize);

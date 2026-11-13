@@ -38,6 +38,7 @@ struct WorkspaceData {
   TreeSnapshot tree;               // Only accessed on UI.
   bool ready = false;
 };
+class BackgroundHost;
 class AppSession {
  public:
   void Register(const std::shared_ptr<State>& window);
@@ -54,6 +55,17 @@ class AppSession {
   std::function<bool(const std::shared_ptr<State>&)> new_private_window;
   // "Open link in new window" / "... in private window" (page menu): a new window that opens |url|.
   std::function<bool(const std::shared_ptr<State>&, const std::string& url, bool private_window)> new_window_with_link;
+  std::function<bool(const std::shared_ptr<State>&, const std::string& url)> new_little_window;
+  // Ctrl+Alt+N / tray: a hidden Little Sol whose command bar opens on its own (docs/little-sol.md).
+  std::function<bool(const std::shared_ptr<State>& source)> new_little_sol_launcher;
+  // Background mode (windows/background_host.cpp): while |keep_running|, closing the last window
+  // leaves Sol in the notification area. |quitting| (Quit Sol, Restart to update) ends it anyway.
+  bool keep_running = false, quitting = false;
+  // Re-reads Settings after a change (Little Sol hotkey on or off).
+  std::function<void()> apply_background;
+  // Starts sol-tray.exe so Sol can exit instead of staying in memory; false keeps Sol running.
+  std::function<bool()> hand_to_tray;
+  std::shared_ptr<BackgroundHost> background;
   // Moves the live page of |from|'s entry into |to| for |node_id| without
   // reloading it (docs/multi-window.md); false when it cannot move live.
   std::function<bool(const std::shared_ptr<State>& from, const std::shared_ptr<State>& to, const std::string& source_id,

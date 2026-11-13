@@ -75,16 +75,16 @@ Arc for macOS, including its signature features.
 | Spaces and themes | ✓ | ✓ |
 | Favorites, pins and folders | ✓ | ✓ |
 | Automatic tab archiving | ✓ | ✓ |
-| Split View | Not polished | ✓ |
+| Split View | ✓ | ✓ |
 | Link Peek / Peek | ✓ | ✓ |
+| Little Arc | ✓ (Little Sol) | ✓ |
 | Separate browsing profiles | ✓ | ✓ |
-| Command bar and tab search | Not polished | ✓ |
-| Picture-in-Picture | Not polished | ✓ |
+| Command bar and tab search | ✓ | ✓ |
+| Picture-in-Picture | ✓ | ✓ |
 | Chrome extensions | ✓¹ | ✓ |
 | Website styling (CSS Boosts) | Not polished | ✓ |
 | JavaScript Boosts | No | ✓ |
 | Easels | No | ✓ |
-| Little Arc | No | ✓ |
 | GitHub Live Folders | No | ✓ |
 | Air Traffic Control | No | ✓ |
 | AI tools / Arc Max | No | ✓ |

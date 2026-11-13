@@ -1,6 +1,6 @@
 html:has(.command-panel), body:has(.command-panel) { background:#101012; color:oklch(0.9586 calc(0.0062 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 10.8)); color-scheme:dark; }
 body:has(.command-panel) { margin:0; overflow:hidden; }
-.command-panel { box-sizing:border-box; height:100vh; width:100%; transform-origin:top center; border:1px solid oklch(0.4926 calc(0.0082 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) - 2.9)); border-radius:12px; background:#101012; overflow:hidden; font:13px/1.4 "Segoe UI", sans-serif; }
+.command-panel { box-sizing:border-box; height:100vh; width:100%; transform-origin:top center; border:1px solid oklch(0.4926 calc(0.0082 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) - 2.9)); border-radius:8px; background:#101012; overflow:hidden; font:13px/1.4 "Segoe UI", sans-serif; }
 .command-input-row { height:54px; display:flex; align-items:center; gap:10px; padding:0 8px; margin:0 8px; border-bottom:1px solid oklch(0.2927 calc(0.0077 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 1.2)); -webkit-app-region:no-drag; }
 .command-search { width:17px; height:17px; flex:none; color:oklch(0.8205 calc(0.0123 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 6.2)); }
 .command-search svg { width:100%; height:100%; fill:none; stroke:currentColor; stroke-width:1.6; }
