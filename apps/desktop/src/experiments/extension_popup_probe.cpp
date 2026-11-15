@@ -1,10 +1,46 @@
 #include "experiments/extension_popup_probe.h"
 #include "include/base/cef_callback.h"
+#include "include/cef_command_line.h"
 #include "include/wrapper/cef_closure_task.h"
+#include "windows/main_menu.h"
+#include "windows/menu_popup.h"
 #include "windows/panel_popup.h"
 #include "workspace/controller.h"
 namespace red {
 namespace {
+void ClickExtension(const std::shared_ptr<State>& state, const char* name) {
+  if (CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-extension-popup") != "menu") {
+    if (state->panel_popup) {
+      state->panel_popup->Toggle("site", CefRect(500, 8, 28, 28));
+      state->panel_popup->ProbeClick(std::string("Open ") + name);
+    }
+    return;
+  }
+  // At the left screen edge the extension popup and the closing main menu
+  // occupy the same part of the screen.
+  state->window->Maximize();
+  state->window->Activate();
+  ShowMainMenu(state, kMainMenuAnchor);
+  if (!state->menu_popup) return;
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+    if (const auto s = weak.lock(); s && s->menu_popup)
+      s->menu_popup->ProbeRun(0, R"JS(window.cefQuery({request: '{"method":"menu.probe:move:1:1"}', persistent: false, onSuccess() {}, onFailure() {}}))JS");
+  }, std::weak_ptr<State>(state)), 320);
+  const auto mouse = [weak = std::weak_ptr<State>(state)](int level, std::string row, const char* action, int delay) {
+    const auto script = "(() => { const row = " + row + R"JS(;
+      if (!row) return;
+      const bounds = row.getBoundingClientRect();
+      const x = Math.round(bounds.left + bounds.width / 2), y = Math.round(bounds.top + bounds.height / 2);
+      window.cefQuery({ request: JSON.stringify({ method: 'menu.probe:)JS" + action + R"JS(:' + x + ':' + y }),
+        persistent: false, onSuccess() {}, onFailure() {} }); })())JS";
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, int level, std::string script) {
+      if (const auto s = weak.lock(); s && s->menu_popup) s->menu_popup->ProbeRun(level, script);
+    }, weak, level, script), delay);
+  };
+  mouse(0, "document.querySelector('[data-menu-key=extensions]')", "move", 450);
+  mouse(1, "[...document.querySelectorAll('.menu-row')].find(row => row.textContent === '" + std::string(name) + "')", "click", 1150);
+}
+
 void Activate(std::weak_ptr<State> weak, std::string url) {
   auto state = weak.lock(); if (!state || !state->workspace) return;
   const auto snapshot = state->workspace->Snapshot();
@@ -36,9 +72,7 @@ void OnExtensionPopupProbeLoad(const std::shared_ptr<State>& state, const std::s
     state->extension_popup_phase = 3;
     CefPostDelayedTask(TID_UI, base::BindOnce(&Activate, std::weak_ptr<State>(state), base + "/second"), 800);
     CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
-      auto state = weak.lock(); if (!state || !state->panel_popup) return;
-      state->panel_popup->Toggle("site", CefRect(500, 8, 28, 28));
-      state->panel_popup->ProbeClick("Open Popup Probe");
+      if (const auto state = weak.lock()) ClickExtension(state, "Popup Probe");
     }, std::weak_ptr<State>(state)), 2200);
   }
 }
@@ -46,9 +80,7 @@ void OnExtensionPopupProbeClosed(const std::shared_ptr<State>& state) {
   if (!state->extension_popup_probe || state->extension_popup_phase != 3) return;
   state->extension_popup_phase = 4;
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
-    auto state = weak.lock(); if (!state || !state->panel_popup) return;
-    state->panel_popup->Toggle("site", CefRect(500, 8, 28, 28));
-    state->panel_popup->ProbeClick("Open Action Probe");
+    if (const auto state = weak.lock()) ClickExtension(state, "Action Probe");
   }, std::weak_ptr<State>(state)), 600);
   // Without engine patch 02 nothing dispatches onClicked: end anyway.
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {

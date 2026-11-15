@@ -77,9 +77,10 @@ int main() {
   check(red::AllowedInTrustedProfile(6, false), "disabled default external extension tolerated");
   check(!red::AllowedInTrustedProfile(8, true) && !red::AllowedInTrustedProfile(1, true) && !red::AllowedInTrustedProfile(4, true),
         "command-line, store or unpacked extensions denied in shell profile");
-  check(red::AnnouncedInstallLocation(1) && red::AnnouncedInstallLocation(4), "store and chrome://extensions installs are announced");
-  check(!red::AnnouncedInstallLocation(8) && !red::AnnouncedInstallLocation(5) && !red::AnnouncedInstallLocation(6),
-        "command-line, component and default external extensions are not announced");
+  check(red::IsTrackedExtensionInstallLocation(1) && red::IsTrackedExtensionInstallLocation(4),
+        "store and chrome://extensions installs are tracked for new-tab suppression");
+  check(!red::IsTrackedExtensionInstallLocation(8) && !red::IsTrackedExtensionInstallLocation(5) &&
+        !red::IsTrackedExtensionInstallLocation(6), "startup and default extensions do not count as new installs");
   check(red::IsCommandUi(9, 9, true, red::kCommandUrl), "exact command document accepted");
   check(red::IsAllowedBrowserSwitch("probe-google-integrations",true)&&!red::IsAllowedBrowserSwitch("probe-google-integrations",false),"Google fixture is probe-only");
   check(red::IsAllowedBrowserSwitch("memory-report",false)&&!red::IsAllowedBrowserSwitch("memory-report",true),"memory report is a normal-mode request, not a probe input");

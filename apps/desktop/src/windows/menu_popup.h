@@ -15,6 +15,11 @@ namespace red {
 class MenuPopup : public std::enable_shared_from_this<MenuPopup> {
  public:
   static constexpr int kLevels = 3;
+  enum class Selection { RestoreFocus, OpenPopup };
+  struct Action {
+    std::function<void()> run;
+    Selection selection;
+  };
   // Item: {id, label, icon?, image?, shortcut?, enabled, checked?, children?} or {separator: true}.
   class Builder {
    public:
@@ -24,20 +29,21 @@ class MenuPopup : public std::enable_shared_from_this<MenuPopup> {
     CefRefPtr<CefListValue> items() const;
     // Adds a row running |action|; returns its id.
     void Add(const std::string& label, const std::string& icon, std::function<void()> action, const std::string& shortcut = "",
-             bool enabled = true, bool checked = false, const std::string& image = "", const std::string& key = "");
+             bool enabled = true, bool checked = false, const std::string& image = "", const std::string& key = "",
+             Selection selection = Selection::RestoreFocus);
     void Separator();
     // Rows added to the returned builder form the submenu.
     Builder& Submenu(const std::string& label, const std::string& icon, bool enabled = true, const std::string& key = "");
-    std::map<std::string, std::function<void()>>& actions() { return *actions_; }
+    std::map<std::string, Action>& actions() { return *actions_; }
    private:
-    Builder(std::shared_ptr<std::map<std::string, std::function<void()>>> actions, std::shared_ptr<int> next);
+    Builder(std::shared_ptr<std::map<std::string, Action>> actions, std::shared_ptr<int> next);
     struct Entry {
       std::string id, key, label, icon, shortcut, image;
       bool enabled = true, checked = false, separator = false;
       std::unique_ptr<Builder> submenu;
     };
     std::vector<Entry> entries_;
-    std::shared_ptr<std::map<std::string, std::function<void()>>> actions_;
+    std::shared_ptr<std::map<std::string, Action>> actions_;
     std::shared_ptr<int> next_;
   };
 
@@ -48,7 +54,7 @@ class MenuPopup : public std::enable_shared_from_this<MenuPopup> {
   // menu closes while it has it (default: the browser window), e.g. the popover that opened it.
   void Open(Builder& builder, const CefPoint& at, const std::string& anchor_key, std::function<void()> dismissed = nullptr,
             CefRefPtr<CefWindow> return_to = nullptr);
-  void Close(bool animate = true);
+  void Close(bool animate = true, bool restore_focus = true);
   void Shutdown();
   bool is_open() const { return open_; }
   // Window/browser lifetime (from the level's delegates).
@@ -86,7 +92,7 @@ class MenuPopup : public std::enable_shared_from_this<MenuPopup> {
   std::string Response(int level) const;
   std::weak_ptr<State> state_;
   std::array<Level, kLevels> levels_;
-  std::map<std::string, std::function<void()>> actions_;
+  std::map<std::string, Action> actions_;
   std::function<void()> dismissed_;
   CefRefPtr<CefWindow> return_to_;
   std::string anchor_key_;

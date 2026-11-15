@@ -343,7 +343,8 @@ bool WorkspaceController::HandleSplit(CefRefPtr<CefDictionaryValue> request, Rep
       };
     };
     MenuPopup::Builder menu;
-    const std::string_view locale = session_ ? session_->interface_locale : "en";
+    std::string_view locale = "en";
+    if (session_) locale = session_->interface_locale;
     const auto label = [locale](InterfaceMessage message) { return InterfaceText(locale, message); };
     static const std::map<std::string,std::pair<InterfaceMessage,const char*>> names{
       {"columns",{InterfaceMessage::MenuSplitColumns,"columns"}},{"rows",{InterfaceMessage::MenuSplitRows,"rows"}},
@@ -437,7 +438,8 @@ bool WorkspaceController::HandleSplit(CefRefPtr<CefDictionaryValue> request, Rep
       if (node == tree_.nodes.end()) { done(409,"Split pane is unavailable",nullptr); return true; }
       const auto address = browser && browser->GetMainFrame() ? browser->GetMainFrame()->GetURL() : CefString(node->url);
       const int code = CopyLinkText(state->window->GetWindowHandle(),address.ToWString());
-      const std::string_view locale = session_ ? session_->interface_locale : "en";
+      std::string_view locale = "en";
+      if (session_) locale = session_->interface_locale;
       if (code) {
         done(code, InterfaceText(locale, code == 409 ? InterfaceMessage::WindowClipboardBusy : InterfaceMessage::WindowCopyFailed), nullptr);
         return true;

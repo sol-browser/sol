@@ -57,7 +57,7 @@ void ShowExtensionMenu(const std::shared_ptr<State>& state, const std::string& i
     first(); const auto s = weak.lock(); if (!s) return;
     if (s->panel_popup) s->panel_popup->Hide(false);
     RunExtension(s, id, popup);
-  }, "", true, false, item->icon);
+  }, "", true, false, item->icon, "", MenuPopup::Selection::OpenPopup);
   menu.Add(pinned ? label(InterfaceMessage::MenuUnpinTopBar) : label(InterfaceMessage::MenuPinTopBar), pinned ? "pinOff" : "pin",
            [weak, id, pinned, first] { first(); if (const auto s = weak.lock()) PinExtension(s, id, !pinned); }, "", pins != nullptr);
   menu.Separator();
@@ -185,7 +185,7 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
   if (!standalone) tabs.Add(label(InterfaceMessage::MenuArchive), "archive", run([anchor](const std::shared_ptr<State>& s) { if (s->panel_popup) s->panel_popup->Toggle("archive", anchor); }));
 
   // Extensions: the web profile's installed list, each opened as from a toolbar button.
-  auto& extensions = menu.Submenu(label(InterfaceMessage::MenuExtensions), "puzzle");
+  auto& extensions = menu.Submenu(label(InterfaceMessage::MenuExtensions), "puzzle", true, "extensions");
   extensions.Add(label(InterfaceMessage::MenuAddExtension), "plus", run([](const std::shared_ptr<State>& s) { s->workspace->OpenLink(kChromeWebStoreUrl, true); }));
   extensions.Add(label(InterfaceMessage::MenuManageExtensions), "settings", run([](const std::shared_ptr<State>& s) {
     if (!s->extensions_window) s->extensions_window = std::make_shared<ExtensionsWindow>(s);
@@ -199,7 +199,9 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
       if (!item.action && item.popup.empty() && item.options.empty()) continue;
       if (first) { extensions.Separator(); first = false; }
       const std::string id = item.id;
-      extensions.Add(item.name, "puzzle", run([id, below](const std::shared_ptr<State>& s) { RunExtension(s, id, below); }), "", true, false, item.icon);
+      extensions.Add(item.name, "puzzle", run([id, below](const std::shared_ptr<State>& s) {
+        RunExtension(s, id, below, ExtensionPopupSide::Left);
+      }), "", true, false, item.icon, "", MenuPopup::Selection::OpenPopup);
     }
     // Pins: a checked row is on the top bar; choosing it toggles.
     if (pins && !first) {

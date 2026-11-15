@@ -6,10 +6,12 @@
 #include "experiments/extension_popup_probe.h"
 #include "extensions/extension_manifest.h"
 #include "extensions/extension_catalog.h"
+#include "include/base/cef_callback.h"
 #include "include/cef_parser.h"
 #include "include/cef_request_context.h"
 #include "include/views/cef_display.h"
 #include "include/views/cef_fill_layout.h"
+#include "include/wrapper/cef_closure_task.h"
 #include "workspace/controller.h"
 
 namespace red {
@@ -136,11 +138,35 @@ class PopupWindow final : public CefWindowDelegate {
     window->SetToFillLayout(); window->AddChildView(view_);
     if (auto owner = owner_.lock()) owner->Created(window);
     window->Show();
+    window->Activate();
     view_->RequestFocus();
   }
   // Like Chrome's popups: clicking anywhere else closes it.
   void OnWindowActivationChanged(CefRefPtr<CefWindow> window, bool active) override {
-    if (!active) if (auto owner = owner_.lock()) owner->Close(window);
+    if (const auto state = state_.lock(); state && state->probe) {
+      const HWND foreground = GetForegroundWindow();
+      auto details = CefDictionaryValue::Create();
+      details->SetBool("active", active);
+      details->SetBool("owner_foreground", state->window && foreground == state->window->GetWindowHandle());
+      details->SetBool("popup_foreground", foreground == window->GetWindowHandle());
+      state->Record("ext_popup_activation", details);
+    }
+    if (active) return;
+    // During opening, Views can report deactivation while the native menu
+    // releases focus. Close only if activation is still lost after it settles.
+    CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<ExtensionPopup> weak, std::weak_ptr<State> state,
+                                        CefRefPtr<CefWindow> window) {
+      const auto owner = weak.lock();
+      if (!owner || !window->IsValid() || window->IsActive()) return;
+      const auto foreground = GetForegroundWindow();
+      if (foreground == window->GetWindowHandle()) return;
+      if (const auto s = state.lock(); s && s->probe) {
+        auto details = CefDictionaryValue::Create();
+        details->SetBool("owner_foreground", s->window && foreground == s->window->GetWindowHandle());
+        s->Record("ext_popup_focus_lost", details);
+      }
+      owner->Close(window);
+    }, owner_, state_, window));
   }
   bool CanClose(CefRefPtr<CefWindow>) override {
     const auto browser = view_ ? view_->GetBrowser() : nullptr;
@@ -157,7 +183,7 @@ class PopupWindow final : public CefWindowDelegate {
 };
 }  // namespace
 
-void ExtensionPopup::Open(const std::string& id, const std::string& path, const CefPoint& anchor) {
+void ExtensionPopup::Open(const std::string& id, const std::string& path, const CefPoint& anchor, ExtensionPopupSide side) {
   auto state = state_.lock();
   if (!state || !state->window || !IsExtensionId(id) || !ExtensionRelativePath(path, true)) return;
   if (window_) {
@@ -165,12 +191,16 @@ void ExtensionPopup::Open(const std::string& id, const std::string& path, const 
     Close();
     if (same) return;  // A second click on the same extension closes it.
   }
-  id_ = id; anchor_ = anchor;
+  id_ = id; anchor_ = anchor; side_ = side;
   size_ = kInitialSize;
   auto view = CefBrowserView::CreateBrowserView(new PopupClient(weak_from_this(), state_, id), Origin(id) + path,
       CefBrowserSettings(), nullptr, state->WebContext(), new PopupView());
   CefWindow::CreateTopLevelWindow(new PopupWindow(weak_from_this(), state_, view));
   auto data = CefDictionaryValue::Create(); data->SetString("id", id.substr(0, 8));
+  if (state->probe && window_) {
+    data->SetInt("x", window_->GetBounds().x);
+    data->SetInt("anchor_x", anchor_.x);
+  }
   state->Record("ext_popup_opened", data);
 }
 void ExtensionPopup::Created(CefRefPtr<CefWindow> window) { window_ = window; Place(); }
@@ -190,9 +220,10 @@ void ExtensionPopup::Resize(const CefSize& size) {
 }
 void ExtensionPopup::Place() {
   if (!window_) return;
-  // Right-aligned to the anchor, kept inside the work area of its display.
+  // Align to the opener's edge and keep the popup on its display.
   const auto area = CefDisplay::GetDisplayNearestPoint(anchor_, false)->GetWorkArea();
-  const int x = std::clamp(anchor_.x - size_.width, area.x, std::max(area.x, area.x + area.width - size_.width));
+  const int preferred_x = side_ == ExtensionPopupSide::Left ? anchor_.x : anchor_.x - size_.width;
+  const int x = std::clamp(preferred_x, area.x, std::max(area.x, area.x + area.width - size_.width));
   const int y = std::clamp(anchor_.y, area.y, std::max(area.y, area.y + area.height - size_.height));
   window_->SetBounds(CefRect(x, y, size_.width, size_.height));
 }
@@ -203,7 +234,7 @@ void ExtensionPopup::Destroyed(CefRefPtr<CefWindow> window) {
     OnExtensionPopupProbeClosed(state);
   }
 }
-void RunExtension(const std::shared_ptr<State>& s, const std::string& id, const CefPoint& at) {
+void RunExtension(const std::shared_ptr<State>& s, const std::string& id, const CefPoint& at, ExtensionPopupSide side) {
   const auto* item = s->extensions ? s->extensions->Find(id) : nullptr;
   if (!item) return;
 #if CEF_API_ADDED(CEF_EXPERIMENTAL)
@@ -212,10 +243,10 @@ void RunExtension(const std::shared_ptr<State>& s, const std::string& id, const 
     const int ran = s->content->GetHost()->RunExtensionAction(id, popup_url);
     const std::string origin = "chrome-extension://" + id + "/", url = popup_url.ToString();
     if (ran == 2) return;
-    if (ran == 1 && url.starts_with(origin) && s->extension_popup) { s->extension_popup->Open(id, url.substr(origin.size()), at); return; }
+    if (ran == 1 && url.starts_with(origin) && s->extension_popup) { s->extension_popup->Open(id, url.substr(origin.size()), at, side); return; }
   }
 #endif
-  if (!item->popup.empty() && s->extension_popup) s->extension_popup->Open(id, item->popup, at);
+  if (!item->popup.empty() && s->extension_popup) s->extension_popup->Open(id, item->popup, at, side);
   else if (!item->options.empty() && s->workspace) s->workspace->AdoptExtensionPage("chrome-extension://" + id + "/" + item->options);
 }
 }  // namespace red

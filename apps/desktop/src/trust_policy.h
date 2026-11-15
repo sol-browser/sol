@@ -112,9 +112,8 @@ inline ForeignPage ClassifyForeignPage(std::string_view url) {
   return ForeignPage::Reject;
 }
 // Installs the user made: kInternal = 1 (Web Store/CRX), kUnpacked = 4
-// (chrome://extensions). Command-line test loads (8) and policy or default
-// external installs are not announced as "added".
-inline bool AnnouncedInstallLocation(int location) { return location == 1 || location == 4; }
+// (chrome://extensions). These can open Chrome's post-install new-tab window.
+inline bool IsTrackedExtensionInstallLocation(int location) { return location == 1 || location == 4; }
 // Chromium ManifestLocation values: kComponent = 5, kExternalComponent = 10.
 // The trusted UI profile may hold only built-in or disabled extensions.
 inline bool AllowedInTrustedProfile(int location, bool enabled) {

@@ -1271,7 +1271,8 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
       cb->Success(Response()); Hide(true);
       if (ShowShareSheet(owner, url, title)) { s->Record("page_share_opened"); return true; }
       const int failure = CopyLinkText(owner, url);
-      const std::string_view locale = s->session ? s->session->interface_locale : "en";
+      std::string_view locale = "en";
+      if (s->session) locale = s->session->interface_locale;
       const auto message = failure == 409 ? InterfaceMessage::WindowClipboardBusy :
           failure ? InterfaceMessage::WindowCopyFailed : InterfaceMessage::WindowCopied;
       if (s->embedded) s->embedded->Notify("copy", CefString(InterfaceText(locale, message)).ToWString());

@@ -348,7 +348,8 @@ bool EmbeddedContent::ExitBrowserFullscreen() {
   ToggleBrowserFullscreen(); return true;
 }
 void EmbeddedContent::NotifyFullscreenExit(const State& state) {
-  const std::string_view locale = state.session ? state.session->interface_locale : "en";
+  std::string_view locale = "en";
+  if (state.session) locale = state.session->interface_locale;
   constexpr std::string_view key = "{name}";
   const auto message = InterfaceMessage::WindowExitFullscreen;
   std::string_view text = InterfaceText(locale, message);

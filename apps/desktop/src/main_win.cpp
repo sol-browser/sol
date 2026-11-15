@@ -1164,7 +1164,8 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       }
       const int code = red::CopyLinkText(state_->window ? state_->window->GetWindowHandle() : nullptr,
           CefString(std::string(red::ShownAddress(snapshot->GetString("url").ToString()))).ToWString());
-      const std::string_view locale = state_->session ? state_->session->interface_locale : "en";
+      std::string_view locale = "en";
+      if (state_->session) locale = state_->session->interface_locale;
       if (code) {
         callback->Failure(code, red::InterfaceText(locale, code == 409 ? red::InterfaceMessage::WindowClipboardBusy : red::InterfaceMessage::WindowCopyFailed));
         return true;
@@ -1880,8 +1881,8 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       if (state->workspace && !wrong_profile) {
         if (kind == red::ForeignPage::NewTab) {
           // After a store install Chrome opens a new tab page only to host its
-          // "added" bubble; our own install notice replaces it. The preference
-          // update can trail the window, so decide shortly afterwards.
+          // "added" bubble. The preference update can trail the window, so
+          // decide shortly afterwards.
           outcome = "new_tab";
           CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
             auto state = weak.lock();

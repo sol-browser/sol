@@ -113,15 +113,15 @@ CefRefPtr<CefListValue> FindChildren(CefRefPtr<CefListValue> items, const std::s
 }
 }  // namespace
 
-MenuPopup::Builder::Builder() : actions_(std::make_shared<std::map<std::string, std::function<void()>>>()), next_(std::make_shared<int>(0)) {}
-MenuPopup::Builder::Builder(std::shared_ptr<std::map<std::string, std::function<void()>>> actions, std::shared_ptr<int> next)
+MenuPopup::Builder::Builder() : actions_(std::make_shared<std::map<std::string, Action>>()), next_(std::make_shared<int>(0)) {}
+MenuPopup::Builder::Builder(std::shared_ptr<std::map<std::string, Action>> actions, std::shared_ptr<int> next)
     : actions_(std::move(actions)), next_(std::move(next)) {}
 void MenuPopup::Builder::Add(const std::string& label, const std::string& icon, std::function<void()> action, const std::string& shortcut,
-                             bool enabled, bool checked, const std::string& image, const std::string& key) {
+                             bool enabled, bool checked, const std::string& image, const std::string& key, Selection selection) {
   Entry entry; entry.id = "m" + std::to_string((*next_)++);
   entry.key = key;
   entry.label = label; entry.icon = icon; entry.shortcut = shortcut; entry.enabled = enabled; entry.checked = checked; entry.image = image;
-  if (enabled && action) (*actions_)[entry.id] = std::move(action);
+  if (enabled && action) actions_->emplace(entry.id, Action{std::move(action), selection});
   entries_.push_back(std::move(entry));
 }
 void MenuPopup::Builder::Separator() {
@@ -287,7 +287,7 @@ void MenuPopup::CloseFrom(int level, bool animate) {
   }
 }
 
-void MenuPopup::Close(bool animate) {
+void MenuPopup::Close(bool animate, bool restore_focus) {
   if (!open_) return;
   open_ = false; closed_ms_ = GetTickCount64(); closed_key_ = anchor_key_; anchor_key_.clear();
   // Give activation back to the browser window as a native menu does, so what runs next (an inline
@@ -295,7 +295,7 @@ void MenuPopup::Close(bool animate) {
   bool focused = false;
   for (const auto& l : levels_) if (l.open && l.window && l.window->IsActive()) focused = true;
   CloseFrom(0, animate);
-  if (const auto s = state_.lock(); focused && s) {
+  if (const auto s = state_.lock(); restore_focus && focused && s) {
     const auto target = return_to_ && return_to_->IsVisible() ? return_to_ : s->window;
     if (target) target->Activate();
   }
@@ -415,11 +415,24 @@ bool MenuPopup::Query(int level, CefRefPtr<CefBrowser> browser, CefRefPtr<CefFra
     auto action = found->second;
     cb->Success("{}");
     dismissed_ = nullptr;  // Chosen, not dismissed.
-    Close(true);
-    // Run after the menu has let go of focus, as a native menu's command would.
-    CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, std::function<void()> run) {
-      run(); if (const auto s = weak.lock()) s->Record("menu_action_ran");
-    }, state_, std::move(action)));
+    const bool opens_popup = action.selection == Selection::OpenPopup;
+    // Let an extension popup take activation directly. Reactivating the
+    // browser here can compete with the popup while its widget is opening.
+    Close(!opens_popup, !opens_popup);
+    CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<MenuPopup> weak, std::function<void()> run) {
+      const auto menu = weak.lock();
+      const auto s = menu ? menu->state_.lock() : nullptr;
+      if (s && s->extension_popup_probe) {
+        const bool concealed = std::ranges::none_of(menu->levels_, [](const Level& level) {
+          return level.window && level.window->IsVisible();
+        });
+        auto details = CefDictionaryValue::Create();
+        details->SetBool("concealed", concealed);
+        s->Record("menu_action_handoff", details);
+      }
+      run();
+      if (s) s->Record("menu_action_ran");
+    }, weak_from_this(), std::move(action.run)));
     s->Record("menu_chosen");
     return true;
   }

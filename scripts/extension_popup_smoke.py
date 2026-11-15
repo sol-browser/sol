@@ -1,11 +1,12 @@
 """Extension popup acceptance through actual CEF in workspace mode.
 
 Loads the owned popup fixture extension, opens /second and /third, switches
-back to the middle tab, then clicks the extension in the real site popover. The popup must
+back to the middle tab, then clicks the extension in the site popover or main menu. The popup must
 open in its own Alloy window bound to the visible (middle) tab, also as seen
-by the extension's service worker, allow tab capture (activeTab invocation),, follow the
+by the extension's service worker, allow tab capture (activeTab invocation), follow the
 document's size and close when the popup calls window.close().
 """
+import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import shutil
@@ -25,6 +26,10 @@ def png(size: int) -> bytes:
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--menu', action='store_true', help='Open the actions through the main menu')
+    args = parser.parse_args()
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args): pass
         def do_GET(self):
@@ -43,7 +48,8 @@ def main():
     first = f'http://127.0.0.1:{server.server_port}/first'
     second = first[:-len('first')] + 'second'
     try:
-        directory, rows = run(first, ['--probe-extension-popup', f'--load-extension={extension},{action}'], allow_failure=True)
+        route = '--probe-extension-popup=menu' if args.menu else '--probe-extension-popup'
+        directory, rows = run(first, [route, f'--load-extension={extension},{action}'], allow_failure=True)
     finally:
         server.shutdown(); server.server_close()
         shutil.rmtree(extension, ignore_errors=True); shutil.rmtree(action, ignore_errors=True)
@@ -54,7 +60,6 @@ def main():
     clicked = details('extension_open_clicked')
     checks = {
         'switched_back_to_middle_tab': any(d['code'] == 0 for d in details('ext_popup_probe_activated')),
-        'catalog_localized_name_and_png_icon': any(d['name'] == 'Popup Probe' and d['icon'] and d['popup'] for d in clicked),
         'popup_loaded_in_alloy_window': any(d['status'] == 200 and d['extension_origin'] and d['style'] == 2 for d in loaded),
         'popup_bound_to_visible_tab': len(queries) == 1 and queries[0].get('current') == [second] and queries[0].get('focused') == [second],
         'worker_bound_to_visible_tab': len(queries) == 1 and queries[0].get('worker', {}).get('focused') == [second],
@@ -64,11 +69,20 @@ def main():
         # are normal windows, and a popup-less action gets action.onClicked.
         'tab_capture_allowed': bool(queries) and queries[0].get('capture', {}).get('ok') is True,
         'normal_window_type': bool(queries) and queries[0].get('worker', {}).get('normal') == [second],
-        'popup_opened_via_action_run': any(d.get('result') == 1 and d.get('popup_url') for d in details('extension_action_run')),
-        'popupless_action_ran': any(d.get('result') == 2 for d in details('extension_action_run')),
         'action_on_clicked_with_active_tab': any(d.get('path') == '/second' for d in details('ext_action_clicked')),
         'probe_passed': any(r['event'] == 'probe_result' and r['details']['pass'] for r in rows),
     }
+    if args.menu:
+        checks['main_menu_actions_chosen'] = len(details('menu_chosen')) == 2
+        checks['menu_hidden_before_actions'] = details('menu_action_handoff') == [{'concealed': True}] * 2
+        opened = details('ext_popup_opened')
+        checks['popup_aligned_to_left_opener'] = len(opened) == 1 and opened[0].get('x') == opened[0].get('anchor_x') and 'x' in opened[0]
+    else:
+        checks.update({
+            'catalog_localized_name_and_png_icon': any(d['name'] == 'Popup Probe' and d['icon'] and d['popup'] for d in clicked),
+            'popup_opened_via_action_run': any(d.get('result') == 1 and d.get('popup_url') for d in details('extension_action_run')),
+            'popupless_action_ran': any(d.get('result') == 2 for d in details('extension_action_run')),
+        })
     result = {'passed': all(checks.values()), 'checks': checks, 'queries': queries, 'resized': resized}
     (directory / 'extension_popup.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2), flush=True)

@@ -17,6 +17,18 @@ One short line that sums up the release. Optional; the website shows it as the h
 New things first, smaller fixes under "### Fixes". Describe the result for the user, not the code.
 -->
 
+## 0.7.1 — 2026-11-15
+
+A small update for extension popups and localized browser controls.
+
+### Fixes
+
+- **Extensions:** popups opened from the main menu now appear over the
+  browser and stay open until you click away. Sol no longer shows a banner
+  after installing an extension.
+- **Localized controls:** fixed an issue that could affect the fullscreen
+  hint, link copying and sharing, and Split View menus.
+
 ## 0.7.0 — 2026-11-15
 
 On-device page translation and a new way to help bring Sol to your language.
