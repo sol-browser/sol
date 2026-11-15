@@ -3,6 +3,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include "include/cef_thread.h"
 #include "include/cef_values.h"
@@ -23,6 +24,11 @@ struct Preferences {
   Preferences& operator=(Preferences&&) noexcept = default;
   ~Preferences() = default;
   std::string search_engine = "google";
+  std::string interface_language = "system";
+  std::string translation_target = "system";
+  bool translation_offers = true;
+  std::set<std::string> translation_known_languages;
+  std::set<std::string> translation_excluded_sites;
   std::string notes_provider = "googleDocs";
   IntegrationSettings integrations;
   std::filesystem::path download_directory;
@@ -66,6 +72,7 @@ class BrowserPreferences : public std::enable_shared_from_this<BrowserPreference
 bool ValidSearchEngine(const std::string& engine);
 CefRefPtr<CefDictionaryValue> IntegrationSettingsDictionary(const IntegrationSettings& settings);
 bool ReadSiteSearches(CefRefPtr<CefListValue> list, std::vector<SiteSearch>& sites);
+bool ReadTranslationKnownLanguages(CefRefPtr<CefListValue> list, std::set<std::string>& languages);
 CefRefPtr<CefListValue> SiteSearchList(const std::vector<SiteSearch>& sites);
 bool ValidAutoArchiveHours(int hours);
 bool ValidUnloadMinutes(int minutes);

@@ -1,0 +1,8 @@
+Bergamot Translator 0.4.9
+
+The WebAssembly distribution comes from the unmodified @browsermt/bergamot-translator 0.4.9 npm package under the Mozilla Public License 2.0. It is installed under translator/bergamot.
+
+Source revision from the npm package metadata:
+https://github.com/jelmervdl/bergamot-translator/tree/8cc5d0495479c9ec56eafafd6bcd7fb5b929ca98
+
+The upstream source tree links to its pinned dependencies through Git submodules. Clone it with submodules and run the build script in wasm/module/package.json to build the WebAssembly files.

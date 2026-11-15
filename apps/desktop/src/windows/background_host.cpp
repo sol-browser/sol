@@ -1,4 +1,6 @@
 #include "windows/background_host.h"
+#include "interface_strings.h"
+#include "include/internal/cef_string.h"
 #include <shellapi.h>
 #include <shlobj.h>
 #pragma comment(lib, "shell32.lib")
@@ -26,7 +28,8 @@ void CloseTrayHelper() {
   if (const HWND tray = FindWindowW(L"SolTrayHelper", nullptr)) PostMessageW(tray, WM_CLOSE, 0, 0);
 }
 
-BackgroundHost::BackgroundHost(Actions actions) : actions_(std::move(actions)) {
+BackgroundHost::BackgroundHost(Actions actions, std::string locale)
+    : actions_(std::move(actions)), locale_(std::move(locale)) {
   const HINSTANCE instance = GetModuleHandleW(nullptr);
   WNDCLASSEXW type{sizeof(type)};
   type.lpfnWndProc = Proc; type.hInstance = instance; type.lpszClassName = kClass;
@@ -75,7 +78,8 @@ void BackgroundHost::AddIcon() {
   NOTIFYICONDATAW data{sizeof(data)};
   data.hWnd = window_; data.uID = kTrayId; data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
   data.uCallbackMessage = kTrayMessage; data.hIcon = icon_handle_;
-  wcscpy_s(data.szTip, hotkey_ ? L"Sol — Ctrl+Alt+N opens Little Sol" : L"Sol");
+  const auto tooltip = hotkey_ ? CefString(InterfaceText(locale_, InterfaceMessage::MenuHotkey)).ToWString() : L"Sol";
+  wcscpy_s(data.szTip, tooltip.c_str());
   if (icon_) { Shell_NotifyIconW(NIM_MODIFY, &data); return; }
   icon_ = Shell_NotifyIconW(NIM_ADD, &data) != FALSE;
   if (icon_) { data.uVersion = NOTIFYICON_VERSION_4; Shell_NotifyIconW(NIM_SETVERSION, &data); }
@@ -92,10 +96,11 @@ void BackgroundHost::RemoveIcon() {
 void BackgroundHost::ShowMenu() {
   HMENU menu = CreatePopupMenu();
   if (!menu) return;
-  AppendMenuW(menu, MF_STRING, kMenuLittleSol, hotkey_ ? L"New Little Sol\tCtrl+Alt+N" : L"New Little Sol");
-  AppendMenuW(menu, MF_STRING, kMenuOpen, L"Open Sol");
+  const auto label = [&](InterfaceMessage id) { return CefString(InterfaceText(locale_, id)).ToWString(); };
+  AppendMenuW(menu, MF_STRING, kMenuLittleSol, label(hotkey_ ? InterfaceMessage::MenuNewLittleHotkey : InterfaceMessage::MenuNewLittle).c_str());
+  AppendMenuW(menu, MF_STRING, kMenuOpen, label(InterfaceMessage::MenuOpenSol).c_str());
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-  AppendMenuW(menu, MF_STRING, kMenuQuit, L"Quit Sol");
+  AppendMenuW(menu, MF_STRING, kMenuQuit, label(InterfaceMessage::MenuQuitSol).c_str());
   SetMenuDefaultItem(menu, kMenuOpen, FALSE);
   POINT point{};
   GetCursorPos(&point);

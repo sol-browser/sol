@@ -30,6 +30,9 @@ function validProfiles(value: unknown): value is BrowsingProfileInfo[] {
     new Set(value.map(profile => profile.id)).size === value.length;
 }
 export type SpaceInfo = { id: string; name: string; icon: string; position: number; hue: number; intensity: number; profileId?: string };
+function validSpaceName(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 40 && (value === '' || value.trim() !== '');
+}
 /** Complete ZWJ/skin-tone emoji, bounded in code points and UTF-8 bytes. */
 export function validSpaceIcon(value:unknown):value is string {
   return typeof value==='string'&&Array.from(value).length<=16&&new TextEncoder().encode(value).length<=128&&!/[\u0000-\u0020\u007f\ud800-\udfff]/u.test(value);
@@ -87,8 +90,28 @@ export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boo
   browsingProbe?: boolean; browsingPreserved?: boolean; popupCount?: number; windowClosing?: boolean; activeCrashed?: boolean;
   lifecycleMode?: 'full' | 'restore' | 'hold' | 'manual'; lifecycleArmedCount?: number; lifecycleInspections?: number; windowCloseCancelled?: number;
   notice?: string; noticeId?: number; shellExtensions?: number; windowMaximized?: boolean;
+  translationOffer?: PageTranslation; translationPending?: true; translationOfferProbe?: boolean;
   downloads?: DownloadItem[]; downloadsStarted?: number; downloadsProbe?: boolean; theme?: Theme; paletteProbe?: boolean;
   spaces?: SpaceInfo[]; activeSpace?: string; profiles?: BrowsingProfileInfo[]; activeProfile?: string; devTools?: DevToolsInfo; devicePreview?: DevicePreview };
+export type PageTranslation = { id: number; from: string; to: string; phase: 'offer' | 'working' | 'translated' | 'original' | 'error';
+  toolbar: boolean; automatic?: true; download?: number };
+export type SelectionTranslation = { from: string; to: string; phase: 'working' | 'translated' | 'same' | 'unavailable' | 'error'; text: string; download?: number };
+export function validTranslationLanguage(value: unknown): value is string {
+  return typeof value === 'string' && /^(?:[a-z]{2,3}|zh_hant)$/.test(value);
+}
+function translationLanguageList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length <= 100 && value.every(validTranslationLanguage) && new Set(value).size === value.length;
+}
+function validTranslationProgress(value: unknown) {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100);
+}
+export function parseSelectionTranslation(value: unknown): SelectionTranslation {
+  if (!object(value) || !validTranslationLanguage(value.to) || (value.from !== '' && !validTranslationLanguage(value.from)) ||
+      typeof value.phase !== 'string' || !['working', 'translated', 'same', 'unavailable', 'error'].includes(value.phase) ||
+      typeof value.text !== 'string' || value.text.length > 22000 || (value.phase === 'translated') !== !!value.text ||
+      !validTranslationProgress(value.download)) throw new Error('Invalid selection translation');
+  return value as SelectionTranslation;
+}
 // Shell theme (Arc-style theme color): hue 0–359 replaces the authored purple,
 // intensity is percent of the authored chroma (0 gray … 160), noise 0–100 is
 // background grain. |dark| is the resolved mode (system follows Windows).
@@ -103,7 +126,10 @@ export type Backdrop = 'none' | 'mica' | 'acrylic';
 export type Clock = 'system' | '12' | '24';
 export type KeyBinding = { key: number; ctrl: boolean; shift: boolean; alt: boolean };
 export type BrowserPreferences = { schema: 1; searchEngine: SearchEngine; searchSuggestions?: boolean; siteSearches?: SiteSearch[]; siteSearchActivation?: SiteSearchActivation; autoArchiveHours?: number; autoPictureInPicture?: boolean; autoPipSites?: Record<string, boolean>; pipButton?: boolean; littleSolLinks?: boolean; littleSolClick?: boolean; littleSolHotkey?: boolean; unloadMinutes?: number; clock?: Clock; backdrop?: Backdrop; downloadDirectory: string; askDownload: boolean;
-  notesProvider?: 'googleDocs' | 'word'; integrations?: IntegrationSettings; startup: 'restore' | 'newTab' | 'homepage'; homepage: string; shortcuts: Record<string, KeyBinding> };
+  notesProvider?: 'googleDocs' | 'word'; integrations?: IntegrationSettings; interfaceLanguage?: InterfaceLanguage;
+  translationTarget?: string; translationOffers?: boolean; translationExcludedSites?: string[]; translationKnownLanguages?: string[];
+  startup: 'restore' | 'newTab' | 'homepage'; homepage: string; shortcuts: Record<string, KeyBinding> };
+export type InterfaceLanguage = 'system' | 'en' | 'uk';
 export type KeyboardSetting = { action: string; title: string; label: string; defaultLabel: string; custom: boolean; editable: boolean };
 export type SettingsCommand = { method: 'settings.get' | 'settings.ready' | 'settings.makeDefault' | 'settings.extensions' | 'settings.whatsNew'
     | 'settings.chooseDownloadFolder' | 'settings.resetDownloadFolder' | 'settings.resetShortcuts' }
@@ -114,14 +140,21 @@ export type SettingsCommand = { method: 'settings.get' | 'settings.ready' | 'set
   | { method: 'settings.set'; key: 'siteSearchActivation'; value: SiteSearchActivation }
   | { method: 'settings.set'; key: 'backdrop'; value: Backdrop }
   | { method: 'settings.set'; key: 'clock'; value: Clock }
+  | { method: 'settings.set'; key: 'interfaceLanguage'; value: InterfaceLanguage }
   | { method: 'settings.set'; key: 'askDownload' | 'searchSuggestions' | 'autoPictureInPicture' | 'pipButton' | 'littleSolLinks' | 'littleSolClick' | 'littleSolHotkey'; value: boolean }
   | { method: 'settings.set'; key: 'autoArchiveHours' | 'unloadMinutes'; value: number }
   | { method: 'settings.shortcut'; action: string; binding: KeyBinding | null }
+  | { method: 'settings.set'; key: 'translationTarget'; value: string }
+  | { method: 'settings.set'; key: 'translationOffers'; value: boolean }
+  | { method: 'settings.set'; key: 'translationKnownLanguages'; value: string[] }
+  | { method: 'settings.allowTranslationSite'; origin: string }
   | { method: 'settings.passwords'; profile: string; settings: boolean }
   | { method: 'profile.create'; title: string; spaceIds?: string[] }
   | { method: 'profile.rename'; id: string; title: string }
   | ThemeCommand;
 export type SettingsSnapshot = {
+  translationLanguages?: string[];
+  translationSourceLanguages?: string[];
   profiles?: BrowsingProfileInfo[]; activeProfile?: string;
   spaces?: SpaceInfo[];
   standalone?: boolean;
@@ -140,7 +173,7 @@ export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
   if (object(value) && value.spaces !== undefined && (!Array.isArray(value.spaces) || value.spaces.length>24 ||
       new Set(value.spaces.map(space=>object(space)?space.id:undefined)).size!==value.spaces.length ||
       !value.spaces.every(space=>object(space) && typeof space.id==='string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(space.id) &&
-        typeof space.name==='string' && !!space.name.trim() && space.name.length<=40 && validSpaceIcon(space.icon) &&
+        validSpaceName(space.name) && validSpaceIcon(space.icon) &&
         validProfileId(space.profileId) && Array.isArray(value.profiles) && value.profiles.some(profile=>object(profile)&&profile.id===space.profileId))))
     throw new Error('Invalid profile Spaces');
   if (object(value) && value.profiles !== undefined && (!validProfiles(value.profiles) ||
@@ -163,6 +196,15 @@ export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
   if (object(prefs) && prefs.siteSearches !== undefined && !validSiteSearches(prefs.siteSearches)) throw new Error('Invalid site searches');
   if (object(prefs) && prefs.siteSearchActivation !== undefined && (typeof prefs.siteSearchActivation !== 'string' || !['spaceOrTab','tab'].includes(prefs.siteSearchActivation))) throw new Error('Invalid site search activation');
   if (object(prefs) && prefs.searchSuggestions !== undefined && typeof prefs.searchSuggestions !== 'boolean') throw new Error('Invalid suggestion preference');
+  if (value.translationLanguages !== undefined && (!Array.isArray(value.translationLanguages) || value.translationLanguages.length > 100 ||
+      !value.translationLanguages.every(validTranslationLanguage))) throw new Error('Invalid translation languages');
+  if (value.translationSourceLanguages !== undefined && !translationLanguageList(value.translationSourceLanguages))
+    throw new Error('Invalid translation source languages');
+  if (object(prefs) && ((prefs.translationTarget !== undefined && prefs.translationTarget !== 'system' && !validTranslationLanguage(prefs.translationTarget)) ||
+      (prefs.translationOffers !== undefined && typeof prefs.translationOffers !== 'boolean') ||
+      (prefs.translationKnownLanguages !== undefined && !translationLanguageList(prefs.translationKnownLanguages)) ||
+      (prefs.translationExcludedSites !== undefined && (!Array.isArray(prefs.translationExcludedSites) || prefs.translationExcludedSites.length > 500 ||
+        !prefs.translationExcludedSites.every(site => typeof site === 'string' && site.length <= 300))))) throw new Error('Invalid translation preferences');
   if (object(prefs) && prefs.notesProvider !== undefined && (typeof prefs.notesProvider !== 'string' || !['googleDocs', 'word'].includes(prefs.notesProvider))) throw new Error('Invalid Notes provider');
   if (object(prefs) && prefs.integrations !== undefined && !validIntegrationSettings(prefs.integrations)) throw new Error('Invalid integrations');
   if (object(prefs) && prefs.unloadMinutes !== undefined && (typeof prefs.unloadMinutes !== 'number' || ![0,15,30,60,120,360].includes(prefs.unloadMinutes))) throw new Error('Invalid unload preference');
@@ -174,6 +216,8 @@ export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
   if (object(prefs) && prefs.pipButton !== undefined && typeof prefs.pipButton !== 'boolean') throw new Error('Invalid picture-in-picture button preference');
   for (const key of ['littleSolLinks', 'littleSolClick', 'littleSolHotkey'] as const)
     if (object(prefs) && prefs[key] !== undefined && typeof prefs[key] !== 'boolean') throw new Error('Invalid Little Sol preference');
+  if (object(prefs) && prefs.interfaceLanguage !== undefined && prefs.interfaceLanguage !== 'system' &&
+      prefs.interfaceLanguage !== 'en' && prefs.interfaceLanguage !== 'uk') throw new Error('Invalid interface language');
   if (object(prefs) && prefs.autoPictureInPicture !== undefined && typeof prefs.autoPictureInPicture !== 'boolean') throw new Error('Invalid picture-in-picture preference');
   if (object(prefs) && prefs.autoArchiveHours !== undefined && (typeof prefs.autoArchiveHours!=='number' || ![0,12,24,48,168].includes(prefs.autoArchiveHours))) throw new Error('Invalid archive preference');
   if (!object(prefs) || prefs.schema !== 1 || !['google', 'duckduckgo', 'bing', 'brave'].includes(String(prefs.searchEngine)) ||
@@ -241,6 +285,9 @@ export type TreeMutation =
   | { method: 'space.delete' | 'space.switch'; id: string }
   | { method: 'space.move'; id: string; position: number };
 export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'navigation.forward' | 'navigation.reload' | 'navigation.stop' | 'navigation.copyLink' | 'navigation.resetZoom' | 'workspace.openDroppedFiles' | 'settings.openProfiles' }
+  | { method: 'translation.accept'; id: number }
+  | { method: 'probe.translationPanel'; action: 'options' | 'choose' | 'english' | 'original' | 'undo' | 'never' | 'excluded' |
+      'settings' | 'shown' | 'hidden' | 'known' | 'selectText' | 'selectionMenu' | 'selectionPick' | 'activate' | 'start' }
   | { method: 'navigation.openEntry'; offset: -1 | 1 }
   | { method: 'navigation.historyMenu'; x: number; y: number; width: number; height: number }
   | { method: 'media.control'; id: string; action: 'toggle' | 'mute' | 'dismiss' | 'open' | 'pip' | 'previous' | 'next' }
@@ -278,7 +325,8 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'tab.mute'; id: string; muted: boolean }
   | { method: 'tab.setXBadgeHidden'; id: string; hidden: boolean }
   | { method: 'tab.setIntegration'; id: string; provider: IntegrationId; enabled: boolean }
-  | { method: 'panel.open'; kind: 'archive' | 'downloads' | 'site' | 'history' | 'space' | 'newSpace'; x: number; y: number; width: number; height: number }
+  | { method: 'panel.open'; kind: 'archive' | 'downloads' | 'site' | 'history' | 'space' | 'newSpace' | 'translation';
+      x: number; y: number; width: number; height: number; offerId?: number }
   | { method: 'integration.preview'; id: string; x: number; y: number; width: number; height: number }
   | { method: 'navigation.load'; url: string }
   | { method: 'probe.commandInput'; url: string }
@@ -431,6 +479,17 @@ export function parseSnapshot(raw: string): Snapshot {
       }
     }
     if (s.notice !== undefined && (typeof s.notice !== 'string' || s.notice.length > 240 || !integer(s.noticeId))) throw new Error('Invalid notice');
+    if (s.translationPending !== undefined && s.translationPending !== true) throw new Error('Invalid translation check');
+    if (s.translationOffer !== undefined) {
+      const offer = s.translationOffer;
+      if (!object(offer) || !integer(offer.id) || offer.id <= 0 || offer.id > 2147483647 ||
+          !validTranslationLanguage(offer.to) || (offer.from !== '' && !validTranslationLanguage(offer.from)) ||
+          (offer.phase === 'offer' && (!offer.from || offer.from === offer.to)) ||
+          typeof offer.toolbar !== 'boolean' || !validTranslationProgress(offer.download) ||
+          (offer.automatic !== undefined && (offer.automatic !== true || offer.phase !== 'offer' || !offer.toolbar)) ||
+          typeof offer.phase !== 'string' || !['offer', 'working', 'translated', 'original', 'error'].includes(offer.phase))
+        throw new Error('Invalid page translation offer');
+    }
     if (s.shellExtensions !== undefined && (!Number.isSafeInteger(s.shellExtensions) || (s.shellExtensions as number) < -1)) throw new Error('Invalid shell extension count');
     if (s.sidebarWidth !== undefined && (!integer(s.sidebarWidth) || s.sidebarWidth < 150 || s.sidebarWidth > 480)) throw new Error('Invalid sidebar width');
     if (s.devTools !== undefined && !validDevTools(s.devTools)) throw new Error('Invalid developer tools layout');
@@ -442,8 +501,8 @@ export function parseSnapshot(raw: string): Snapshot {
       if (!Array.isArray(s.spaces) || s.spaces.length < (s.windowKind === 'standalone' ? 0 : 1) || s.spaces.length > 24) throw new Error('Invalid spaces');
       const seen = new Set<string>();
       for (const v of s.spaces as unknown[]) {
-        if (!object(v) || typeof v.id !== 'string' || v.id.length !== 36 || seen.has(v.id) || typeof v.name !== 'string' || !v.name.trim()
-          || v.name.length > 40 || !validSpaceIcon(v.icon) || !integer(v.position)
+        if (!object(v) || typeof v.id !== 'string' || v.id.length !== 36 || seen.has(v.id) || !validSpaceName(v.name)
+          || !validSpaceIcon(v.icon) || !integer(v.position)
           || !integer(v.hue) || (v.hue as number) > 359 || !integer(v.intensity) || (v.intensity as number) > 160) throw new Error('Invalid space');
         seen.add(v.id);
         if (v.profileId !== undefined && (!validProfileId(v.profileId) ||

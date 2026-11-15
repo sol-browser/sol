@@ -378,7 +378,16 @@ int wmain(int argc, wchar_t** argv) {
     c = {red::TreeAction::EditSpace}; c.id = work; c.title = "Job"; c.icon = "J"; r = apply(c);
     Check(r && r.snapshot.ActiveSpace()->name == "Job", "rename a space");
     c = {red::TreeAction::EditSpace}; c.id = work; c.title = "  "; c.icon = "";
-    Check(apply(c).code == 400, "a space needs a name");
+    Check(apply(c).code == 400, "reject a nonempty, whitespace-only Space name");
+    c.title.clear(); c.icon = "J"; r = apply(c);
+    Check(r && r.snapshot.ActiveSpace()->name.empty() && r.snapshot.ActiveSpace()->icon == "J" &&
+          Find(r.snapshot, work_tab).space == work, "clearing a name retains the Space identity, icon and tabs");
+    {
+      red::TreeStore reopened;
+      const auto persisted = reopened.Open(spaces_path);
+      Check(persisted && persisted.snapshot.active_space == work && persisted.snapshot.ActiveSpace()->name.empty(),
+            "an empty Space name survives a new connection");
+    }
     c = {red::TreeAction::MoveSpace}; c.id = work; c.position = 0; r = apply(c);
     Check(r && r.snapshot.spaces[0].id == work && r.snapshot.spaces[0].position == 0, "reorder spaces");
     c = {red::TreeAction::DeleteSpace}; c.id = work; r = apply(c);
@@ -387,6 +396,13 @@ int wmain(int argc, wchar_t** argv) {
           "deleting a space removes its entries, keeps Favorites and lands in a remaining space");
     c = {red::TreeAction::DeleteSpace}; c.id = home;
     Check(apply(c).code == 409, "the last space stays");
+    c = {red::TreeAction::CreateSpace}; r = apply(c);
+    const auto unnamed = r.created_id;
+    Check(r && r.snapshot.active_space == unnamed && r.snapshot.ActiveSpace()->name.empty(), "create a Space without a name");
+    c = {red::TreeAction::ExportSpace}; c.id = unnamed; c.space = home; r = apply(c);
+    const auto exported = Find(r.snapshot, r.created_id);
+    Check(r && exported.folder && exported.title == "Space 2" && exported.space == home,
+          "exporting an unnamed Space creates a numbered folder");
     }
     for (const auto& suffix : {L"", L"-wal", L"-shm"}) { std::error_code error; std::filesystem::remove(spaces_path + suffix, error); }
   }

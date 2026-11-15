@@ -62,6 +62,11 @@ target_sources(${CEF_TARGET} PRIVATE src/experiments/browsing_probe.cpp
   src/windows/update_window.cpp
   src/windows/page_capture.cpp
   src/windows/capture_window.cpp
+  src/translation/page_translator.cpp
+  src/translation/page_translation_model.cpp
+  src/translation/model_catalog.cpp
+  src/translation/model_store.cpp
+  src/translation/translator_host.cpp
   src/windows/tab_thumbnails.cpp
   src/windows/image_scale.cpp
   src/windows/tab_switcher_strip.cpp
@@ -102,6 +107,51 @@ target_sources(${CEF_TARGET} PRIVATE resources/red.rc)
 set_source_files_properties(resources/red.rc PROPERTIES OBJECT_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/resources/red-32.png;${CMAKE_CURRENT_SOURCE_DIR}/resources/red-48.png;${CMAKE_CURRENT_SOURCE_DIR}/resources/red-64.png")
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(SOL_INTERFACE_CATALOGS "${CMAKE_SOURCE_DIR}/apps/browser-ui/src/locales")
+foreach(locale en uk)
+  set(catalog "${SOL_INTERFACE_CATALOGS}/${locale}.json")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${catalog}")
+  file(READ "${catalog}" catalog_${locale})
+endforeach()
+set(interface_entries "settings.title" "native.settings.title")
+string(JSON count LENGTH "${catalog_en}")
+math(EXPR last "${count} - 1")
+foreach(index RANGE ${last})
+  string(JSON entry MEMBER "${catalog_en}" ${index})
+  if(entry MATCHES "^native\\.(menu|sidebar|window|shortcut)\\.[A-Za-z0-9]+$")
+    list(APPEND interface_entries "${entry}")
+  endif()
+endforeach()
+set(interface_ids "")
+set(interface_en "")
+set(interface_uk "")
+foreach(entry IN LISTS interface_entries)
+  if(entry STREQUAL "settings.title")
+    set(name SettingsTitle)
+  elseif(entry STREQUAL "native.settings.title")
+    set(name NativeSettingsTitle)
+  else()
+    string(REGEX REPLACE "^native\\.([a-z])([a-z]+)\\." "\\1;\\2;" parts "${entry}")
+    list(POP_FRONT parts initial namespace suffix)
+    string(TOUPPER "${initial}" initial)
+    set(name "${initial}${namespace}${suffix}")
+  endif()
+  string(APPEND interface_ids "  ${name},\n")
+  string(JSON english_text GET "${catalog_en}" "${entry}" defaultMessage)
+  foreach(locale en uk)
+    string(JSON text ERROR_VARIABLE error GET "${catalog_${locale}}" "${entry}" defaultMessage)
+    if(NOT error STREQUAL "NOTFOUND")
+      set(text "${english_text}")
+    endif()
+    string(REPLACE "\\" "\\\\" text "${text}")
+    string(REPLACE "\"" "\\\"" text "${text}")
+    string(REPLACE "\r" "\\r" text "${text}")
+    string(REPLACE "\n" "\\n" text "${text}")
+    string(REPLACE "\t" "\\t" text "${text}")
+    string(APPEND interface_${locale} "  \"${text}\",\n")
+  endforeach()
+endforeach()
+configure_file(src/app/interface_strings.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/interface_strings.h" @ONLY)
 configure_file(src/app/version.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/red_version.h" @ONLY)
 configure_file(resources/version.rc.in "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc" @ONLY)
 target_sources(${CEF_TARGET} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc")
@@ -158,6 +208,15 @@ add_custom_target(browser_ui_assets ALL
   COMMENT "Staging built browser UI"
   VERBATIM)
 add_dependencies(${CEF_TARGET} browser_ui_assets)
+# On-device page translation engine (scripts/fetch_translation_engine.py, docs/page-translation.md).
+add_custom_target(translation_engine_assets ALL
+  COMMAND "${CMAKE_COMMAND}" -E copy_directory
+          "${CMAKE_SOURCE_DIR}/third_party/translation-engine" "${CEF_TARGET_OUT_DIR}/translator"
+  COMMAND "${CMAKE_COMMAND}" -E copy_directory
+          "${CMAKE_SOURCE_DIR}/apps/desktop/translator" "${CEF_TARGET_OUT_DIR}/translator"
+  COMMENT "Staging the translation engine"
+  VERBATIM)
+add_dependencies(${CEF_TARGET} translation_engine_assets)
 # sol-tray.exe: the tray icon and Ctrl+Alt+N while no Sol window is open, without CEF
 # (src/tray/sol_tray.cpp, docs/little-sol.md). Next to sol.exe, so packages carry it.
 add_executable(sol_tray WIN32 src/tray/sol_tray.cpp)
@@ -174,6 +233,11 @@ add_executable(trust_policy_test "${CMAKE_SOURCE_DIR}/tests/native/trust_policy_
 target_include_directories(trust_policy_test PRIVATE src)
 target_compile_options(trust_policy_test PRIVATE /W4 /WX)
 add_test(NAME trust_policy COMMAND trust_policy_test)
+
+add_executable(page_translation_test "${CMAKE_SOURCE_DIR}/tests/native/page_translation_test.cpp" src/translation/page_translation_model.cpp src/translation/model_catalog.cpp)
+target_include_directories(page_translation_test PRIVATE src)
+target_compile_options(page_translation_test PRIVATE /W4 /WX /EHsc)
+add_test(NAME page_translation COMMAND page_translation_test)
 
 add_executable(windows_locale_test "${CMAKE_SOURCE_DIR}/tests/native/windows_locale_test.cpp" src/app/windows_locale.cpp)
 target_include_directories(windows_locale_test PRIVATE src)
@@ -281,7 +345,7 @@ target_compile_options(download_names_test PRIVATE /W4 /WX /utf-8)
 target_compile_definitions(download_names_test PRIVATE _HAS_EXCEPTIONS=0 NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME download_names COMMAND download_names_test)
 add_executable(sidebar_menu_test "${CMAKE_SOURCE_DIR}/tests/native/sidebar_menu_test.cpp")
-target_include_directories(sidebar_menu_test PRIVATE src)
+target_include_directories(sidebar_menu_test PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_compile_options(sidebar_menu_test PRIVATE /W4 /WX /utf-8)
 add_test(NAME sidebar_menu COMMAND sidebar_menu_test)
 add_executable(extension_manifest_test "${CMAKE_SOURCE_DIR}/tests/native/extension_manifest_test.cpp")

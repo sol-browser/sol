@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useMessages } from './i18n';
 import { request, watchSidebarResizeLeave, type Snapshot } from './bridge';
 import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, sidebarWidth } from './sidebar-model';
 
@@ -7,6 +8,7 @@ type Props = { width: number; hidden: boolean; disabled: boolean;
   viewportWidth?: number;
   apply: (snapshot: Snapshot) => void; onError: (message: string) => void };
 export function SidebarResizer({ width, hidden, disabled, nativeDragging, viewportWidth = innerWidth, apply, onError }: Props) {
+  const t = useMessages();
   const drag = useRef<{ id: number; x: number; start: number; width: number } | undefined>(undefined);
   const queue = useRef<{ width: number; save: boolean } | undefined>(undefined);
   const sending = useRef(false);
@@ -56,7 +58,7 @@ export function SidebarResizer({ width, hidden, disabled, nativeDragging, viewpo
       if (!keyboardFocus) separator.current?.blur();
     }, () => Math.round(separator.current?.getBoundingClientRect().width ?? 2));
   }, [hovered, dragging, hidden, disabled, keyboardFocus]);
-  return <div ref={separator} className="sidebar-resizer" role="separator" aria-label="Sidebar width" aria-orientation="vertical"
+  return <div ref={separator} className="sidebar-resizer" role="separator" aria-label={t('sidebar.width')} aria-orientation="vertical"
     aria-controls="browser-sidebar" aria-valuemin={SIDEBAR_MIN_WIDTH} aria-valuemax={sidebarWidth(SIDEBAR_MAX_WIDTH, viewportWidth)} aria-valuenow={width}
     aria-disabled={disabled} tabIndex={disabled ? -1 : 0} hidden={hidden} data-dragging={nativeDragging ?? dragging}
     data-hovered={hovered} data-keyboard-focus={keyboardFocus}

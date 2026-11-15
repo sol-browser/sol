@@ -50,6 +50,7 @@
 #include "windows/website_popup.h"
 #include "windows/website_popup_host.h"
 #include "app/windows_locale.h"
+#include "interface_strings.h"
 #include "windows/welcome_music.h"
 #include "windows/welcome_window.h"
 #include "experiments/tab_probe.h"
@@ -109,6 +110,9 @@
 #include "windows/start_with_windows.h"
 #include "experiments/pin_probe.h"
 #include "windows/page_menu.h"
+#include "translation/page_translator.h"
+#include "translation/translator_host.h"
+#include "translation/page_translation_model.h"
 #include "windows/ui_context_menu.h"
 #include "extensions/pinned_extensions.h"
 #include "extensions/extension_catalog.h"
@@ -230,7 +234,9 @@ class ThemeResource final : public CefStreamResourceHandler {
 };
 class UiResources final : public CefSchemeHandlerFactory {
  public:
-  UiResources(std::shared_ptr<State> state, const fs::path& directory) : state_(state) {
+  UiResources(std::shared_ptr<State> state, const fs::path& directory)
+      : state_(state), interface_locale_(state->session ? state->session->interface_locale :
+          red::ResolveInterfaceLanguage("system", red::ReadWindowsBrowserLocale().chromium)) {
     std::error_code error;
     fs::recursive_directory_iterator iterator(directory, error), end;
     for (; !error && iterator != end; iterator.increment(error)) {
@@ -322,22 +328,31 @@ class UiResources final : public CefSchemeHandlerFactory {
     auto found = assets_.find(path == "/command.html" || path == "/welcome.html" || path == "/panel.html" || path == "/peek.html" || path == "/settings.html" || path == "/boost.html" || path == "/update.html" || path == "/capture.html" || path == "/menu.html" || path == "/history.html" || path == "/downloads.html" || path == "/devtools.html" ? "/index.html" : path);
     if (found == assets_.end()) return nullptr;
     auto& asset = found->second;
-    auto stream = CefStreamReader::CreateForData(asset.body.data(), asset.body.size());
     CefResponse::HeaderMap headers;
     headers.emplace("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
     headers.emplace("X-Content-Type-Options", "nosniff");
     headers.emplace("Cache-Control", "no-store");
-    if (path == "/panel.html" || path == "/welcome.html" || path == "/command.html" || path == "/settings.html" || path == "/boost.html" || path == "/update.html" || path == "/capture.html" || path == "/menu.html" || path == "/history.html" || path == "/downloads.html") {
+    if (asset.mime == "text/html") {
       auto body = std::make_shared<std::string>(asset.body);
-      const auto html = body->find("<html");
-      if (html != std::string::npos) body->insert(html + 5, path == "/panel.html" ? " data-ui=\"panel\"" : path == "/welcome.html" ? " data-ui=\"welcome\"" : path == "/settings.html" ? " data-ui=\"settings\"" : path == "/boost.html" ? " data-ui=\"boost\"" : path == "/update.html" ? " data-ui=\"update\"" : path == "/capture.html" ? " data-ui=\"capture\"" : path == "/menu.html" ? " data-ui=\"menu\"" : path == "/history.html" || path == "/downloads.html" ? " data-ui=\"page\"" : " data-ui=\"command\"");
+      constexpr std::string_view default_tag = "<html lang=\"en\"";
+      if (const auto html = body->find(default_tag); html != std::string::npos) {
+        body->replace(html, default_tag.size(), "<html lang=\"" + interface_locale_ + "\"");
+        const auto surface = path == "/panel.html" ? "panel" : path == "/welcome.html" ? "welcome" :
+            path == "/settings.html" ? "settings" : path == "/boost.html" ? "boost" :
+            path == "/update.html" ? "update" : path == "/capture.html" ? "capture" :
+            path == "/menu.html" ? "menu" : path == "/history.html" || path == "/downloads.html" ? "page" :
+            path == "/command.html" ? "command" : nullptr;
+        if (surface) body->insert(html + 5, std::string(" data-ui=\"") + surface + "\"");
+      }
       return new ThemeResource(body, CefStreamReader::CreateForData(body->data(), body->size()), headers, "text/html");
     }
+    auto stream = CefStreamReader::CreateForData(asset.body.data(), asset.body.size());
     return new CefStreamResourceHandler(200, "OK", asset.mime, headers, stream);
   }
  private:
   struct Asset { std::string mime; std::string body; };
   std::shared_ptr<State> state_;
+  const std::string interface_locale_;
   std::map<std::string, Asset> assets_;
   IMPLEMENT_REFCOUNTING(UiResources);
 };
@@ -458,11 +473,18 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   }
   // Red's own UI (the shell) gets no browser page menu; website pages get Chrome's, drawn as Red's.
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { if (shell_) return new red::UiContextMenu(state_); return this; }
-  void OnBeforeContextMenu(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>,
+  void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame>,
       CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> model) override {
     if (shell_ || foreign_ || !state_->workspace) return;
     if (internal_page_) { model->Clear(); return; }  // Trusted UI: no inspector, no page menu.
-    if (state_->probe) { auto d = CefDictionaryValue::Create(); d->SetInt("items", static_cast<int>(model->GetCount())); state_->Record("page_context_menu", d); }
+    const auto locale = state_->session ? state_->session->interface_locale : "en";
+    if (state_->probe) {
+      auto d = CefDictionaryValue::Create(); d->SetInt("items", static_cast<int>(model->GetCount()));
+      auto labels = CefListValue::Create();
+      for (size_t i = 0; i < model->GetCount(); ++i) labels->SetString(i, std::to_string(model->GetCommandIdAt(i)) + "|" + model->GetLabelAt(i).ToString());
+      d->SetList("labels", labels);
+      state_->Record("page_context_menu", d);
+    }
     // Chrome Runtime already supplies Inspect. Replace it with our exact
     // point-targeted command instead of showing two inspector entries.
     const int builtin = cef_id_for_command_id_name("IDC_CONTENT_CONTEXT_INSPECTELEMENT");
@@ -477,14 +499,36 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     // Chrome's incognito item opens the link in a Red private window (OnContextMenuCommand).
     if (const int private_link = cef_id_for_command_id_name("IDC_CONTENT_CONTEXT_OPENLINKOFFTHERECORD"); private_link >= 0) {
       if (state_->private_window) model->Remove(private_link);  // Already private: "new window" opens one.
-      else model->SetLabel(private_link, "Open link in private window");
+      else model->SetLabel(private_link, red::InterfaceText(locale, red::InterfaceMessage::MenuPrivateLink));
     }
     if (!state_->private_window && !state_->little_window && red::HasWebScheme(params->GetLinkUrl().ToString())) {
       const int next_to = model->GetIndexOf(cef_id_for_command_id_name("IDC_CONTENT_CONTEXT_OPENLINKNEWWINDOW"));
-      if (next_to >= 0) model->InsertItemAt(next_to + 1, red::kOpenLittleWindowMenu, "Open link in Little Sol");
+      if (next_to >= 0) model->InsertItemAt(next_to + 1, red::kOpenLittleWindowMenu, red::InterfaceText(locale, red::InterfaceMessage::MenuLittleLink));
+    }
+    // On-device translation for the page itself (not a link, picture, selection or field), as Chrome offers it.
+    constexpr int kNotPage = CM_TYPEFLAG_LINK | CM_TYPEFLAG_MEDIA | CM_TYPEFLAG_SELECTION | CM_TYPEFLAG_EDITABLE;
+    if (!popup_ && (params->GetTypeFlags() & CM_TYPEFLAG_SELECTION) && !(params->GetTypeFlags() & CM_TYPEFLAG_EDITABLE) &&
+        red::HasWebScheme(params->GetPageUrl().ToString())) {
+      const auto selection = params->GetSelectionText();
+      if (!selection.empty() && selection.length() <= red::kMaxTranslationSelection) {
+        const auto label = red::InterfaceText(locale, red::InterfaceMessage::MenuTranslateSelection);
+        const int copy = model->GetIndexOf(cef_id_for_command_id_name("IDC_CONTENT_CONTEXT_COPY"));
+        if (copy >= 0) model->InsertItemAt(copy + 1, red::kTranslateSelectionMenu, label);
+        else model->AddItem(red::kTranslateSelectionMenu, label);
+      }
+    }
+    if (!(params->GetTypeFlags() & kNotPage) && red::HasWebScheme(params->GetPageUrl().ToString())) {
+      const bool translated = red::PageTranslated(browser->GetIdentifier());
+      const auto label = translated ? std::string(red::InterfaceText(locale, red::InterfaceMessage::MenuOriginal)) :
+          red::InterfaceTextWithName(locale, red::InterfaceMessage::MenuTranslate,
+              CefString(red::LanguageDisplayName(red::PageTranslationTarget(state_))).ToString());
+      const int source = model->GetIndexOf(cef_id_for_command_id_name("IDC_VIEW_SOURCE"));
+      const int command = translated ? red::kShowOriginalMenu : red::kTranslatePageMenu;
+      if (source >= 0) model->InsertItemAt(source, command, label);
+      else model->AddItem(command, label);
     }
     if (model->GetCount()) model->AddSeparator();
-    model->AddItem(red::kInspectElementMenu, "Inspect element");
+    model->AddItem(red::kInspectElementMenu, red::InterfaceText(locale, red::InterfaceMessage::MenuInspect));
   }
   // Website pages: Chrome's menu, drawn as Red's own (windows/page_menu.cpp); the choice goes back to Chrome.
   bool RunContextMenu(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, CefRefPtr<CefContextMenuParams>, CefRefPtr<CefMenuModel> model,
@@ -495,6 +539,31 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame>,
       CefRefPtr<CefContextMenuParams> params, int command, EventFlags) override {
     if (red::OpensLinkInProfile(command)) return true;  // Removed above; never run it either.
+    if (command == red::kTranslateSelectionMenu) {
+      if (shell_ || popup_ || foreign_ || internal_page_ || !state_->workspace ||
+          !(params->GetTypeFlags() & CM_TYPEFLAG_SELECTION) || (params->GetTypeFlags() & CM_TYPEFLAG_EDITABLE) ||
+          !red::HasWebScheme(params->GetPageUrl().ToString())) return true;
+      const auto selection = params->GetSelectionText();
+      if (selection.empty() || selection.length() > red::kMaxTranslationSelection) return true;
+      const auto frame = browser->GetMainFrame();
+      if (!frame) return true;
+      CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page, CefRefPtr<CefFrame> frame,
+                                          CefString url, CefString selection) {
+        const auto state = weak.lock();
+        if (!state || !state->panel_popup || !page->IsValid() || !frame->IsValid() || frame->GetURL() != url) return;
+        state->panel_popup->ShowSelectionTranslation(page, selection);
+      }, std::weak_ptr<State>(state_), browser, frame, frame->GetURL(), selection));
+      return true;
+    }
+    if ((command == red::kTranslatePageMenu || command == red::kShowOriginalMenu) && !shell_ && !foreign_ && !internal_page_) {
+      if (command == red::kTranslatePageMenu) {
+        red::TranslatePage(state_, browser);
+        if (state_->content && browser->GetIdentifier() == state_->content->GetIdentifier() && state_->panel_popup)
+          state_->panel_popup->ShowPageTranslation();
+      }
+      else red::ShowOriginalPage(state_, browser);
+      return true;
+    }
     if (command == red::kOpenLittleWindowMenu && !shell_ && !foreign_ && !internal_page_) {
       const auto url = params->GetLinkUrl().ToString();
       if (!state_->private_window && !state_->little_window && red::HasWebScheme(url) && url.size() <= 8192 &&
@@ -533,8 +602,13 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     // The shell view fills the window from (0,0): view and window coordinates match.
     state_->window->SetDraggableRegions(regions);
   }
-  bool OnPreKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& event, CefEventHandle,
+  bool OnPreKeyEvent(CefRefPtr<CefBrowser> browser, const CefKeyEvent& event, CefEventHandle,
                     bool*) override {
+    if (!shell_ && !popup_ && !foreign_ && !internal_page_ && state_->content &&
+        browser->GetIdentifier() == state_->content->GetIdentifier() && !event.focus_on_editable_field &&
+        event.type == KEYEVENT_RAWKEYDOWN && event.windows_key_code == 'Z' && (event.modifiers & EVENTFLAG_CONTROL_DOWN) &&
+        !(event.modifiers & (EVENTFLAG_SHIFT_DOWN | EVENTFLAG_ALT_DOWN | EVENTFLAG_COMMAND_DOWN)) &&
+        red::UndoPageTranslationRestore(state_, browser)) return true;
     if (event.type == KEYEVENT_RAWKEYDOWN && event.windows_key_code == VK_ESCAPE &&
         !(event.modifiers & (EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN | EVENTFLAG_SHIFT_DOWN | EVENTFLAG_COMMAND_DOWN)) &&
         state_->panel_popup && state_->panel_popup->DismissIntegration()) return true;
@@ -711,6 +785,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     return true;
   }
   void OnBeforeClose(CefRefPtr<CefBrowser> browser) override {
+    if (!shell_) red::ForgetPageTranslation(browser->GetIdentifier());
     if (MovablePage()) RemoveWindowSubclass(browser->GetHost()->GetWindowHandle(), PageWindowMessage, browser->GetIdentifier());
     PageClients().erase(browser->GetIdentifier());
     red::UnregisterSessionUi(state_, browser->GetIdentifier());
@@ -983,6 +1058,68 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       if (!state_->sidebar_menu->ProbeSelect(action)) { callback->Failure(409, "Menu is not shown"); return true; }
       auto result = CefValue::Create(); result->SetDictionary(state_->workspace->Snapshot()); callback->Success(CefWriteJSON(result, JSON_WRITER_DEFAULT)); return true;
     }
+    if (method == "probe.translationPanel" && state_->probe && state_->menu_translate_offer && state_->panel_popup && !persistent &&
+        dict->GetSize() == 2 && dict->GetType("action") == VTYPE_STRING) {
+      const auto action = dict->GetString("action").ToString();
+      if (action == "activate" && state_->window && state_->content) {
+        state_->window->Activate();
+        red::FocusBrowser(state_->content);
+        if (!red::PopupOwnerIsForeground(state_->window)) {
+          state_->Record("translation_probe_foreground_unavailable");
+          callback->Failure(409, "Test window is not in the foreground"); return true;
+        }
+      } else if (action == "shown" || action == "hidden") {
+        if (state_->panel_popup->is_presented() != (action == "shown")) {
+          callback->Failure(409, "Translation panel has not changed visibility"); return true;
+        }
+      } else if (action == "options" || action == "choose" || action == "original" || action == "never" || action == "settings" || action == "start")
+        state_->panel_popup->ProbeClickSelector("[data-action=\"translation-" + action + "\"]");
+      else if (action == "english") state_->panel_popup->ProbeClickSelector("[data-language=\"en\"]");
+      else if (action == "excluded") {
+        if (!state_->session || !state_->session->preferences ||
+            !state_->session->preferences->Get().translation_excluded_sites.contains(red::SiteOrigin(state_->content))) {
+          callback->Failure(409, "The site exclusion has not been saved"); return true;
+        }
+      } else if (action == "known") {
+        if (!state_->session || !state_->session->preferences ||
+            !state_->session->preferences->Get().translation_known_languages.contains("de")) {
+          callback->Failure(409, "Known language has not been saved"); return true;
+        }
+        if (state_->settings_window) state_->settings_window->Close();
+      } else if (action == "selectText" && state_->content) {
+        const auto page = state_->content;
+        page->GetMainFrame()->ExecuteJavaScript(
+            "const r = document.createRange(); r.selectNodeContents(document.querySelector('#t')); getSelection().removeAllRanges(); getSelection().addRange(r);",
+            page->GetMainFrame()->GetURL(), 0);
+      } else if (action == "selectionMenu" && state_->content && state_->window) {
+        state_->window->Activate();
+        red::FocusBrowser(state_->content);
+        auto host = state_->content->GetHost();
+        for (const char* type : {"mousePressed", "mouseReleased"}) {
+          auto input = CefDictionaryValue::Create(); input->SetString("type", type);
+          input->SetDouble("x", 50); input->SetDouble("y", 32);
+          input->SetString("button", "right"); input->SetInt("clickCount", 1);
+          host->ExecuteDevToolsMethod(0, "Input.dispatchMouseEvent", input);
+        }
+      } else if (action == "selectionPick" && state_->menu_popup && state_->menu_popup->is_open()) {
+        state_->menu_popup->ProbeRun(0, "document.querySelector('[data-menu-key=\"" +
+            std::to_string(red::kTranslateSelectionMenu) + "\"]')?.click()");
+      } else if (action == "undo" && state_->content && state_->window) {
+        state_->window->Activate();
+        red::FocusBrowser(state_->content);
+        if (!red::BrowserIsForeground(state_->content) || !red::BrowserOwnsKeyboard(state_, state_->content)) {
+          callback->Failure(409, "The page does not own keyboard focus"); return true;
+        }
+        INPUT keys[4]{};
+        for (auto& key : keys) key.type = INPUT_KEYBOARD;
+        keys[0].ki.wVk = keys[3].ki.wVk = VK_CONTROL;
+        keys[1].ki.wVk = keys[2].ki.wVk = 'Z';
+        keys[2].ki.dwFlags = keys[3].ki.dwFlags = KEYEVENTF_KEYUP;
+        if (SendInput(4, keys, sizeof(INPUT)) != 4) { callback->Failure(409, "Could not send Ctrl+Z"); return true; }
+      } else { callback->Failure(400, "Invalid translation panel probe action"); return true; }
+      auto result = CefValue::Create(); result->SetDictionary(state_->workspace->Snapshot());
+      callback->Success(CefWriteJSON(result, JSON_WRITER_DEFAULT)); return true;
+    }
     if (method == "probe.panelClick" && state_->probe && (state_->organization_probe || state_->downloads_probe) &&
         state_->panel_popup && !persistent && dict->GetSize() == 2 && dict->GetType("text") == VTYPE_STRING && dict->GetString("text").length() <= 200) {
       state_->panel_popup->ProbeClick(dict->GetString("text"));
@@ -1027,9 +1164,13 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       }
       const int code = red::CopyLinkText(state_->window ? state_->window->GetWindowHandle() : nullptr,
           CefString(std::string(red::ShownAddress(snapshot->GetString("url").ToString()))).ToWString());
-      if (code) { callback->Failure(code, code == 409 ? "The clipboard is busy. Try again." : "Could not copy the page address"); return true; }
+      const std::string_view locale = state_->session ? state_->session->interface_locale : "en";
+      if (code) {
+        callback->Failure(code, red::InterfaceText(locale, code == 409 ? red::InterfaceMessage::WindowClipboardBusy : red::InterfaceMessage::WindowCopyFailed));
+        return true;
+      }
       red::FocusBrowser(state_->content);
-      if (state_->embedded) state_->embedded->Notify("copy", L"Copied current URL");
+      if (state_->embedded) state_->embedded->Notify("copy", CefString(red::InterfaceText(locale, red::InterfaceMessage::WindowCopied)).ToWString());
       auto value = CefValue::Create(); value->SetDictionary(snapshot);
       state_->Record("page_link_copied"); callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
     }
@@ -1118,15 +1259,19 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       // The shell names which popover to open and where its button is (DIP,
       // root client coordinates). Native code positions the popover itself.
       const auto kind = dict->GetType("kind") == VTYPE_STRING ? dict->GetString("kind").ToString() : "";
+      const bool automatic = dict->HasKey("offerId");
+      const int offer_id = dict->GetType("offerId") == VTYPE_INT ? dict->GetInt("offerId") : 0;
       const bool numbers = dict->GetType("x") == VTYPE_INT && dict->GetType("y") == VTYPE_INT &&
           dict->GetType("width") == VTYPE_INT && dict->GetType("height") == VTYPE_INT;
       const auto bounds = state_->window ? state_->window->GetClientAreaBoundsInScreen() : CefRect();
-      if (!state_->panel_popup || persistent || dict->GetSize() != 6 || (kind != "archive" && kind != "downloads" && kind != "site" && kind != "history" && kind != "space" && kind != "newSpace") || !numbers ||
+      if (!state_->panel_popup || persistent || dict->GetSize() != (automatic ? 7 : 6) ||
+          (automatic && (kind != "translation" || offer_id <= 0)) ||
+          (kind != "archive" && kind != "downloads" && kind != "site" && kind != "history" && kind != "space" && kind != "newSpace" && kind != "translation") || !numbers ||
           dict->GetInt("x") < 0 || dict->GetInt("y") < 0 || dict->GetInt("width") < 1 || dict->GetInt("height") < 1 ||
           dict->GetInt("x") + dict->GetInt("width") > bounds.width || dict->GetInt("y") + dict->GetInt("height") > bounds.height) {
         callback->Failure(400, "Invalid panel command"); return true;
       }
-      state_->panel_popup->Toggle(kind, CefRect(dict->GetInt("x"), dict->GetInt("y"), dict->GetInt("width"), dict->GetInt("height")));
+      state_->panel_popup->Toggle(kind, CefRect(dict->GetInt("x"), dict->GetInt("y"), dict->GetInt("width"), dict->GetInt("height")), offer_id);
       auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot());
       callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
     }
@@ -1261,6 +1406,14 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     if (method == "workspace.archive" && state_->workspace && !persistent && dict->GetSize() == 1) {
       auto archive = CefDictionaryValue::Create(); archive->SetList("archive", state_->workspace->ArchiveSnapshot());
       auto value = CefValue::Create(); value->SetDictionary(archive);
+      callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
+    }
+    if (method == "translation.accept") {
+      if (!state_->workspace || persistent || dict->GetSize() != 2 || dict->GetType("id") != VTYPE_INT || dict->GetInt("id") <= 0) {
+        callback->Failure(400, "Invalid translation offer command"); return true;
+      }
+      if (red::AcceptPageTranslationOffer(state_, dict->GetInt("id"))) red::FocusBrowser(state_->content);
+      auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot());
       callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
     }
     if (method == "browser.subscribe" && state_->workspace) {
@@ -1408,8 +1561,14 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     if (!shell_ && !popup_ && state_->embedded) state_->embedded->SetLinkStatus(browser, value);
   }
   void OnLoadStart(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, TransitionType) override {
-    if (!shell_ && !popup_ && !foreign_ && !internal_page_ && frame->IsMain() && state_->workspace)
-      state_->workspace->OnDocumentStarted(browser->GetIdentifier(), frame->GetURL());
+    if (!frame->IsMain()) return;
+    const int browser_id = browser->GetIdentifier();
+    const auto url = frame->GetURL();
+    const bool translation_reset = red::BeginPageTranslationNavigation(browser_id, red::HasWebScheme(url.ToString()));
+    if (translation_reset && state_->workspace && state_->content && state_->content->GetIdentifier() == browser_id)
+      state_->workspace->Refresh();
+    if (!shell_ && !popup_ && !foreign_ && !internal_page_ && state_->workspace)
+      state_->workspace->OnDocumentStarted(browser_id, url);
   }
   void OnAddressChange(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, const CefString& url) override {
     if (!shell_ && !popup_ && frame->IsMain() && state_->embedded) state_->embedded->SetLinkStatus(browser, "");
@@ -1496,6 +1655,11 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     }
     RestoreContentStack(state_);
     if (!shell_ && !popup_ && state_->workspace) state_->workspace->OnLoadFinished(browser);
+    if (!shell_ && !popup_ && !internal_page_) {
+      if ((!state_->probe || state_->menu_translate_offer) && status >= 200 && status < 300)
+        red::CheckPageTranslationOffer(state_, browser);
+      else red::CancelPageTranslationCheck(state_, browser);
+    }
     if (!shell_ && !popup_ && !foreign_ && !internal_page_) red::OnGoogleIntegrationsProbeLoad(state_,browser);
     if (!shell_ && !popup_ && !foreign_ && !internal_page_) red::ScheduleIntegrationLiveCheck(state_,browser);
     auto details = CefDictionaryValue::Create();
@@ -1552,9 +1716,10 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       frame->ExecuteJavaScript("console.info('RED_PROBE_BRIDGE:' + typeof window.cefQuery)", frame->GetURL(), 0);
     }
   }
-  void OnLoadError(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, ErrorCode code,
+  void OnLoadError(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, ErrorCode code,
                    const CefString&, const CefString&) override {
     if (!frame->IsMain() || code == ERR_ABORTED) return;
+    if (!shell_ && !popup_ && !foreign_ && !internal_page_) red::CancelPageTranslationCheck(state_, browser);
     auto details = CefDictionaryValue::Create();
     details->SetString("role", shell_ ? "shell" : "content");
     details->SetInt("code", code);
@@ -1562,6 +1727,13 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   }
   bool OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t severity,
       const CefString& message, const CefString&, int) override {
+    if (state_->probe && state_->menu_translate_offer && shell_ && message.ToString().starts_with("RED_TRANSLATION_OFFER:")) {
+      const bool passed = message == "RED_TRANSLATION_OFFER:pass";
+      auto data = CefDictionaryValue::Create(); data->SetBool("passed", passed); state_->Record("translation_offer_probe", data);
+      CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<red::State> weak) {
+        if (const auto state = weak.lock()) state->menu_done = true;
+      }, std::weak_ptr<red::State>(state_)), passed ? 1200 : 0);
+    }
     if (state_->probe && state_->sidebar_peek_probe && shell_ && message.ToString().starts_with("RED_PEEK:")) {
       auto data = CefDictionaryValue::Create(); data->SetString("result", message.ToString().substr(9, 1000)); state_->Record("peek_document", data);
     }
@@ -2519,8 +2691,8 @@ void StartBackground(const std::shared_ptr<State>& root) {
       root->session->quitting = true;
       bool open = false;
       for (const auto& window : root->session->Windows()) if (window->window) { open = true; window->window->Close(); }
-      if (!open) CefQuitMessageLoop();
-    }});
+      if (!open) { red::CloseTranslator(); CefQuitMessageLoop(); }
+    }}, session->interface_locale);
   session->apply_background = [weak] {
     const auto root = weak.lock(); if (!root || !root->session || !root->session->background) return;
     const auto& session = root->session;
@@ -2534,7 +2706,7 @@ void StartBackground(const std::shared_ptr<State>& root) {
     }
     // Only while the icon is there: without it, nothing could quit Sol.
     session->keep_running = session->background->enabled() && session->background->icon_visible();
-    if (!session->keep_running && !session->HasOpenWindows()) CefQuitMessageLoop();
+    if (!session->keep_running && !session->HasOpenWindows()) { red::CloseTranslator(); CefQuitMessageLoop(); }
   };
   session->apply_background();
 }
@@ -2689,6 +2861,8 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
     // A memory report request reaches a running Sol through OnAlreadyRunningAppRelaunch. When no
     // Sol was running, this launch became the first instance: there is nothing to report, so quit.
     if (CefCommandLine::GetGlobalCommandLine()->HasSwitch("memory-report")) { CefQuitMessageLoop(); return; }
+    // Probes run on fresh profiles and must not download in the background.
+    if (!state_->probe) red::PrefetchPageTranslationModel(state_);
     // Websites must never run in the trusted Shell profile: the global context
     // has to be <profile>\Default (--profile-directory, OnBeforeCommandLineProcessing).
     {
@@ -2972,6 +3146,9 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
 #endif
   state->pin_probe = command->HasSwitch("probe-pin");
   state->menu_page = command->GetSwitchValue("probe-menu") == "page";
+  state->menu_translate = command->GetSwitchValue("probe-menu") == "translate" || command->GetSwitchValue("probe-menu") == "translate-now";
+  state->menu_translate_now = command->GetSwitchValue("probe-menu") == "translate-now";
+  state->menu_translate_offer = command->GetSwitchValue("probe-menu") == "translate-offer";
   state->menu_edges = command->GetSwitchValue("probe-menu") == "edges";
   state->menu_update_restart = command->GetSwitchValue("probe-menu") == "update-restart";
   state->menu_screenshot = command->GetSwitchValue("probe-menu") == "screenshot";
@@ -3067,6 +3244,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   settings.no_sandbox = false;
   settings.windowless_rendering_enabled = true;  // Short-lived mailbox preview workers.
   CefString(&settings.locale) = locale.chromium;
+  red::SetPageTranslationTarget(state->menu_translate_offer ? "en" : locale.chromium);
   wchar_t* local_data = nullptr;
   size_t env_length = 0;
   _wdupenv_s(&local_data, &env_length, L"LOCALAPPDATA");
@@ -3094,6 +3272,10 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   if (profile_error) return 16;
   if (!fs::is_regular_file(directory / "ui" / "index.html", profile_error) || profile_error) return 17;
   state->profile = profile;
+  red::ConfigureTranslator(profile, directory);
+  if (state->probe) red::SetTranslatorProbe([weak = std::weak_ptr<State>(state)](const std::string& step, const std::string& detail) {
+    if (const auto s = weak.lock()) { auto d = CefDictionaryValue::Create(); d->SetString("step", step); d->SetString("detail", detail); s->Record("translator_host", d); }
+  });
   // Sol up to 0.1.2 could run websites in Shell; move such data to Default first.
   const auto web_repair = red::RepairWebProfile(profile);
   // The last theme, before any window or UI document exists (no light flash).
@@ -3137,6 +3319,10 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
     state->session->StopWorkspaces();
   } else if (state->workspace) state->workspace->Stop();
   if (state->history) state->history->Stop();
+  state->Record("loop_ended");
+  red::ForgetAllPageTranslations();
+  red::ShutdownTranslator();
+  state->Record("translator_closed");
   app->ReleaseContext();
   state->ui_context = nullptr;
   CefShutdown();

@@ -29,10 +29,13 @@ void ExpectTitles(const std::shared_ptr<State>& state, std::vector<std::string> 
     next(state);
   });
 }
-void OpenHistoryAndClick(const std::shared_ptr<State>& state, const std::string& label) {
+void OpenHistoryAndClick(const std::shared_ptr<State>& state, const std::string& selector) {
   // The real Ctrl+H path (also the logo menu's History item).
-  if (!state->panel_popup->is_open()) ExecuteShortcut(state, Shortcut::History);
-  state->panel_popup->ProbeClick(label);
+  if (!state->panel_popup->is_open()) {
+    state->window->Activate();
+    ExecuteShortcut(state, Shortcut::History);
+  }
+  state->panel_popup->ProbeClickSelector(selector);
 }
 }  // namespace
 namespace {
@@ -43,12 +46,12 @@ constexpr char kPageScript[] = R"JS((async () => {
   const ask = r => new Promise(ok => window.cefQuery({ request: JSON.stringify(r), persistent: false,
     onSuccess: () => ok('ok'), onFailure: c => ok(String(c)) }));
   say('shell_command:' + await ask({ method: 'tree.createTab', title: 'x', url: 'https://example.com/', expectedRevision: 0 }));
-  const find = label => [...document.querySelectorAll('[aria-label]')].find(e => e.getAttribute('aria-label') === label);
-  for (let i = 0; i < 100 && !(find('Select Alpha page') && find('Select Beta page')); i++) await new Promise(r => setTimeout(r, 50));
+  const find = page => document.querySelector(`.hp-row:has(.hp-open[title$="/${page}"]) .hp-check`);
+  for (let i = 0; i < 100 && !(find('alpha') && find('beta')); i++) await new Promise(r => setTimeout(r, 50));
   say('rows:' + document.querySelectorAll('.hp-row').length);
-  find('Select Alpha page')?.click(); await new Promise(r => setTimeout(r, 50));
-  find('Select Beta page')?.click(); await new Promise(r => setTimeout(r, 50));
-  [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Delete selected')?.click();
+  find('alpha')?.click(); await new Promise(r => setTimeout(r, 50));
+  find('beta')?.click(); await new Promise(r => setTimeout(r, 50));
+  document.querySelector('.hp-danger')?.click();
   for (let i = 0; i < 100 && document.querySelectorAll('.hp-row').length; i++) await new Promise(r => setTimeout(r, 50));
   say('deleted:' + document.querySelectorAll('.hp-row').length);
   location.href = 'https://example.com/';
@@ -90,7 +93,7 @@ void OnHistoryProbeLoad(const std::shared_ptr<State>& state, CefRefPtr<CefBrowse
       state->history_phase = 2;
       Later(state, 600, [](const std::shared_ptr<State>& s) {
         ExpectTitles(s, {"Alpha page", "Beta page"}, {}, "recorded", [](const std::shared_ptr<State>& s) {
-          OpenHistoryAndClick(s, "Remove Alpha page from history");
+          OpenHistoryAndClick(s, R"CSS(.history-row:has(.history-open[title$="/alpha"]) .history-delete)CSS");
           Later(s, 1200, [](const std::shared_ptr<State>& s) {
             ExpectTitles(s, {"Beta page"}, {"Alpha page"}, "removed_through_popover", [](const std::shared_ptr<State>& s) {
               s->history_checks = true; s->Record("history_checks_pass");
@@ -104,8 +107,8 @@ void OnHistoryProbeLoad(const std::shared_ptr<State>& state, CefRefPtr<CefBrowse
     Later(state, 800, [](const std::shared_ptr<State>& s) {
       ExpectTitles(s, {"Beta page"}, {"Alpha page"}, "persisted", [](const std::shared_ptr<State>& s) {
         // One opening, as a person would: "Clear…" then the range.
-        OpenHistoryAndClick(s, "Clear…");
-        s->panel_popup->ProbeClick("Clear history: All time");
+        OpenHistoryAndClick(s, R"CSS(.history-popover [data-action="clear"])CSS");
+        s->panel_popup->ProbeClickSelector(R"CSS(.history-clear-options [data-range="all"])CSS");
         Later(s, 1600, [](const std::shared_ptr<State>& s) {
           ExpectTitles(s, {}, {"Beta page", "Alpha page"}, "cleared_through_popover", [](const std::shared_ptr<State>& s) {
             s->history->Visits(0, 5, "", [weak = std::weak_ptr<State>(s)](std::vector<Visit> visits) {

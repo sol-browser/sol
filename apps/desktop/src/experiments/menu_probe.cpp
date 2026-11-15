@@ -1,9 +1,12 @@
 #include "experiments/menu_probe.h"
 #include "include/cef_devtools_message_observer.h"
+#include "include/cef_command_line.h"
 #include <algorithm>
 #include "include/base/cef_callback.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "windows/main_menu.h"
+#include "windows/page_menu.h"
+#include "include/cef_id_mappers.h"
 #include "windows/settings_window.h"
 #include "windows/menu_popup.h"
 #include "app/updates.h"
@@ -12,6 +15,7 @@
 #include "windows/capture_window.h"
 #include "experiments/shell_capture.h"
 #include "navigation/shortcuts.h"
+#include "translation/page_translator.h"
 #include <windows.h>
 #include "app/session.h"
 #include "workspace/controller.h"
@@ -19,8 +23,8 @@
 namespace red {
 namespace {
 // Finds the row and reports its centre; native input then moves to it (and clicks), as a person would.
-std::string Row(const char* label, const char* action) {
-  return std::string("(() => { const row = [...document.querySelectorAll('.menu-row')].find(e => e.textContent.startsWith('") + label + "'));"
+std::string Row(const std::string& key, const char* action) {
+  return std::string("(() => { const row = document.querySelector('[data-menu-key=\"") + key + "\"]');"
          " const r = row ? row.getBoundingClientRect() : { left: -1, top: -1, width: 0, height: 0 };"
          " window.cefQuery({ request: JSON.stringify({ method: 'menu.probe:" + action + ":' + Math.round(r.left + r.width / 2) + ':' + Math.round(r.top + r.height / 2) }),"
          " persistent: false, onSuccess() {}, onFailure() {} }); })()";
@@ -29,6 +33,9 @@ std::string Row(const char* label, const char* action) {
 // levels, independent of CDP's cached hover state in a moved native widget.
 std::string ActivateRow(const char* label) {
   return std::string("[...document.querySelectorAll('.menu-row')].find(e=>e.textContent.startsWith('")+label+"'))?.click()";
+}
+std::string ActivateKey(const std::string& key) {
+  return "document.querySelector('[data-menu-key=\"" + key + "\"]')?.click()";
 }
 void Later(const std::shared_ptr<State>& state, int delay_ms, void (*step)(const std::shared_ptr<State>&)) {
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, void (*step)(const std::shared_ptr<State>&)) {
@@ -163,6 +170,83 @@ void WatchUpdate(const std::shared_ptr<State>& state, int polls, int phase, int 
 void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url) {
   if (!state->menu_probe || state->menu_probe_started || !url.starts_with("http")) return;
   state->menu_probe_started = true;
+  const auto mode = CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-menu").ToString();
+  if (mode == "translate-offer") return;  // The trusted shell drives the offer scenario.
+  if (mode == "language-save" || mode == "language-read") {
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+      if (const auto owner = weak.lock()) ShowMainMenu(owner, kMainMenuAnchor);
+    }, std::weak_ptr<State>(state)), 1200);
+    Later(state, 3500, [](const std::shared_ptr<State>& s) {
+      s->menu_popup->ProbeRun(0, R"JS(
+        const row = document.querySelector('[data-menu-key="settings"]');
+        if (row?.querySelector('.menu-label')?.textContent ===
+            (document.documentElement.lang === 'uk' ? 'Налаштування' : 'Settings')) row.click()
+      )JS");
+    });
+    Later(state, 5300, [](const std::shared_ptr<State>& s) {
+      const auto window = s->settings_window ? s->settings_window->window() : nullptr;
+      if (!window) return;
+      const auto bounds = window->GetBounds();
+      window->SetBounds(CefRect(bounds.x, bounds.y, 720, 520));
+      auto data = CefDictionaryValue::Create();
+      data->SetString("title", window->GetTitle());
+      s->Record("language_window", data);
+    });
+    Later(state, 5800, [](const std::shared_ptr<State>& s) {
+      static CefRefPtr<CefRegistration> capture;
+      if (const auto browser = s->settings_window ? s->settings_window->browser() : nullptr)
+        capture = CaptureShell(browser, s->evidence_directory / "settings-language.png");
+    });
+    Later(state, 6300, [](const std::shared_ptr<State>& s) {
+      if (!s->settings_window) return;
+      const auto browser = s->settings_window->browser();
+      if (!browser) return;
+      const bool save = CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-menu") == "language-save";
+      const auto script = std::string("(async(save)=>{") + R"JS(
+        const select = document.querySelector('#interface-language');
+        const query = request => new Promise((resolve, reject) => cefQuery({
+          request: JSON.stringify(request), persistent: false,
+          onSuccess: raw => resolve(JSON.parse(raw)), onFailure: reject
+        }));
+        let invalid = 0;
+        const before = select?.value;
+        if (save && select && !select.disabled) {
+          try { await query({ method: 'settings.set', key: 'interfaceLanguage', value: '<invalid>' }); }
+          catch (code) { invalid = code; }
+          select.value = 'uk';
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          for (let i = 0; i < 50 && (select.disabled || select.value !== 'uk'); i++)
+            await new Promise(resolve => setTimeout(resolve, 20));
+        }
+        const data = await query({ method: 'settings.get' });
+        const hasOverflow = () => [...document.querySelectorAll('.settings-nav, .settings-content, .settings-card, .settings-nav button, .settings-card-actions button, .settings-inline-card button')]
+          .some(element => element.scrollWidth > element.clientWidth + 1);
+        const overflow = hasOverflow();
+        const heading = document.querySelector('#interface-language-heading')?.textContent;
+        for (const element of document.querySelectorAll('.settings-nav button span, .settings-card h2, .settings-card p, .settings-card-actions button, .settings-inline-card button'))
+          for (const child of [...element.childNodes])
+            if (child.nodeType === Node.TEXT_NODE && child.textContent.trim()) child.textContent += ' ' + child.textContent;
+        const expandedOverflow = hasOverflow();
+        document.querySelector('[data-section="search"]').click();
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const search = document.querySelector('.settings-page h2')?.textContent;
+        const searchOverflow = hasOverflow();
+        document.querySelector('[data-section="keyboard"]').click();
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const shortcuts = !!document.querySelector('.settings-shortcut-row');
+        console.info('RED_LANGUAGE:' + JSON.stringify({
+          lang: document.documentElement.lang, before, value: data.preferences.interfaceLanguage,
+          heading, width: innerWidth, overflow, expandedOverflow, invalid, search, searchOverflow, shortcuts
+        }));
+      })()JS" + (save ? "true)" : "false)");
+      browser->GetMainFrame()->ExecuteJavaScript(script, browser->GetMainFrame()->GetURL(), 0);
+    });
+    Later(state, 7800, [](const std::shared_ptr<State>& s) {
+      if (s->settings_window) s->settings_window->Close();
+      s->menu_done = true;
+    });
+    return;
+  }
   if(state->menu_edges) {
     for(int i=0;i<4;++i) CefPostDelayedTask(TID_UI,base::BindOnce([](std::weak_ptr<State> weak,int corner) {
       const auto s=weak.lock();if(!s || !s->window)return;
@@ -170,11 +254,31 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
       const auto work=s->window->GetDisplay()->GetWorkArea();
       MenuPopup::Builder menu;
       menu.Add("First","copy",[] {});
+      menu.Add("Шукати «Довгий виділений текст зі сторінки, який може займати кілька рядків "
+               "і має залишатися всередині контекстного меню навіть біля краю екрана» у Google",
+               "search", [] {}, "Ctrl+Shift+F", true, false, "", "wideRow");
       auto& sub=menu.Submenu("Branch","folder");
       sub.Add("Child","copy",[] {});
       sub.Submenu("Nested","folder").Add("Pick","copy",[] {});
       menu.Add("Last","copy",[] {});
       s->menu_popup->Open(menu,CefPoint(work.x+(corner%2 ? work.width-1 : 1),work.y+(corner/2 ? work.height-1 : 1)),"edge:"+std::to_string(corner));
+      Later(s,900,[](const std::shared_ptr<State>& s) {
+        s->menu_popup->ProbeRun(0, R"JS((() => {
+          const menu = document.querySelector('.menu');
+          const row = menu?.querySelector('[data-menu-key="wideRow"]');
+          const label = row?.querySelector('.menu-label');
+          const shortcut = row?.querySelector('.menu-shortcut');
+          const inside = (element, container) => {
+            const a = element.getBoundingClientRect(), b = container.getBoundingClientRect();
+            return a.width > 0 && a.left >= b.left - 1 && a.right <= b.right + 1;
+          };
+          const fits = menu && row && label && shortcut && menu.getBoundingClientRect().right <= innerWidth + 1 &&
+            inside(row, menu) && inside(label, row) && inside(shortcut, row) && shortcut.scrollWidth <= shortcut.clientWidth + 1 &&
+            label.scrollWidth > label.clientWidth && getComputedStyle(label).textOverflow === 'ellipsis';
+          window.cefQuery({ request: JSON.stringify({ method: fits ? 'menu.probe:long-row-fits' : 'menu.probe:long-row-overflows' }),
+            persistent: false, onSuccess() {}, onFailure() {} });
+        })())JS");
+      });
       Later(s,1300,[](const std::shared_ptr<State>& s) {s->menu_popup->ProbeRun(0,ActivateRow("Branch"));});
       Later(s,2200,[](const std::shared_ptr<State>& s) {s->menu_popup->ProbeRun(1,ActivateRow("Nested"));});
       Later(s,3000,[](const std::shared_ptr<State>& s) {s->menu_popup->ProbeRun(2,ActivateRow("Pick"));});
@@ -182,6 +286,45 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
     Later(state,17500,[](const std::shared_ptr<State>& s) {
       auto d=CefDictionaryValue::Create();d->SetBool("closed",!s->menu_popup->is_open());s->Record("menu_probe_result",d);s->menu_done=true;
     });
+    return;
+  }
+  if (state->menu_translate) {
+    // Sol's on-device page translation from its page menu (scripts/translate_experiment.py):
+    // "Translate page to <language>", then "Show original" from the same menu.
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+      const auto state = weak.lock(); if (!state || !state->content) return;
+      if (!state->menu_popup) state->menu_popup = std::make_shared<MenuPopup>(state);
+      if (state->menu_translate_now) {
+        // A real website: the page menu's command itself, without aiming a right click at the page.
+        TranslatePage(state, state->content);
+        Later(state, 24000, [](const std::shared_ptr<State>& s) {
+          s->Record("menu_probe_result", CefDictionaryValue::Create()); s->menu_done = true;
+        });
+        return;
+      }
+      static constexpr auto right_click = [](const std::shared_ptr<State>& s) {
+        s->Record("translate_probe_right_click");
+        Mouse(s, "mouseMoved", 120, 60, false);
+        for (const char* type : {"mousePressed", "mouseReleased"}) {
+          auto input = CefDictionaryValue::Create(); input->SetString("type", type); input->SetDouble("x", 120); input->SetDouble("y", 60);
+          input->SetString("button", "right"); input->SetInt("clickCount", 1);
+          s->content->GetHost()->ExecuteDevToolsMethod(0, "Input.dispatchMouseEvent", input);
+        }
+      };
+      right_click(state);
+      Later(state, 1500, [](const std::shared_ptr<State>& s) {
+        s->menu_popup->ProbeRun(0, ActivateKey(std::to_string(kTranslatePageMenu)));
+      });
+      // Then "Show original" from the same menu must put the German text back.
+      Later(state, 14000, [](const std::shared_ptr<State>& s) { if (s->content) right_click(s); });
+      Later(state, 15500, [](const std::shared_ptr<State>& s) {
+        s->menu_popup->ProbeRun(0, ActivateKey(std::to_string(kShowOriginalMenu)));
+      });
+      Later(state, 20000, [](const std::shared_ptr<State>& s) {
+        auto data = CefDictionaryValue::Create(); data->SetBool("closed", !s->menu_popup->is_open());
+        s->Record("menu_probe_result", data); s->menu_done = true;
+      });
+    }, std::weak_ptr<State>(state)), 4000);
     return;
   }
   if (state->menu_page) {
@@ -195,7 +338,7 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
         input->SetString("button", "right"); input->SetInt("clickCount", 1);
         state->content->GetHost()->ExecuteDevToolsMethod(0, "Input.dispatchMouseEvent", input);
       }
-      Later(state, 1500, [](const std::shared_ptr<State>& s) { s->menu_popup->ProbeRun(0, Row("Reload", "click")); });
+      Later(state, 1500, [](const std::shared_ptr<State>& s) { s->menu_popup->ProbeRun(0, Row(std::to_string(cef_id_for_command_id_name("IDC_RELOAD")), "click")); });
       Later(state, 4000, [](const std::shared_ptr<State>& s) {
         auto data = CefDictionaryValue::Create(); data->SetBool("closed", !s->menu_popup->is_open());
         data->SetInt("loads_before", s->menu_loads); data->SetInt("loads_after", s->content_loads);
@@ -341,7 +484,7 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
     CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
       const auto state = weak.lock(); if (!state) return;
       ShowCopyMenu(state, kMainMenuAnchor);
-      Later(state, 1500, [](const std::shared_ptr<State>& s) { s->menu_popup->ProbeRun(0, ActivateRow("Super Copy")); });
+      Later(state, 1500, [](const std::shared_ptr<State>& s) { s->menu_popup->ProbeRun(0, ActivateKey("superCopy")); });
       Later(state, 3000, [](const std::shared_ptr<State>& s) {
         auto data = CefDictionaryValue::Create(); data->SetString("clipboard", ClipboardText()); s->Record("copy_menu_probe", data);
         auto done = CefDictionaryValue::Create(); done->SetBool("closed", !s->menu_popup->is_open());
@@ -383,7 +526,7 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
       const auto state = weak.lock(); if (!state) return;
       ShowMainMenu(state, kMainMenuAnchor);
       // The menu's own click handler, as the edge probe uses: a native mouse click can miss when someone moves the pointer.
-      Later(state, 1500, [](const std::shared_ptr<State>& s) { s->menu_popup->ProbeRun(0, ActivateRow("Check for Updates")); });
+      Later(state, 1500, [](const std::shared_ptr<State>& s) { s->menu_popup->ProbeRun(0, ActivateKey("checkUpdates")); });
       Later(state, 2500, [](const std::shared_ptr<State>& s) { WatchUpdate(s, 0, -1, -1, false); });
     }, std::weak_ptr<State>(state)), 1200);
     return;
@@ -391,8 +534,8 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
     const auto state = weak.lock(); if (!state) return;
     ShowMainMenu(state, kMainMenuAnchor);
-    Later(state, 1500, [](const std::shared_ptr<State>& s) { s->menu_popup->ProbeRun(0, Row("Tabs", "move")); });
-    Later(state, 3000, [](const std::shared_ptr<State>& s) { s->menu_popup->ProbeRun(1, Row("Next Tab", "click")); });
+    Later(state, 1500, [](const std::shared_ptr<State>& s) { s->menu_popup->ProbeRun(0, Row("tabs", "move")); });
+    Later(state, 3000, [](const std::shared_ptr<State>& s) { s->menu_popup->ProbeRun(1, Row("nextTab", "click")); });
     Later(state, 4500, [](const std::shared_ptr<State>& s) {
       auto data = CefDictionaryValue::Create(); data->SetBool("closed", !s->menu_popup->is_open());
       s->Record("menu_probe_result", data); s->menu_done = true;

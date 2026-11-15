@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useMessages } from './i18n';
 import { Ban, Braces, Lightbulb, Scan, SlidersHorizontal, Sparkles, X, Zap } from 'lucide-react';
 import { focusOnMount } from './focus-on-mount';
 import { CASES, FONTS, MAX_BOOST_CSS, NEUTRAL_LOOK, accentDot, dotPosition, fromPadPoint, isEmpty, moveDot, parseBoostState, tintColor,
@@ -23,6 +24,7 @@ type Section = '' | 'adjust' | 'size' | 'code';
 
 /** The Boost editor window (sol://ui/boost.html): Zen/Arc-style controls for one site. */
 export function BoostEditor() {
+  const t = useMessages();
   const [state, setState] = useState<BoostState>();
   const [boost, setBoost] = useState<Boost>();
   const [open, setOpen] = useState<Section>('');
@@ -95,12 +97,12 @@ export function BoostEditor() {
   return <main className="boost-app" data-off={!boost.enabled}>
     <header className="boost-head">
       <span className="boost-host" title={state.host}>{state.host}</span>
-      <label className="boost-power" title={boost.enabled ? 'Turn this Boost off' : 'Turn this Boost on'}>
-        <input type="checkbox" role="switch" aria-label="Boost this site" checked={boost.enabled} disabled={isEmpty(boost)}
+      <label className="boost-power" title={boost.enabled ? t('boost.off') : t('boost.on')}>
+        <input type="checkbox" role="switch" aria-label={t('site.boostCreate')} checked={boost.enabled} disabled={isEmpty(boost)}
           onChange={event => change({ ...boost, enabled: event.target.checked })} /></label>
     </header>
 
-    <div ref={pad} className="boost-pad" role="slider" tabIndex={0} aria-label="Tint colour" aria-valuemin={0} aria-valuemax={100} aria-valuenow={l.tint}
+    <div ref={pad} className="boost-pad" role="slider" tabIndex={0} aria-label={t('boost.tint')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={l.tint}
       aria-valuetext={`${l.tint ? `Page tint ${l.hue} degrees at ${l.tint}%` : 'No page tint'}, ${l.tint2 ? `accent ${l.hue2} degrees at ${l.tint2}%` : 'no accent'}`}
       onPointerDown={event => { if ((event.target as HTMLElement).closest('button')) return; event.currentTarget.setPointerCapture(event.pointerId); grab(event); setDragging(true); movePad(event); }}
       onPointerMove={event => event.buttons && event.currentTarget.hasPointerCapture(event.pointerId) && movePad(event)}
@@ -113,29 +115,29 @@ export function BoostEditor() {
       }}>
       <span className="boost-ring" />
       {!l.tint && !l.tint2 && <span className="boost-dot boost-dot-center" />}
-      {l.tint2 > 0 && <span className="boost-dot boost-dot-accent" title="Accent colour: links, selection, form controls"
+      {l.tint2 > 0 && <span className="boost-dot boost-dot-accent" title={t('boost.accentHint')}
         style={{ left: `${50 + accent.x * 42}%`, top: `${50 + accent.y * 42}%`, background: tintColor(accentDot(l)) }} />}
       <span className="boost-dot boost-dot-main" style={{ left: `${50 + dot.x * 42}%`, top: `${50 + dot.y * 42}%`, background: tintColor(l) }} />
-      <button type="button" className="boost-magic" title="Random colour" aria-label="Random colour"
+      <button type="button" className="boost-magic" title={t('boost.random')} aria-label={t('boost.random')}
         onClick={() => { const hue = Math.floor(Math.random() * 360);
           look({ hue, tint: 35 + Math.floor(Math.random() * 45), hue2: (hue + 180) % 360, tint2: 45 + Math.floor(Math.random() * 45) }); }}><Sparkles size={14} /></button>
     </div>
 
     <div className="boost-row three">
-      <button type="button" className="boost-tile" aria-pressed={l.dark === 1} title="Dark mode" aria-label="Dark mode"
+      <button type="button" className="boost-tile" aria-pressed={l.dark === 1} title={t('boost.dark')} aria-label={t('boost.dark')}
         onClick={() => look({ dark: l.dark ? 0 : 1 })}><Lightbulb size={17} /></button>
-      <button type="button" className="boost-tile" aria-pressed={open === 'adjust'} aria-expanded={open === 'adjust'} title="Brightness, contrast and saturation"
-        aria-label="Adjust colours" onClick={() => toggle('adjust')}><SlidersHorizontal size={17} /></button>
-      <button type="button" className="boost-tile" title="Remove colour changes" aria-label="Remove colour changes"
+      <button type="button" className="boost-tile" aria-pressed={open === 'adjust'} aria-expanded={open === 'adjust'} title={t('boost.adjustHint')}
+        aria-label={t('boost.adjust')} onClick={() => toggle('adjust')}><SlidersHorizontal size={17} /></button>
+      <button type="button" className="boost-tile" title={t('boost.remove')} aria-label={t('boost.remove')}
         disabled={!l.tint && !l.tint2 && !l.dark && !l.brightness && !l.contrast && !l.saturation}
         onClick={() => look({ tint: 0, tint2: 0, dark: 0, brightness: 0, contrast: 0, saturation: 0 })}><Ban size={17} /></button>
     </div>
     {open === 'adjust' && <div className="boost-drawer">
-      {slider('Brightness', 'brightness', -50, 50)}{slider('Contrast', 'contrast', -50, 50)}{slider('Saturation', 'saturation', -50, 50)}
+      {slider(t('theme.brightness'), 'brightness', -50, 50)}{slider(t('boost.contrast'), 'contrast', -50, 50)}{slider(t('boost.saturation'), 'saturation', -50, 50)}
     </div>}
 
     <div className="boost-fonts-box">
-      <ul className="boost-fonts" aria-label="Font">{FONTS.map((font, index) => <li key={font.label}>
+      <ul className="boost-fonts" aria-label={t('boost.font')}>{FONTS.map((font, index) => <li key={font.label}>
         <button type="button" title={font.label} aria-label={font.label} aria-pressed={l.font === index} style={{ fontFamily: font.stack }}
           onClick={() => look({ font: index })}>Aa</button></li>)}</ul>
       <span className="boost-font-name">{FONTS[l.font].label}</span>
@@ -143,39 +145,39 @@ export function BoostEditor() {
 
     <div className="boost-row two">
       <button type="button" className="boost-tile text" aria-pressed={open === 'size' || l.size !== 0} aria-expanded={open === 'size'} onClick={() => toggle('size')}>
-        Size{l.size ? <small>{l.size > 0 ? '+' : ''}{l.size}%</small> : null}</button>
-      <button type="button" className="boost-tile text" aria-pressed={l.caps !== 0} title={`Letter case: ${CASES[l.caps]}`}
-        onClick={() => look({ caps: (l.caps + 1) % CASES.length })}>{l.caps ? <span className="boost-case">{CASES[l.caps]}</span> : 'Case'}</button>
+        {t('boost.size')}{l.size ? <small>{l.size > 0 ? '+' : ''}{l.size}%</small> : null}</button>
+      <button type="button" className="boost-tile text" aria-pressed={l.caps !== 0} title={t('boost.caseHint', { mode: CASES[l.caps] })}
+        onClick={() => look({ caps: (l.caps + 1) % CASES.length })}>{l.caps ? <span className="boost-case">{CASES[l.caps]}</span> : t('boost.case')}</button>
     </div>
-    {open === 'size' && <div className="boost-drawer">{slider('Size', 'size', -30, 50)}</div>}
+    {open === 'size' && <div className="boost-drawer">{slider(t('boost.size'), 'size', -30, 50)}</div>}
 
     <button type="button" className="boost-wide" aria-pressed={state.picking === 'zap'} disabled={!state.page && state.picking !== 'zap'}
       onClick={() => state.picking === 'zap' ? void stopPick() : void pick('zap')}>
-      <span>{state.picking === 'zap' ? 'Done zapping' : 'Zap'}{boost.zaps.length > 0 && <small>{boost.zaps.length}</small>}</span><Zap size={17} /></button>
-    {state.picking === 'zap' && <p className="boost-hint">Click elements on the page to hide them. Esc finishes.</p>}
-    {boost.zaps.length > 0 && <ul className="boost-zaps" aria-label="Zapped elements">{boost.zaps.map((zap, index) => <li key={zap}>
+      <span>{state.picking === 'zap' ? t('boost.stopZap') : t('boost.zap')}{boost.zaps.length > 0 && <small>{boost.zaps.length}</small>}</span><Zap size={17} /></button>
+    {state.picking === 'zap' && <p className="boost-hint">{t('boost.zapHint')}</p>}
+    {boost.zaps.length > 0 && <ul className="boost-zaps" aria-label={t('boost.hidden')}>{boost.zaps.map((zap, index) => <li key={zap}>
       <code title={zap}>{zap}</code>
-      <button type="button" aria-label={`Unzap ${zap}`} title="Unzap" onClick={() => change({ ...boost, zaps: boost.zaps.filter((_, i) => i !== index) })}><X size={13} /></button>
+      <button type="button" aria-label={t('boost.unhideNamed', { name: zap })} title={t('boost.unhide')} onClick={() => change({ ...boost, zaps: boost.zaps.filter((_, i) => i !== index) })}><X size={13} /></button>
     </li>)}</ul>}
 
     <button type="button" className="boost-wide" aria-pressed={state.picking === 'focus' || boost.focus !== ''} disabled={!state.page && state.picking !== 'focus'}
       onClick={() => state.picking === 'focus' ? void stopPick() : boost.focus ? change({ ...boost, focus: '' }) : void pick('focus')}>
-      <span>{state.picking === 'focus' ? 'Cancel focus' : boost.focus ? 'Unfocus' : 'Focus'}</span><Scan size={17} /></button>
-    {state.picking === 'focus' && <p className="boost-hint">Click the part of the page to keep. Everything else is hidden.</p>}
+      <span>{state.picking === 'focus' ? t('boost.cancelFocus') : boost.focus ? t('boost.unfocus') : t('boost.focus')}</span><Scan size={17} /></button>
+    {state.picking === 'focus' && <p className="boost-hint">{t('boost.focusHint')}</p>}
     {boost.focus && state.picking !== 'focus' && <p className="boost-hint"><code title={boost.focus}>{boost.focus}</code></p>}
 
     <div className="boost-code-box">
       <button type="button" className="boost-wide" aria-expanded={open === 'code'} aria-pressed={boost.css.trim() !== ''} onClick={() => toggle('code')}>
-        <span>Code</span><Braces size={17} /></button>
-      {open === 'code' && <textarea className="boost-css" spellCheck={false} aria-label={`CSS for ${state.host}`} value={boost.css} ref={focusOnMount}
+        <span>{t('boost.code')}</span><Braces size={17} /></button>
+      {open === 'code' && <textarea className="boost-css" spellCheck={false} aria-label={t('boost.css', { host: state.host })} value={boost.css} ref={focusOnMount}
         placeholder={`/* Applies to ${state.host} and its subdomains */\nbody { font-size: 110%; }`} maxLength={MAX_BOOST_CSS}
         onChange={event => change({ ...boost, enabled: true, css: event.target.value }, false)} onBlur={flush} />}
     </div>
 
     {error && <p className="boost-error" role="alert">{error}</p>}
-    {!state.page && <p className="boost-hint">The page this editor was opened from is closed: Zap and Focus need it open.</p>}
+    {!state.page && <p className="boost-hint">{t('boost.closed')}</p>}
     <footer className="boost-foot">
-      <button type="button" disabled={isEmpty(boost)} onClick={() => change({ enabled: true, css: '', look: NEUTRAL_LOOK, zaps: [], focus: '' })}>Reset Boost</button>
+      <button type="button" disabled={isEmpty(boost)} onClick={() => change({ enabled: true, css: '', look: NEUTRAL_LOOK, zaps: [], focus: '' })}>{t('boost.reset')}</button>
     </footer>
   </main>;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useMessages } from './i18n';
 import { Icon } from './Icon';
 import { focusOnMount } from './focus-on-mount';
 import { extensionHue } from './downloads-model';
@@ -17,6 +18,8 @@ function query(request: object) {
 }
 
 export function HistoryPage() {
+  const t = useMessages();
+  const locale = document.documentElement.lang || 'en-US';
   const [search, setSearch] = useState('');
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [more, setMore] = useState(false);
@@ -85,11 +88,12 @@ export function HistoryPage() {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
   const open = (url: string) => void query({ method: 'history.open', url }).catch(e => setError(e instanceof Error ? e.message : String(e)));
-  const groups = groupByDay(visits);
+  const calendar = { locale, today: t('history.today'), yesterday: t('history.yesterday') };
+  const groups = groupByDay(visits, Date.now(), calendar);
   const selecting = selected.size > 0;
   // Full day counts from native; the loaded pages until those arrive.
   const counts = new Map(days.map(day => [day.date, day.count]));
-  const rail = days.length ? days.map(day => ({ key: day.date, label: dayLabel(dayTime(day.date)), count: day.count, latest: day.latest }))
+  const rail = days.length ? days.map(day => ({ key: day.date, label: dayLabel(dayTime(day.date), Date.now(), calendar), count: day.count, latest: day.latest }))
     : groups.map(group => ({ key: group.key, label: group.label, count: group.visits.length, latest: 0 }));
   // The day rail follows scrolling: the topmost visible day is highlighted.
   const [activeDay, setActiveDay] = useState('');
@@ -117,61 +121,61 @@ export function HistoryPage() {
     jumpTo.current = day.key; setActiveDay(day.key);
     void load(search, day.latest + 1, false);
   }
-  const subtitle = search ? (loading && !visits.length ? 'Searching…' : `${visits.length}${more ? '+' : ''} ${visits.length === 1 ? 'page' : 'pages'} matching “${search.trim()}”`)
-    : 'Pages you visited in Sol';
+  const subtitle = search ? (loading && !visits.length ? t('history.searching') : t('history.results', { count: visits.length, shown: Intl.NumberFormat(locale).format(visits.length) + (more ? '+' : ''), query: search.trim() }))
+    : t('history.subtitle');
   return <main className="history-page" data-selecting={selecting}>
     <header className="hp-header">
       <div className="hp-title"><span className="hp-title-icon"><Icon name="history" /></span>
-        <div><h1>History</h1><p>{subtitle}</p></div></div>
-      <button type="button" className="hp-button" aria-expanded={clearing} onClick={() => setClearing(!clearing)}><Icon name="trash" />Clear history…</button>
+        <div><h1>{t('history.title')}</h1><p>{subtitle}</p></div></div>
+      <button type="button" className="hp-button" aria-expanded={clearing} onClick={() => setClearing(!clearing)}><Icon name="trash" />{t('history.clearOpen')}</button>
     </header>
     <div className="hp-bar">{selecting
-      ? <div className="hp-selection" role="toolbar" aria-label="Selection">
-          <span><strong>{selected.size}</strong> selected</span>
-          <button type="button" className="hp-cancel" onClick={() => setSelected(new Set())}>Cancel</button>
-          <button type="button" className="hp-danger" aria-label="Delete selected" onClick={() => void removeSelected()}><Icon name="trash" />Delete</button>
+      ? <div className="hp-selection" role="toolbar" aria-label={t('history.selection')}>
+          <span>{t('history.selected', { count: selected.size })}</span>
+          <button type="button" className="hp-cancel" onClick={() => setSelected(new Set())}>{t('common.cancel')}</button>
+          <button type="button" className="hp-danger" aria-label={t('history.deleteSelected')} onClick={() => void removeSelected()}><Icon name="trash" />{t('history.delete')}</button>
         </div>
       : <label className="hp-search"><Icon name="search" />
-          <input ref={focusOnMount} value={search} placeholder="Search history" aria-label="Search history" spellCheck={false} autoComplete="off" maxLength={200}
+          <input ref={focusOnMount} value={search} placeholder={t('history.search')} aria-label={t('history.search')} spellCheck={false} autoComplete="off" maxLength={200}
             onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Escape' && search) { e.preventDefault(); setSearch(''); } }} />
-          {search && <button type="button" className="hp-search-clear" aria-label="Clear search" onClick={() => setSearch('')}><Icon name="close" /></button>}
+          {search && <button type="button" className="hp-search-clear" aria-label={t('history.clearSearch')} onClick={() => setSearch('')}><Icon name="close" /></button>}
         </label>}</div>
-    {clearing && <section className="hp-clear" role="group" aria-label="Clear history">
-      <div className="hp-clear-text"><strong>Clear browsing history</strong><span>Removes pages from Sol's history. Open tabs, saved tabs and downloads stay.</span></div>
+    {clearing && <section className="hp-clear" role="group" aria-label={t('history.clear')}>
+      <div className="hp-clear-text"><strong>{t('history.clearTitle')}</strong><span>{t('history.clearDetail')}</span></div>
       <div className="hp-clear-options">{(Object.keys(CLEAR_LABELS) as ClearRange[]).map(range =>
-        <button key={range} type="button" aria-label={`Clear history: ${CLEAR_LABELS[range]}`} onClick={() => void clear(range)}>{CLEAR_LABELS[range]}</button>)}
-        <button type="button" className="hp-cancel" onClick={() => setClearing(false)}>Cancel</button></div>
+        <button key={range} type="button" aria-label={t('history.clearWithRange', { range: t(`history.range.${range}`) })} onClick={() => void clear(range)}>{t(`history.range.${range}`)}</button>)}
+        <button type="button" className="hp-cancel" onClick={() => setClearing(false)}>{t('common.cancel')}</button></div>
     </section>}
     {error && <p className="hp-error" role="alert">{error}</p>}
     <div className="hp-body">
-      {rail.length > 0 && <nav className="hp-days" aria-label="Days">{rail.map(day =>
+      {rail.length > 0 && <nav className="hp-days" aria-label={t('history.days')}>{rail.map(day =>
         <a key={day.key} href={`#day-${day.key}`} aria-current={day.key === (activeDay || groups[0]?.key) ? 'true' : undefined}
           onClick={e => { e.preventDefault(); showDay(day); }}>
           {day.label}<span>{day.count}</span></a>)}</nav>}
-      <section className="hp-list" aria-label="Visited pages" aria-busy={loading}>
+      <section className="hp-list" aria-label={t('history.visited')} aria-busy={loading}>
         {groups.map(group => { const count = counts.get(group.key) ?? group.visits.length;
           return <div key={group.key} className="hp-day" id={`day-${group.key}`} data-day={group.key}>
-          <h2>{group.label}<span>{count} {count === 1 ? 'page' : 'pages'}</span></h2>
+          <h2>{group.label}<span>{t('history.pages', { count })}</span></h2>
           <ul>{group.visits.map(visit => {
             const title = visit.title || host(visit.url);
             return <li key={visit.id} className="hp-row" data-selected={selected.has(visit.id)}>
-              <input type="checkbox" className="hp-check" aria-label={`Select ${title}`} checked={selected.has(visit.id)}
+              <input type="checkbox" className="hp-check" aria-label={t('history.select', { title })} checked={selected.has(visit.id)}
                 onChange={() => {}} onClick={e => toggle(visit.id, e.shiftKey)} />
               <button type="button" className="hp-open" title={visit.url} onClick={e => selecting ? toggle(visit.id, e.shiftKey) : open(visit.url)}>
                 <SiteIcon visit={visit} title={title} />
                 <span className="hp-text"><span className="hp-page">{title}</span><span className="hp-host">{shortUrl(visit.url)}</span></span>
-                <span className="hp-time">{timeLabel(visit.visitedAt, hour12)}</span>
+                <span className="hp-time">{timeLabel(visit.visitedAt, hour12, locale)}</span>
               </button>
-              <button type="button" className="hp-remove" aria-label={`Remove ${title} from history`} title="Remove from history"
+              <button type="button" className="hp-remove" aria-label={t('history.removeNamed', { title })} title={t('history.remove')}
                 onClick={() => void removeOne(visit.id)}><Icon name="close" /></button>
             </li>;
           })}</ul>
         </div>; })}
         {loading && !visits.length && <div className="hp-skeleton" aria-hidden="true">{Array.from({ length: 6 }, (_, i) => <span key={i} />)}</div>}
         {!groups.length && !loading && <div className="hp-empty"><span className="hp-empty-icon"><Icon name={search ? 'search' : 'history'} /></span>
-          <h2>{search ? 'No matching pages' : 'No history yet'}</h2><p>{search ? 'Try a different word or part of the address.' : 'Pages you visit in Sol appear here.'}</p></div>}
+          <h2>{search ? t('history.noResults') : t('history.empty')}</h2><p>{search ? t('history.searchHint') : t('history.emptyDetail')}</p></div>}
         <div ref={sentinel} className="hp-sentinel" aria-hidden="true" />
-        {more && <button type="button" className="hp-button hp-more" disabled={loading} onClick={() => void load(search, visits.at(-1)?.visitedAt ?? 0)}>{loading ? 'Loading…' : 'Show more'}</button>}
+        {more && <button type="button" className="hp-button hp-more" disabled={loading} onClick={() => void load(search, visits.at(-1)?.visitedAt ?? 0)}>{loading ? t('history.loading') : t('history.more')}</button>}
       </section>
     </div>
   </main>;

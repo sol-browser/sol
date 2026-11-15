@@ -1,4 +1,5 @@
 #include "experiments/fullscreen_probe.h"
+#include "navigation/shortcuts.h"
 #include "windows/embedded_content.h"
 #include "windows/window_corners.h"
 #include "include/base/cef_callback.h"
@@ -82,8 +83,18 @@ void ObserveFullscreenProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBr
     PressEscape(page);  // Chrome's own exit action, as a user would press it.
   } else if (report->GetString("phase") == "exited" && state->fullscreen_phase == 4) {
     if (report->GetBool("element") || covers) { state->exit_code = 2; return; }
-    state->fullscreen_checks = true;
-    state->Record("fullscreen_checks_pass");
+    ExecuteShortcut(state, Shortcut::Fullscreen);
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+      const auto state = weak.lock();
+      if (!state || !state->embedded) return;
+      const bool entered = state->embedded->IsBrowserFullscreen() && state->embedded->NotificationVisible() &&
+          state->embedded->NotificationGeometryOk();
+      ExecuteShortcut(state, Shortcut::Stop);
+      const bool exited = !state->embedded->IsBrowserFullscreen() && !state->embedded->NotificationVisible();
+      state->fullscreen_checks = entered && exited;
+      if (state->fullscreen_checks) state->Record("fullscreen_checks_pass");
+      else state->exit_code = 2;
+    }, std::weak_ptr<State>(state)), 500);
   }
 }
 }  // namespace red

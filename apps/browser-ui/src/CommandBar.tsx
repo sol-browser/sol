@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { defaultSiteSearches, parseSnapshot, type Snapshot } from '../../../packages/browser-contracts/src';
+import { useMessages } from './i18n';
 import { commandRows, commandSelectionIndex, inlineAddressCompletion, parseHistoryReply, type CommandRow, type HistoryEntry } from './command-model';
 import { Icon } from './Icon';
 import { shownAddress } from './internal-pages';
@@ -17,6 +18,7 @@ function parse(raw: string): CommandState {
   return { ...s, sourceUrl: shownAddress(s.sourceUrl), snapshot: parseSnapshot(JSON.stringify(s.snapshot)) };
 }
 export function CommandBar() {
+  const t = useMessages();
   const [state, setState] = useState<CommandState>();
   useLayoutEffect(() => applyTheme(state?.snapshot.theme), [state?.snapshot.theme]);
   const [text, setText] = useState('');
@@ -97,10 +99,10 @@ export function CommandBar() {
   const rows: CommandRow[] = siteKeyword ? (() => {
     if (!site) { siteError = 'That site search is unavailable. Press Escape to leave it.'; return []; }
     if (!text.trim()) return [];
-    try { return [{ key: `site:${site.keyword}`, title: `Search ${site.name} for ${text.trim()}`, detail: new URL(siteSearchTemplate(site, text)).host,
+    try { return [{ key: `site:${site.keyword}`, title: t('command.siteQuery', { name: site.name, query: text.trim() }), detail: new URL(siteSearchTemplate(site, text)).host,
       kind: 'visit', action: { method: 'command.submit', url: siteSearchUrl(site, text) } }]; }
     catch (error) { siteError = String(error instanceof Error ? error.message : error); return []; }
-  })() : state ? commandRows(state.snapshot, text, state.mode, state.sourceUrl, history.visits, completions, { actionsOnly }) : [];
+  })() : state ? commandRows(state.snapshot, text, state.mode, state.sourceUrl, history.visits, completions, { actionsOnly, translate: t }) : [];
   const index = commandSelectionIndex(rows, selectedKey);
   // Capture the initial default for this edit before history/network replies can
   // reorder it. A missing chosen row remains unselected until explicit input.
@@ -142,7 +144,7 @@ export function CommandBar() {
       onSuccess: () => { if (action.method !== 'command.close' && state?.mode === 'new') newDraft.current = { text: '', start: 0, end: 0 }; setBusy(false); },
       onFailure: (_, message) => { setBusy(false); setError(message); input.current?.focus(); } });
   }
-  return <main className="command-panel" ref={root} aria-label={state?.mode === 'navigate' ? 'Edit address' : 'New tab'} onKeyDown={e => {
+  return <main className="command-panel" ref={root} aria-label={state?.mode === 'navigate' ? t('command.editAddress') : t('sidebar.tab.new')} onKeyDown={e => {
     if (e.key !== 'Escape' || e.nativeEvent.isComposing) return;
     e.preventDefault();
     if (siteKeyword) leaveSiteSearch();
@@ -152,16 +154,16 @@ export function CommandBar() {
     <form className="command-input-row" onSubmit={e => {
       e.preventDefault(); if (composing) return;
       if (rows[index]) execute(rows[index].action);
-      else if (selectedKey) setError('That result is no longer available. Choose another result.');
+      else if (selectedKey) setError(t('command.resultGone'));
     }}>
       <span className="command-search"><Icon name="search" /></span>
-      {actionsOnly && <button className="command-mode command-actions-mode" type="button" aria-label="Exit actions" title="Exit actions (Escape)" onClick={() => {
+      {actionsOnly && <button className="command-mode command-actions-mode" type="button" aria-label={t('command.exitActions')} title={t('command.exitActionsHint')} onClick={() => {
         setActionsOnly(false); setSelectedKey(undefined); setError(''); input.current?.focus();
-      }}>Actions</button>}
-      {siteKeyword && <button className="command-mode command-site-mode" type="button" aria-label="Exit site search" onClick={leaveSiteSearch}>{site?.name ?? siteKeyword} ×</button>}
-      <input ref={input} aria-label={siteKeyword ? `Search ${site?.name ?? siteKeyword}` : actionsOnly ? 'Search actions' : 'Search or enter URL'} role="combobox" aria-autocomplete={actionsOnly || siteKeyword ? 'list' : 'both'} aria-expanded={rows.length > 0}
+      }}>{t('command.actions')}</button>}
+      {siteKeyword && <button className="command-mode command-site-mode" type="button" aria-label={t('command.exitSite')} onClick={leaveSiteSearch}>{site?.name ?? siteKeyword} ×</button>}
+      <input ref={input} aria-label={siteKeyword ? t('command.site', { name: site?.name ?? siteKeyword }) : actionsOnly ? t('command.searchActions') : t('command.address')} role="combobox" aria-autocomplete={actionsOnly || siteKeyword ? 'list' : 'both'} aria-expanded={rows.length > 0}
         aria-controls="command-results" aria-activedescendant={rows[index] ? `result-${index}` : undefined}
-        value={selectedText ?? inline ?? text} placeholder={siteKeyword ? `Search ${site?.name ?? siteKeyword}…` : actionsOnly ? 'Search…' : 'Search or Enter URL…'} spellCheck={false} autoComplete="off" maxLength={4096}
+        value={selectedText ?? inline ?? text} placeholder={siteKeyword ? t('command.sitePlaceholder', { name: site?.name ?? siteKeyword }) : actionsOnly ? t('command.searchPlaceholder') : t('command.addressPlaceholder')} spellCheck={false} autoComplete="off" maxLength={4096}
         onChange={e => {
           const element = e.target;
           setText(element.value); setSelectedKey(undefined); setSelectedText(undefined); setError('');
@@ -204,12 +206,12 @@ export function CommandBar() {
             setError('');
           }
         }} />
-      {siteMatch && <button className="command-actions-toggle" type="button" aria-label={`Search ${siteMatch.name} with Tab`} onClick={enterSiteSearch}><span className="command-toggle-label">Search {siteMatch.name}</span><kbd>Tab</kbd></button>}
+      {siteMatch && <button className="command-actions-toggle" type="button" aria-label={t('command.siteWithTab', { name: siteMatch.name })} onClick={enterSiteSearch}><span className="command-toggle-label">{t('command.site', { name: siteMatch.name })}</span><kbd>Tab</kbd></button>}
       {!actionsOnly && !siteKeyword && !text && selectedText === undefined && <button className="command-actions-toggle" type="button" onClick={() => {
         setActionsOnly(true); setInlineAllowed(false); setSelectedKey(undefined); setError(''); input.current?.focus();
-      }}><span className="command-toggle-label">Search Actions</span><kbd>Tab</kbd></button>}
+      }}><span className="command-toggle-label">{t('command.searchActionsButton')}</span><kbd>Tab</kbd></button>}
     </form>
-    <div className="command-results" id="command-results" role="listbox" aria-label="Suggestions">
+    <div className="command-results" id="command-results" role="listbox" aria-label={t('command.suggestions')}>
       {rows.map((row, i) => <div className="command-result" key={row.key} id={`result-${i}`} role="option" tabIndex={-1} aria-selected={index === i} data-kind={row.kind}
         onPointerMove={e => {
           if ((e.movementX || e.movementY) && selectedKey !== row.key) {
@@ -220,11 +222,11 @@ export function CommandBar() {
         <span className="command-site-icon">
           {row.icon ? <img src={row.icon} alt="" /> : <Icon name={row.actionIcon ?? (row.kind === 'search' ? 'search' : row.kind === 'history' ? 'history' : 'globe')} />}
         </span><span className="command-result-text"><span className="command-title">{row.title}</span>{row.detail && <span className="command-detail"> — {row.detail}</span>}</span>
-        {row.kind === 'tab' && <span className="command-hint">{row.live ? 'Switch to Tab' : 'Open Saved Tab'}<span className="command-enter"><Icon name="enter" /></span></span>}
+        {row.kind === 'tab' && <span className="command-hint">{row.live ? t('command.switchTab') : t('command.openSaved')}<span className="command-enter"><Icon name="enter" /></span></span>}
         {row.kind === 'action' ? row.shortcut && <kbd className="command-hint command-shortcut">{row.shortcut}</kbd> :
           index === i && row.kind !== 'tab' && <span className="command-hint command-only-enter"><Icon name="enter" /></span>}
       </div>)}
     </div>
-    {error || siteError ? <p className="command-message" role="alert">{error || siteError}</p> : !rows.length && <p className="command-message">{siteKeyword ? `Enter a search for ${site?.name ?? siteKeyword}.` : actionsOnly ? 'No matching actions.' : text ? 'Enter a web address, file path or search query.' : 'Search the web or find a tab.'}</p>}
+    {error || siteError ? <p className="command-message" role="alert">{error || siteError}</p> : !rows.length && <p className="command-message">{siteKeyword ? t('command.sitePrompt', { name: site?.name ?? siteKeyword }) : actionsOnly ? t('command.noActions') : text ? t('command.invalidInput') : t('command.empty')}</p>}
   </main>;
 }

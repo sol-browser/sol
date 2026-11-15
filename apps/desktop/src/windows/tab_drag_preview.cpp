@@ -163,7 +163,7 @@ class Preview : public std::enable_shared_from_this<Preview> {
     if (!dib.bitmap || FAILED(image->CopyPixels(nullptr, w*4, w*h*4, static_cast<BYTE*>(pixels)))) return false;
     dib.previous = SelectObject(dib.dc, dib.bitmap);
     SIZE size{w,h}; POINT origin{};
-    BLENDFUNCTION blend{AC_SRC_OVER, 0, 210, AC_SRC_ALPHA};
+    BLENDFUNCTION blend{AC_SRC_OVER, 0, 145, AC_SRC_ALPHA};
     paint_stage_ = 6;
     return UpdateLayeredWindow(window_, nullptr, &point, &size, dib.dc, &origin, 0, &blend, ULW_ALPHA) != FALSE;
   }

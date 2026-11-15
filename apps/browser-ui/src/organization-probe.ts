@@ -224,7 +224,7 @@ export async function organizationProbe() {
   }
   if (!selected) throw new Error('Native sidebar menu did not show');
   if (document.querySelector('.context-menu') || document.querySelector('.row-action:not(.close-page)')) throw new Error('Legacy sidebar action buttons or inline menu remain');
-  const rename = await dom<HTMLInputElement>('[aria-label="Rename entry"]'); value(rename, 'Project reference'); await sleep(30); rename.form!.requestSubmit();
+  const rename = await dom<HTMLInputElement>('[data-action="rename-entry"]'); value(rename, 'Project reference'); await sleep(30); rename.form!.requestSubmit();
   await waitFor(s => s.nodes!.some(n => n.id === tab.id && n.title === 'Project reference' && n.customTitle) &&
     document.querySelector(`${row(tab.id)} .node-title`)?.textContent === 'Project reference');
   await mutate({ method: 'tree.usePageTitle', id: tab.id });

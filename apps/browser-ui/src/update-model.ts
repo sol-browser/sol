@@ -1,3 +1,5 @@
+import type { Translate } from './i18n.ts';
+
 /** The update window's state (native `update.state`) and what it says about it. */
 export const UPDATE_PHASES = ['idle', 'checking', 'downloading', 'ready', 'upToDate', 'failed', 'notInstalled'] as const;
 export type UpdatePhase = typeof UPDATE_PHASES[number];
@@ -20,21 +22,21 @@ export interface UpdateView {
 }
 
 /** The words of each phase, in the web installer's voice (apps/installer/src/view.cpp). */
-export function updateView(state: UpdateState): UpdateView {
-  const next = state.version ? `Sol ${state.version}` : 'the update';
+export function updateView(state: UpdateState, t?: Translate): UpdateView {
+  const next = state.version ? `Sol ${state.version}` : (t?.('update.update') ?? 'the update');
   switch (state.phase) {
     case 'downloading':
-      return { title: `Downloading ${next}`, detail: state.percent >= 100 ? 'Almost done…' : `${next}  ·  ${state.percent}%  ·  keep browsing`, action: null };
+      return { title: t?.('update.download', { name: next }) ?? `Downloading ${next}`, detail: state.percent >= 100 ? (t?.('update.almost') ?? 'Almost done…') : (t?.('update.downloadProgress', { name: next, percent: state.percent }) ?? `${next}  ·  ${state.percent}%  ·  keep browsing`), action: null };
     case 'ready':
-      return { title: `${next} is ready`, detail: 'Restart Sol to finish. It also installs the next time Sol starts.', action: 'restart' };
+      return { title: t?.('update.ready', { name: next }) ?? `${next} is ready`, detail: t?.('update.readyDetail') ?? 'Restart Sol to finish. It also installs the next time Sol starts.', action: 'restart' };
     case 'upToDate':
-      return { title: 'Sol is up to date', detail: `You have the latest version, ${state.current}.`, action: null };
+      return { title: t?.('update.latest') ?? 'Sol is up to date', detail: t?.('update.latestDetail', { version: state.current }) ?? `You have the latest version, ${state.current}.`, action: null };
     case 'failed':
-      return { title: 'Couldn’t check for updates', detail: 'Check your connection and try again.', action: 'retry' };
+      return { title: t?.('update.failed') ?? 'Couldn’t check for updates', detail: t?.('update.failedDetail') ?? 'Check your connection and try again.', action: 'retry' };
     case 'notInstalled':
-      return { title: 'This copy does not update itself', detail: 'Updates arrive with the installed Sol, which downloads them in the background.', action: null };
+      return { title: t?.('update.notInstalled') ?? 'This copy does not update itself', detail: t?.('update.notInstalledDetail') ?? 'Updates arrive with the installed Sol, which downloads them in the background.', action: null };
     default:
-      return { title: 'Checking for updates', detail: `Looking for a version newer than ${state.current}…`, action: null };
+      return { title: t?.('update.checking') ?? 'Checking for updates', detail: t?.('update.checkingDetail', { version: state.current }) ?? `Looking for a version newer than ${state.current}…`, action: null };
   }
 }
 

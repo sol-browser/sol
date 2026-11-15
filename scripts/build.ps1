@@ -20,6 +20,8 @@ try {
     if ($LASTEXITCODE) { throw 'SQLite setup failed' }
     python scripts/fetch_velopack.py
     if ($LASTEXITCODE) { throw 'Velopack setup failed' }
+    python scripts/fetch_translation_engine.py
+    if ($LASTEXITCODE) { throw 'Translation engine setup failed' }
     Push-Location apps/browser-ui
     try {
         & npm.cmd ci --no-audit --no-fund
@@ -33,6 +35,8 @@ try {
         if ($uiCode) { throw 'UI build failed' }
         & node --experimental-strip-types --test ../../tests/contracts.test.mjs ../../tests/welcome.test.mjs ../../tests/welcome-sound.test.mjs ../../tests/sidebar.test.mjs ../../tests/split-view.test.mjs ../../tests/navigation.test.mjs ../../tests/command-model.test.mjs ../../tests/site-search.test.mjs ../../tests/downloads.test.mjs ../../tests/site.test.mjs ../../tests/history.test.mjs ../../tests/downloads-page.test.mjs ../../tests/theme.test.mjs ../../tests/favicon-color.test.mjs ../../tests/release-notes.test.mjs ../../tests/snapshot-sharing.test.mjs ../../tests/devtools-window.test.mjs ../../tests/update-window.test.mjs ../../tests/capture-overlay.test.mjs ../../tests/settings-snapshot.test.mjs
         if ($LASTEXITCODE) { throw 'Protocol tests failed' }
+        & node --experimental-strip-types --test ../../tests/interface-language.test.mjs
+        if ($LASTEXITCODE) { throw 'Localization tests failed' }
         & node --experimental-strip-types --test ../../tests/integrations.test.mjs
         if ($LASTEXITCODE) { throw 'Integration tests failed' }
     } finally { Pop-Location }

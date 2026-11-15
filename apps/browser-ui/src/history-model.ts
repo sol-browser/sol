@@ -45,27 +45,29 @@ const pad = (n: number) => String(n).padStart(2, '0');
 export function dayKey(time: number) { const d = new Date(time); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 /** Noon of a "YYYY-MM-DD" day, local time. */
 export function dayTime(key: string) { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d, 12).getTime(); }
-export function dayLabel(time: number, now = Date.now()): string {
+export type CalendarLabels = { locale: string; today: string; yesterday: string };
+const englishCalendar: CalendarLabels = { locale: 'en-US', today: 'Today', yesterday: 'Yesterday' };
+export function dayLabel(time: number, now = Date.now(), calendar = englishCalendar): string {
   const days = Math.round((startOfDay(now) - startOfDay(time)) / 86_400_000);
-  if (days <= 0) return 'Today';
-  if (days === 1) return 'Yesterday';
+  if (days <= 0) return calendar.today;
+  if (days === 1) return calendar.yesterday;
   const date = new Date(time);
-  if (days < 7) return date.toLocaleDateString('en-US', { weekday: 'long' });
-  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric',
+  if (days < 7) return date.toLocaleDateString(calendar.locale, { weekday: 'long' });
+  return date.toLocaleDateString(calendar.locale, { weekday: 'short', month: 'short', day: 'numeric',
     ...(date.getFullYear() !== new Date(now).getFullYear() ? { year: 'numeric' } : {}) });
 }
 /** "2:30 PM" or "14:30": |hour12| comes from native (Settings, else Windows). */
-export function timeLabel(time: number, hour12 = true) {
-  return new Date(time).toLocaleTimeString('en-US', hour12 ? { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' }
+export function timeLabel(time: number, hour12 = true, locale = 'en-US') {
+  return new Date(time).toLocaleTimeString(locale, hour12 ? { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' }
     : { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 }
 // Consecutive visits (already newest first) grouped by local day.
-export function groupByDay(visits: VisitRow[], now = Date.now()): { key: string; label: string; visits: VisitRow[] }[] {
+export function groupByDay(visits: VisitRow[], now = Date.now(), calendar = englishCalendar): { key: string; label: string; visits: VisitRow[] }[] {
   const groups: { key: string; label: string; visits: VisitRow[] }[] = [];
   for (const visit of visits) {
     const key = dayKey(visit.visitedAt);
     if (groups.at(-1)?.key === key) groups.at(-1)!.visits.push(visit);
-    else groups.push({ key, label: dayLabel(visit.visitedAt, now), visits: [visit] });
+    else groups.push({ key, label: dayLabel(visit.visitedAt, now, calendar), visits: [visit] });
   }
   return groups;
 }

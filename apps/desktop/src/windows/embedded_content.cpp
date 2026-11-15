@@ -1,4 +1,6 @@
 #include "windows/embedded_content.h"
+#include "app/session.h"
+#include "interface_strings.h"
 #include "windows/auto_pip.h"
 #include "windows/devtools_dock.h"
 #include "windows/focus.h"
@@ -297,9 +299,8 @@ void EmbeddedContent::SetFullscreen(CefRefPtr<CefBrowser> browser, bool fullscre
   // Window bounds callbacks also call Resize; apply now for the current size.
   Resize(bounds_);
   QueueRaise();
-  if (fullscreen) {
-    Notify("fullscreen", L"Press", {L"Esc"}, L"to exit full screen");
-  } else HideNotification();
+  if (fullscreen) NotifyFullscreenExit(*state);
+  else HideNotification();
   auto data = CefDictionaryValue::Create();
   data->SetInt("browser_id", id); data->SetBool("fullscreen", fullscreen);
   state->Record("page_fullscreen", data);
@@ -331,7 +332,7 @@ void EmbeddedContent::ToggleBrowserFullscreen() {
   if (was_fullscreen && fullscreen_id_ != -1) ExitFullscreenFor(fullscreen_id_);
   ApplyFullscreenWindow(was_fullscreen);
   Resize(bounds_); QueueRaise();
-  if (browser_fullscreen_) Notify("fullscreen", L"Press", {L"Esc"}, L"to exit full screen");  // Esc also leaves F11 full screen.
+  if (browser_fullscreen_) NotifyFullscreenExit(*state);
   else HideNotification();
   FocusBrowser(state->content);
   if (state->workspace) state->workspace->Refresh();
@@ -345,6 +346,20 @@ void EmbeddedContent::ToggleBrowserFullscreen() {
 bool EmbeddedContent::ExitBrowserFullscreen() {
   if (!browser_fullscreen_ || fullscreen_id_ != -1) return false;
   ToggleBrowserFullscreen(); return true;
+}
+void EmbeddedContent::NotifyFullscreenExit(const State& state) {
+  const std::string_view locale = state.session ? state.session->interface_locale : "en";
+  constexpr std::string_view key = "{name}";
+  const auto message = InterfaceMessage::WindowExitFullscreen;
+  std::string_view text = InterfaceText(locale, message);
+  if (text.find(key) == std::string_view::npos) text = InterfaceText("en", message);
+  const auto at = text.find(key);
+  auto before = text.substr(0, at);
+  auto after = text.substr(at + key.size());
+  // The renderer already adds spacing around a key cap.
+  while (before.ends_with(' ')) before.remove_suffix(1);
+  while (after.starts_with(' ')) after.remove_prefix(1);
+  Notify("fullscreen", CefString(std::string(before)).ToWString(), {L"Esc"}, CefString(std::string(after)).ToWString());
 }
 bool EmbeddedContent::ShowTabSwitcher(const std::vector<PageCorners::SwitcherCard>& cards, int selected) {
   const auto state = state_.lock();
@@ -402,6 +417,11 @@ void EmbeddedContent::Notify(const std::string& kind, const std::wstring& text, 
     const auto card = corners_.notification_bounds();
     data->SetDouble("top_inset_dip", (card.top - area.y) / scale);
     data->SetDouble("right_inset_dip", (area.x + area.width - card.right) / scale);
+    if (kind == "fullscreen" && keys.size() == 1) {
+      data->SetString("text", CefString(text));
+      data->SetString("key", CefString(keys.front()));
+      data->SetString("tail", CefString(tail));
+    }
   }
   state->Record("notification_shown", data);
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, unsigned long long generation) {

@@ -10,7 +10,7 @@ import { isFaviconUrl, validTheme, type Theme } from '../../../packages/browser-
 
 // Red's own menus (windows/menu_popup.cpp): native code sends the rows of this level; the
 // document reports geometry, the row that opens a submenu and the row chosen, by native id.
-export type MenuItem = { id?: string; label?: string; icon?: string; image?: string; shortcut?: string; enabled?: boolean;
+export type MenuItem = { id?: string; key?: string; label?: string; icon?: string; image?: string; shortcut?: string; enabled?: boolean;
   checked?: boolean; children?: MenuItem[]; separator?: boolean };
 type MenuState = { request: number; level: number; open: boolean; items: MenuItem[]; theme?: Theme };
 
@@ -29,11 +29,11 @@ function parseItems(value: unknown, depth = 0): MenuItem[] {
     const v = raw as Record<string, unknown>;
     if (typeof v !== 'object' || !v) throw new Error('Invalid menu');
     if (v.separator === true) return { separator: true };
-    if (!text(v.id, 16) || !text(v.label, 200) || typeof v.enabled !== 'boolean' || (v.icon !== undefined && !text(v.icon, 32)) ||
+    if (!text(v.id, 16) || !text(v.label, 200) || typeof v.enabled !== 'boolean' || (v.key !== undefined && !text(v.key, 32)) || (v.icon !== undefined && !text(v.icon, 32)) ||
         (v.shortcut !== undefined && !text(v.shortcut, 40)) || (v.checked !== undefined && typeof v.checked !== 'boolean') ||
         (v.image !== undefined && (!text(v.image, 200000) || !((v.image as string).startsWith('data:image/') || isFaviconUrl(v.image)))))
       throw new Error('Invalid menu');
-    return { id: v.id as string, label: v.label as string, enabled: v.enabled, icon: v.icon as string | undefined, image: v.image as string | undefined,
+    return { id: v.id as string, key: v.key as string | undefined, label: v.label as string, enabled: v.enabled, icon: v.icon as string | undefined, image: v.image as string | undefined,
       shortcut: v.shortcut as string | undefined, checked: v.checked === true, children: v.children === undefined ? undefined : parseItems(v.children, depth + 1) };
   });
 }
@@ -118,7 +118,7 @@ export function Menu() {
       if (item.separator) return <div key={`s${index}`} className="menu-separator" role="separator" />;
       const Icon = item.checked ? Check : item.icon ? ICONS[item.icon] : undefined;
       return <button key={item.id} ref={element => { rows.current[index] = element; }} type="button" role="menuitem" className="menu-row"
-        data-active={active === index} data-open={openId === item.id} aria-disabled={!item.enabled} aria-haspopup={item.children ? 'menu' : undefined}
+        data-menu-key={item.key} data-active={active === index} data-open={openId === item.id} aria-disabled={!item.enabled} aria-haspopup={item.children ? 'menu' : undefined}
         aria-checked={item.checked || undefined} tabIndex={-1}
         onMouseEnter={() => item.enabled ? hover(index) : (setActive(-1), closeSub())} onClick={() => choose(index)}>
         {hasIcons && <span className="menu-icon">{item.image ? <img src={item.image} alt="" draggable={false} /> : Icon ? <Icon size={16} strokeWidth={1.8} /> : null}</span>}

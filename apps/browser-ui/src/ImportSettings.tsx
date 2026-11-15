@@ -1,7 +1,8 @@
+import { useMessages } from './i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, Check, FileText, FolderOpen, KeyRound, ShieldCheck, TriangleAlert } from 'lucide-react';
 import {
-  DATA_TYPES, defaultTypes, parsePreview, parseProfile, parseReport, parseSources, previewLines, reportLines,
+  DATA_TYPES, defaultTypes, importTypeText, parsePreview, parseProfile, parseReport, parseSources, previewLines, reportLines,
   type DataType, type ImportPreview, type ImportReport, type ImportSource, type ImportSourceId,
 } from './import-model';
 
@@ -24,6 +25,7 @@ const NAMES: Record<ImportSourceId, string> = { zen: 'Zen', chrome: 'Chrome', ed
 type Stage = 'choose' | 'reading' | 'preview' | 'importing' | 'done';
 
 export function ImportSettings({ disabled, profileName = 'Default' }: { disabled: boolean; profileName?: string }) {
+  const t = useMessages();
   const [sources, setSources] = useState<ImportSource[]>([]);
   const [source, setSource] = useState<ImportSourceId>('chrome');
   const [profile, setProfile] = useState('');
@@ -92,98 +94,100 @@ export function ImportSettings({ disabled, profileName = 'Default' }: { disabled
   const name = NAMES[source];
   const busy = disabled || stage === 'reading' || stage === 'importing';
   const nothing = !Object.values(types).some(Boolean);
-  const lines = preview ? previewLines(preview) : [];
+  const lines = preview ? previewLines(preview, t) : [];
   const needsPrimary = preview?.needsPrimaryPassword === true;
   return <>
     <section className="settings-card" aria-labelledby="import-source-heading">
-      <span className="settings-category">FROM ANOTHER BROWSER</span>
-      <h2 id="import-source-heading">Choose a browser</h2>
-      <p>Bring your tabs, bookmarks, history and saved passwords into Sol. You’ll see everything before it’s imported.</p>
+      <span className="settings-category">{t('import.source')}</span>
+      <h2 id="import-source-heading">{t('import.choose')}</h2>
+      <p>{t('import.detail')}</p>
       <p className="settings-note">{source === 'arc'
-        ? `Spaces bring their Arc profile assignments. History and passwords from the selected Arc profile go to "${profileName}" in Sol.`
-        : `Imported data is added to the "${profileName}" browsing profile.`}</p>
-      <div className="import-sources" role="radiogroup" aria-label="Browser">
+        ? t('import.arcProfile', { profile: profileName })
+        : t('import.otherProfile', { profile: profileName })}</p>
+      <div className="import-sources" role="radiogroup" aria-label={t('import.browser')}>
         {(['zen', 'chrome', 'edge', 'arc'] as const).map(id => {
           const found = sources.find(s => s.id === id)?.profiles.length ?? 0;
           return <button key={id} type="button" role="radio" aria-checked={source === id} disabled={busy && source !== id} onClick={() => choose(id)}>
             <strong>{NAMES[id]}</strong>
-            <small>{found ? `${found} profile${found === 1 ? '' : 's'} found` : 'Not found'}</small>
+            <small>{found ? t('import.found', { count: found }) : t('import.missing')}</small>
           </button>;
         })}
       </div>
-      <label className="settings-field" htmlFor="import-profile"><span>Profile</span>
+      <label className="settings-field" htmlFor="import-profile"><span>{t('import.profile')}</span>
         <div className="import-profile-row">
           <select id="import-profile" value={profile} disabled={busy || !current?.profiles.length} onChange={event => setProfile(event.target.value)}>
-            {!current?.profiles.length && <option value="">No {name} profile selected</option>}
+            {!current?.profiles.length && <option value="">{t('import.noProfile', { name })}</option>}
             {current?.profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <button type="button" className="settings-secondary" disabled={busy} onClick={() => void pickFolder()}>
-            <FolderOpen size={14} />Choose folder…</button>
+            <FolderOpen size={14} />{t('import.folder')}</button>
         </div>
       </label>
       {!current?.profiles.length && <p className="settings-note">{source === 'arc'
-        ? 'Choose the Arc data folder, or import a copy of StorableSidebar.json below.'
-        : `If ${name} keeps its data somewhere else, choose its “User Data” folder or one of its profiles.`}</p>}
+        ? t('import.arcFolder')
+        : t('import.otherFolder', { name })}</p>}
       <fieldset className="import-types" disabled={busy}>
-        <legend>What to import</legend>
-        {DATA_TYPES[source].map(item => <label key={item.type} className="import-type">
+        <legend>{t('import.types')}</legend>
+        {DATA_TYPES[source].map(({ type }) => {
+          const item = { type, ...importTypeText(source, type, t, NAMES[source]) };
+          return <label key={item.type} className="import-type">
           <input type="checkbox" checked={types[item.type]} onChange={event => setTypes(t => ({ ...t, [item.type as DataType]: event.target.checked }))} />
           <span><strong>{item.label}</strong>{item.hint && <small>{item.hint}</small>}</span>
-        </label>)}
+        </label>; })}
       </fieldset>
       {needsPrimary && <label className="settings-field import-primary" htmlFor="import-primary">
-        <span><KeyRound size={13} />{preview?.wrongPrimaryPassword ? 'That Primary Password didn’t work. Try again.' : `This ${name} profile is locked with a Primary Password.`}</span>
-        <input id="import-primary" type="password" autoComplete="off" value={primary} disabled={busy} placeholder="Primary Password"
+        <span><KeyRound size={13} />{preview?.wrongPrimaryPassword ? t('import.incorrect') : t('import.locked', { name })}</span>
+        <input id="import-primary" type="password" autoComplete="off" value={primary} disabled={busy} placeholder={t('import.primary')}
           onChange={event => setPrimary(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && primary) void read(); }} />
       </label>}
       <div className="import-consent">
         <ShieldCheck size={16} strokeWidth={1.7} />
-        <p>Sol will read this {name} profile on this PC without changing it. Close {name} first so its files aren’t locked.
-          {types.passwords && ' Passwords are unlocked with your Windows account and saved only to Sol’s password manager.'}</p>
+        <p>{t('import.consent', { name })}
+          {types.passwords && ` ${t('import.passwordConsent')}`}</p>
       </div>
       <div className="settings-card-actions">
         <button type="button" className="settings-primary" disabled={busy || !profile || nothing || (needsPrimary && !primary)} onClick={() => void read()}>
-          {stage === 'reading' ? 'Reading…' : `Allow Sol to read ${name}`}</button>
+          {stage === 'reading' ? t('import.reading') : t('import.read', { name })}</button>
       </div>
     </section>
 
     {preview && !needsPrimary && stage !== 'done' && <section className="settings-card import-preview" aria-labelledby="import-preview-heading" aria-live="polite">
-      <span className="settings-category">PREVIEW</span>
-      <h2 id="import-preview-heading">{lines.length ? `Ready to import from ${preview.label}` : `Nothing to import from ${preview.label}`}</h2>
+      <span className="settings-category">{t('import.preview')}</span>
+      <h2 id="import-preview-heading">{lines.length ? t('import.previewReady', { name: preview.label }) : t('import.previewEmpty', { name: preview.label })}</h2>
       {lines.length > 0 && <ul className="import-lines">{lines.map(line => <li key={line}><Check size={13} />{line}</li>)}</ul>}
       {(preview.passwords.unreadable > 0 || preview.passwords.skipped > 0) && <p className="settings-note">
-        {preview.passwords.skipped ? `${preview.passwords.skipped} entries skipped (never-save sites, app or non-website sign-ins). ` : ''}
-        {preview.passwords.unreadable ? `${preview.passwords.unreadable} passwords couldn’t be unlocked.` : ''}</p>}
+        {preview.passwords.skipped ? `${t('import.skipped', { count: preview.passwords.skipped })} ` : ''}
+        {preview.passwords.unreadable ? t('import.unreadable', { count: preview.passwords.unreadable }) : ''}</p>}
       {preview.notes.map(note => <p key={note} className="import-warning"><TriangleAlert size={14} />{note}</p>)}
       {preview.passwords.appBound > 0 && <div className="settings-card-actions">
-        <button type="button" className="settings-secondary" disabled={busy} onClick={() => void readFile('passwords')}><FileText size={14} />Import a password file…</button></div>}
+        <button type="button" className="settings-secondary" disabled={busy} onClick={() => void readFile('passwords')}><FileText size={14} />{t('import.passwordImport')}</button></div>}
       <div className="settings-card-actions">
         <button type="button" className="settings-primary" disabled={busy || !lines.length} onClick={() => void commit()}>
-          {stage === 'importing' ? 'Importing…' : 'Import into Sol'}<ArrowDownToLine size={15} /></button>
-        <button type="button" className="settings-text" disabled={stage === 'importing'} onClick={cancel}>Cancel</button>
+          {stage === 'importing' ? t('import.importing') : t('import.commit')}<ArrowDownToLine size={15} /></button>
+        <button type="button" className="settings-text" disabled={stage === 'importing'} onClick={cancel}>{t('common.cancel')}</button>
       </div>
-      <p className="settings-note">Imported tabs start unloaded. Sol keeps your existing Spaces, passwords and cookies.</p>
+      <p className="settings-note">{t('import.previewNote')}</p>
     </section>}
 
     {report && stage === 'done' && <section className="settings-card" aria-labelledby="import-done-heading" role="status">
-      <span className="settings-category">DONE</span>
-      <h2 id="import-done-heading">{report.errors.length ? `Imported from ${report.label}, with some problems` : `Imported from ${report.label}`}</h2>
-      <ul className="import-lines">{reportLines(report).map(line => <li key={line}><Check size={13} />{line}</li>)}</ul>
+      <span className="settings-category">{t('import.done')}</span>
+      <h2 id="import-done-heading">{report.errors.length ? t('import.donePartial', { name: report.label }) : t('import.doneTitle', { name: report.label })}</h2>
+      <ul className="import-lines">{reportLines(report, t).map(line => <li key={line}><Check size={13} />{line}</li>)}</ul>
       {report.errors.map(e => <p key={e} className="import-warning"><TriangleAlert size={14} />{e}</p>)}
-      {!!report.spaces && <p className="settings-note">Find your imported {report.spaces === 1 ? 'Space' : 'Spaces'} in the sidebar.</p>}
-      <div className="settings-card-actions"><button type="button" className="settings-text" onClick={() => { setReport(undefined); setStage('choose'); }}>Import something else</button></div>
+      {!!report.spaces && <p className="settings-note">{t('import.doneSpaces', { count: report.spaces })}</p>}
+      <div className="settings-card-actions"><button type="button" className="settings-text" onClick={() => { setReport(undefined); setStage('choose'); }}>{t('import.again')}</button></div>
     </section>}
 
     <section className="settings-card" aria-labelledby="import-files-heading">
-      <span className="settings-category">FROM A FILE</span>
-      <h2 id="import-files-heading">Import a file</h2>
-      {source === 'arc' && <p>Choose StorableSidebar.json to restore Spaces and their tabs from an Arc backup.</p>}
+      <span className="settings-category">{t('import.fileCategory')}</span>
+      <h2 id="import-files-heading">{t('import.file')}</h2>
+      {source === 'arc' && <p>{t('import.arcFileNote')}</p>}
       <div className="settings-card-actions">
-        <button type="button" className="settings-secondary" disabled={busy} onClick={() => void readFile('passwords')}><KeyRound size={14} />Password file (.csv)…</button>
-        <button type="button" className="settings-secondary" disabled={busy} onClick={() => void readFile('bookmarks')}><FileText size={14} />Bookmarks file (.html)…</button>
-        {source === 'arc' && <button type="button" className="settings-secondary" disabled={busy} onClick={() => void readFile('arcSidebar')}><FileText size={14} />Arc sidebar (.json)…</button>}
+        <button type="button" className="settings-secondary" disabled={busy} onClick={() => void readFile('passwords')}><KeyRound size={14} />{t('import.passwordFile')}</button>
+        <button type="button" className="settings-secondary" disabled={busy} onClick={() => void readFile('bookmarks')}><FileText size={14} />{t('import.bookmarkFile')}</button>
+        {source === 'arc' && <button type="button" className="settings-secondary" disabled={busy} onClick={() => void readFile('arcSidebar')}><FileText size={14} />{t('import.arcFile')}</button>}
       </div>
-      <p className="settings-note">A password export is plain text. Delete it once the import is done.</p>
+      <p className="settings-note">{t('import.fileWarning')}</p>
     </section>
     {error && <p className="settings-error" role="alert">{error}</p>}
   </>;

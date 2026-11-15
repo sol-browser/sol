@@ -187,12 +187,12 @@ void StartDevToolsProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowse
       static CefRefPtr<CefRegistration> window_observer;
       window_observer = header->GetHost()->AddDevToolsMessageObserver(new Observer(s));
       Evaluate(header,"({red_devtools_probe:true,kind:'window',phase:'detached',"
-        "buttons:[...document.querySelectorAll('.devtools-window-header button')].map(b=>b.getAttribute('aria-label')),"
-        "dockEnabled:document.querySelector('[aria-label=\"Dock right\"]')?.disabled===false,"
+        "buttons:[...document.querySelectorAll('.devtools-window-header button')].map(b=>b.dataset.action).filter(Boolean),"
+        "dockEnabled:document.querySelector('[data-action=\"right\"]')?.disabled===false,"
         "height:Math.round(document.querySelector('.devtools-window-header')?.getBoundingClientRect().height||0),"
         "href:location.href,ready:document.readyState,body:(document.body?.innerHTML||'').slice(0,300)})");
       CefPostDelayedTask(TID_UI, base::BindOnce([](CefRefPtr<CefBrowser> header) {
-        Evaluate(header,"document.querySelector('[aria-label=\"Dock right\"]')?.click()");
+        Evaluate(header,"document.querySelector('[data-action=\"right\"]')?.click()");
       }, header), 250);
     }
   });
@@ -205,7 +205,7 @@ void StartDevToolsProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowse
   for (int i=0;i<6;++i) at(9600+i*120,[i](auto s,auto) { ResizeRoot(s,1100+(i%2)*100,780+(i%2)*40); });
   at(11400, [](auto s,auto page) { Sample(s,page,"device_resized"); });
   at(12000, [](auto s,auto page) {
-    Evaluate(Shell(s),"document.querySelector('[aria-label=\"Rotate device\"]')?.click()");
+    Evaluate(Shell(s),"document.querySelector('[data-action=\"rotate-device\"]')?.click()");
   });
   at(13600, [](auto s,auto page) { Sample(s,page,"rotated"); });
   at(13900, [](auto s,auto) {
@@ -232,9 +232,9 @@ void StartDevToolsProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowse
   at(14500, [pointer](auto s,auto) { Mouse(Shell(s),"mouseReleased",pointer->first+16,pointer->second); });
   at(15100, [](auto s,auto) { Evaluate(Shell(s),"({red_devtools_probe:true,kind:'shell',phase:'events',events:window.devtoolsEvents,dragging:document.querySelector('[aria-label=\"Resize viewport width\"]')?.dataset.dragging})"); });
   at(15900, [](auto s,auto page) { Sample(s,page,"dragged"); });
-  at(16200, [](auto s,auto) { Evaluate(Shell(s),"{let e=document.querySelector('[aria-label=\"Preview scale\"]');e.value='0.25';e.dispatchEvent(new Event('change',{bubbles:true}))}"); });
+  at(16200, [](auto s,auto) { Evaluate(Shell(s),"{let e=document.querySelector('[data-action=\"preview-scale\"]');e.value='0.25';e.dispatchEvent(new Event('change',{bubbles:true}))}"); });
   at(17300, [](auto s,auto page) { Sample(s,page,"scaled"); });
-  at(17600, [](auto s,auto) { Evaluate(Shell(s),"{let e=document.querySelector('[aria-label=\"Device pixel ratio\"]');e.value='2';e.dispatchEvent(new Event('change',{bubbles:true}))}"); });
+  at(17600, [](auto s,auto) { Evaluate(Shell(s),"{let e=document.querySelector('[data-action=\"device-pixel-ratio\"]');e.value='2';e.dispatchEvent(new Event('change',{bubbles:true}))}"); });
   at(18900, [](auto s,auto page) { Sample(s,page,"dpr_changed"); });
   at(19500, [](auto s,auto page) { s->devtools_dock->ToggleDevice(page->GetIdentifier()); });
   at(20800, [](auto s,auto page) { Sample(s,page,"desktop"); });

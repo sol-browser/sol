@@ -27,6 +27,8 @@ const std::map<int, std::string>& Icons() {
     std::map<int, std::string> result;
     for (const auto& [name, icon] : kNames) if (const int id = cef_id_for_command_id_name(name); id >= 0) result[id] = icon;
     result[kOpenLittleWindowMenu] = "window";
+    result[kTranslatePageMenu] = "translate";
+    result[kTranslateSelectionMenu] = "translate";
     return result;
   }();
   return icons;
@@ -75,7 +77,7 @@ void Copy(MenuPopup::Builder& menu, CefRefPtr<CefMenuModel> model, const std::sh
       continue;
     }
     menu.Add(label, glyph, [answer, command] { answer->Continue(command); }, Accelerator(model, i), model->IsEnabledAt(i),
-             (type == MENUITEMTYPE_CHECK || type == MENUITEMTYPE_RADIO) && model->IsCheckedAt(i));
+             (type == MENUITEMTYPE_CHECK || type == MENUITEMTYPE_RADIO) && model->IsCheckedAt(i), "", std::to_string(command));
   }
 }
 }  // namespace

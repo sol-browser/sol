@@ -1,9 +1,11 @@
 import React, { memo, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type DragEvent } from 'react';
+import { useIntl } from 'react-intl';
+import { message, useMessages } from './i18n';
 import { openSidebarMenu, type TreeNode, type TreeMutation } from './bridge';
 import type { Command, MediaInfo, SpaceInfo } from '../../../packages/browser-contracts/src';
 import { MediaStack } from './MediaPlayer';
 import { faviconColor } from './favicon-color';
-import { crossProfileLiveMove, descendant, inSpace, neighborSpace, ordered, placement, sectionOf, favoriteColumnLimit, favoriteColumns, displayTitle, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, withoutClosingTabs, sameRowNode, type Section } from './sidebar-model';
+import { crossProfileLiveMove, descendant, inSpace, neighborSpace, ordered, placement, sectionOf, favoriteColumnLimit, favoriteColumns, displayTitle, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, withoutClosingTabs, sameRowNode, spaceDisplayName, type Section } from './sidebar-model';
 import { swatchColor } from './theme-model';
 import { splitLanding, splitMembers, splitNamedMember } from './split-model';
 import { Icon } from './Icon';
@@ -54,6 +56,7 @@ export type TabCommand = { method: 'split.focus'; id: string }
   | { method: 'tab.confirmMoveToSpace'; id: string; space: string }
   | Extract<Command, { method: 'media.control' | 'tab.setXBadgeHidden' | 'tab.setIntegration' | 'split.add' }>;
 function UnreadBadge({ node, settings, xUnread, whatsappUnread }: { node: TreeNode; settings?: IntegrationSettings; xUnread?: number; whatsappUnread?: number }) {
+  const t = useMessages();
   if (!node.pinned || node.closing) return null;
   // X: the native counter decides, loaded or not. WhatsApp: an unloaded pin shows the last hidden
   // check. Otherwise the loaded site's title does.
@@ -63,7 +66,7 @@ function UnreadBadge({ node, settings, xUnread, whatsappUnread }: { node: TreeNo
   const unread = counted !== null ? counted : integrationUnread(node.currentUrl || node.url, node.pageTitle || '', node.url, node.xBadgeHidden);
   if (!unread || !integrationEnabled(settings, unread === 'x' ? 'twitter' : unread)) return null;
   return <span className="integration-unread" data-favorite={node.favorite} data-provider={unread} role="img"
-    aria-label={unread === 'x' ? 'Unread X notifications' : 'Unread messages'} />;
+    aria-label={unread === 'x' ? t('sidebar.badge.x') : t('sidebar.badge.messages')} />;
 }
 type RowApi = {
   perform: (command: TreeMutation) => Promise<boolean>; tabCommand: (command: TabCommand) => void;
@@ -107,6 +110,7 @@ type RowProps = {
  *  it shows is a prop; every action goes through |api|. */
 const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMembers, namedMember, leaving, selected, busy, hidden, activeSurface, dragging, dragSource, dropInside,
   anyRenaming, renaming, draft, nodeAudio, membersAudio, tint, integrations, xUnread, whatsappUnread, removal, removing, treeRevision, nested }: RowProps) {
+  const t = useMessages();
   ++renderCounts.rows;
   const folder = node.kind === 'folder';
   const showAudio = !!node.live && !node.closing && (node.muted || node.audible || nodeAudio);
@@ -190,27 +194,27 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
           void api.current.context(node.id, bounds.x + 20, bounds.bottom);
         }
       }}>
-      {!folder && !group && (node.favorite ? <span className="node-icon" aria-hidden="true"><SiteMark node={node} /></span> : <button className="node-icon" aria-label={away ? `Back to pinned URL for ${node.title}` : node.pinned ? `Reset ${node.title}` : `Open ${title}`}
+      {!folder && !group && (node.favorite ? <span className="node-icon" aria-hidden="true"><SiteMark node={node} /></span> : <button className="node-icon" aria-label={away ? t('sidebar.tab.back', { name: node.title }) : node.pinned ? t('sidebar.tab.reset', { name: node.title }) : t('sidebar.tab.open', { name: title })}
         disabled={busy || node.closing || renaming === node.id} onClick={() => void api.current.perform({ method: !group && node.pinned ? 'tree.reset' : 'tree.activate', id: node.id })}>
         <SiteMark node={node} />
       </button>)}
       {/* Arc: a speaker before the title while the tab plays sound; click to mute or unmute. */}
       {!folder && !group && !node.favorite && showAudio && <button className="row-action tab-audio" data-muted={node.muted === true}
-        aria-label={node.muted ? `Unmute ${node.title}` : `Mute ${node.title}`} title={node.muted ? 'Unmute tab' : 'Mute tab'}
+        aria-label={node.muted ? t('sidebar.tab.unmute', { name: node.title }) : t('sidebar.tab.mute', { name: node.title })} title={node.muted ? t('sidebar.tab.unmuteHint') : t('sidebar.tab.muteHint')}
         onClick={() => api.current.tabCommand({ method: 'tab.mute', id: node.id, muted: !node.muted })}><Icon name={node.muted ? 'muted' : 'speaker'} /></button>}
       {renaming === node.id && !group ?
         // Renaming edits the title in place: same font and position, no box or
         // confirm button. Enter or leaving the field saves; Escape cancels.
         <form className="inline-rename" onSubmit={e => { e.preventDefault(); void api.current.saveRename(node.id); }}>
           {folder && <FolderIcon expanded={node.expanded} />}
-          <input ref={api.current.renameInput} aria-label="Rename entry" maxLength={80} value={draft ?? ''} onChange={e => api.current.setDraft(e.target.value)}
+          <input ref={api.current.renameInput} data-action="rename-entry" aria-label={t('sidebar.rename')} maxLength={80} value={draft ?? ''} onChange={e => api.current.setDraft(e.target.value)}
             spellCheck={false} autoComplete="off" onBlur={() => void api.current.saveRename(node.id)}
             onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); api.current.cancelRename(); } }} />
         </form> : <>
         {group ? <div className="node-name split-row-content" role="group" aria-label={title} tabIndex={-1} data-panes={members.length}>
           {members.map(member => <span className="split-row-part" key={member.id} data-tab-id={member.id} data-named={member.id === namedMember} data-leaving={member.id === leaving}>
             {renaming === member.id ? <form className="split-row-edit" onSubmit={event => { event.preventDefault(); void api.current.saveRename(member.id); }}>
-              <SiteMark node={member} /><input ref={api.current.renameInput} aria-label={`Rename ${displayTitle(member)}`} value={draft ?? ''} maxLength={80}
+              <SiteMark node={member} /><input ref={api.current.renameInput} aria-label={t('sidebar.renameNamed', { name: displayTitle(member) })} value={draft ?? ''} maxLength={80}
                 onChange={event => api.current.setDraft(event.target.value)} onBlur={() => void api.current.saveRename(member.id)} spellCheck={false} autoComplete="off"
                 onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); api.current.cancelRename(); } }} />
             </form> : <button className="split-row-title" disabled={busy || member.closing} title={displayTitle(member)}
@@ -224,29 +228,29 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
                 void focusMember(member.id);
               }}>
               <SiteMark node={member} /><span className="split-row-label">{displayTitle(member)}</span>
-              {(member.mediaCamera || member.mediaMicrophone) && <span className="tab-media" role="img" aria-label={member.mediaCamera ? 'Using camera' : 'Using microphone'}><Icon name={member.mediaCamera ? 'camera' : 'mic'} /></span>}
+              {(member.mediaCamera || member.mediaMicrophone) && <span className="tab-media" role="img" aria-label={member.mediaCamera ? t('sidebar.camera') : t('sidebar.microphone')}><Icon name={member.mediaCamera ? 'camera' : 'mic'} /></span>}
             </button>}
             {!member.favorite && <UnreadBadge node={member} settings={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} />}
             {member.live && (member.muted || member.audible || (membersAudio ?? '').split(',').includes(member.id)) && <button className="row-action tab-audio" data-muted={member.muted === true}
-              aria-label={`${member.muted ? 'Unmute' : 'Mute'} ${displayTitle(member)}`} title={member.muted ? 'Unmute tab' : 'Mute tab'}
+              aria-label={t(member.muted ? 'sidebar.tab.unmute' : 'sidebar.tab.mute', { name: displayTitle(member) })} title={member.muted ? t('sidebar.tab.unmuteHint') : t('sidebar.tab.muteHint')}
               onClick={() => api.current.tabCommand({ method:'tab.mute',id:member.id,muted:!member.muted })}><Icon name={member.muted ? 'muted' : 'speaker'} /></button>}
             <button className="row-action split-tab-close" disabled={busy || member.closing}
-              aria-label={`Close ${displayTitle(member)}`} title={member.pinned ? 'Close page, keep pin' : 'Archive tab'}
+              aria-label={t('sidebar.tab.close', { name: displayTitle(member) })} title={member.pinned ? t('sidebar.tab.keepPin') : t('sidebar.tab.archive')}
               onClick={() => void api.current.perform({ method:'tree.close',id:member.id })}><Icon name={tabCloseIcon(member) ?? 'close'} /></button>
           </span>)}
         </div> : <button className="node-name" disabled={busy || node.closing} aria-label={node.favorite ? displayTitle(node) : undefined} aria-expanded={folder ? node.expanded : undefined}
           onPointerDown={press} onDoubleClick={folder ? undefined : () => api.current.startRename(node)} onClick={open}>
           {folder && <FolderIcon expanded={node.expanded} />}
-          {away && <span className="pinned-away-prefix" title="Away from saved address" aria-hidden="true">/</span>}
+          {away && <span className="pinned-away-prefix" title={t('sidebar.tab.away')} aria-hidden="true">/</span>}
           {away ? <span className="pinned-away-label">
             <span className="node-title">{title}</span>
-            <span className="pinned-reset-hint" aria-hidden="true">Back to pinned url</span>
+            <span className="pinned-reset-hint" aria-hidden="true">{t('sidebar.tab.pinnedHint')}</span>
           </span> : <span className="node-title">{title}</span>}
-          {!node.favorite && (node.mediaCamera || node.mediaMicrophone) && <span className="tab-media" role="img" aria-label={node.mediaCamera ? 'Using camera' : 'Using microphone'}
-            title={node.mediaCamera ? 'Using your camera' : 'Using your microphone'}><Icon name={node.mediaCamera ? 'camera' : 'mic'} /></span>}
+          {!node.favorite && (node.mediaCamera || node.mediaMicrophone) && <span className="tab-media" role="img" aria-label={node.mediaCamera ? t('sidebar.camera') : t('sidebar.microphone')}
+            title={node.mediaCamera ? t('sidebar.cameraHint') : t('sidebar.microphoneHint')}><Icon name={node.mediaCamera ? 'camera' : 'mic'} /></span>}
         </button>}
-        {!group && closeIcon && <button className="row-action close-page" aria-label={removePin ? `Remove ${title} from Pinned` : node.pinned ? `Close page ${title}` : `Archive ${title}`}
-          title={removePin ? 'Remove from Pinned' : node.pinned ? 'Close page, keep pin' : 'Archive tab'} disabled={busy || node.closing}
+        {!group && closeIcon && <button className="row-action close-page" aria-label={removePin ? t('sidebar.tab.removeNamedPin', { name: title }) : node.pinned ? t('sidebar.tab.closePage', { name: title }) : t('sidebar.tab.archiveNamed', { name: title })}
+          title={removePin ? t('sidebar.tab.removePin') : node.pinned ? t('sidebar.tab.keepPin') : t('sidebar.tab.archive')} disabled={busy || node.closing}
           onClick={() => void api.current.perform({ method:tabCloseMethod(node), id: node.id })}><Icon name={closeIcon} /></button>}
       </>}
       {/* After the close button: the row ends with the preview's icon; on a tile it sits in the top-right corner. */}
@@ -254,25 +258,25 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
       {(!group || node.favorite) && <UnreadBadge node={node} settings={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} />}
       {node.favorite && (node.mediaCamera || node.mediaMicrophone || showAudio) &&
         <span className="favorite-status">
-          {(node.mediaCamera || node.mediaMicrophone) && <span role="img" aria-label={[node.mediaCamera && 'Using camera', node.mediaMicrophone && 'Using microphone'].filter(Boolean).join(', ')}>
+          {(node.mediaCamera || node.mediaMicrophone) && <span role="img" aria-label={[node.mediaCamera && t('sidebar.camera'), node.mediaMicrophone && t('sidebar.microphone')].filter(Boolean).join(', ')}>
             {node.mediaCamera && <Icon name="camera" />}{node.mediaMicrophone && <Icon name="mic" />}</span>}
           {/* The speaker mutes or unmutes the tile's tab, like a row's audio button. */}
           {showAudio && <button type="button" className="favorite-audio" data-muted={node.muted === true}
-            aria-label={node.muted ? `Unmute ${displayTitle(node)}` : `Mute ${displayTitle(node)}`} title={node.muted ? 'Unmute tab' : 'Mute tab'}
+            aria-label={node.muted ? t('sidebar.tab.unmute', { name: displayTitle(node) }) : t('sidebar.tab.mute', { name: displayTitle(node) })} title={node.muted ? t('sidebar.tab.unmuteHint') : t('sidebar.tab.muteHint')}
             onClick={() => api.current.tabCommand({ method: 'tab.mute', id: node.id, muted: !node.muted })}><Icon name={node.muted ? 'muted' : 'speaker'} /></button>}
         </span>}
     </div>
     {folder && removal && <div className="folder-remove-confirm" role="alertdialog" data-folder-removal={node.id}
       aria-labelledby={`remove-folder-title-${node.id}`} aria-describedby={`remove-folder-description-${node.id}`}
       onContextMenu={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); api.current.cancelRemoval(); } }}>
-      <strong id={`remove-folder-title-${node.id}`}>Delete “{removal.title}”?</strong>
-      <p id={`remove-folder-description-${node.id}`}>{removal.tabs} {removal.tabs === 1 ? 'tab' : 'tabs'}{removal.folders ? ' in this folder and its subfolders' : ''} will be closed and moved to Archive.</p>
-      {treeRevision !== removal.revision && <p role="status">Your workspace changed. Review the updated count first.</p>}
+      <strong id={`remove-folder-title-${node.id}`}>{t('sidebar.folder.deletePrompt', { name: removal.title })}</strong>
+      <p id={`remove-folder-description-${node.id}`}>{t(removal.folders ? 'sidebar.folder.archiveNested' : 'sidebar.folder.archiveTabs', { count: removal.tabs })}</p>
+      {treeRevision !== removal.revision && <p role="status">{t('sidebar.folder.changed')}</p>}
       {removal.error && <p role="alert">{removal.error}</p>}
       <div className="folder-remove-actions">
-        <button ref={api.current.cancelRemovalButton} type="button" className="popover-text-button" data-action="cancel-folder-removal" disabled={removing} onClick={() => api.current.cancelRemoval()}>Cancel</button>
+        <button ref={api.current.cancelRemovalButton} type="button" className="popover-text-button" data-action="cancel-folder-removal" disabled={removing} onClick={() => api.current.cancelRemoval()}>{t('common.cancel')}</button>
         <button type="button" className="popover-text-button danger" data-action="confirm-folder-removal" disabled={busy || removing}
-          onClick={() => void api.current.confirmFolderRemoval()}>{removing ? 'Removing…' : treeRevision !== removal.revision ? 'Review' : 'Delete folder'}</button>
+          onClick={() => void api.current.confirmFolderRemoval()}>{removing ? t('sidebar.folder.removing') : treeRevision !== removal.revision ? t('sidebar.folder.review') : t('sidebar.folder.delete')}</button>
       </div>
     </div>}
     {nested}
@@ -284,6 +288,8 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
     ? sameRowNode(previous[key], next[key]) : Object.is(previous[key], next[key]));
 });
 export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, activeSurface = true, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, newSpace, request, media, previewIntegration, integrations, xUnread, whatsappUnread, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate, splitLeaving }: Props) {
+  const t = useMessages();
+  const intl = useIntl();
   ++renderCounts.sidebar;
   // Favorite tiles are tinted with their icon's color, read once per icon.
   const [, retint] = useReducer((n: number) => n + 1, 0);
@@ -663,7 +669,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       integrations={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread}
       removal={confirming} removing={confirming ? removing : false} treeRevision={confirming ? treeRevision : 0} nested={nested} />;
   }
-  const newTab = <button className="new-tab" data-motion-key="new-tab" data-action="new-tab" disabled={busy} onClick={openNewTab}><Icon name="plus" /><span>New tab</span><kbd>{newTabShortcut}</kbd></button>;
+  const newTab = <button className="new-tab" data-motion-key="new-tab" data-action="new-tab" disabled={busy} onClick={openNewTab}><Icon name="plus" /><span>{message(intl, 'sidebar.tab.new')}</span><kbd>{newTabShortcut}</kbd></button>;
   function dropSlot(section: Section) {
     return <li key="drop-slot" className="drop-slot" data-drop-kind={section === 'favorites' ? 'tile' : 'line'}
       data-target-id={drop?.targetId ?? ''} data-mode={drop?.mode} aria-hidden="true"><span /></li>;
@@ -673,7 +679,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     if (!page) return null;
     return <li key={`landing-${id}`} className="tree-node split-landing" aria-live="polite">
       <div className="tree-row split-landing-row"><SiteMark node={page} /><span className="node-title">{displayTitle(page)}</span>
-        <span className="split-landing-hint">Out of split</span></div>
+        <span className="split-landing-hint">{t('sidebar.split.out')}</span></div>
     </li>;
   }
   function renderRows(rows: TreeNode[], parentId: string, section: Section) {
@@ -693,7 +699,8 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       if (relevant && drop.targetId === node.id && drop.mode === 'after') result.push(dropSlot(section));
     }
     if (landing?.kind === 'own' && !ownShown && landing.parentId === parentId && section !== 'today') result.push(landingRow(splitLeaving!));
-    if (relevant && drop.mode === 'inside' && drop.targetId === (parentId || null)) result.push(dropSlot(section));
+    if (relevant && drop.mode === 'inside' && drop.targetId === (parentId || null) &&
+        (rows.length || parentId || section === 'today')) result.push(dropSlot(section));
     return result;
   }
   const todayTabs = ordered(visible.filter(n => !n.parentId && !n.archived && n.kind !== 'folder' && sectionOf(n) === 'today'));
@@ -707,15 +714,19 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     const previewFavorite = section === 'favorites' && drop?.section === 'favorites';
     const count = rows.length + Number(previewFavorite) - Number(previewFavorite && rows.some(n => n.id === dragId));
     const gridStyle = section === 'favorites' ? { '--favorite-columns': favoriteColumns(count, favoriteLimit) } as React.CSSProperties : undefined;
-    return <section className={`sidebar-zone ${section}`} aria-label={label} data-section={section}>
+    const contents = renderRows(rows, '', section);
+    const emptyDrop = section !== 'today' && contents.length === 0;
+    const showHint = emptyDrop && drop?.section === section;
+    return <section className={`sidebar-zone ${section}`} aria-label={label} aria-hidden={emptyDrop && !showHint || undefined}
+      data-section={section} data-empty-drop={emptyDrop}>
       {section === 'today' && newTab}
-      <ul className="tree" style={gridStyle}>{renderRows(rows, '', section)}</ul>
-      {!rows.length && section !== 'today' && <p className="zone-empty" data-drop-active={drop?.section === section}>{section === 'favorites' ? 'Drop your everyday tabs here' : 'Keep tabs and folders here'}</p>}
+      <ul className="tree" style={gridStyle}>{contents}</ul>
+      {emptyDrop && <p className="zone-empty" hidden={!showHint}>{message(intl, `sidebar.${section}.empty`)}</p>}
     </section>;
   };
   // Handle OS files before row/section drop handlers consume the event for
   // tree reordering. Internal node drags continue through the bubbling path.
-  return <aside ref={aside} id="browser-sidebar" className="sidebar" data-hidden={hidden} inert={hidden} aria-label="Tabs and folders" data-file-drop={fileDrop} data-dragging={!!dragId} data-drop-section={drop?.section}
+  return <aside ref={aside} id="browser-sidebar" className="sidebar" data-hidden={hidden} inert={hidden} aria-label={message(intl, 'sidebar.label')} data-file-drop={fileDrop} data-dragging={!!dragId} data-drop-section={drop?.section}
     onPointerMove={pointerMove} onPointerUp={pointerUp}
     onPointerCancel={event => { if (pointerDrag.current?.pointer === event.pointerId) finishDrag(); }}
     onLostPointerCapture={event => { if (event.target === aside.current && pointerDrag.current?.pointer === event.pointerId) finishDrag(); }}
@@ -738,13 +749,13 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     {menuError && <p className="sidebar-menu-error" role="alert">{menuError}</p>}
     {deletingSpace && <section className="space-delete-confirm" role="alertdialog" aria-labelledby="delete-space-question"
       onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();setDeletingSpace(undefined);}}}>
-      <p id="delete-space-question">Delete “{deletingSpace.name}” and its tabs?</p>
-      <div><button type="button" autoFocus onClick={()=>setDeletingSpace(undefined)}>Cancel</button>
-        <button type="button" disabled={busy} onClick={()=>void perform({method:'space.delete',id:deletingSpace.id}).then(ok=>{if(ok)setDeletingSpace(undefined);})}>Delete Space</button></div>
+      <p id="delete-space-question">{message(intl, 'sidebar.space.confirmDelete', { name: spaceDisplayName(deletingSpace, t) })}</p>
+      <div><button type="button" autoFocus onClick={()=>setDeletingSpace(undefined)}>{message(intl, 'common.cancel')}</button>
+        <button type="button" disabled={busy} onClick={()=>void perform({method:'space.delete',id:deletingSpace.id}).then(ok=>{if(ok)setDeletingSpace(undefined);})}>{message(intl, 'sidebar.space.delete')}</button></div>
     </section>}
     {!standalone && <div className="sidebar-fixed">
     <div className="sidebar-favorites" ref={favoriteMotion.scrollRef}>
-      {zone('favorites', 'Favorites')}
+      {zone('favorites', message(intl, 'sidebar.favorites'))}
       <div className="sidebar-motion-layer" ref={favoriteMotion.layerRef} aria-hidden="true" />
     </div>
     <SpaceHeader key={activeSpace} space={space} busy={busy} anchorRef={header} action={action} editSpace={anchor=>{
@@ -752,26 +763,28 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     }} />
     </div>}
     <SpaceTransition spaceId={activeSpace} position={space?.position ?? 0} hidden={hidden} scrollRef={scrollRef} layerRef={layerRef}>
-    {!standalone && <>{zone('pinned', 'Pinned')}
+    {!standalone && <>{zone('pinned', message(intl, 'sidebar.pinned'))}
     <TodayDivider tabs={clearableTabs} busy={busy} confirming={clearing} setConfirming={setClearing}
       clear={() => { if (clearableTabs[0]) tabCommand({ method: 'tab.clearToday', id: clearableTabs[0].id }); setClearing(false); }} /></>}
-    {zone('today', 'Today')}
+    {zone('today', message(intl, 'sidebar.today'))}
     </SpaceTransition>
     {!standalone && <div className="sidebar-footer">
     {!!media?.length && <MediaStack media={media} nodes={tree} command={tabCommand} />}
     {updateReady && restartToUpdate && <button type="button" className="update-pill" data-action="restart-to-update"
-      title={`Sol ${updateReady} is ready`} onClick={restartToUpdate}><Icon name="logo" /><span>Restart to update</span></button>}
+      title={message(intl, 'sidebar.update.ready', { version: updateReady })} onClick={restartToUpdate}><Icon name="logo" /><span>{message(intl, 'sidebar.update.restart')}</span></button>}
     <div className="sidebar-bottom">
-      <button ref={archiveButton} data-action="archive" title="Archived tabs" aria-label="Archive" onClick={e => openArchive(e.currentTarget)}><Icon name="archive" /></button>
+      <button ref={archiveButton} data-action="archive" title={message(intl, 'sidebar.archive.title')} aria-label={message(intl, 'sidebar.archive')} onClick={e => openArchive(e.currentTarget)}><Icon name="archive" /></button>
       {/* Arc: the space switcher along the bottom; Ctrl+1…9 or a horizontal swipe also switch. */}
-      <nav className="space-switcher" aria-label="Spaces">
-        {[...spaces].sort((a, b) => a.position - b.position).map((s, index) =>
-          <button key={s.id} type="button" className="space-dot" aria-current={s.id === activeSpace ? 'true' : undefined}
-            title={index < 9 ? `${s.name} (Ctrl+${index + 1})` : s.name} aria-label={s.name} disabled={busy}
+      <nav className="space-switcher" aria-label={message(intl, 'sidebar.spaces')}>
+        {[...spaces].sort((a, b) => a.position - b.position).map((s, index) => {
+          const name = spaceDisplayName(s, t);
+          return <button key={s.id} type="button" className="space-dot" aria-current={s.id === activeSpace ? 'true' : undefined}
+            title={index < 9 ? `${name} (Ctrl+${index + 1})` : name} aria-label={name} disabled={busy}
             style={{ '--space-color': swatchColor(s.hue, s.intensity) } as React.CSSProperties}
-            onClick={() => switchSpace(s.id)}>{s.icon ? <span className="space-dot-icon">{s.icon}</span> : <span className="space-dot-mark" />}</button>)}
+            onClick={() => switchSpace(s.id)}>{s.icon ? <span className="space-dot-icon">{s.icon}</span> : <span className="space-dot-mark" />}</button>;
+        })}
       </nav>
-      <button type="button" className="space-add" aria-label="New space" title="New space" disabled={busy || spaces.length >= 24}
+      <button type="button" className="space-add" aria-label={message(intl, 'sidebar.space.new')} title={message(intl, 'sidebar.space.new')} disabled={busy || spaces.length >= 24}
         onClick={createSpace}><Icon name="plus" /></button>
     </div>
     </div>}
@@ -780,25 +793,27 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
 /** Arc: the line above Today; hovering it shows Clear, which archives every Today tab after a confirmation. */
 function TodayDivider({ tabs, busy, confirming, setConfirming, clear }: {
   tabs: TreeNode[]; busy: boolean; confirming: boolean; setConfirming: (value: boolean) => void; clear: () => void }) {
+  const intl = useIntl();
   const cancel = useRef<HTMLButtonElement>(null);
   useEffect(() => { if (confirming) cancel.current?.focus(); }, [confirming]);
   useEffect(() => { if (!tabs.length) setConfirming(false); }, [tabs.length, setConfirming]);
   return <div className="today-divider" role="presentation" data-motion-key="section-divider" data-confirming={confirming}
     onKeyDown={event => { if (event.key === 'Escape' && confirming) { event.preventDefault(); event.stopPropagation(); setConfirming(false); } }}>
     {confirming ? <>
-      <span className="today-clear-question" role="status">Close {tabs.length} {tabs.length === 1 ? 'tab' : 'tabs'}?</span>
-      <button ref={cancel} type="button" className="today-clear" data-action="cancel-clear-today" onClick={() => setConfirming(false)}>Cancel</button>
-      <button type="button" className="today-clear danger" data-action="confirm-clear-today" disabled={busy} onClick={clear}>Clear</button>
+      <span className="today-clear-question" role="status">{message(intl, 'sidebar.clear.confirm', { count: tabs.length })}</span>
+      <button ref={cancel} type="button" className="today-clear" data-action="cancel-clear-today" onClick={() => setConfirming(false)}>{message(intl, 'common.cancel')}</button>
+      <button type="button" className="today-clear danger" data-action="confirm-clear-today" disabled={busy} onClick={clear}>{message(intl, 'sidebar.clear.action')}</button>
     </> : <>
       <div className="section-divider" />
       {!!tabs.length && <button type="button" className="today-clear" data-action="clear-today" disabled={busy}
-        title="Close Today tabs except the one on screen" onClick={() => setConfirming(true)}><Icon name="arrowDown" />Clear</button>}
+        title={message(intl, 'sidebar.clear.title')} onClick={() => setConfirming(true)}><Icon name="arrowDown" />{message(intl, 'sidebar.clear.action')}</button>}
     </>}
   </div>;
 }
 /** Arc: the site open in this tab's Link Peek (shown or parked with the tab). */
 function PeekMark({ node }: { node: TreeNode }) {
-  return <span className="peek-mark" role="img" aria-label={`Preview: ${node.peekTitle || 'link preview'}`} title={node.peekTitle || undefined}>
+  const t = useMessages();
+  return <span className="peek-mark" role="img" aria-label={t('sidebar.preview', { name: node.peekTitle || t('sidebar.previewLink') })} title={node.peekTitle || undefined}>
     {node.peekFavicon ? <img src={node.peekFavicon} alt="" draggable={false} /> : <Icon name="globe" />}</span>;
 }
 export function SiteMark({ node }: { node: TreeNode }) {

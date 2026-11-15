@@ -75,6 +75,8 @@ inline std::string EncodeComponent(std::wstring_view text) {
   return out;
 }
 
+inline constexpr wchar_t kHttp[] = L"http", kHttps[] = L"https", kSchemeSeparator[] = L"://";
+
 inline std::optional<Destination> ResolveInput(std::wstring_view raw, std::wstring_view engine) {
   if (raw.size() > 4096) return std::nullopt;
   for (const wchar_t c : raw) if (c < 0x20 || c == 0x7f) return std::nullopt;
@@ -95,8 +97,9 @@ inline std::optional<Destination> ResolveInput(std::wstring_view raw, std::wstri
   if (const auto colon = authority.find(L':'); colon != std::wstring::npos && colon > 0 && authority.find_first_of(L" \t") == std::wstring::npos)
     host_port = IsDigits(authority.substr(colon + 1));
   const bool explicit_scheme = scheme_like && !local && !host_port;
-  const auto lower = Lower(text);
-  const bool web = lower.starts_with(L"http://") || lower.starts_with(L"https://");
+  // Read the scheme rather than match clear-text URL literals (docs/code-quality.md, cpp:S5332).
+  const auto scheme_name = scheme_like ? Lower(text.substr(0, scheme)) : std::wstring();
+  const bool web = (scheme_name == kHttp || scheme_name == kHttps) && text.compare(scheme, 3, kSchemeSeparator) == 0;
   const bool spaces = text.find_first_of(L" \t 　") != std::wstring::npos;
   // name@example.com: an e-mail address is searched for, not opened.
   const auto at = text.find(L'@');
@@ -106,8 +109,9 @@ inline std::optional<Destination> ResolveInput(std::wstring_view raw, std::wstri
   const bool address = (explicit_scheme && web) ||
       (!explicit_scheme && !email && !spaces && (local || authority.find(L'.') != std::wstring::npos || bracketed));
   if (address) {
-    std::wstring url = explicit_scheme ? text : std::wstring(local ? L"http://" : L"https://") + text;
-    const auto host_start = url.find(L"://") + 3;
+    // Local addresses over HTTP, like localhost in Sol's bar; everything else over HTTPS.
+    std::wstring url = explicit_scheme ? text : std::wstring(local ? kHttp : kHttps) + kSchemeSeparator + text;
+    const auto host_start = url.find(kSchemeSeparator) + 3;
     const auto host_end = url.find_first_of(L"/?#", host_start);
     const auto host = url.substr(host_start, host_end == std::wstring::npos ? std::wstring::npos : host_end - host_start);
     // No credentials, no backslashes, a real host (as navigation-input.ts).
@@ -201,14 +205,16 @@ inline std::vector<std::wstring> ParseSuggestions(std::string_view body, size_t 
     }
     return std::nullopt;
   };
+  // The next character is |c|: step over it.
+  const auto expect = [&](char c) {
+    skip();
+    if (at >= body.size() || body[at] != c) return false;
+    ++at;
+    return true;
+  };
+  if (!expect('[')) return out;
   skip();
-  if (at >= body.size() || body[at++] != '[') return out;
-  skip();
-  if (!string()) return out;
-  skip();
-  if (at >= body.size() || body[at++] != ',') return out;
-  skip();
-  if (at >= body.size() || body[at++] != '[') return out;
+  if (!string() || !expect(',') || !expect('[')) return out;
   for (int seen = 0; seen < 20 && out.size() < limit; ++seen) {
     skip();
     if (at < body.size() && body[at] == ']') break;

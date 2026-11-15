@@ -27,15 +27,15 @@ export async function paletteProbe(root:HTMLElement,native:()=>Theme|undefined,c
     range('[data-size="1"]',25);await wait(()=>native()?.palette?.circles?.[1].size===25,'independent size');checks.push('independent_size');
     range('.palette-fill',0);range('.palette-noise',0);await wait(()=>native()?.palette?.fill===0&&native()?.noise===0,'zero');
     if(root.querySelector('.orbit-bars [data-on="true"]')||[...root.querySelectorAll('.orbit-dial line')].some(n=>n.getAttribute('stroke')?.startsWith('hsl(')))throw new Error('Zero has lit ticks');checks.push('empty_zero_scales');
-    click('[aria-label="Follow system"]');await wait(()=>native()?.mode==='system','auto');click('[aria-label="Dark"]');await wait(()=>native()?.mode==='dark','dark');checks.push('appearance');
+    click('[data-mode="system"]');await wait(()=>native()?.mode==='system','auto');click('[data-mode="dark"]');await wait(()=>native()?.mode==='dark','dark');checks.push('appearance');
     const current=native()!;let rejected=0;
     for(const bad of [{...themeCommand(current,spaceId,false),palette:{...current.palette,version:3}},{...themeCommand(current,spaceId,false),palette:{...current.palette,circles:[{hue:360,distance:0,size:43},...current.palette!.circles!.slice(1)]}},{...themeCommand(current,spaceId,false),unexpected:true},{...themeCommand(current,spaceId,false),palette:{...current.palette,rotation:360}}]){
       try{await command(bad);}catch(error){if(String(error).includes('400:'))rejected++;else throw new Error('Validation fixture interrupted: '+String(error));}
     }
     if(rejected!==4)throw new Error('Invalid native palette command accepted');checks.push('native_validation');
-    click('[aria-label="Reset theme"]');await wait(()=>native()?.palette===undefined,'legacy reset');
+    click('.orbit-reset');await wait(()=>native()?.palette===undefined,'legacy reset');
     if(document.documentElement.style.getPropertyValue('--theme-palette-gradient')!=='initial')throw new Error('Reset exposes startup palette');checks.push('reset');
-    click('[data-count="3"]');click('[aria-label="Dusk"]');click('[aria-label="Dark"]');
+    click('[data-count="3"]');click('[aria-label="Dusk"]');click('[data-mode="dark"]');
     range('[data-size="0"]',27);range('[data-size="1"]',38);range('[data-size="2"]',37);range('.palette-fill',65);range('.palette-noise',31);
     const turn=root.querySelector<HTMLButtonElement>('.orbit-turn')!;turn.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}));
     for(let i=0;i<6;i++)turn.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',shiftKey:true,bubbles:true}));

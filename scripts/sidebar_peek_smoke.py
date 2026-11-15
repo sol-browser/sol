@@ -47,6 +47,7 @@ def main():
             db.executescript('CREATE TABLE preferences(id INTEGER PRIMARY KEY, value TEXT NOT NULL);'
                              'PRAGMA application_id=1380271184; PRAGMA user_version=1;')
             preferences = dict(schema=1, searchEngine='bing', downloadDirectory='', askDownload=False,
+                               interfaceLanguage='uk',
                                startup='restore', homepage='https://www.google.com/', shortcuts={},
                                integrations=dict(notion=True, linear=True, confluence=True, figma=True))
             db.execute('INSERT INTO preferences VALUES(1,?)', (json.dumps(preferences),))
@@ -75,6 +76,10 @@ def main():
     editor_presentations = [r['details'] for r in rows if r['event'] == 'popup_presented' and r['details'].get('kind') == 'editPinned']
     pinned_hints = {d['pinnedHint']: d for d in documents if 'pinnedHint' in d}
     checks = {
+        'ukrainian_in_both_hosts': all(any(d.get('localeHost') == host and d.get('locale') == 'uk' and
+                                          d.get('newTab') == 'Нова вкладка' and d.get('sidebarLabel') == 'Вкладки й папки' and
+                                          d.get('overflow') is False and d.get('narrowOverflow') is False for d in documents)
+                                      for host in ('docked', 'floating')),
         'both_hosts_reveal_pinned_hint_and_reset': set(pinned_hints) == {'docked', 'floating'} and
             all(all(d.get(key) is True for key in ('hidden', 'shown', 'lifted', 'sameHeight', 'arrowCursor', 'highlight', 'atHome')) for d in pinned_hints.values()),
         'both_hosts_open_pinned_editor': {r['details']['surface'] for r in rows if r['event']=='shared_sidebar_action' and r['details']['method']=='tab.editPinned'} == {'docked','floating'},

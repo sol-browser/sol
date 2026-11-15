@@ -1,5 +1,6 @@
 // Downloads page model: strict parsing of native replies and day grouping.
-import { dayLabel } from './history-model.ts';
+import type { Translate } from './i18n.ts';
+import { dayLabel, type CalendarLabels } from './history-model.ts';
 
 export type ActiveDownload = { id: number; name: string; origin: string; state: 'in_progress' | 'paused'; received: number; total: number; speed: number };
 export type SavedDownload = { id: number; name: string; origin: string; state: 'complete' | 'canceled' | 'interrupted'; total: number; finishedAt: number; exists: boolean };
@@ -29,19 +30,19 @@ export function parseDownloadsPage(raw: string): DownloadsPageData {
 }
 
 // Saved downloads (newest first) grouped by local day.
-export function groupDownloads(items: SavedDownload[], now = Date.now()) {
+export function groupDownloads(items: SavedDownload[], now = Date.now(), calendar?: CalendarLabels) {
   const groups: { label: string; items: SavedDownload[] }[] = [];
   for (const item of items) {
-    const label = dayLabel(item.finishedAt, now);
+    const label = dayLabel(item.finishedAt, now, calendar);
     if (groups.at(-1)?.label === label) groups.at(-1)!.items.push(item); else groups.push({ label, items: [item] });
   }
   return groups;
 }
 
-export function savedStatus(item: SavedDownload): string {
-  if (item.state === 'canceled') return 'Canceled';
-  if (item.state === 'interrupted') return 'Failed';
-  return item.exists ? '' : 'Deleted or moved';
+export function savedStatus(item: SavedDownload, t?: Translate): string {
+  if (item.state === 'canceled') return t?.('downloads.canceled') ?? 'Canceled';
+  if (item.state === 'interrupted') return t?.('downloads.failed') ?? 'Failed';
+  return item.exists ? '' : (t?.('downloads.missing') ?? 'Deleted or moved');
 }
 
 export function matches(item: { name: string; origin: string }, query: string) {

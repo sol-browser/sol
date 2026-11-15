@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type RefObject } from 'react';
+import { useMessages } from './i18n';
 import type { SpaceInfo, TreeMutation } from '../../../packages/browser-contracts/src';
 import { spaceGlyph } from './sidebar-model';
 
@@ -11,6 +12,7 @@ type Props = {
 
 /** The name edits in place; the separate Edit action opens the full editor. */
 export function SpaceHeader({ space, busy, anchorRef, action, editSpace }: Props) {
+  const t = useMessages();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(space?.name ?? '');
   const active = useRef(false);
@@ -26,7 +28,7 @@ export function SpaceHeader({ space, busy, anchorRef, action, editSpace }: Props
     if (pending.current) return pending.current;
     if (!active.current || !space) return true;
     const title = draft.trim();
-    if (!title || title === space.name) { cancel(); return true; }
+    if (title === space.name) { cancel(); return true; }
     // Blur and Enter can arrive together. One request owns this edit, while
     // the native revision gate keeps it consistent with the rest of the tree.
     active.current = false;
@@ -41,15 +43,15 @@ export function SpaceHeader({ space, busy, anchorRef, action, editSpace }: Props
   return <div className="sidebar-heading" ref={anchorRef}>
     <span className="space-mark" data-emoji={!!space?.icon} aria-hidden="true">{space ? spaceGlyph(space) : 'R'}</span>
     {editing ? <form className="space-title-edit" onSubmit={event => { event.preventDefault(); void save(); }}>
-      <input ref={focusInput} aria-label="Space name" value={draft} maxLength={40} spellCheck={false} autoComplete="off"
+      <input ref={focusInput} aria-label={t('space.name')} placeholder={t('space.nameHint')} value={draft} maxLength={40} spellCheck={false} autoComplete="off"
         onFocus={event => event.currentTarget.select()} onChange={event => setDraft(event.target.value)} onBlur={() => void save()}
         onKeyDown={event => {
           if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(); }
         }} />
     </form> : <h1 className="space-title"><button type="button" disabled={busy || !space}
-      aria-label={space ? `Rename space ${space.name}` : 'Space'} title="Rename space" onClick={start}>{space?.name ?? 'Your space'}</button></h1>}
-    <button type="button" className="space-edit" disabled={busy || !space} aria-label="Edit space" aria-haspopup="menu"
+      aria-label={space?.name ? t('space.renameNamed', { name: space.name }) : t('space.rename')} title={t('space.rename')} onClick={start}>{space?.name ?? t('settings.appearance.space')}</button></h1>}
+    <button type="button" className="space-edit" disabled={busy || !space} aria-label={t('space.edit')} aria-haspopup="menu"
       onMouseDown={event => event.preventDefault()}
-      onClick={event => { const anchor = event.currentTarget; void save().then(saved => { if (saved && anchor.isConnected) editSpace(anchor); }); }}>Edit</button>
+      onClick={event => { const anchor = event.currentTarget; void save().then(saved => { if (saved && anchor.isConnected) editSpace(anchor); }); }}>{t('space.editButton')}</button>
   </div>;
 }

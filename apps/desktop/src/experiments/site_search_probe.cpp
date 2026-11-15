@@ -50,21 +50,21 @@ void Drive(std::weak_ptr<State> weak, std::string url, int attempts) {
       let activationRejected=0;try{await call({method:'settings.set',key:'siteSearchActivation',value:'enter'});}catch(code){activationRejected=code;}
       if(activationRejected!==400)throw Error('Unsafe activation accepted');
       const root=document.querySelector('.site-search-settings');
-      const field=async(label,value)=>{const i=root.querySelector(`input[aria-label="${label}"]`);Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,value);i.dispatchEvent(new Event('input',{bubbles:true}));await pause(40);};
+      const field=async(name,value)=>{const i=root.querySelector(`input[name="${name}"]`);Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,value);i.dispatchEvent(new Event('input',{bubbles:true}));await pause(40);};
       const entry=keyword=>[...root.querySelectorAll('.site-search-entry')].find(row=>row.querySelector('code').textContent===keyword);
       const openAdd=async()=>{root.querySelector('.site-search-group-heading > button').click();await until(()=>root.querySelector('dialog[open]'));};
-      const add=async(name,keyword)=>{await openAdd();await field('Site search name',name);await field('Site search shortcut',keyword);await field('Site search URL',site.url);root.querySelector('form').requestSubmit();await until(()=>entry(keyword)&&!root.querySelector('dialog[open]'));};
-      await openAdd();await field('Site search name','Cancelled');root.querySelector('dialog button[type=button]').click();await until(()=>!root.querySelector('dialog[open]'));
+      const add=async(name,keyword)=>{await openAdd();await field('name',name);await field('keyword',keyword);await field('url',site.url);root.querySelector('form').requestSubmit();await until(()=>entry(keyword)&&!root.querySelector('dialog[open]'));};
+      await openAdd();await field('name','Cancelled');root.querySelector('dialog button[type=button]').click();await until(()=>!root.querySelector('dialog[open]'));
       await add('Owned','owned.test');
       await add('Temporary','temporary');
-      const menu=(keyword,text)=>{const row=entry(keyword);row.querySelector('summary').click();[...row.querySelectorAll('.site-search-menu button')].find(b=>b.textContent===text).click();};
-      menu('temporary','Delete');await until(()=>!entry('temporary'));
-      menu('owned.test','Deactivate');await until(()=>entry('owned.test')?.querySelector('button[aria-label="Activate Owned"]'));
-      entry('owned.test').querySelector('button[aria-label="Activate Owned"]').click();await until(()=>!entry('owned.test')?.querySelector('button[aria-label="Activate Owned"]'));
-      entry('owned.test').querySelector('button[aria-label="Edit Owned"]').click();await until(()=>root.querySelector('dialog[open]'));
-      if(document.activeElement!==root.querySelector('input[aria-label="Site search name"]'))throw Error('Dialog did not focus the name');
+      const menu=(keyword,action)=>{const row=entry(keyword);row.querySelector('summary').click();row.querySelector(`.site-search-menu [data-action="${action}"]`).click();};
+      menu('temporary','delete');await until(()=>!entry('temporary'));
+      menu('owned.test','deactivate');await until(()=>entry('owned.test')?.querySelector('button[data-action="activate"]'));
+      entry('owned.test').querySelector('button[data-action="activate"]').click();await until(()=>!entry('owned.test')?.querySelector('button[data-action="activate"]'));
+      entry('owned.test').querySelector('button[data-action="edit"]').click();await until(()=>root.querySelector('dialog[open]'));
+      if(document.activeElement!==root.querySelector('input[name="name"]'))throw Error('Dialog did not focus the name');
       console.info('RED_SITE_SEARCH_DIALOG');await pause(160);
-      await field('Site search name','Owned search');root.querySelector('form').requestSubmit();
+      await field('name','Owned search');root.querySelector('form').requestSubmit();
       await until(()=>entry('owned.test')?.querySelector('strong').textContent==='Owned search'&&!root.querySelector('dialog[open]'));
       root.querySelector('input[value="tab"]').click();await until(()=>!root.querySelector('input[value="tab"]').matches(':disabled'));await pause(40);
       if((await call({method:'settings.get'})).preferences.siteSearchActivation!=='tab')throw Error('Tab setting not saved');
@@ -73,8 +73,8 @@ void Drive(std::weak_ptr<State> weak, std::string url, int attempts) {
       if(saved.preferences.siteSearches.length!==base.length+1||!saved.preferences.siteSearches.some(s=>s.keyword==='owned.test'&&s.name==='Owned search'&&s.enabled!==false)||saved.preferences.siteSearchActivation!=='spaceOrTab')throw Error('Settings did not retain search');
       root.scrollIntoView({block:'start'});await pause(80);
       // What's new is a link to the website's notes for this version (no bundled history).
-      [...document.querySelectorAll('.settings-nav button')].find(b=>b.textContent.trim()==='What’s new').click();
-      const notesButton=()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Open release notes')&&!b.disabled);
+      document.querySelector('.settings-nav button[data-section="releases"]').click();
+      const notesButton=()=>document.querySelector('button[data-action="release-notes"]:enabled');
       await until(notesButton);const notes=notesButton();
       const bundledHistory=!!document.querySelector('.settings-release, .settings-releases');
       notes.click();await pause(400);

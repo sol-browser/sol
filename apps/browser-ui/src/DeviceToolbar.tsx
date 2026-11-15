@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
+import { useMessages } from './i18n';
 import { Hand, Smartphone, Monitor, RotateCw } from 'lucide-react';
 import { Icon } from './Icon';
 import { request, type Snapshot } from './bridge';
@@ -12,6 +13,7 @@ const presets = [
   { label: 'Responsive · 1024 × 768', width: 1024, height: 768, dpr: 1, mobile: false, touch: false },
 ];
 export function DeviceToolbar({ device, apply, onError }: { device: DevicePreview; apply: (s: Snapshot) => void; onError: (e: string) => void }) {
+  const t = useMessages();
   const [width, setWidth] = useState(String(device.width)), [height, setHeight] = useState(String(device.height));
   const widthInput = useRef<HTMLInputElement>(null), heightInput = useRef<HTMLInputElement>(null);
   const latest = useRef<DeviceSettings>(device), pending = useRef<DeviceSettings | undefined>(undefined);
@@ -98,24 +100,24 @@ export function DeviceToolbar({ device, apply, onError }: { device: DevicePrevie
         const dy = e.key === 'ArrowDown' ? delta : e.key === 'ArrowUp' ? -delta : 0;
         if (dx || dy) { e.preventDefault(); update(resizeDevice(edge, latest.current.width, latest.current.height, 1, dx / 2, dy)); }
       }} />)}
-    <section className="device-toolbar" style={geometry(device.toolbar)} aria-label="Device preview" onPointerDownCapture={focusToolbar} onFocusCapture={focusToolbar}>
+    <section className="device-toolbar" style={geometry(device.toolbar)} aria-label={t('device.title')} onPointerDownCapture={focusToolbar} onFocusCapture={focusToolbar}>
       <div className="device-toolbar-row">
-        <select aria-label="Device preset" value={preset < 0 ? 'custom' : String(preset)} onChange={e => {
+        <select aria-label={t('device.preset')} value={preset < 0 ? 'custom' : String(preset)} onChange={e => {
           const p = presets[Number(e.target.value)]; if (p) {
             const { width, height, dpr, mobile, touch } = p; void update({ width, height, dpr, mobile, touch });
           }
-        }}><option value="custom" disabled>Responsive</option>{presets.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}</select>
-        <span className="device-apply-status" title={device.pending ? 'Applying…' : 'Actual preview scale'} aria-busy={device.pending}>{Math.round(device.effectiveScale * 100)}%</span>
-        <button type="button" aria-label="Mobile browser" title="Mobile browser (Android Chrome; reload for server-selected content)" aria-pressed={device.mobile} onClick={() => update({ mobile: !latest.current.mobile })}>{device.mobile ? <Smartphone size={16} /> : <Monitor size={16} />}</button>
-        <button type="button" aria-label="Touch input" title="Emulate touch input" aria-pressed={device.touch} onClick={() => update({ touch: !latest.current.touch })}><Hand size={16} /></button>
-        <button type="button" aria-label="Close device preview" title="Close device preview (Ctrl+Shift+M)" onClick={() => void update({ enabled: false })}><Icon name="close" /></button>
+        }}><option value="custom" disabled>{t('device.responsive')}</option>{presets.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}</select>
+        <span className="device-apply-status" title={device.pending ? t('device.applying') : t('device.actualScale')} aria-busy={device.pending}>{Math.round(device.effectiveScale * 100)}%</span>
+        <button type="button" aria-label={t('device.mobile')} title={t('device.mobileHint')} aria-pressed={device.mobile} onClick={() => update({ mobile: !latest.current.mobile })}>{device.mobile ? <Smartphone size={16} /> : <Monitor size={16} />}</button>
+        <button type="button" aria-label={t('device.touch')} title={t('device.touchHint')} aria-pressed={device.touch} onClick={() => update({ touch: !latest.current.touch })}><Hand size={16} /></button>
+        <button type="button" aria-label={t('device.close')} title={t('device.closeHint')} onClick={() => void update({ enabled: false })}><Icon name="close" /></button>
       </div>
       <div className="device-toolbar-row device-toolbar-dimensions">
-        <input ref={widthInput} type="number" min={50} max={9999} aria-label="Viewport width" value={width} onChange={e => setWidth(e.target.value)} onBlur={dimensions} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
-        <span>×</span><input ref={heightInput} type="number" min={50} max={9999} aria-label="Viewport height" value={height} onChange={e => setHeight(e.target.value)} onBlur={dimensions} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
-        <button type="button" aria-label="Rotate device" title="Rotate device" onClick={() => update({ width: latest.current.height, height: latest.current.width })}><RotateCw size={16} /></button>
-        <select aria-label="Preview scale" value={device.scale} onChange={e => update({ scale: Number(e.target.value) })}><option value={0}>Fit</option>{[2, 1.5, 1.25, 1, .75, .5, .25].map(scale => <option key={scale} value={scale}>{scale * 100}%</option>)}</select>
-        <select aria-label="Device pixel ratio" value={device.dpr} onChange={e => update({ dpr: Number(e.target.value) })}>{[1, 2, 3, 4].map(dpr => <option key={dpr} value={dpr}>DPR {dpr}</option>)}</select>
+        <input ref={widthInput} type="number" min={50} max={9999} aria-label={t('device.width')} value={width} onChange={e => setWidth(e.target.value)} onBlur={dimensions} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+        <span>×</span><input ref={heightInput} type="number" min={50} max={9999} aria-label={t('device.height')} value={height} onChange={e => setHeight(e.target.value)} onBlur={dimensions} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+        <button type="button" data-action="rotate-device" aria-label={t('device.rotate')} title={t('device.rotate')} onClick={() => update({ width: latest.current.height, height: latest.current.width })}><RotateCw size={16} /></button>
+        <select data-action="preview-scale" aria-label={t('device.scale')} value={device.scale} onChange={e => update({ scale: Number(e.target.value) })}><option value={0}>{t('device.fit')}</option>{[2, 1.5, 1.25, 1, .75, .5, .25].map(scale => <option key={scale} value={scale}>{scale * 100}%</option>)}</select>
+        <select data-action="device-pixel-ratio" aria-label={t('device.dpr')} value={device.dpr} onChange={e => update({ dpr: Number(e.target.value) })}>{[1, 2, 3, 4].map(dpr => <option key={dpr} value={dpr}>DPR {dpr}</option>)}</select>
       </div>
       {device.error && <span role="alert">{device.error}</span>}
     </section>

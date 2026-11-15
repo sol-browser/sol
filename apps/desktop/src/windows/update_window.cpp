@@ -1,6 +1,7 @@
 #include "windows/update_window.h"
 #include <dwmapi.h>
 #include "app/session.h"
+#include "interface_strings.h"
 #include "app/updates.h"
 #include "include/cef_parser.h"
 #include "include/views/cef_fill_layout.h"
@@ -129,7 +130,8 @@ CefRefPtr<CefWindow> UpdateWindow::parent() const {
 
 void UpdateWindow::Created(CefRefPtr<CefWindow> window) {
   window_ = window;
-  window->SetTitle("Check for Updates — Sol");
+  const auto state = state_.lock();
+  window->SetTitle(InterfaceText(state && state->session ? state->session->interface_locale : "en", InterfaceMessage::WindowUpdateTitle));
   if (const auto owner = parent()) {
     const auto area = owner->GetBounds();
     window->SetBounds(CefRect(area.x + (area.width - kWidth) / 2, area.y + (area.height - kHeight) / 3, kWidth, kHeight));

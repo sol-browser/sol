@@ -1,6 +1,7 @@
 #include "app/browsing_profiles.h"
 #include "windows/main_menu.h"
 #include "app/session.h"
+#include "interface_strings.h"
 #include "navigation/shortcut_settings.h"
 #include <windows.h>
 #include "include/cef_request_context.h"
@@ -47,18 +48,20 @@ void ShowExtensionMenu(const std::shared_ptr<State>& state, const std::string& i
   const std::weak_ptr<State> weak = state;
   const auto pins = ActiveProfilePins(state);
   const bool pinned = pins && pins->Contains(id);
+  const auto locale = state->session ? state->session->interface_locale : "en";
+  const auto label = [locale](InterfaceMessage id) { return InterfaceText(locale, id); };
   MenuPopup::Builder menu;
   const auto first = [chosen] { if (chosen) chosen(); };
   // Opening the extension replaces the popover it was asked from, as a click on the extension does.
-  menu.Add("Open " + item->name, "puzzle", [weak, id, popup, first] {
+  menu.Add(InterfaceTextWithName(locale, InterfaceMessage::MenuOpenExtension, item->name), "puzzle", [weak, id, popup, first] {
     first(); const auto s = weak.lock(); if (!s) return;
     if (s->panel_popup) s->panel_popup->Hide(false);
     RunExtension(s, id, popup);
   }, "", true, false, item->icon);
-  menu.Add(pinned ? "Unpin from Top Bar" : "Pin to Top Bar", pinned ? "pinOff" : "pin",
+  menu.Add(pinned ? label(InterfaceMessage::MenuUnpinTopBar) : label(InterfaceMessage::MenuPinTopBar), pinned ? "pinOff" : "pin",
            [weak, id, pinned, first] { first(); if (const auto s = weak.lock()) PinExtension(s, id, !pinned); }, "", pins != nullptr);
   menu.Separator();
-  menu.Add("Manage Extensions", "settings", [weak, first] {
+  menu.Add(label(InterfaceMessage::MenuManageExtensions), "settings", [weak, first] {
     first(); const auto s = weak.lock(); if (!s) return;
     if (s->panel_popup) s->panel_popup->Hide(false);
     if (!s->extensions_window) s->extensions_window = std::make_shared<ExtensionsWindow>(s);
@@ -79,9 +82,11 @@ void ShowCopyMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
   const auto labels = ShortcutLabels(prefs);
   const auto origin = state->window->GetClientAreaBoundsInScreen();
   const CefPoint below(origin.x + anchor.x, origin.y + anchor.y + anchor.height + 6);
+  const auto locale = state->session ? state->session->interface_locale : "en";
+  const auto label = [locale](InterfaceMessage id) { return InterfaceText(locale, id); };
   MenuPopup::Builder menu;
-  menu.Add("Copy Link", "copy", run([](const std::shared_ptr<State>& s) { s->workspace->CopyActiveLink(); }));
-  menu.Add("Super Copy (without trackers)", "link", run([](const std::shared_ptr<State>& s) { s->workspace->CopyCleanLink(); }), Chord(labels, "copyUrl"));
+  menu.Add(label(InterfaceMessage::MenuCopyLink), "copy", run([](const std::shared_ptr<State>& s) { s->workspace->CopyActiveLink(); }));
+  menu.Add(label(InterfaceMessage::MenuSuperCopy), "link", run([](const std::shared_ptr<State>& s) { s->workspace->CopyCleanLink(); }), Chord(labels, "copyUrl"), true, false, "", "superCopy");
   state->menu_popup->Open(menu, below, "copy");
   state->Record("copy_menu_shown");
 }
@@ -92,10 +97,13 @@ void ShowLittleSpaces(const std::shared_ptr<State>& state, const CefRect& anchor
   if (spaces.empty()) return;
   if (!state->menu_popup) state->menu_popup = std::make_shared<MenuPopup>(state);
   const auto origin = state->window->GetClientAreaBoundsInScreen();
+  const auto locale = state->session ? state->session->interface_locale : "en";
   MenuPopup::Builder menu;
   for (const auto& space : spaces) {
-    const auto label = space.name + (space.profile == state->active_profile ? "" : " (another profile)");
-    menu.Add(label, "externalLink", [weak = std::weak_ptr<WorkspaceController>(state->workspace), id = space.id] {
+    const auto name = InterfaceSpaceName(locale, space.name, space.position);
+    const auto title = space.profile == state->active_profile ? name :
+        InterfaceTextWithName(locale, InterfaceMessage::MenuAnotherProfile, name);
+    menu.Add(title, "externalLink", [weak = std::weak_ptr<WorkspaceController>(state->workspace), id = space.id] {
       if (const auto workspace = weak.lock()) workspace->SendLittlePage(id, [weak](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
         if (code) if (const auto source = weak.lock()) source->Notify(error);
       });
@@ -120,23 +128,25 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
   const auto origin = state->window->GetClientAreaBoundsInScreen();
   const CefPoint below(origin.x + anchor.x, origin.y + anchor.y + anchor.height + 6);
 
+  const auto locale = state->session ? state->session->interface_locale : "en";
+  const auto label = [locale](InterfaceMessage id) { return InterfaceText(locale, id); };
   MenuPopup::Builder menu;
   const auto status = DefaultBrowserStatus();
   if (status->GetType("isDefault") == VTYPE_BOOL && !status->GetBool("isDefault"))
-    menu.Add("Set Sol as Default Browser", "heart", run([](const std::shared_ptr<State>& s) {
+    menu.Add(label(InterfaceMessage::MenuSetDefault), "heart", run([](const std::shared_ptr<State>& s) {
       std::string error; OpenDefaultBrowserSettings(s->window->GetWindowHandle(), error);
     }));
-  menu.Add("Check for Updates", "reload", run([](const std::shared_ptr<State>& s) { ShowUpdateWindow(s); }));
+  menu.Add(label(InterfaceMessage::MenuCheckUpdates), "reload", run([](const std::shared_ptr<State>& s) { ShowUpdateWindow(s); }), "", true, false, "", "checkUpdates");
   menu.Separator();
-  menu.Add("New Tab", "plus", shortcut(Shortcut::NewTab), Chord(labels, "newTab"));
-  menu.Add("New Window", "window", shortcut(Shortcut::NewWindow), Chord(labels, "newWindow"));
-  menu.Add("New Private Window", "private", shortcut(Shortcut::NewPrivateWindow), Chord(labels, "newPrivateWindow"));
+  menu.Add(label(InterfaceMessage::MenuNewTab), "plus", shortcut(Shortcut::NewTab), Chord(labels, "newTab"));
+  menu.Add(label(InterfaceMessage::MenuNewWindow), "window", shortcut(Shortcut::NewWindow), Chord(labels, "newWindow"));
+  menu.Add(label(InterfaceMessage::MenuNewPrivate), "private", shortcut(Shortcut::NewPrivateWindow), Chord(labels, "newPrivateWindow"));
   menu.Separator();
 
   // Spaces: create/rename run the sidebar's own flows; the list switches like Ctrl+1…9.
-  auto& spaces = menu.Submenu("Spaces", "spaces", !standalone);
-  spaces.Add("New Space", "plus", run([](const std::shared_ptr<State>& s) { s->workspace->RequestSidebar("newSpace"); }), "", sidebar);
-  spaces.Add("Rename Space", "pencil", run([](const std::shared_ptr<State>& s) { s->workspace->RequestSidebar("editSpace"); }), "", sidebar);
+  auto& spaces = menu.Submenu(label(InterfaceMessage::MenuSpaces), "spaces", !standalone);
+  spaces.Add(label(InterfaceMessage::MenuNewSpace), "plus", run([](const std::shared_ptr<State>& s) { s->workspace->RequestSidebar("newSpace"); }), "", sidebar);
+  spaces.Add(label(InterfaceMessage::MenuRenameSpace), "pencil", run([](const std::shared_ptr<State>& s) { s->workspace->RequestSidebar("editSpace"); }), "", sidebar);
   spaces.Separator();
   const auto list = snapshot->GetList("spaces");
   const auto active = snapshot->GetString("activeSpace").ToString();
@@ -149,35 +159,35 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
     });
   };
   if (count > 1) {
-    spaces.Add("Next Space", "arrowRight", switch_to(list->GetDictionary((current + 1) % count)->GetString("id")));
-    spaces.Add("Previous Space", "arrowLeft", switch_to(list->GetDictionary((current + count - 1) % count)->GetString("id")));
+    spaces.Add(label(InterfaceMessage::MenuNextSpace), "arrowRight", switch_to(list->GetDictionary((current + 1) % count)->GetString("id")));
+    spaces.Add(label(InterfaceMessage::MenuPreviousSpace), "arrowLeft", switch_to(list->GetDictionary((current + count - 1) % count)->GetString("id")));
     spaces.Separator();
   }
   for (size_t i = 0; i < count; ++i) {
     const auto space = list->GetDictionary(i);
-    const auto name = space->GetString("name").ToString();
+    const auto name = InterfaceSpaceName(locale, space->GetString("name").ToString(), space->GetInt("position"));
     const std::string key = "space" + std::to_string(i + 1);
-    spaces.Add(name.empty() ? "Space " + std::to_string(i + 1) : name, "", switch_to(space->GetString("id")),
+    spaces.Add(name, "", switch_to(space->GetString("id")),
                i < 9 ? Chord(labels, key.c_str()) : "", true, space->GetString("id") == active);
   }
 
-  auto& tabs = menu.Submenu("Tabs", "tabs");
-  tabs.Add("Open Command Bar", "search", shortcut(Shortcut::Address), Chord(labels, "address"));
-  tabs.Add("New Tab", "plus", shortcut(Shortcut::NewTab), Chord(labels, "newTab"));
-  tabs.Add("Pin Tab", "pin", shortcut(Shortcut::Pin), Chord(labels, "pin"), state->content != nullptr && !standalone);
-  tabs.Add("New Folder", "folder", run([](const std::shared_ptr<State>& s) { s->workspace->RequestSidebar("newFolder"); }), "", sidebar);
+  auto& tabs = menu.Submenu(label(InterfaceMessage::MenuTabs), "tabs", true, "tabs");
+  tabs.Add(label(InterfaceMessage::MenuCommandBar), "search", shortcut(Shortcut::Address), Chord(labels, "address"));
+  tabs.Add(label(InterfaceMessage::MenuNewTab), "plus", shortcut(Shortcut::NewTab), Chord(labels, "newTab"));
+  tabs.Add(label(InterfaceMessage::MenuPinTab), "pin", shortcut(Shortcut::Pin), Chord(labels, "pin"), state->content != nullptr && !standalone);
+  tabs.Add(label(InterfaceMessage::MenuNewFolder), "folder", run([](const std::shared_ptr<State>& s) { s->workspace->RequestSidebar("newFolder"); }), "", sidebar);
   tabs.Separator();
-  tabs.Add("Recent Tab", "history", shortcut(Shortcut::RecentTab), Chord(labels, "recentTab"));
-  tabs.Add("Next Tab", "arrowDown", shortcut(Shortcut::NextTab), Chord(labels, "nextTab"));
-  tabs.Add("Previous Tab", "arrowUp", shortcut(Shortcut::PreviousTab), Chord(labels, "previousTab"));
+  tabs.Add(label(InterfaceMessage::MenuRecentTab), "history", shortcut(Shortcut::RecentTab), Chord(labels, "recentTab"));
+  tabs.Add(label(InterfaceMessage::MenuNextTab), "arrowDown", shortcut(Shortcut::NextTab), Chord(labels, "nextTab"), true, false, "", "nextTab");
+  tabs.Add(label(InterfaceMessage::MenuPreviousTab), "arrowUp", shortcut(Shortcut::PreviousTab), Chord(labels, "previousTab"));
   tabs.Separator();
-  tabs.Add("Reopen Last Closed Tab", "undo", shortcut(Shortcut::ReopenClosed), Chord(labels, "reopenClosed"));
-  if (!standalone) tabs.Add("Archive", "archive", run([anchor](const std::shared_ptr<State>& s) { if (s->panel_popup) s->panel_popup->Toggle("archive", anchor); }));
+  tabs.Add(label(InterfaceMessage::MenuReopen), "undo", shortcut(Shortcut::ReopenClosed), Chord(labels, "reopenClosed"));
+  if (!standalone) tabs.Add(label(InterfaceMessage::MenuArchive), "archive", run([anchor](const std::shared_ptr<State>& s) { if (s->panel_popup) s->panel_popup->Toggle("archive", anchor); }));
 
   // Extensions: the web profile's installed list, each opened as from a toolbar button.
-  auto& extensions = menu.Submenu("Extensions", "puzzle");
-  extensions.Add("Add Extension", "plus", run([](const std::shared_ptr<State>& s) { s->workspace->OpenLink(kChromeWebStoreUrl, true); }));
-  extensions.Add("Manage Extensions", "settings", run([](const std::shared_ptr<State>& s) {
+  auto& extensions = menu.Submenu(label(InterfaceMessage::MenuExtensions), "puzzle");
+  extensions.Add(label(InterfaceMessage::MenuAddExtension), "plus", run([](const std::shared_ptr<State>& s) { s->workspace->OpenLink(kChromeWebStoreUrl, true); }));
+  extensions.Add(label(InterfaceMessage::MenuManageExtensions), "settings", run([](const std::shared_ptr<State>& s) {
     if (!s->extensions_window) s->extensions_window = std::make_shared<ExtensionsWindow>(s);
     s->extensions_window->Show();
   }));
@@ -194,7 +204,7 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
     // Pins: a checked row is on the top bar; choosing it toggles.
     if (pins && !first) {
       extensions.Separator();
-      auto& pin = extensions.Submenu("Pin to Top Bar", "pin");
+      auto& pin = extensions.Submenu(label(InterfaceMessage::MenuPinTopBar), "pin");
       for (const auto& item : installed) {
         if (!item.action && item.popup.empty() && item.options.empty()) continue;
         const std::string id = item.id; const bool pinned = pins->Contains(id);
@@ -203,32 +213,33 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
     }
   }
 
-  auto& developer = menu.Submenu("Developer", "code");
-  developer.Add("Developer Tools", "code", shortcut(Shortcut::DevTools), Chord(labels, "devTools"), state->content != nullptr);
-  developer.Add("Reload Ignoring Cache", "reload", shortcut(Shortcut::ReloadBypass), Chord(labels, "reloadBypass"), state->content != nullptr);
+  auto& developer = menu.Submenu(label(InterfaceMessage::MenuDeveloper), "code");
+  developer.Add(label(InterfaceMessage::MenuDeveloperTools), "code", shortcut(Shortcut::DevTools), Chord(labels, "devTools"), state->content != nullptr);
+  developer.Add(label(InterfaceMessage::MenuReloadBypass), "reload", shortcut(Shortcut::ReloadBypass), Chord(labels, "reloadBypass"), state->content != nullptr);
   menu.Separator();
 
-  menu.Add("History", "history", shortcut(Shortcut::History), Chord(labels, "history"));
-  menu.Add("Downloads", "download", shortcut(Shortcut::Downloads), Chord(labels, "downloads"));
-  auto& passwords = menu.Submenu("Passwords", "lock");
-  passwords.Add("Passwords for This Page", "lock", run([](const std::shared_ptr<State>& s) {
+  menu.Add(label(InterfaceMessage::MenuHistory), "history", shortcut(Shortcut::History), Chord(labels, "history"));
+  menu.Add(label(InterfaceMessage::MenuDownloads), "download", shortcut(Shortcut::Downloads), Chord(labels, "downloads"));
+  auto& passwords = menu.Submenu(label(InterfaceMessage::MenuPasswords), "lock");
+  passwords.Add(label(InterfaceMessage::MenuPagePasswords), "lock", run([](const std::shared_ptr<State>& s) {
     if (s->content && s->content->GetHost()->CanExecuteChromeCommand(cef_id_for_command_id_name("IDC_MANAGE_PASSWORDS_FOR_PAGE")))
       s->content->GetHost()->ExecuteChromeCommand(cef_id_for_command_id_name("IDC_MANAGE_PASSWORDS_FOR_PAGE"), CEF_WOD_CURRENT_TAB);
   }), "", state->content && state->content->GetHost()->CanExecuteChromeCommand(cef_id_for_command_id_name("IDC_MANAGE_PASSWORDS_FOR_PAGE")));
-  passwords.Add("Manage Passwords", "settings", run([](const std::shared_ptr<State>& s) {
+  passwords.Add(label(InterfaceMessage::MenuManagePasswords), "settings", run([](const std::shared_ptr<State>& s) {
     ShowPasswords(s, s->active_profile);
   }), "", !state->private_window && !standalone);
   menu.Separator();
-  if (!standalone) menu.Add("Theme", "palette", run([anchor](const std::shared_ptr<State>& s) { if (s->panel_popup) s->panel_popup->Toggle("theme", anchor); }));
-  menu.Add("Settings", "settings", run([](const std::shared_ptr<State>& s) { ShowSettings(s); }), Chord(labels, "settings"));
-  menu.Add("Print…", "print", shortcut(Shortcut::Print), Chord(labels, "print"), state->content != nullptr);
-  menu.Add("Copy Link Without Trackers", "link", shortcut(Shortcut::CopyUrl), Chord(labels, "copyUrl"), state->content != nullptr);
-  auto& capture = menu.Submenu("Screenshot", "image", state->content != nullptr);
-  capture.Add("Select Area or Element…", "image", shortcut(Shortcut::Capture), Chord(labels, "capture"));
-  capture.Add("Visible Area", "image", shortcut(Shortcut::Screenshot), Chord(labels, "screenshot"));
-  capture.Add("Full Page", "image", shortcut(Shortcut::FullPageScreenshot), Chord(labels, "fullPageScreenshot"));
+  if (!standalone) menu.Add(label(InterfaceMessage::MenuTheme), "palette", run([anchor](const std::shared_ptr<State>& s) { if (s->panel_popup) s->panel_popup->Toggle("theme", anchor); }));
+  menu.Add(label(InterfaceMessage::SettingsTitle), "settings",
+      run([](const std::shared_ptr<State>& s) { ShowSettings(s); }), Chord(labels, "settings"), true, false, "", "settings");
+  menu.Add(label(InterfaceMessage::MenuPrint), "print", shortcut(Shortcut::Print), Chord(labels, "print"), state->content != nullptr);
+  menu.Add(label(InterfaceMessage::MenuCleanCopy), "link", shortcut(Shortcut::CopyUrl), Chord(labels, "copyUrl"), state->content != nullptr);
+  auto& capture = menu.Submenu(label(InterfaceMessage::MenuScreenshot), "image", state->content != nullptr);
+  capture.Add(label(InterfaceMessage::MenuSelectArea), "image", shortcut(Shortcut::Capture), Chord(labels, "capture"));
+  capture.Add(label(InterfaceMessage::MenuVisibleArea), "image", shortcut(Shortcut::Screenshot), Chord(labels, "screenshot"));
+  capture.Add(label(InterfaceMessage::MenuFullPage), "image", shortcut(Shortcut::FullPageScreenshot), Chord(labels, "fullPageScreenshot"));
   menu.Separator();
-  menu.Add("Close Window", "close", run([](const std::shared_ptr<State>& s) { s->window->Close(); }), Chord(labels, "closeWindow"));
+  menu.Add(label(InterfaceMessage::MenuCloseWindow), "close", run([](const std::shared_ptr<State>& s) { s->window->Close(); }), Chord(labels, "closeWindow"));
 
   state->menu_popup->Open(menu, below, "main");
   state->Record("main_menu_shown");

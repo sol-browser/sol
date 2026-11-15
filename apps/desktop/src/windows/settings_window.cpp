@@ -3,6 +3,10 @@
 #include "windows/ui_context_menu.h"
 #include "app/session.h"
 #include "windows/settings_window.h"
+#include "translation/page_translator.h"
+#include "translation/model_catalog.h"
+#include "app/windows_locale.h"
+#include "interface_strings.h"
 #include <fstream>
 #include <dwmapi.h>
 #include "windows/default_browser.h"
@@ -85,13 +89,14 @@ class SettingsView final : public CefBrowserViewDelegate {
 };
 class SettingsDelegate final : public UtilityWindowDelegate {
  public:
-  SettingsDelegate(std::weak_ptr<State> state, std::weak_ptr<SettingsWindow> owner, CefRefPtr<CefBrowserView> view)
-      : UtilityWindowDelegate(std::move(state), CefSize(940, 700)), owner_(owner), view_(view) {}
+  SettingsDelegate(const std::shared_ptr<State>& state, std::weak_ptr<SettingsWindow> owner, CefRefPtr<CefBrowserView> view)
+      : UtilityWindowDelegate(state, CefSize(940, 700)), owner_(owner), view_(view),
+        title_(InterfaceText(state->session ? state->session->interface_locale : "en", InterfaceMessage::NativeSettingsTitle)) {}
   cef_runtime_style_t GetWindowRuntimeStyle() override { return CEF_RUNTIME_STYLE_ALLOY; }
   CefSize GetMinimumSize(CefRefPtr<CefView>) override { return CefSize(720, 520); }
   void OnWindowCreated(CefRefPtr<CefWindow> window) override {
     UtilityWindowDelegate::OnWindowCreated(window);
-    window->SetTitle("Settings — Sol"); window->SetBackgroundColor(CefColorSetARGB(255, 28, 26, 32));
+    window->SetTitle(title_); window->SetBackgroundColor(CefColorSetARGB(255, 28, 26, 32));
     const auto icon = RedWindowIcon(); window->SetWindowIcon(icon); window->SetWindowAppIcon(icon);
     const BOOL dark = TRUE;
     DwmSetWindowAttribute(window->GetWindowHandle(), DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
@@ -107,6 +112,7 @@ class SettingsDelegate final : public UtilityWindowDelegate {
   void OnWindowDestroyed(CefRefPtr<CefWindow>) override { view_ = nullptr; if (auto owner = owner_.lock()) owner->Destroyed(); }
  private:
   std::weak_ptr<SettingsWindow> owner_; CefRefPtr<CefBrowserView> view_;
+  const CefString title_;
   IMPLEMENT_REFCOUNTING(SettingsDelegate);
 };
 }  // namespace
@@ -138,7 +144,7 @@ void SettingsWindow::Show() {
   auto view = CefBrowserView::CreateBrowserView(new SettingsClient(weak_from_this()), std::string(kSettingsUrl),
       settings, extra, state->ui_context, new SettingsView());
   view->SetBackgroundColor(settings.background_color);
-  CefWindow::CreateTopLevelWindow(new SettingsDelegate(state_, weak_from_this(), view));
+  CefWindow::CreateTopLevelWindow(new SettingsDelegate(state, weak_from_this(), view));
 }
 void SettingsWindow::Destroyed() {
   window_ = nullptr; ready_ = false;
@@ -155,6 +161,23 @@ void SettingsWindow::ShowSection(const std::string& section) {
   if (requested == "import") browser_->GetMainFrame()->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'import'}))", std::string(kSettingsUrl), 0);
   if (requested == "search") browser_->GetMainFrame()->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'search'}))", std::string(kSettingsUrl), 0);
   if (requested == "siteSearch") browser_->GetMainFrame()->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'siteSearch'}))", std::string(kSettingsUrl), 0);
+  if (requested == "languages") {
+    auto frame = browser_->GetMainFrame();
+    frame->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'languages'}))", std::string(kSettingsUrl), 0);
+    if (const auto state = state_.lock(); state && state->probe && state->menu_translate_offer)
+      frame->ExecuteJavaScript(R"JS((async () => {
+        for (let i = 0; i < 50; i++) {
+          const add = document.querySelector('#translation-known-add');
+          if (add && !add.disabled && add.querySelector('option[value="de"]')) {
+            console.info('SOL_TRANSLATION_SETTINGS:visible');
+            add.value = 'de';
+            add.dispatchEvent(new Event('change', { bubbles: true }));
+            return;
+          }
+          await new Promise(resolve => setTimeout(resolve, 60));
+        }
+      })())JS", std::string(kSettingsUrl), 0);
+  }
   if (requested == "profiles" || requested == "newProfile") {
     const auto script=requested=="profiles" ? "window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'profiles'}))" :
       "window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'newProfile'}))";
@@ -207,7 +230,10 @@ void SettingsWindow::SavePreferences(Preferences next, CefRefPtr<CefMessageRoute
           window->backdrop = backdrop; WorkspaceController::ApplyTheme(window);
         }
         RefreshShortcuts(window);
-        if (window->workspace) window->workspace->Refresh();
+        if (window->workspace) {
+          CheckPageTranslationOffer(window, window->content);
+          window->workspace->Refresh();
+        }
         if (window->command_bar) window->command_bar->Refresh();
       }
       if (state->session->apply_background) state->session->apply_background();
@@ -244,8 +270,10 @@ std::string SettingsWindow::Response(bool refresh_default) const {
   const auto preferences = state->session ? state->session->preferences : nullptr;
   const auto current = preferences ? preferences->Get() : Preferences{};
   response->SetDictionary("preferences",BrowserPreferences::ToDictionary(current));
+  response->SetList("translationLanguages", PageTranslationLanguages());
+  response->SetList("translationSourceLanguages", PageTranslationSourceLanguages());
   response->SetString("preferencesError",preferences ? preferences->error() : "Settings are not ready");
-  response->SetList("keyboard",DescribeShortcuts(current));
+  response->SetList("keyboard",DescribeShortcuts(current, state->session ? state->session->interface_locale : "en"));
   response->SetBool("systemHour12", SystemTwelveHourClock());
   auto backdrop = CefDictionaryValue::Create();
 #if defined(RED_CEF_TRANSLUCENT)
@@ -293,12 +321,27 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
     });
     return true;
   }
+  if (method == "settings.allowTranslationSite" && data->GetSize() == 2 && data->GetType("origin") == VTYPE_STRING && state->session && state->session->preferences) {
+    auto next = state->session->preferences->Get();
+    if (!next.translation_excluded_sites.erase(data->GetString("origin").ToString())) callback->Success(Response());
+    else SavePreferences(std::move(next), callback);
+    return true;
+  }
   if (method == "settings.set" && data->GetSize() == 3 && data->GetType("key") == VTYPE_STRING && state->session && state->session->preferences) {
     auto next = state->session->preferences->Get();
     const auto key = data->GetString("key").ToString();
     bool valid = false;
     if (key == "searchEngine" && data->GetType("value") == VTYPE_STRING && ValidSearchEngine(data->GetString("value"))) {
       next.search_engine = data->GetString("value"); valid = true;
+    } else if (key == "interfaceLanguage" && data->GetType("value") == VTYPE_STRING && ValidInterfaceLanguage(data->GetString("value").ToString())) {
+      next.interface_language = data->GetString("value"); valid = true;
+    } else if (key == "translationTarget" && data->GetType("value") == VTYPE_STRING) {
+      const auto target = data->GetString("value").ToString();
+      if (target == "system" || HasTranslationTarget(target)) { next.translation_target = target; valid = true; }
+    } else if (key == "translationOffers" && data->GetType("value") == VTYPE_BOOL) {
+      next.translation_offers = data->GetBool("value"); valid = true;
+    } else if (key == "translationKnownLanguages" && data->GetType("value") == VTYPE_LIST) {
+      valid = ReadTranslationKnownLanguages(data->GetList("value"), next.translation_known_languages);
     } else if (key == "askDownload" && data->GetType("value") == VTYPE_BOOL) {
       next.ask_download = data->GetBool("value"); valid = true;
     } else if (key == "searchSuggestions" && data->GetType("value") == VTYPE_BOOL) {
@@ -335,7 +378,8 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
       const auto url = data->GetString("value").ToString();
       if (ValidHomepage(url)) { next.homepage = url; valid = true; }
     }
-    if (!valid) callback->Failure(400,"Invalid preference value. Homepage must be an HTTP(S) address without credentials.");
+    if (!valid) callback->Failure(400, key == "interfaceLanguage" ? "Invalid interface language." :
+        "Invalid preference value. Homepage must be an HTTP(S) address without credentials.");
     else SavePreferences(std::move(next),callback);
     return true;
   }
@@ -344,7 +388,8 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
       auto next = state->session->preferences->Get(); next.download_directory.clear(); SavePreferences(std::move(next),callback);
     } else if (browser_) {
       const auto& directory = state->session->preferences->Get().download_directory;
-      browser_->GetHost()->RunFileDialog(FILE_DIALOG_OPEN_FOLDER,"Download location",
+      browser_->GetHost()->RunFileDialog(FILE_DIALOG_OPEN_FOLDER,
+          InterfaceText(state->session->interface_locale, InterfaceMessage::WindowDownloadLocation),
           (directory.empty() ? DownloadManager::DefaultDirectory() : directory).wstring(),{},
           new FolderPicked([weak = weak_from_this(),callback](const std::vector<CefString>& paths) {
             const auto owner = weak.lock(); const auto state = owner ? owner->state_.lock() : nullptr;

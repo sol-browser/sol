@@ -1,0 +1,34 @@
+#pragma once
+
+#include <cstddef>
+#include <string>
+#include <string_view>
+
+namespace red {
+
+enum class InterfaceMessage {
+@interface_ids@};
+
+inline const char* InterfaceText(std::string_view locale, InterfaceMessage id) {
+  constexpr const char* english[] = {
+@interface_en@  };
+  constexpr const char* ukrainian[] = {
+@interface_uk@  };
+  const auto index = static_cast<std::size_t>(id);
+  return locale == "uk" ? ukrainian[index] : english[index];
+}
+
+inline std::string InterfaceTextWithName(std::string_view locale, InterfaceMessage id, std::string_view name) {
+  std::string text = InterfaceText(locale, id);
+  constexpr std::string_view argument = "{name}";
+  for (auto at = text.find(argument); at != std::string::npos; at = text.find(argument, at + name.size()))
+    text.replace(at, argument.size(), name);
+  return text;
+}
+
+inline std::string InterfaceSpaceName(std::string_view locale, std::string_view name, int position) {
+  if (!name.empty()) return std::string(name);
+  return InterfaceTextWithName(locale, InterfaceMessage::MenuNumberedSpace, std::to_string(position + 1));
+}
+
+}  // namespace red

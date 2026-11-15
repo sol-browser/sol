@@ -63,15 +63,19 @@ void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRe
       row->GetBool("pinned"), row->GetBool("favorite"), row->GetBool("archived"), row->GetBool("live"), row->GetBool("closing"), row->GetBool("expanded"), row->GetInt("position"), row->GetBool("customTitle"), row->GetBool("muted"),
       row->GetString("space"), row->GetBool("xBadgeHidden")});
   }
+  const auto locale = state->session ? state->session->interface_locale : "en";
   std::vector<MenuSpace> spaces; const auto space_rows = snapshot->GetList("spaces");
-  for (size_t i = 0; space_rows && i < space_rows->GetSize(); ++i)
-    spaces.push_back({space_rows->GetDictionary(i)->GetString("id"), space_rows->GetDictionary(i)->GetString("name")});
-  auto items = SidebarMenuItems(nodes, id, spaces, snapshot->GetString("activeSpace"), state->standalone_window);
+  for (size_t i = 0; space_rows && i < space_rows->GetSize(); ++i) {
+    const auto row = space_rows->GetDictionary(i);
+    spaces.push_back({row->GetString("id"), InterfaceSpaceName(locale, row->GetString("name").ToString(), row->GetInt("position"))});
+  }
+  const auto label = [locale](InterfaceMessage entry) { return InterfaceText(locale, entry); };
+  auto items = SidebarMenuItems(nodes, id, spaces, snapshot->GetString("activeSpace"), state->standalone_window, locale);
   if (space_menu) {
     if (state->standalone_window || !id.empty()) { callback->Failure(403,"Space actions are unavailable"); return; }
     std::vector<MenuProfile> profiles; const auto list=snapshot->GetList("profiles");
     for (size_t i=0;list && i<list->GetSize();++i) profiles.push_back({list->GetDictionary(i)->GetString("id"),list->GetDictionary(i)->GetString("name")});
-    items=SpaceMenuItems(spaces,profiles,snapshot->GetString("activeSpace"),snapshot->GetString("activeProfile"));
+    items=SpaceMenuItems(spaces,profiles,snapshot->GetString("activeSpace"),snapshot->GetString("activeProfile"), locale);
   }
   CefRefPtr<CefDictionaryValue> entry, active;
   for (size_t i = 0; i < rows->GetSize(); ++i) {
@@ -82,19 +86,20 @@ void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRe
     std::optional<SidebarMenuItem> movement;
     std::optional<SidebarMenuItem> badge;
     for (const auto& item : items) if (item.action == "showXBadge" || item.action == "hideXBadge") badge = item;
-    for (auto item : items) if (item.label == "Move to") {
+    for (auto item : items) if (item.move_group) {
       std::erase_if(item.children,[](const auto& child) { return child.action == "favorites"; });
       if (!item.children.empty()) movement = std::move(item);
     }
     // One rename per pane, in the order they appear on screen.
     const auto panes = entry->GetList("splitPanes");
-    const char* ordinals[] = {"first","second","third","fourth"};
-    items = {{"Open split view","activate","",true,{}}};
+    constexpr InterfaceMessage rename[] = {InterfaceMessage::SidebarRenameFirst, InterfaceMessage::SidebarRenameSecond,
+        InterfaceMessage::SidebarRenameThird, InterfaceMessage::SidebarRenameFourth};
+    items = {{label(InterfaceMessage::SidebarOpenGroup),"activate","",true,{}}};
     for (size_t pane = 0; panes && pane < panes->GetSize() && pane < 4; ++pane)
-      items.push_back({std::string("Rename ") + ordinals[pane] + " tab","renamePane",panes->GetString(pane).ToString(),true,{}});
-    items.push_back({entry->GetBool("pinned") ? "Unpin split view" : "Pin split view",entry->GetBool("pinned") ? "today" : "pinned","",true,{}});
-    if (panes && panes->GetSize() == 2) items.push_back({"Swap panes","swapSplit","",true,{}});
-    items.push_back({"Separate tabs","unsplit","",true,{}});
+      items.push_back({label(rename[pane]),"renamePane",panes->GetString(pane).ToString(),true,{}});
+    items.push_back({entry->GetBool("pinned") ? label(InterfaceMessage::SidebarUnpinSplit) : label(InterfaceMessage::SidebarPinSplit),entry->GetBool("pinned") ? "today" : "pinned","",true,{}});
+    if (panes && panes->GetSize() == 2) items.push_back({label(InterfaceMessage::SidebarSwap),"swapSplit","",true,{}});
+    items.push_back({label(InterfaceMessage::SidebarSeparate),"unsplit","",true,{}});
     if (movement) items.push_back(std::move(*movement));
     if (badge) items.push_back(std::move(*badge));
   } else if (entry && active && entry->GetString("kind") == "tab" && !entry->GetBool("archived") && !entry->GetBool("closing") &&
@@ -111,7 +116,7 @@ void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRe
     if (const auto* provider = FindIntegrationSetting(IntegrationForUrl(entry->GetString("url").ToString())); provider && provider->listed) {
       const bool enabled = BrowserIntegrationEnabled(state, provider->id);
       items.push_back({"", "", "", false, {}});
-      items.push_back({std::string(enabled ? "Disable " : "Enable ") + std::string(provider->name) + " Integration (All Tabs)",
+      items.push_back({InterfaceTextWithName(locale, enabled ? InterfaceMessage::SidebarDisableIntegration : InterfaceMessage::SidebarEnableIntegration, provider->name),
                        enabled ? "disableIntegration" : "enableIntegration", std::string(provider->id), true, {}});
     }
   }

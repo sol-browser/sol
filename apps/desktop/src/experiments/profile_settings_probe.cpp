@@ -26,7 +26,7 @@ void Drive(std::weak_ptr<State> weak,int attempts) {
       const create=await until(()=>document.querySelector('.profiles-intro button'));
       create.click();
       const dialog=await until(()=>document.querySelector('.profile-dialog[open]'));
-      const input=dialog.querySelector('input[aria-label="Profile name"]');
+      const input=dialog.querySelector('#profile-name');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Studio');input.dispatchEvent(new Event('input',{bubbles:true}));
       await pause(80);
       for(const checkbox of dialog.querySelectorAll('input[type=checkbox]'))if(checkbox.checked){checkbox.click();await pause(40);}
@@ -41,8 +41,8 @@ void Drive(std::weak_ptr<State> weak,int attempts) {
       await until(()=>!document.querySelector('.profile-dialog'));
       const saved=!![...document.querySelectorAll('.profile-card h3')].find(node=>node.textContent.includes('Studio'));
       create.click();const another=await until(()=>document.querySelector('.profile-dialog[open]'));
-      if(another.querySelector('input[aria-label="Profile name"]').value!=='')throw Error('New profile retained the old name');
-      another.querySelector('button[aria-label="Close profile dialog"]').click();await until(()=>!document.querySelector('.profile-dialog'));
+      if(another.querySelector('#profile-name').value!=='')throw Error('New profile retained the old name');
+      another.querySelector('[data-action="close-profile-dialog"]').click();await until(()=>!document.querySelector('.profile-dialog'));
       console.info('RED_PROFILE_SETTINGS:'+JSON.stringify({phase:'saved',passed:saved}));
     } catch(error){console.info('RED_PROFILE_SETTINGS:'+JSON.stringify({phase:'error',passed:false,error:String(error)}));}
   })())JS",std::string(kSettingsUrl),0);

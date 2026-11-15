@@ -1,11 +1,15 @@
+import type { Translate } from './i18n.ts';
+
 // Sol's own pages live at sol://ui/<name>.html (the trusted UI origin), but
 // people see and type short addresses, like chrome://history in Chrome.
 // Native maps a submitted short address back (trust_policy.h).
 const PAGES = [
-  { url: 'sol://ui/history.html', address: 'sol://history', title: 'History' },
-  { url: 'sol://ui/downloads.html', address: 'sol://downloads', title: 'Downloads' },
+  { url: 'sol://ui/history.html', address: 'sol://history', title: 'History', titleId: 'history.title' },
+  { url: 'sol://ui/downloads.html', address: 'sol://downloads', title: 'Downloads', titleId: 'settings.section.downloads' },
 ] as const;
 export type InternalPage = typeof PAGES[number];
+
+export const internalPageTitle = (page: InternalPage, translate?: Translate) => translate?.(page.titleId) ?? page.title;
 
 function withoutTrailingSlashes(text: string): string {
   let end = text.length;

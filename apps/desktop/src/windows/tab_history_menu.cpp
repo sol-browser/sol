@@ -1,4 +1,6 @@
 #include "windows/tab_history_menu.h"
+#include "app/session.h"
+#include "interface_strings.h"
 #include "web_url.h"
 #include <algorithm>
 #include <string>
@@ -76,7 +78,7 @@ void ShowTabHistoryMenu(const std::shared_ptr<State>& state, CefRefPtr<CefBrowse
     }, "", true, entry.current, entry.current ? "" : image);
   }
   menu.Separator();
-  menu.Add("Show full history", "history", [weak] { if (const auto s = weak.lock(); s && s->workspace) s->workspace->OpenHistoryPage(); });
+  menu.Add(InterfaceText(state->session ? state->session->interface_locale : "en", InterfaceMessage::MenuFullHistory), "history", [weak] { if (const auto s = weak.lock(); s && s->workspace) s->workspace->OpenHistoryPage(); });
   const auto origin = state->window->GetClientAreaBoundsInScreen();
   state->menu_popup->Open(menu, CefPoint(origin.x + anchor.x, origin.y + anchor.y + anchor.height + 6), "tab-history");
 }

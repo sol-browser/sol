@@ -2,6 +2,7 @@
 // The page can move to a Space; every other page it would open goes to a workspace window.
 #include "workspace/controller.h"
 #include "app/session.h"
+#include "interface_strings.h"
 #include "web_url.h"
 #include "windows/command_bar.h"
 #include "windows/focus.h"
@@ -131,8 +132,9 @@ void WorkspaceController::OpenFromLittleWindow(const std::string& url, const std
   if (!space) { if (done) done(409, "No Space uses this page's profile", nullptr); return; }
   const auto target = LittleTargetWindow(space_id);
   if (!target) { if (done) done(409, "Cannot open a workspace window", nullptr); return; }
+  const auto name = InterfaceSpaceName(session_->interface_locale, space->name, space->position);
   target->workspace->OpenPage(url, title, foreground,
-      [weak = weak_from_this(), weak_target = std::weak_ptr<State>(target), foreground, name = space->name, done = std::move(done)]
+      [weak = weak_from_this(), weak_target = std::weak_ptr<State>(target), foreground, name, done = std::move(done)]
       (int code, const std::string& error, CefRefPtr<CefDictionaryValue> snapshot) {
     const auto self = weak.lock();
     if (!code) {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useMessages } from './i18n';
 import { RefreshCw } from 'lucide-react';
 import { animate, drawMark, newMotion, type MarkTarget } from './sol-mark';
 import { markTarget, parseUpdateState, updateView, type UpdateState } from './update-model';
@@ -49,6 +50,7 @@ function Mark({ target }: { target: MarkTarget }) {
 
 /** "Check for Updates" (sol://ui/update.html): the check, the download as it happens, and the restart. */
 export function UpdateWindow() {
+  const t = useMessages();
   const [state, setState] = useState<UpdateState>();
   const [error, setError] = useState('');
   const alive = useRef(true);
@@ -65,18 +67,18 @@ export function UpdateWindow() {
     return () => { alive.current = false; clearInterval(timer); removeEventListener('keydown', onKey); };
   }, [apply, fail]);
 
-  const view = state && updateView(state);
+  const view = state && updateView(state, t);
   return (
     <main className="update-window" data-phase={state?.phase ?? 'idle'}>
       <Mark target={state ? markTarget(state) : { fill: 0.05, morph: 0, done: false }} />
       <div className="update-text" aria-live="polite">
-        <h1>{view?.title ?? 'Checking for updates'}</h1>
-        <p>{error ? 'The browser did not answer. Close this window and try again.' : view?.detail ?? ''}</p>
+        <h1>{view?.title ?? t('update.checking')}</h1>
+        <p>{error ? t('update.error') : view?.detail ?? ''}</p>
       </div>
       <div className="update-actions">
-        {view?.action === 'restart' && <button type="button" className="update-primary" onClick={() => { query('update.restart').then(apply, fail); }}>Restart to update</button>}
-        {view?.action === 'retry' && <button type="button" className="update-primary" onClick={() => { query('update.check').then(apply, fail); }}><RefreshCw size={14} /> Try again</button>}
-        {view?.action === 'restart' && <button type="button" className="update-quiet" onClick={() => { query('update.close').catch(() => {}); }}>Later</button>}
+        {view?.action === 'restart' && <button type="button" className="update-primary" onClick={() => { query('update.restart').then(apply, fail); }}>{t('sidebar.update.restart')}</button>}
+        {view?.action === 'retry' && <button type="button" className="update-primary" onClick={() => { query('update.check').then(apply, fail); }}><RefreshCw size={14} /> {t('update.retry')}</button>}
+        {view?.action === 'restart' && <button type="button" className="update-quiet" onClick={() => { query('update.close').catch(() => {}); }}>{t('update.later')}</button>}
       </div>
     </main>
   );

@@ -1,5 +1,6 @@
 #pragma once
 #include <functional>
+#include <string>
 #include <windows.h>
 namespace red {
 // Sol in the notification area (docs/little-sol.md). While enabled, Sol keeps running after its
@@ -11,7 +12,7 @@ void CloseTrayHelper();
 class BackgroundHost {
  public:
   struct Actions { std::function<void()> little_sol, open_sol, quit; };
-  explicit BackgroundHost(Actions actions);
+  explicit BackgroundHost(Actions actions, std::string locale);
   ~BackgroundHost();
   BackgroundHost(const BackgroundHost&) = delete;
   BackgroundHost& operator=(const BackgroundHost&) = delete;
@@ -28,6 +29,7 @@ class BackgroundHost {
   void RemoveIcon();
   void ShowMenu();
   Actions actions_;
+  const std::string locale_;
   HWND window_ = nullptr;
   HICON icon_handle_ = nullptr;
   UINT taskbar_created_ = 0;

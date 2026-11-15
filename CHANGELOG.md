@@ -17,6 +17,29 @@ One short line that sums up the release. Optional; the website shows it as the h
 New things first, smaller fixes under "### Fixes". Describe the result for the user, not the code.
 -->
 
+## 0.7.0 — 2026-11-15
+
+On-device page translation and a new way to help bring Sol to your language.
+
+- **Page translation:** Sol translates pages on your device with Bergamot,
+  the open-source engine behind Firefox Translations. Use the globe to
+  translate, choose another language, or show the original, and set your
+  preferred translation language and the languages you already read in
+  Settings > Languages.
+- **Interface localization:** you can now choose Sol’s interface language in
+  Settings > General. [Help bring Sol to your language on Weblate](https://translate.sol-browser.app/engage/sol-browser/).
+- **Space names:** Space names are now optional.
+
+### Fixes
+
+- **Sidebar:** empty Favorites and Pinned take up no space and show a hint
+  only when you drag a tab over their drop area. The dragged tab is more
+  transparent, so you can see where it will land.
+- **Address bar:** the address grows to fit the full domain whenever there
+  is enough room in the toolbar.
+- **Context menus:** long search labels are shortened so keyboard shortcuts
+  stay visible.
+
 ## 0.6.0 — 2026-11-13
 
 Little Sol: a quick look at any link in a small window of its own, from Sol or from any app.

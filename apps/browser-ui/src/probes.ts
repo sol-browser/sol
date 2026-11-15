@@ -24,6 +24,8 @@ export async function ipcProbe() {
     [{ method: 'browser.shortcut', action: 'closeTab', id: 'untrusted' }, 400],
     [{ method: 'workspace.setSidebarVisible', visible: 'no' }, 400],
     [{ method: 'navigation.copyLink', url: 'https://untrusted.example/' }, 400],
+    [{ method: 'translation.accept', id: '1' }, 400],
+    [{ method: 'translation.accept', id: 1, extra: true }, 400],
     [{ method: 'workspace.setSidebarWidth', width: SIDEBAR_MIN_WIDTH - 1, save: true }, 400],
     [{ method: 'workspace.setSidebarWidth', width: 481, save: true }, 400],
     [{ method: 'workspace.setSidebarWidth', width: 256.5, save: true }, 400],
@@ -34,6 +36,8 @@ export async function ipcProbe() {
     [{ method: 'panel.open', kind: 'settings', x: 1, y: 1, width: 10, height: 10 }, 400],
     [{ method: 'panel.open', kind: 'archive', x: 1, y: 1, width: 99999, height: 10 }, 400],
     [{ method: 'panel.open', kind: 'downloads', x: -5, y: 1, width: 10, height: 10 }, 400],
+    [{ method: 'panel.open', kind: 'downloads', x: 1, y: 1, width: 10, height: 10, offerId: 1 }, 400],
+    [{ method: 'panel.open', kind: 'translation', x: 1, y: 1, width: 10, height: 10, offerId: '1' }, 400],
     [{ method: 'menu.main', x: 1, y: 1, width: 99999, height: 10 }, 400],
     [{ method: 'menu.copy', x: 1, y: 1, width: 99999, height: 10 }, 400],
     [{ method: 'menu.copy', x: 1, y: 1, width: 10, height: 10, extra: true }, 400],
@@ -57,36 +61,243 @@ export async function ipcProbe() {
   console.info('RED_PROBE_IPC_REJECTIONS:pass');
 }
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-async function waitFor(predicate: (s: Snapshot) => boolean): Promise<Snapshot> {
-  for (let i = 0; i < 60; ++i) {
+async function waitFor(predicate: (s: Snapshot) => boolean, attempts = 60): Promise<Snapshot> {
+  for (let i = 0; i < attempts; ++i) {
     const snapshot = await request({ method: 'browser.getSnapshot' });
     if (predicate(snapshot)) return snapshot;
     await sleep(50);
   }
   throw new Error('Workspace probe timed out');
 }
-export async function workspaceProbe(initial: Snapshot) {
-  // On startup CEF can publish a ready workspace before the Alloy view receives
-  // its first nonzero viewport. Measure the rendered layout after that resize.
-  await waitFor(() => innerWidth >= 700 && !!document.querySelector('.address'));
+export async function translationOfferProbe() {
+  try {
+    const panel = (action: Extract<Command, { method: 'probe.translationPanel' }>['action']) =>
+      request({ method: 'probe.translationPanel', action });
+    const globe = () => document.querySelector<HTMLButtonElement>('.window-side .translation-button');
+    async function waitForPanel(visibility: 'shown' | 'hidden') {
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const snapshot = await panel(visibility).catch(() => undefined);
+        if (snapshot) return snapshot;
+        await sleep(50);
+      }
+      throw new Error(`Translation panel did not become ${visibility}`);
+    }
+    async function closeOffer(id: number) {
+      await waitForPanel('shown');
+      globe()!.click();
+      const closed = await waitForPanel('hidden');
+      if (closed.translationOffer?.id !== id || !globe()) throw new Error('Closing the panel lost the translation offer');
+    }
+    const first = await waitFor(s => s.translationOffer?.from === 'de' && s.translationOffer.to === 'en' &&
+      !!globe());
+    const initialOffer = first.translationOffer!;
+    const foreground = await panel('activate').then(() => true, () => false);
+    if (globe()!.hasAttribute('title')) throw new Error('The translation globe has a hover tooltip');
+    await closeOffer(initialOffer.id);
+    globe()!.click();
+    await closeOffer(initialOffer.id);
+    const previousGlobe = globe();
+    const formUrl = new URL('/offer/form', first.url).href;
+    await request({ method: 'navigation.load', url: formUrl });
+    await waitFor(s => !!s.isLoading && globe() === previousGlobe && !!globe()?.disabled)
+      .catch(() => { throw new Error('The globe did not stay visible during navigation'); });
+    const form = await waitFor(s => s.url === formUrl && s.translationOffer?.from === 'de' && !!globe())
+      .catch(() => { throw new Error('The form body did not get a German translation offer'); });
+    if (form.translationOffer?.automatic || globe() !== previousGlobe) throw new Error('Same-language navigation changed the globe or requested a popup');
+    await waitForPanel('hidden');
+    globe()!.click();
+    await closeOffer(form.translationOffer!.id);
+    const frenchUrl = new URL('/offer/french', first.url).href;
+    await request({ method: 'navigation.load', url: frenchUrl });
+    const french = await waitFor(s => s.url === frenchUrl && s.translationOffer?.from === 'fr' && !!globe());
+    await closeOffer(french.translationOffer!.id);
+    for (const path of ['/offer/same', '/offer/short']) {
+      const url = new URL(path, first.url).href;
+      await request({ method: 'navigation.load', url });
+      await waitFor(s => s.url === url && !s.isLoading);
+      await sleep(750);
+      const current = await request({ method: 'browser.getSnapshot' });
+      if (current.translationOffer || globe()) throw new Error(`Unexpected offer on ${path}`);
+    }
+    const url = new URL('/offer/accept', first.url).href;
+    await request({ method: 'navigation.load', url });
+    const next = await waitFor(s => s.url === url && s.translationOffer?.from === 'de' &&
+      !!globe());
+    if (next.translationOffer?.id === initialOffer.id) throw new Error('The previous document kept its offer');
+    const stale = await request({ method: 'translation.accept', id: initialOffer.id });
+    if (stale.translationOffer?.id !== next.translationOffer?.id) throw new Error('A stale offer replaced the active offer');
+    await panel('options'); await panel('choose'); await panel('english');
+    let ring = false;
+    await waitFor(s => {
+      ring ||= !!globe()?.querySelector('.downloads-ring');
+      return s.translationOffer?.phase === 'translated';
+    }, 380).catch(() => { throw new Error('The language picker did not translate the page'); });
+    if (!ring) throw new Error('Model download progress was not shown on the globe');
+    await panel('original');
+    await waitFor(s => s.translationOffer?.phase === 'original').catch(() => { throw new Error('Use Original did not restore the page'); });
+    if (foreground) await panel('undo');
+    else { globe()!.click(); await panel('start'); }
+    await waitFor(s => s.translationOffer?.phase === 'translated', 120).catch(() => { throw new Error('The translation was not reapplied'); });
+    if (foreground) globe()!.click();
+    await panel('options'); await panel('never');
+    const excludedUrl = new URL('/offer/excluded', first.url).href;
+    // Settings are written on a worker. Navigate only after the exclusion is committed.
+    for (let attempt = 0; ; attempt++) {
+      const saved = await panel('excluded').then(() => true, () => false);
+      if (saved) break;
+      if (attempt === 80) throw new Error('The site exclusion did not save');
+      await sleep(75);
+    }
+    await request({ method: 'navigation.load', url: excludedUrl });
+    await waitFor(s => s.url === excludedUrl && !s.isLoading);
+    await sleep(750);
+    if ((await request({ method: 'browser.getSnapshot' })).translationOffer) throw new Error('Excluded site received an offer');
+    const otherSite = new URL('/offer/other-site', first.url);
+    otherSite.hostname = '127.0.0.1';
+    await request({ method: 'navigation.load', url: otherSite.href });
+    const other = await waitFor(s => s.url === otherSite.href && s.translationOffer?.phase === 'offer' && !!globe());
+    if (other.translationOffer?.automatic) throw new Error('Same-language navigation across sites requested a popup');
+    globe()!.click();
+    await panel('options'); await panel('settings');
+    for (let attempt = 0; ; attempt++) {
+      if (await panel('known').then(() => true, () => false)) break;
+      if (attempt === 80) throw new Error('The known language did not save');
+      await sleep(75);
+    }
+    const knownUrl = new URL('/offer/known', otherSite).href;
+    await request({ method: 'navigation.load', url: knownUrl });
+    await waitFor(s => s.url === knownUrl && !s.isLoading);
+    await sleep(750);
+    if ((await request({ method: 'browser.getSnapshot' })).translationOffer || globe()) throw new Error('Known language received an offer');
+    await panel('selectText');
+    await sleep(350);
+    await panel('selectionMenu');
+    await sleep(750);
+    await panel('selectionPick');
+    console.info('RED_TRANSLATION_OFFER:pass');
+  } catch (error) {
+    console.info('RED_TRANSLATION_OFFER:fail');
+    throw error;
+  }
+}
+async function checkEmptySidebarHints() {
+  const sidebar = document.querySelector<HTMLElement>('.sidebar')!;
+  const emptyZones = [...sidebar.querySelectorAll<HTMLElement>('.sidebar-zone:has(> .zone-empty)')];
+  if (!emptyZones.length) return;
+  const snapshot = await request({ method: 'browser.getSnapshot' });
+  if (snapshot.nodes?.some(node => node.pinned)) return; // Preserve the restored fixture's selection.
+  const tab = sidebar.querySelector<HTMLElement>('.sidebar-zone.today .tree-row[data-active="true"]');
+  // Starting the drag on another tab would change the persisted workspace under test.
+  if (!tab) return;
+  const source = tab.getBoundingClientRect();
+  const visible = (zone: HTMLElement) => {
+    const hint = zone.querySelector<HTMLElement>('.zone-empty');
+    return !!hint?.getClientRects().length && getComputedStyle(hint).visibility === 'visible';
+  };
+  const collapsed = (zone: HTMLElement) => zone.getBoundingClientRect().height === 0;
+  const today = sidebar.querySelector<HTMLElement>('.sidebar-zone.today')!;
+  const todayTop = today.getBoundingClientRect().top;
+  const pointer = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+  const x = source.left + 30, y = source.top + source.height / 2;
+  const startDrag = () => {
+    tab.dispatchEvent(new PointerEvent('pointerdown', { ...pointer, buttons: 1, clientX: x, clientY: y }));
+    sidebar.dispatchEvent(new PointerEvent('pointermove', { ...pointer, buttons: 1, clientX: x, clientY: y + 8 }));
+  };
+  const moveTo = (zone: HTMLElement) => {
+    const target = zone.getBoundingClientRect();
+    const point = { clientX: target.left + target.width / 2, clientY: target.top + 6 };
+    sidebar.dispatchEvent(new PointerEvent('pointermove', { ...pointer, buttons: 1, ...point }));
+    return point;
+  };
+  const swallowClick = () => sidebar.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  const noHint = () => emptyZones.every(zone => !visible(zone));
+  const layoutStable = () => emptyZones.every(collapsed) && today.getBoundingClientRect().top === todayTop;
+  if (!noHint() || !layoutStable()) throw new Error('An empty sidebar section reserves space at rest');
+  try {
+    startDrag();
+    await waitFor(() => sidebar.dataset.dragging === 'true');
+    if (!noHint() || !layoutStable()) throw new Error('Empty sidebar changed when the drag started');
+    for (const zone of emptyZones) {
+      moveTo(zone);
+      await waitFor(() => visible(zone));
+      if (!layoutStable() || emptyZones.some(other => other !== zone && visible(other)))
+        throw new Error(`${zone.dataset.section} hover changed the layout or opened another hint`);
+      sidebar.dispatchEvent(new PointerEvent('pointermove', { ...pointer, buttons: 1, clientX: x, clientY: y + 8 }));
+      await waitFor(() => noHint());
+    }
+  } finally {
+    sidebar.dispatchEvent(new PointerEvent('pointercancel', pointer));
+    swallowClick();
+  }
+  await waitFor(() => noHint() && layoutStable() && sidebar.dataset.dragging === 'false');
+  const favorites = emptyZones.find(zone => zone.dataset.section === 'favorites');
+  const id = tab.closest<HTMLElement>('[data-node-id]')?.dataset.nodeId;
+  // Exercise the first drop on the fresh fixture, then restore its Today tab.
+  if (!favorites || emptyZones.length !== 2 || !id) return;
+  startDrag();
+  await waitFor(() => sidebar.dataset.dragging === 'true');
+  const point = moveTo(favorites);
+  await waitFor(() => visible(favorites));
+  sidebar.dispatchEvent(new PointerEvent('pointerup', { ...pointer, ...point }));
+  swallowClick();
+  const placed = await waitFor(s => !!s.nodes?.some(n => n.id === id && n.favorite) && !!favorites.querySelector('.tree-row'));
+  await request({ method: 'tree.place', id, parentId: '', section: 'today', position: -1, expectedRevision: placed.treeRevision! });
+  await waitFor(() => collapsed(favorites));
+}
+function checkAddressLayout() {
   const trigger = document.querySelector('.address');
   if (!(trigger instanceof HTMLButtonElement) || getComputedStyle(trigger).userSelect !== 'none')
     throw new Error('Top address must be a non-selectable button');
-  const address = trigger.getBoundingClientRect();
-  // The address unit (address + site button) sits in the middle of the free
-  // space between the left toolbar block and the window controls.
-  const unit = trigger.closest('.page-toolbar')!.getBoundingClientRect();
-  const left = document.querySelector('.toolbar-navigation')!.getBoundingClientRect().right;
-  const right = document.querySelector('.window-side')!.getBoundingClientRect().left;
-  if (Math.abs((unit.left - left) - (right - unit.right)) > 2 || address.width > 301 || address.width < 119)
-    throw new Error('Compact address field geometry: ' + JSON.stringify({ left, right, unitLeft: unit.left, unitRight: unit.right, width: address.width, viewport: innerWidth }));
-  let snapshot = initial;
+
+  const toolbar = trigger.closest<HTMLElement>('.topbar')!;
+  const sample = toolbar.cloneNode(true) as HTMLElement;
+  Object.assign(sample.style, { position: 'absolute', visibility: 'hidden', width: '1200px' });
+  sample.style.setProperty('--sidebar-width', '256px');
+  toolbar.after(sample);
+  try {
+    const address = sample.querySelector('.address-trigger')!;
+    const label = address.querySelector('.address-text')!;
+    label.textContent = 'example.com';
+    const shortWidth = address.getBoundingClientRect().width;
+    label.textContent = 'developer-documentation.internationalization.services.example.com';
+    const wide = address.getBoundingClientRect();
+    if (wide.width <= shortWidth || label.scrollWidth > label.clientWidth)
+      throw new Error('The address did not grow to fit the hostname');
+
+    sample.style.width = '700px';
+    const unit = address.closest('.page-toolbar')!.getBoundingClientRect();
+    const navEnd = sample.querySelector('.toolbar-navigation')!.getBoundingClientRect().right;
+    const controlsStart = sample.querySelector('.window-side')!.getBoundingClientRect().left;
+    if (address.getBoundingClientRect().width >= wide.width || label.scrollWidth <= label.clientWidth ||
+        navEnd >= unit.left || unit.right >= controlsStart || Math.abs((unit.left - navEnd) - (controlsStart - unit.right)) > 2)
+      throw new Error('The long address did not shrink within the toolbar');
+  } finally {
+    sample.remove();
+  }
+}
+export async function workspaceProbe() {
+  // On startup CEF can publish a ready workspace before the Alloy view receives
+  // its first nonzero viewport. Measure the rendered layout after that resize.
+  await waitFor(() => innerWidth >= 700 && !!document.querySelector('.address'));
+  checkAddressLayout();
+  await checkEmptySidebarHints();
+  let snapshot = await request({ method: 'browser.getSnapshot' });
   if (snapshot.nodes!.some(n => n.title === 'Research') && snapshot.sidebarWidth !== 336)
     throw new Error('Saved sidebar width was not restored');
   const mutate = async (command: TreeMutation) => {
     snapshot = await request({ ...command, expectedRevision: snapshot.treeRevision! }); return snapshot;
   };
   if (!snapshot.nodes!.some(n => n.title === 'Research')) {
+    const spaceId = snapshot.activeSpace;
+    const rename = document.querySelector<HTMLButtonElement>('.space-title button');
+    if (!spaceId || !rename) throw new Error('Space name editor is missing');
+    rename.click();
+    await waitFor(() => !!document.querySelector('.space-title-edit input'));
+    const input = document.querySelector<HTMLInputElement>('.space-title-edit input')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.form!.requestSubmit();
+    snapshot = await waitFor(s => s.activeSpace === spaceId && s.spaces?.find(space => space.id === spaceId)?.name === '');
     const count = snapshot.nodes!.length;
     // The sidebar has no section "+" any more: folders come from the native
     // context menu (New folder), i.e. this command. Inline rename UI is
@@ -111,6 +322,10 @@ export async function workspaceProbe(initial: Snapshot) {
     if (!cycleRejected) throw new Error('Cycle was accepted');
     snapshot = await request({ method: 'browser.getSnapshot' });
     if (snapshot.treeRevision !== revision) throw new Error('Rejected cycle changed revision');
+  }
+  if (snapshot.spaces?.find(space => space.id === snapshot.activeSpace)?.name === '') {
+    await waitFor(() => document.querySelector('.space-title button')?.textContent === '' &&
+      !!document.querySelector('.space-dot[aria-current="true"]')?.getAttribute('aria-label')?.trim());
   }
   const folder = snapshot.nodes!.find(n => n.title === 'Research')!;
   const nested = snapshot.nodes!.find(n => n.title === 'Nested')!;
@@ -195,7 +410,7 @@ export async function workspaceProbe(initial: Snapshot) {
   document.querySelector<HTMLButtonElement>('[data-action="toggle-sidebar"]')!.click();
   snapshot = await waitFor(s => s.sidebarVisible === true && document.querySelector<HTMLElement>('.sidebar')!.dataset.hidden !== 'true' && layoutReady(s));
   await settled(); snapshot = await request({ method: 'browser.getSnapshot' }); checkLayout(snapshot, true);
-  const separator = document.querySelector<HTMLElement>('[role="separator"][aria-label="Sidebar width"]')!;
+  const separator = document.querySelector<HTMLElement>('.sidebar-resizer[role="separator"]')!;
   separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
   snapshot = await waitFor(s => s.sidebarWidth === SIDEBAR_MIN_WIDTH && layoutReady(s)); checkLayout(snapshot, true);
   separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));

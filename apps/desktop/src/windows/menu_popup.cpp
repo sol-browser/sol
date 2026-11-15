@@ -117,8 +117,9 @@ MenuPopup::Builder::Builder() : actions_(std::make_shared<std::map<std::string, 
 MenuPopup::Builder::Builder(std::shared_ptr<std::map<std::string, std::function<void()>>> actions, std::shared_ptr<int> next)
     : actions_(std::move(actions)), next_(std::move(next)) {}
 void MenuPopup::Builder::Add(const std::string& label, const std::string& icon, std::function<void()> action, const std::string& shortcut,
-                             bool enabled, bool checked, const std::string& image) {
+                             bool enabled, bool checked, const std::string& image, const std::string& key) {
   Entry entry; entry.id = "m" + std::to_string((*next_)++);
+  entry.key = key;
   entry.label = label; entry.icon = icon; entry.shortcut = shortcut; entry.enabled = enabled; entry.checked = checked; entry.image = image;
   if (enabled && action) (*actions_)[entry.id] = std::move(action);
   entries_.push_back(std::move(entry));
@@ -127,8 +128,9 @@ void MenuPopup::Builder::Separator() {
   if (entries_.empty() || entries_.back().separator) return;
   Entry entry; entry.separator = true; entries_.push_back(std::move(entry));
 }
-MenuPopup::Builder& MenuPopup::Builder::Submenu(const std::string& label, const std::string& icon, bool enabled) {
+MenuPopup::Builder& MenuPopup::Builder::Submenu(const std::string& label, const std::string& icon, bool enabled, const std::string& key) {
   Entry entry; entry.id = "m" + std::to_string((*next_)++); entry.label = label; entry.icon = icon; entry.enabled = enabled;
+  entry.key = key;
   entry.submenu.reset(new Builder(actions_, next_));
   entries_.push_back(std::move(entry));
   return *entries_.back().submenu;
@@ -143,6 +145,7 @@ CefRefPtr<CefListValue> MenuPopup::Builder::items() const {
     if (entry.separator) item->SetBool("separator", true);
     else {
       item->SetString("id", entry.id); item->SetString("label", entry.label); item->SetBool("enabled", entry.enabled);
+      if (!entry.key.empty()) item->SetString("key", entry.key);
       if (!entry.icon.empty()) item->SetString("icon", entry.icon);
       if (!entry.image.empty()) item->SetString("image", entry.image);
       if (!entry.shortcut.empty()) item->SetString("shortcut", entry.shortcut);

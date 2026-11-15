@@ -12,19 +12,33 @@ export function sidebarDropTarget(root: HTMLElement, nodes: TreeNode[], sourceId
   // move. Recomputing "before/after" from the displaced tile causes oscillation.
   const hit = document.elementFromPoint(x, y);
   if (!hit || !root.contains(hit)) return;
-  const zones = [...root.querySelectorAll<HTMLElement>('.sidebar-zone[data-section]')];
+  const zones = [...root.querySelectorAll<HTMLElement>('.sidebar-zone[data-section]')]
+    .filter(zone => !zone.closest('.space-transition-outgoing'));
+  const today = zones.find(zone => zone.dataset.section === 'today');
+  const todayTop = today?.getBoundingClientRect().top ?? Infinity;
+  const scroll = root.querySelector<HTMLElement>('.sidebar-scroll');
+  // The zero-height sections anchor the hover regions. Their hints overlay
+  // the sidebar without changing these regions or intercepting the pointer.
+  for (const empty of zones) {
+    if (empty.dataset.emptyDrop !== 'true') continue;
+    const bounds = empty.getBoundingClientRect();
+    const favorites = empty.dataset.section === 'favorites';
+    if (!favorites && !scroll?.contains(hit)) continue;
+    const bottom = favorites ? bounds.top + 40 : todayTop;
+    if (x >= bounds.left && x < bounds.right && y >= bounds.top && y < bottom) {
+      const target = valid({ section: favorites ? 'favorites' : 'pinned', targetId: null, mode: 'inside' });
+      if (target) return target;
+    }
+  }
   let zone = hit.closest<HTMLElement>('.sidebar-zone[data-section]');
   if (!zone) {
-    const scroll = root.querySelector<HTMLElement>('.sidebar-scroll');
     if (scroll && (hit === scroll || scroll.contains(hit))) {
-      const today = zones.find(z => z.dataset.section === 'today');
-      const todayTop = today?.getBoundingClientRect().top ?? Infinity;
       zone = zones.find(z => z.dataset.section === (y >= todayTop ? 'today' : 'pinned')) ?? null;
     } else {
       zone = zones.find(z => { const b = z.getBoundingClientRect(); return y >= b.top && y <= b.bottom; }) ?? null;
     }
   }
-  if (!zone) return;
+  if (!zone || zone.dataset.emptyDrop === 'true') return;
   const section = zone.dataset.section as Section;
   if (section === 'favorites') {
     const grid = zone.querySelector<HTMLElement>(':scope > .tree');

@@ -111,6 +111,18 @@ test('a closing Today tab leaves the list at once; pinned and favorites stay', a
   const calm = [{ id: 'd' }];
   assert.equal(withoutClosingTabs(calm), calm, 'unchanged list keeps its identity (no extra motion pass)');
 });
+test('unnamed Spaces have a numbered label and an icon fallback', async () => {
+  const { spaceDisplayName, spaceGlyph } = await import('../apps/browser-ui/src/sidebar-model.ts');
+  const translate = (id, { name }) => {
+    assert.equal(id, 'native.menu.NumberedSpace');
+    return `Space ${name}`;
+  };
+  assert.equal(spaceDisplayName({ name: '', position: 1 }, translate), 'Space 2');
+  assert.equal(spaceDisplayName({ name: 'Work', position: 1 }, translate), 'Work');
+  assert.equal(spaceGlyph({ name: '', icon: '' }), '•');
+  assert.equal(spaceGlyph({ name: '', icon: '💼' }), '💼');
+});
+
 test('spaces: top-level entries show in their space; Favorites and nested entries everywhere', async () => {
   const { inSpace, spaceGlyph, neighborSpace } = await import('../apps/browser-ui/src/sidebar-model.ts');
   const node = (extra) => ({ id: 'x', parentId: '', kind: 'tab', title: 't', url: 'https://a/', position: 0, pinned: false, expanded: true, live: false, favorite: false, archived: false, currentUrl: '', closing: false, ...extra });

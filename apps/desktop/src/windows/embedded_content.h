@@ -165,6 +165,7 @@ class EmbeddedContent {
   CefRect FullClientBounds() const;
   void ExitFullscreenFor(int id);
   void ApplyFullscreenWindow(bool was_fullscreen);
+  void NotifyFullscreenExit(const State& state);
   // Windows 11 draws a 1px border and rounds our window's corners; neither
   // belongs on a fullscreen page.
   void SetWindowFrameForFullscreen(bool fullscreen) const;

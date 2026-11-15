@@ -6,13 +6,13 @@ async function waitFor(test: (s: Snapshot) => boolean, attempts = 120) {
   throw new Error('Browsing acceptance timed out');
 }
 export async function browsingProbe() {
-  async function clickNavigation(label: string) {
+  async function clickNavigation(direction: 'back' | 'forward' | 'reload') {
     for (let i = 0; i < 60; ++i) {
-      const button = document.querySelector<HTMLButtonElement>(`.toolbar-navigation [aria-label="${label}"]`);
+      const button = document.querySelector<HTMLButtonElement>(`.toolbar-navigation [data-nav="${direction}"]`);
       if (button && !button.disabled) { button.click(); return; }
       await delay(30);
     }
-    throw new Error(`Navigation button unavailable: ${label}`);
+    throw new Error(`Navigation button unavailable: ${direction}`);
   }
   let s = await request({ method: 'browser.getSnapshot' });
   const source = s.activeId!, sourceUrl = s.url!, origin = new URL(sourceUrl).origin;
@@ -59,14 +59,14 @@ export async function browsingProbe() {
   await waitFor(s => s.url === `${origin}/history` && !s.isLoading);
   await request({ method: 'navigation.load', url: `${origin}/next` });
   await waitFor(s => s.url === `${origin}/next` && !s.isLoading);
-  await clickNavigation('Back');
+  await clickNavigation('back');
   await waitFor(s => s.url === `${origin}/history` && !s.isLoading);
-  await clickNavigation('Forward');
+  await clickNavigation('forward');
   await waitFor(s => s.url === `${origin}/next` && !s.isLoading);
   await request({ method: 'navigation.load', url: `${origin}/reload` });
   await waitFor(s => s.url === `${origin}/reload` && !s.isLoading);
   for (const action of ['reload', 'reloadBypass'] as const) {
-    if (action === 'reload') await clickNavigation('Reload');
+    if (action === 'reload') await clickNavigation('reload');
     else await request({ method: 'browser.shortcut', action });
     await waitFor(s => s.isLoading === true);
     await waitFor(s => !s.isLoading);

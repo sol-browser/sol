@@ -66,7 +66,7 @@ def main():
         'frontend_hover_and_click':all(pointer.get(phase,{}).get('moves',0)>0 and pointer.get(phase,{}).get('clicks',0)>0 for phase in phases),
         # Sol's own window: the frontend lives in it under the placement strip; the browser window has no strip.
         'detached_in_own_window':steps.get('detached',{}).get('in_own_window') is True and steps.get('detached',{}).get('window_visible') is True and 'dock' not in steps.get('detached',{}),
-        'detached_control_visible':window_doc.get('dockEnabled') is True and 'Dock right' in window_doc.get('buttons',[]) and 30<=window_doc.get('height',0)<=34,
+        'detached_control_visible':window_doc.get('dockEnabled') is True and 'right' in window_doc.get('buttons',[]) and 30<=window_doc.get('height',0)<=34,
         'detached_strip_not_in_browser_window':shell_detached.get('header') is False,
         'reattach_button_works':steps.get('reattach_button',{}).get('child') is True,
         'device_actual_metrics':pages.get('device',{}).get('width')==390 and pages.get('device',{}).get('height')==844 and pages.get('device',{}).get('dpr')==3 and pages.get('device',{}).get('touch')==1,

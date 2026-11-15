@@ -1,3 +1,4 @@
+#include "translation/translator_host.h"
 #include "app/session.h"
 #include "app/auto_archive.h"
 #include "app/browsing_profiles.h"
@@ -91,6 +92,7 @@ void QuitIfLastWindow(const std::shared_ptr<State>& state) {
     if (!state->session->hand_to_tray || !state->session->hand_to_tray()) return;
     state->session->quitting = true;
   }
+  CloseTranslator();
   CefQuitMessageLoop();
 }
 void RegisterSessionUi(const std::shared_ptr<State>& state, int browser) {

@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useIntl } from 'react-intl';
+import { messageDescriptor, useMessages } from './i18n';
 import { Icon } from './Icon';
 import type { Command, Snapshot } from './bridge';
 
@@ -9,12 +11,14 @@ type Props = {
 };
 
 export function LittleWindowSpaceButton({ littleWindow, ready, command }: Props) {
+  const intl = useIntl();
+  const t = useMessages();
   const [sending, setSending] = useState(false);
   const { destinations, preferredSpace } = littleWindow;
   const destination = destinations.find(space => space.id === preferredSpace)
     ?? destinations.find(space => space.sameProfile) ?? destinations[0];
   const canSend = ready && !sending && !!destination;
-  const label = `Open in ${destination?.name ?? 'Space'}`;
+  const label = destination ? t('little.open', { name: destination.name }) : t('little.openGeneric');
 
   async function openInSpace() {
     if (!canSend) return;
@@ -23,13 +27,13 @@ export function LittleWindowSpaceButton({ littleWindow, ready, command }: Props)
     finally { setSending(false); }
   }
 
-  return <div className="little-space-actions" role="group" aria-label="Send page to a Space">
+  return <div className="little-space-actions" role="group" aria-label={t('little.group')}>
     <button type="button" className="icon-button little-space-button" aria-label={label} title={label}
       disabled={!canSend} onClick={() => void openInSpace()}>
-      Open in <strong>{destination?.name ?? 'Space'}</strong>
+      {destination ? intl.formatMessage(messageDescriptor('little.open'), { name: <strong>{destination.name}</strong> }) : label}
     </button>
-    <button type="button" className="icon-button little-space-picker" aria-label="Open in another Space" aria-haspopup="menu"
-      title="Open in another Space" disabled={!canSend} onClick={event => {
+    <button type="button" className="icon-button little-space-picker" aria-label={t('little.other')} aria-haspopup="menu"
+      title={t('little.other')} disabled={!canSend} onClick={event => {
         const { x, y, width, height } = event.currentTarget.getBoundingClientRect();
         void command({ method: 'menu.littleSpaces', x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) });
       }}>

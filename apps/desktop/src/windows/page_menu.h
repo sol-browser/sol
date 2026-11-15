@@ -5,6 +5,10 @@
 #include "include/views/cef_window.h"
 namespace red {
 inline constexpr int kOpenLittleWindowMenu = 26511;
+// On-device page translation (translation/page_translator.h).
+inline constexpr int kTranslatePageMenu = 26512;
+inline constexpr int kShowOriginalMenu = 26513;
+inline constexpr int kTranslateSelectionMenu = 26514;
 // A website page's context menu shown in Red's own menu (windows/menu_popup.cpp): Chrome's model
 // (copy, paste, open link, save image, spelling, Red's Inspect element...) is copied row by row,
 // and the chosen command goes back to Chrome through |callback|, so every item keeps Chrome's

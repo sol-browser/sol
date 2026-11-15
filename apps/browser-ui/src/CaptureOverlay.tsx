@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
+import { useMessages } from './i18n';
 import { boxAt, clampToPage, easeScroll, handlePoints, hitSelection, HANDLES, moved, norm, parseCaptureState, resized, scaleOf, scrollsLocally,
   toDocument, toWindow, viewAt, type CaptureState, type CaptureView, type Handle, type Rect } from './capture-model';
 import './capture.css';
@@ -34,6 +35,7 @@ const CURSORS: Record<Handle | 'move', string> = { nw: 'nwse-resize', se: 'nwse-
  * website: this is Sol's own window.
  */
 export function CaptureOverlay() {
+  const t = useMessages();
   const [frame, setFrame] = useState<CaptureState>();
   const [phase, setPhaseState] = useState<'choose' | 'adjust'>('choose');
   // Read by answers that arrive later (a scroll in flight when the pointer is released must not undo the selection).
@@ -258,22 +260,22 @@ export function CaptureOverlay() {
     {hint && !busy && <div className="capture-hint capture-ui">
       <svg viewBox="0 0 54 54" aria-hidden="true"><path d="M4 18V4h14M36 4h14v14M50 36v14H36M18 50H4V36" /><circle cx="21" cy="23" r="1.6" />
         <circle cx="33" cy="23" r="1.6" /><path d="M20 32c4 4 10 4 14 0" /></svg>
-      <p>Drag or click on the page to select a region. Press ESC to cancel.</p>
-      <button type="button" className="capture-cancel" onClick={cancel}>Cancel</button>
+      <p>{t('capture.hint')}</p>
+      <button type="button" className="capture-cancel" onClick={cancel}>{t('common.cancel')}</button>
     </div>}
     {!busy && <div className="capture-panel capture-ui">
       <button type="button" className="capture-tile" onClick={() => finish('full', 'download')}>
-        <svg viewBox="0 0 30 22" aria-hidden="true"><rect x="3" y="2" width="24" height="18" rx="2" /><path d="M7 7h16M7 15h16" opacity=".55" /></svg>Save full page</button>
+        <svg viewBox="0 0 30 22" aria-hidden="true"><rect x="3" y="2" width="24" height="18" rx="2" /><path d="M7 7h16M7 15h16" opacity=".55" /></svg>{t('capture.saveFull')}</button>
       <button type="button" className="capture-tile" onClick={() => finish('visible', 'download')}>
-        <svg viewBox="0 0 30 22" aria-hidden="true"><rect x="3" y="2" width="24" height="18" rx="2" /></svg>Save visible</button>
+        <svg viewBox="0 0 30 22" aria-hidden="true"><rect x="3" y="2" width="24" height="18" rx="2" /></svg>{t('capture.saveVisible')}</button>
     </div>}
     {adjust && !busy && <div ref={bar} className="capture-tools capture-ui" style={{ left: barLeft, top: barTop }}>
-      <button type="button" className="capture-act capture-x" aria-label="Cancel" onClick={cancel}>
+      <button type="button" className="capture-act capture-x" aria-label={t('common.cancel')} onClick={cancel}>
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" /></svg></button>
       <button type="button" className="capture-act" onClick={() => finish('rect', 'copy', rect)}>
-        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" /><path d="M10.5 3.5v-.2A1.3 1.3 0 0 0 9.2 2H3.8A1.3 1.3 0 0 0 2.5 3.3v5.4A1.3 1.3 0 0 0 3.8 10H4" /></svg>Copy</button>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" /><path d="M10.5 3.5v-.2A1.3 1.3 0 0 0 9.2 2H3.8A1.3 1.3 0 0 0 2.5 3.3v5.4A1.3 1.3 0 0 0 3.8 10H4" /></svg>{t('capture.copy')}</button>
       <button type="button" className="capture-act capture-go" onClick={() => finish('rect', 'download', rect)}>
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8M4.5 7L8 10.5 11.5 7M3 13.5h10" /></svg>Download</button>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8M4.5 7L8 10.5 11.5 7M3 13.5h10" /></svg>{t('capture.download')}</button>
     </div>}
   </main>;
 }

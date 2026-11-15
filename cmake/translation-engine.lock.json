@@ -1,0 +1,39 @@
+{
+  "packages": [
+    {
+      "name": "bergamot-translator",
+      "license": "MPL-2.0",
+      "url": "https://registry.npmjs.org/@browsermt/bergamot-translator/-/bergamot-translator-0.4.9.tgz",
+      "archive": "bergamot-translator-0.4.9.tgz",
+      "size": 1852075,
+      "sha256": "9011be93222d839d7448ffdf00549d53ce8f541fd782ffc79779d1756397c41f",
+      "files": {
+        "package/translator.js": "bergamot/translator.js",
+        "package/worker/translator-worker.js": "bergamot/worker/translator-worker.js",
+        "package/worker/bergamot-translator-worker.js": "bergamot/worker/bergamot-translator-worker.js",
+        "package/worker/bergamot-translator-worker.wasm": "bergamot/worker/bergamot-translator-worker.wasm"
+      }
+    },
+    {
+      "name": "eld",
+      "license": "Apache-2.0",
+      "url": "https://registry.npmjs.org/eld/-/eld-2.1.1.tgz",
+      "archive": "eld-2.1.1.tgz",
+      "size": 2508206,
+      "sha256": "89d65664099c95b7f79a907caa20af77929aeeae6f6ca755b4aa2e7ca56b7411",
+      "files": {
+        "package/LICENSE": "eld/LICENSE",
+        "package/src/entries/static.medium.js": "eld/src/entries/static.medium.js",
+        "package/src/languageDetector.js": "eld/src/languageDetector.js",
+        "package/src/LanguageResult.js": "eld/src/LanguageResult.js",
+        "package/src/avgScore.js": "eld/src/avgScore.js",
+        "package/src/dictionary.js": "eld/src/dictionary.js",
+        "package/src/isoLanguages.js": "eld/src/isoLanguages.js",
+        "package/src/languageData.js": "eld/src/languageData.js",
+        "package/src/regexPatterns.js": "eld/src/regexPatterns.js",
+        "package/src/saveLanguageSubset.dev.js": "eld/src/saveLanguageSubset.dev.js",
+        "package/src/ngrams/medium.js": "eld/src/ngrams/medium.js"
+      }
+    }
+  ]
+}

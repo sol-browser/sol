@@ -1,4 +1,5 @@
 import {useEffect,useMemo,useRef,useState,type RefObject,type KeyboardEvent} from 'react';
+import { useMessages } from './i18n';
 import {Smile,Hand,Leaf,Apple,Plane,Volleyball,Lightbulb,Heart,Flag,Search} from 'lucide-react';
 import {EMOJI_CATALOG} from './emoji-catalog';
 import {EMOJI_GROUPS,findEmoji} from './emoji-picker-model';
@@ -6,6 +7,7 @@ import {EMOJI_GROUPS,findEmoji} from './emoji-picker-model';
 const icons=[Smile,Hand,Leaf,Apple,Plane,Volleyball,Lightbulb,Heart,Flag];
 type Props={value:string;anchor:RefObject<HTMLButtonElement|null>;onPick:(emoji:string)=>void;onClose:(restoreFocus:boolean)=>void};
 export default function EmojiPicker({value,anchor,onPick,onClose}:Props){
+  const t = useMessages();
   const root=useRef<HTMLDivElement>(null),search=useRef<HTMLInputElement>(null);
   const close=useRef(onClose);close.current=onClose;
   const [query,setQuery]=useState(''),[group,setGroup]=useState(0),[limit,setLimit]=useState(120),[focus,setFocus]=useState(0);
@@ -31,14 +33,14 @@ export default function EmojiPicker({value,anchor,onPick,onClose}:Props){
     const next=Math.max(0,Math.min(visible.length-1,Number(index)+step));
     root.current?.querySelector<HTMLButtonElement>(`[data-emoji-index="${next}"]`)?.focus();
   };
-  return <div ref={root} className="space-emoji-picker" role="dialog" aria-label="Choose an emoji" onKeyDown={key}>
-    <label className="emoji-search"><Search size={14} aria-hidden="true"/><input ref={search} value={query} type="search" aria-label="Search emoji" placeholder="Search emoji" maxLength={80} autoComplete="off" spellCheck={false} onChange={e=>{setQuery(e.currentTarget.value);resetResults();}}/></label>
-    <div className="emoji-groups" role="group" aria-label="Emoji categories">{EMOJI_GROUPS.map((name,i)=>{const Glyph=icons[i];return <button key={name} type="button" aria-label={name} title={name} aria-pressed={!query&&group===i} onClick={()=>{setGroup(i);setQuery('');resetResults();}}><Glyph size={15}/></button>;})}</div>
-    <div className="emoji-results" role="group" aria-label="Emoji">
-      <div className="emoji-grid">{visible.map((entry,i)=><button key={entry[0]} type="button" data-emoji-index={i} tabIndex={i===focus?0:-1} onFocus={()=>setFocus(i)} title={entry[1]} aria-label={`Emoji ${entry[0]}: ${entry[1]}`} aria-pressed={value===entry[0]} onClick={()=>onPick(entry[0])}>{entry[0]}</button>)}</div>
-      {!found.length&&<p className="emoji-empty">No emoji found</p>}
-      {found.length>limit&&<button className="emoji-more" type="button" onClick={()=>setLimit(n=>n+120)}>Show more</button>}
+  return <div ref={root} className="space-emoji-picker" role="dialog" aria-label={t('space.emoji')} onKeyDown={key}>
+    <label className="emoji-search"><Search size={14} aria-hidden="true"/><input ref={search} value={query} type="search" aria-label={t('emoji.search')} placeholder={t('emoji.search')} maxLength={80} autoComplete="off" spellCheck={false} onChange={e=>{setQuery(e.currentTarget.value);resetResults();}}/></label>
+    <div className="emoji-groups" role="group" aria-label={t('emoji.groups')}>{EMOJI_GROUPS.map((name,i)=>{const Glyph=icons[i];return <button key={name} type="button" aria-label={name} title={name} aria-pressed={!query&&group===i} onClick={()=>{setGroup(i);setQuery('');resetResults();}}><Glyph size={15}/></button>;})}</div>
+    <div className="emoji-results" role="group" aria-label={t('emoji.label')}>
+      <div className="emoji-grid">{visible.map((entry,i)=><button key={entry[0]} type="button" data-emoji-index={i} tabIndex={i===focus?0:-1} onFocus={()=>setFocus(i)} title={entry[1]} aria-label={t('emoji.named', { emoji: entry[0], name: entry[1] })} aria-pressed={value===entry[0]} onClick={()=>onPick(entry[0])}>{entry[0]}</button>)}</div>
+      {!found.length&&<p className="emoji-empty">{t('emoji.empty')}</p>}
+      {found.length>limit&&<button className="emoji-more" type="button" onClick={()=>setLimit(n=>n+120)}>{t('history.more')}</button>}
     </div>
-    <button className="emoji-letter" type="button" onClick={()=>onPick('')}>Use first letter</button>
+    <button className="emoji-letter" type="button" onClick={()=>onPick('')}>{t('emoji.letter')}</button>
   </div>;
 }

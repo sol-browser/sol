@@ -216,8 +216,9 @@ struct State {
   CefRefPtr<CefDictionaryValue> pin_result;
   bool private_probe = false, private_started = false, private_done = false;
   bool little_probe = false, little_external = false, little_launcher_probe = false, little_click_probe = false, little_started = false, little_links_started = false, little_done = false;
-  bool menu_probe = false, menu_probe_started = false, menu_done = false, menu_page = false, menu_edges = false, menu_update = false, menu_update_restart = false, menu_screenshot = false, menu_recent = false, menu_capture = false, menu_capture_tiles = false, menu_settings = false, screenshot_ask_probe = false, menu_copy = false, menu_switcher = false, menu_switcher_empty = false, menu_switcher_again = false;
+  bool menu_probe = false, menu_probe_started = false, menu_done = false, menu_page = false, menu_translate = false, menu_translate_now = false, menu_edges = false, menu_update = false, menu_update_restart = false, menu_screenshot = false, menu_recent = false, menu_capture = false, menu_capture_tiles = false, menu_settings = false, screenshot_ask_probe = false, menu_copy = false, menu_switcher = false, menu_switcher_empty = false, menu_switcher_again = false;
   int menu_loads = 0;
+  bool menu_translate_offer = false;
   bool boost_probe = false, boost_done = false, boost_store = false, boost_pick = false;
   int boost_phase = 0;
   std::string boost_origin;

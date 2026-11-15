@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cctype>
 #include <utility>
 #include <vector>
 
@@ -74,6 +75,19 @@ BrowserLocale ReadWindowsBrowserLocale() {
     }
   }
   return ResolveBrowserLocale(preferred_languages, regional_format);
+}
+
+bool ValidInterfaceLanguage(std::string_view value) {
+  return value == "system" || value == "en" || value == "uk";
+}
+
+std::string ResolveInterfaceLanguage(std::string_view preference, std::string_view windows_locale) {
+  if (preference == "en" || preference == "uk") return std::string(preference);
+  const auto language = PrimaryLanguage(windows_locale);
+  if (preference == "system" && language.size() == 2 &&
+      std::tolower(static_cast<unsigned char>(language[0])) == 'u' &&
+      std::tolower(static_cast<unsigned char>(language[1])) == 'k') return "uk";
+  return "en";
 }
 
 }  // namespace red

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { parseArchive, parseSnapshotUpdate, type DownloadAction, type Snapshot, type TreeNode } from '../../../packages/browser-contracts/src';
+import { parseArchive, parseSelectionTranslation, parseSnapshotUpdate, validTranslationLanguage, type DownloadAction, type SelectionTranslation, type Snapshot, type TreeNode } from '../../../packages/browser-contracts/src';
 import { DownloadsList } from './Downloads';
+import { useMessages } from './i18n';
 import { Icon } from './Icon';
 import { SiteMark } from './Sidebar';
 import { SitePanel } from './Site';
@@ -13,17 +14,18 @@ import { archiveOrder, displayTitle } from './sidebar-model';
 import { usePopupPresentation } from './usePopupPresentation';
 import { parseIntegrationCard, type IntegrationCard as Card } from './integrations';
 import { IntegrationCard } from './IntegrationCard';
+import { SelectionTranslationPanel, TranslationPanel } from './TranslationPanel';
 
 // The Archive/Downloads popover document (sol://ui/panel.html), hosted by its
 // own owned window. It only speaks the panel IPC; native code validates all.
 type PinnedPage = { title: string; url: string };
 type ProfileMove = { title: string; spaceName: string };
-type Payload = { request: number; kind: 'archive' | 'downloads' | 'site' | 'history' | 'theme' | 'space' | 'newSpace' | 'integration' | 'editPinned' | 'moveToProfile'; open: boolean; snapshot: Snapshot; archive?: TreeNode[]; site?: SiteInfo; extensions?: SiteExtension[]; siteDetails?: number; integration?: Card; pinnedPage?: PinnedPage; profileMove?: ProfileMove };
+type Payload = { request: number; kind: 'archive' | 'downloads' | 'site' | 'history' | 'theme' | 'space' | 'newSpace' | 'integration' | 'editPinned' | 'moveToProfile' | 'translation' | 'selectionTranslation'; open: boolean; snapshot: Snapshot; archive?: TreeNode[]; site?: SiteInfo; extensions?: SiteExtension[]; siteDetails?: number; integration?: Card; pinnedPage?: PinnedPage; profileMove?: ProfileMove; translationLanguages?: string[]; selectionTranslation?: SelectionTranslation };
 function parsePayload(raw: string, previous?:Payload): Payload {
   const value: unknown = JSON.parse(raw);
   if (typeof value !== 'object' || value === null) throw new Error('Invalid panel payload');
   const v = value as Record<string, unknown>;
-  if (!Number.isSafeInteger(v.request) || (v.kind !== 'archive' && v.kind !== 'downloads' && v.kind !== 'site' && v.kind !== 'history' && v.kind !== 'theme' && v.kind !== 'space' && v.kind !== 'newSpace' && v.kind !== 'integration' && v.kind !== 'editPinned' && v.kind !== 'moveToProfile') || typeof v.open !== 'boolean')
+  if (!Number.isSafeInteger(v.request) || (v.kind !== 'archive' && v.kind !== 'downloads' && v.kind !== 'site' && v.kind !== 'history' && v.kind !== 'theme' && v.kind !== 'space' && v.kind !== 'newSpace' && v.kind !== 'integration' && v.kind !== 'editPinned' && v.kind !== 'moveToProfile' && v.kind !== 'translation' && v.kind !== 'selectionTranslation') || typeof v.open !== 'boolean')
     throw new Error('Invalid panel payload');
   const snapshot = parseSnapshotUpdate(JSON.stringify(v.snapshot),previous?.snapshot);
   const pinned = v.pinnedPage as Partial<PinnedPage> | null | undefined;
@@ -35,6 +37,8 @@ function parsePayload(raw: string, previous?:Payload): Payload {
   return { request: v.request as number, kind: v.kind, open: v.open, snapshot,
     // Sent while the Archive panel is open; kept while it closes.
     archive: v.kind === 'archive' ? v.archive !== undefined ? parseArchive(v.archive) : previous?.archive : undefined,
+    translationLanguages: Array.isArray(v.translationLanguages) ? v.translationLanguages.filter(validTranslationLanguage) : undefined,
+    selectionTranslation: v.kind === 'selectionTranslation' && v.open ? parseSelectionTranslation(v.selectionTranslation) : undefined,
     profileMove: typeof move?.title === 'string' && typeof move.spaceName === 'string' ? { title: move.title, spaceName: move.spaceName } : undefined,
     pinnedPage: typeof pinned?.title === 'string' && typeof pinned.url === 'string' ? { title: pinned.title, url: pinned.url } : undefined,
     integration: v.kind === 'integration' ? v.open ? parseIntegrationCard(v.integration, snapshot.integrations) : previous?.integration : undefined,
@@ -59,6 +63,7 @@ function call(request: object) {
 }
 
 function PinnedPageEditor({ page, opening }: { page: PinnedPage; opening: number }) {
+  const t = useMessages();
   const [title, setTitle] = useState(page.title);
   const [url, setUrl] = useState(page.url);
   const [saving, setSaving] = useState(false);
@@ -79,7 +84,7 @@ function PinnedPageEditor({ page, opening }: { page: PinnedPage; opening: number
         }
       }
     }}>
-    <h2 id="pin-editor-heading">Edit Pinned Page</h2>
+    <h2 id="pin-editor-heading">{t('panel.editPin')}</h2>
     <form onSubmit={event => {
       event.preventDefault();
       if (saving || !url.trim()) return;
@@ -88,12 +93,12 @@ function PinnedPageEditor({ page, opening }: { page: PinnedPage; opening: number
       void call({ method: 'pin.save', request: opening, title: title === page.title ? '' : title.trim(), url: url.trim() })
         .catch(error => { report(error); setSaving(false); });
     }}>
-      <label>Title<input autoFocus maxLength={80} value={title} onChange={event => setTitle(event.target.value)} spellCheck={false} autoComplete="off" readOnly={saving} /></label>
-      <label>Address<input type="url" required maxLength={4096} value={url} onChange={event => setUrl(event.target.value)} spellCheck={false} autoComplete="off" readOnly={saving} /></label>
+      <label>{t('panel.title')}<input autoFocus maxLength={80} value={title} onChange={event => setTitle(event.target.value)} spellCheck={false} autoComplete="off" readOnly={saving} /></label>
+      <label>{t('panel.address')}<input type="url" required maxLength={4096} value={url} onChange={event => setUrl(event.target.value)} spellCheck={false} autoComplete="off" readOnly={saving} /></label>
       {error && <p className="popover-error" role="alert">{error}</p>}
       <footer>
-        <button type="button" disabled={saving} onClick={() => void call({ method: 'panel.close' }).catch(report)}>Cancel</button>
-        <button type="submit" disabled={saving || !url.trim()}>Save</button>
+        <button type="button" disabled={saving} onClick={() => void call({ method: 'panel.close' }).catch(report)}>{t('common.cancel')}</button>
+        <button type="submit" disabled={saving || !url.trim()}>{t('common.save')}</button>
       </footer>
     </form>
   </section>;
@@ -102,6 +107,7 @@ function PinnedPageEditor({ page, opening }: { page: PinnedPage; opening: number
 // Moving a loaded tab to a Space of another profile (Arc asks the same): the
 // page reloads in that profile, so its sign-ins and unsaved state stay behind.
 function ProfileMoveConfirm({ move, opening }: { move: ProfileMove; opening: number }) {
+  const t = useMessages();
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState('');
   const report = (error: unknown) => setError(error instanceof Error ? error.message.replace(/^\d+: /, '') : String(error));
@@ -119,20 +125,21 @@ function ProfileMoveConfirm({ move, opening }: { move: ProfileMove; opening: num
         }
       }
     }}>
-    <h2 id="move-confirm-heading">Move “{move.title}” to {move.spaceName}?</h2>
-    <p id="move-confirm-note">{move.spaceName} uses another profile. The tab reloads there, so sign-ins and anything unsaved on the page stay behind.</p>
+    <h2 id="move-confirm-heading">{t('panel.moveQuestion', { title: move.title, space: move.spaceName })}</h2>
+    <p id="move-confirm-note">{t('panel.moveDetail', { space: move.spaceName })}</p>
     {error && <p className="popover-error" role="alert">{error}</p>}
     <footer>
-      <button type="button" autoFocus disabled={moving} onClick={() => void call({ method: 'panel.close' }).catch(report)}>Cancel</button>
+      <button type="button" autoFocus disabled={moving} onClick={() => void call({ method: 'panel.close' }).catch(report)}>{t('common.cancel')}</button>
       <button type="submit" data-action="confirm-profile-move" disabled={moving} onClick={() => {
         setMoving(true); setError('');
         void call({ method: 'move.confirm', request: opening }).catch(error => { report(error); setMoving(false); });
-      }}>Move Tab</button>
+      }}>{t('panel.move')}</button>
     </footer>
   </section>;
 }
 
 export function Panel() {
+  const t = useMessages();
   const [payload, setPayload] = useState<Payload>();
   const latestPayload=useRef<Payload|undefined>(undefined);
   const [error, setError] = useState('');
@@ -169,6 +176,26 @@ export function Panel() {
     // Probe evidence: what this real popover rendered.
     console.info('RED_PANEL_RENDERED:' + JSON.stringify({ kind: payload.kind, rows: root.current?.querySelectorAll('li').length ?? 0 }));
   }, [payload?.request, payload?.kind, downloads.length, archived.length]);
+  const translatedSelection = payload?.selectionTranslation;
+  useEffect(() => {
+    if (!snapshot?.translationOfferProbe || translatedSelection?.phase !== 'translated') return;
+    const result = root.current?.querySelector<HTMLParagraphElement>('[data-testid="translated-selection"]');
+    const text = result?.textContent;
+    if (!result || !text || text !== translatedSelection.text) return;
+
+    const scrollable = result.scrollHeight > result.clientHeight;
+    const previousFocus = document.activeElement;
+    result.focus({ preventScroll: true });
+    const focusable = document.activeElement === result;
+    if (previousFocus instanceof HTMLElement && previousFocus !== document.body) {
+      previousFocus.focus({ preventScroll: true });
+    } else {
+      result.blur();
+    }
+    console.info('RED_SELECTION_TRANSLATION:' + JSON.stringify({
+      from: translatedSelection.from, to: translatedSelection.to, text, scrollable, focusable,
+    }));
+  }, [snapshot?.translationOfferProbe, translatedSelection]);
   const run = (request: object) => void call(request).catch(e => setError(e instanceof Error ? e.message : String(e)));
   return <div className="panel-root" ref={root} data-kind={payload?.kind} data-pointer={pointer} onMouseMove={() => { if (!pointer) setPointer(true); }}>
     {payload?.kind === 'editPinned' ? payload.open && payload.pinnedPage &&
@@ -182,6 +209,10 @@ export function Panel() {
     payload?.kind === 'theme' ? <ThemePanel key={`${payload.request}:${snapshot?.activeSpace}`} theme={snapshot?.theme} spaceId={snapshot?.activeSpace} probe={snapshot?.paletteProbe} closeOnDone command={call} /> :
     payload?.kind === 'space' && snapshot ? <SpacePanel key={`${payload.request}:${snapshot.activeSpace}`} snapshot={snapshot} command={call} /> :
     payload?.kind === 'newSpace' && snapshot ? <NewSpacePanel key={payload.request} snapshot={snapshot} command={call} /> :
+    payload?.kind === 'translation' && snapshot?.translationOffer ? <TranslationPanel key={payload.request} page={snapshot.translationOffer}
+      languages={payload.translationLanguages ?? []} privateWindow={!!snapshot.privateWindow} command={run} /> :
+    payload?.kind === 'selectionTranslation' && payload.selectionTranslation ? <SelectionTranslationPanel key={payload.request}
+      result={payload.selectionTranslation} command={call} /> :
     payload?.kind === 'history' ? <HistoryPanel key={payload.request} query={query} onReady={() => setHistoryReady(payload.request)} /> :
     payload?.kind === 'site' && payload.site ? <SitePanel key={payload.request} site={payload.site} changed={changed}
       extensions={payload.extensions ?? []} details={payload.siteDetails ?? 0} command={run}
@@ -193,8 +224,8 @@ export function Panel() {
         return saved;
       }}
       reload={() => run({ method: 'site.reload' })} /> :
-    payload?.kind === 'archive' ? <section className="popover archive-popover" aria-label="Archived tabs">
-      <header><h2>Archive</h2>{archived.length > 0 && <span className="popover-count">{archived.length}</span>}</header>
+    payload?.kind === 'archive' ? <section className="popover archive-popover" aria-label={t('sidebar.archive.title')}>
+      <header><h2>{t('sidebar.archive')}</h2>{archived.length > 0 && <span className="popover-count">{archived.length}</span>}</header>
       {archived.length ? <ul>{archived.map(node => {
         let host = ''; try { host = new URL(node.url).hostname.replace(/^www\./, ''); } catch { /* Displayed only. */ }
         // An archived split restores as a whole; its row names every page.
@@ -203,10 +234,10 @@ export function Panel() {
         // Tabs closed in another Space say where they came from.
         const origin=node.space && node.space!==snapshot?.activeSpace ? snapshot?.spaces?.find(space => space.id===node.space)?.name : undefined;
         const detail=[host,origin].filter(Boolean).join(' · ');
-        return <li key={node.id}><button className="archive-row" title={`Restore ${title}`} onClick={() => run({ method: 'tree.restore', id: node.id })}>
+        return <li key={node.id}><button className="archive-row" title={t('panel.restore', { title })} onClick={() => run({ method: 'tree.restore', id: node.id })}>
           <SiteMark node={node} /><span className="archive-text"><span>{title}</span>{detail && <span>{detail}</span>}</span>
           <Icon name="arrow" className="archive-go" /></button></li>;
-      })}</ul> : <p className="popover-empty"><Icon name="archive" />Closed tabs from Today land here</p>}
+      })}</ul> : <p className="popover-empty"><Icon name="archive" />{t('panel.emptyArchive')}</p>}
     </section> : payload ? <DownloadsList downloads={downloads}
       command={(id: number, action: DownloadAction) => run({ method: 'downloads.control', id, action })}
       menu={(id, x, y) => run({ method: 'downloads.menu', id, x, y })}

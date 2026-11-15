@@ -33,6 +33,9 @@ bool SafeText(const std::string& value, size_t maximum, bool allow_empty = false
   return (allow_empty || value.find_first_not_of(" \t\r\n") != std::string::npos) && value.size() <= maximum &&
       std::none_of(value.begin(), value.end(), [](unsigned char c) { return c < 32 || c == 127; });
 }
+bool ValidSpaceName(const std::string& name) {
+  return name.empty() || SafeText(name, 40);
+}
 bool SafeUrl(const std::string& url) {
   // Websites, extension pages, local files and exactly our own internal pages.
   return SafeText(url, 4096) && (HasWebScheme(url) || IsExtensionPageUrl(url) ||
@@ -106,7 +109,7 @@ bool Valid(const TreeSnapshot& tree) {
     if (!ValidBrowsingProfileId(profile.id) || !SafeText(profile.name, 40) || !profiles.insert(profile.id).second) return false;
   if (!profiles.contains("default") || profiles.size() > 24) return false;
   for (const auto& s : tree.spaces)
-    if (s.id.size() != 36 || !SafeText(s.name, 40) || !ValidIcon(s.icon) || !ValidSpaceTheme(s) ||
+    if (s.id.size() != 36 || !ValidSpaceName(s.name) || !ValidIcon(s.icon) || !ValidSpaceTheme(s) ||
         !profiles.contains(s.profile) || !space_ids.insert(s.id).second || !space_positions.insert(s.position).second) return false;
   if (*space_positions.rbegin() != static_cast<int>(tree.spaces.size()) - 1 || !space_ids.contains(tree.active_space)) return false;
   std::map<std::string, const TreeNode*> nodes;
@@ -574,7 +577,10 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
     const auto* source=FindSpace(tree,command.id); const auto* destination=FindSpace(tree,command.space);
     if (!source || !destination || source==destination || tree.spaces.size()<2) return rollback(400,"Choose another Space for this folder");
     TreeNode folder; folder.id=NewId(); folder.folder=folder.pinned=true; folder.expanded=true;
-    folder.title=source->name; folder.space=destination->id; folder.profile=destination->profile;
+    folder.title = source->name;
+    if (folder.title.empty())
+      folder.title = SafeText(command.title, 40) ? command.title : "Space " + std::to_string(source->position + 1);
+    folder.space=destination->id; folder.profile=destination->profile;
     if (folder.id.empty()) return rollback(500,"Cannot create exported folder");
     folder.position=static_cast<int>(std::count_if(tree.nodes.begin(),tree.nodes.end(),[](const auto& n){return n.parent.empty();}));
     const auto roots=tree.nodes;
@@ -636,7 +642,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
     switch (command.action) {
       case TreeAction::CreateSpace: {
         if (tree.spaces.size() >= kMaxSpaces) return rollback(409, "Too many spaces");
-        if (!SafeText(command.title, 40) || !ValidIcon(command.icon)) return rollback(400, "Invalid space name or icon");
+        if (!ValidSpaceName(command.title) || !ValidIcon(command.icon)) return rollback(400, "Invalid space name or icon");
         const auto* current = tree.ActiveSpace();
         Space created;
         created.id = NewId(); if (created.id.empty()) return rollback(500, "Cannot generate space identity");
@@ -652,7 +658,7 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         break;
       }
       case TreeAction::EditSpace:
-        if (!SafeText(command.title, 40) || !ValidIcon(command.icon)) return rollback(400, "Invalid space name or icon");
+        if (!ValidSpaceName(command.title) || !ValidIcon(command.icon)) return rollback(400, "Invalid space name or icon");
         space->name = command.title; space->icon = command.icon; break;
       case TreeAction::SwitchSpace:
         tree.active_space = space->id; tree.active_id = SpaceLanding(tree, *space, command.live_nodes); break;

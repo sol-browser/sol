@@ -1,0 +1,2942 @@
+{
+  "settings.title": {
+    "defaultMessage": "Settings",
+    "description": "Settings window, navigation and main menu."
+  },
+  "settings.section.general": {
+    "defaultMessage": "General"
+  },
+  "settings.section.appearance": {
+    "defaultMessage": "Appearance"
+  },
+  "settings.section.search": {
+    "defaultMessage": "Search"
+  },
+  "settings.section.siteSearch": {
+    "defaultMessage": "Manage search engines and site search"
+  },
+  "settings.section.downloads": {
+    "defaultMessage": "Downloads"
+  },
+  "settings.section.startup": {
+    "defaultMessage": "On startup"
+  },
+  "settings.section.links": {
+    "defaultMessage": "Links"
+  },
+  "settings.section.tabs": {
+    "defaultMessage": "Tabs"
+  },
+  "settings.section.integrations": {
+    "defaultMessage": "Integrations"
+  },
+  "settings.section.profiles": {
+    "defaultMessage": "Profiles"
+  },
+  "settings.section.passwords": {
+    "defaultMessage": "Passwords"
+  },
+  "settings.section.keyboard": {
+    "defaultMessage": "Shortcuts"
+  },
+  "settings.section.import": {
+    "defaultMessage": "Import"
+  },
+  "settings.section.releases": {
+    "defaultMessage": "What’s new"
+  },
+  "settings.general.description": {
+    "defaultMessage": "A few essentials to make Sol feel at home."
+  },
+  "settings.language.title": {
+    "defaultMessage": "Interface language"
+  },
+  "settings.language.system": {
+    "defaultMessage": "Same as Windows"
+  },
+  "settings.language.restart": {
+    "defaultMessage": "Quit and reopen Sol to apply the language."
+  },
+  "settings.default.category": {
+    "defaultMessage": "BROWSER"
+  },
+  "settings.default.badge": {
+    "defaultMessage": "Default"
+  },
+  "settings.default.active": {
+    "defaultMessage": "Sol is your default browser"
+  },
+  "settings.default.inactive": {
+    "defaultMessage": "Make Sol your default browser"
+  },
+  "settings.default.title": {
+    "defaultMessage": "Default browser"
+  },
+  "settings.default.activeDescription": {
+    "defaultMessage": "Web links already open in Sol. You’re all set."
+  },
+  "settings.default.description": {
+    "defaultMessage": "Open links from your other apps right here, in Sol."
+  },
+  "settings.default.manage": {
+    "defaultMessage": "Manage in Windows"
+  },
+  "settings.default.make": {
+    "defaultMessage": "Make default"
+  },
+  "settings.default.check": {
+    "defaultMessage": "Check status"
+  },
+  "settings.default.install": {
+    "defaultMessage": "Install Sol to choose it in Windows Default Apps."
+  },
+  "settings.default.unknown": {
+    "defaultMessage": "Windows couldn’t report the current default. You can check it in Default Apps."
+  },
+  "settings.default.opened": {
+    "defaultMessage": "Choose “Set default” in Windows, then return here. Status refreshes automatically."
+  },
+  "settings.notes.category": {
+    "defaultMessage": "NEW DOCUMENTS"
+  },
+  "settings.notes.title": {
+    "defaultMessage": "New Note opens in"
+  },
+  "settings.notes.description": {
+    "defaultMessage": "Create a document from the command bar with New Note."
+  },
+  "settings.notes.provider": {
+    "defaultMessage": "Default Notes app"
+  },
+  "settings.notes.disabled": {
+    "defaultMessage": "No provider enabled"
+  },
+  "settings.extensions.title": {
+    "defaultMessage": "Extensions"
+  },
+  "settings.extensions.description": {
+    "defaultMessage": "Manage the extensions you’ve added to Sol."
+  },
+  "settings.extensions.manage": {
+    "defaultMessage": "Manage"
+  },
+  "settings.clock.category": {
+    "defaultMessage": "DATE AND TIME"
+  },
+  "settings.clock.title": {
+    "defaultMessage": "Time format"
+  },
+  "settings.clock.description": {
+    "defaultMessage": "How times appear in History and Downloads."
+  },
+  "settings.clock.label": {
+    "defaultMessage": "Show times as"
+  },
+  "settings.clock.system": {
+    "defaultMessage": "Same as Windows ({example})"
+  },
+  "settings.clock.12": {
+    "defaultMessage": "12-hour ({example})"
+  },
+  "settings.clock.24": {
+    "defaultMessage": "24-hour ({example})"
+  },
+  "sidebar.label": {
+    "defaultMessage": "Tabs and folders"
+  },
+  "sidebar.favorites": {
+    "defaultMessage": "Favorites"
+  },
+  "sidebar.pinned": {
+    "defaultMessage": "Pinned"
+  },
+  "sidebar.today": {
+    "defaultMessage": "Today"
+  },
+  "sidebar.favorites.empty": {
+    "defaultMessage": "Drop your everyday tabs here"
+  },
+  "sidebar.pinned.empty": {
+    "defaultMessage": "Keep tabs and folders here"
+  },
+  "sidebar.tab.new": {
+    "defaultMessage": "New tab"
+  },
+  "sidebar.archive": {
+    "defaultMessage": "Archive",
+    "description": "Button that opens the list of archived tabs."
+  },
+  "sidebar.archive.title": {
+    "defaultMessage": "Archived tabs"
+  },
+  "sidebar.spaces": {
+    "defaultMessage": "Spaces"
+  },
+  "sidebar.space.new": {
+    "defaultMessage": "New space"
+  },
+  "sidebar.space.confirmDelete": {
+    "defaultMessage": "Delete “{name}” and its tabs?"
+  },
+  "sidebar.space.delete": {
+    "defaultMessage": "Delete Space"
+  },
+  "sidebar.update.ready": {
+    "defaultMessage": "Sol {version} is ready"
+  },
+  "sidebar.update.restart": {
+    "defaultMessage": "Restart to update"
+  },
+  "sidebar.clear.confirm": {
+    "defaultMessage": "Close {count, plural, one {# tab} other {# tabs}}?",
+    "description": "Prompt shown before archiving all Today tabs except the current tab and its split panes."
+  },
+  "sidebar.clear.action": {
+    "defaultMessage": "Clear"
+  },
+  "sidebar.clear.title": {
+    "defaultMessage": "Close Today tabs except the one on screen"
+  },
+  "common.cancel": {
+    "defaultMessage": "Cancel"
+  },
+  "native.settings.title": {
+    "defaultMessage": "Settings — Sol",
+    "description": "Windows title bar for Settings."
+  },
+  "settings.preference.windowsKeys": {
+    "defaultMessage": "Windows key combinations are reserved."
+  },
+  "settings.preference.invalidKey": {
+    "defaultMessage": "This key is not supported."
+  },
+  "settings.preference.today": {
+    "defaultMessage": "TODAY"
+  },
+  "settings.preference.autoArchive": {
+    "defaultMessage": "Auto-archive idle tabs"
+  },
+  "settings.preference.autoArchiveDetail": {
+    "defaultMessage": "Keep Today tidy. Idle tabs move to Archive and can be restored, including split groups."
+  },
+  "settings.preference.archiveAfter": {
+    "defaultMessage": "Archive tabs after"
+  },
+  "settings.preference.never": {
+    "defaultMessage": "Never"
+  },
+  "settings.preference.archiveScope": {
+    "defaultMessage": "Shared across all spaces and windows. Pinned, Favorites, visible pages and protected media or unsaved work are kept."
+  },
+  "settings.preference.unloadAfter": {
+    "defaultMessage": "Free memory of tabs idle for"
+  },
+  "settings.preference.unloadDetail": {
+    "defaultMessage": "Unloaded tabs stay in the sidebar and load again when you open them; scroll position and back history are not kept. Playing, visible and protected tabs stay loaded; Pinned and Favorites only unload while on their saved page."
+  },
+  "settings.preference.autoPip": {
+    "defaultMessage": "Automatic picture-in-picture"
+  },
+  "settings.preference.autoPipDetail": {
+    "defaultMessage": "When you leave a tab that is playing a video with sound, the video keeps playing in a small floating window. It closes when you return. Turn it on for single sites from the site controls in the address bar."
+  },
+  "settings.preference.pip": {
+    "defaultMessage": "Picture-in-picture button on videos"
+  },
+  "settings.preference.pipDetail": {
+    "defaultMessage": "Show a small button at the edge of a video while the pointer is over it. Applies to pages opened after the change."
+  },
+  "settings.preference.searchCategory": {
+    "defaultMessage": "SEARCH ENGINE"
+  },
+  "settings.preference.searchTitle": {
+    "defaultMessage": "Search from the address bar"
+  },
+  "settings.preference.searchDetail": {
+    "defaultMessage": "Choose where search queries go. Website addresses and saved-tab suggestions keep working as usual."
+  },
+  "settings.preference.searchEngine": {
+    "defaultMessage": "Default search engine"
+  },
+  "settings.preference.searchScope": {
+    "defaultMessage": "Changes apply to all windows in this profile."
+  },
+  "settings.preference.suggestions": {
+    "defaultMessage": "Google search suggestions"
+  },
+  "settings.preference.suggestionsDetail": {
+    "defaultMessage": "While Google is selected, send search text to Google for completions. Cookies and page addresses are excluded."
+  },
+  "settings.preference.siteSearchDetail": {
+    "defaultMessage": "Set site shortcuts and choose how to activate them."
+  },
+  "settings.preference.manage": {
+    "defaultMessage": "Manage"
+  },
+  "settings.preference.location": {
+    "defaultMessage": "LOCATION"
+  },
+  "settings.preference.saveTo": {
+    "defaultMessage": "Save downloads to"
+  },
+  "settings.preference.folderDetail": {
+    "defaultMessage": "New downloads use this folder. Files you already downloaded stay where they are."
+  },
+  "settings.preference.systemFolder": {
+    "defaultMessage": "System Downloads folder"
+  },
+  "settings.preference.changeFolder": {
+    "defaultMessage": "Change folder"
+  },
+  "settings.preference.useSystemFolder": {
+    "defaultMessage": "Use system folder"
+  },
+  "settings.preference.askLocation": {
+    "defaultMessage": "Ask where to save each file"
+  },
+  "settings.preference.askLocationDetail": {
+    "defaultMessage": "Choose a location and filename before the download starts."
+  },
+  "settings.preference.littleCategory": {
+    "defaultMessage": "LITTLE SOL"
+  },
+  "settings.preference.littleTitle": {
+    "defaultMessage": "Quick looks without new tabs"
+  },
+  "settings.preference.littleDetail": {
+    "defaultMessage": "Keep a page with Open in Space, or close the window when you are done."
+  },
+  "settings.preference.littleHotkey": {
+    "defaultMessage": "Open Little Sol with Ctrl+Alt+N in any app"
+  },
+  "settings.preference.littleHotkeyDetail": {
+    "defaultMessage": "Type an address or a search and it opens in Little Sol. Sol stays in the notification area after you close its windows and starts there when you sign in to Windows, using little memory until you open it; quit it from there."
+  },
+  "settings.preference.littleClick": {
+    "defaultMessage": "Open links in Little Sol with Ctrl+Alt held"
+  },
+  "settings.preference.littleClickDetail": {
+    "defaultMessage": "Hold Ctrl+Alt while you click a link on a page."
+  },
+  "settings.preference.littleLinks": {
+    "defaultMessage": "Links from other apps open in Little Sol"
+  },
+  "settings.preference.littleLinksDetail": {
+    "defaultMessage": "A link from a chat or an email opens in a small window of its own. When this is off, it opens as a tab in your Sol window."
+  },
+  "settings.preference.startupCategory": {
+    "defaultMessage": "WHEN SOL STARTS"
+  },
+  "settings.preference.startupTitle": {
+    "defaultMessage": "Start your way"
+  },
+  "settings.preference.startupDetail": {
+    "defaultMessage": "Your saved tabs, folders and spaces are kept with every option."
+  },
+  "settings.preference.startupLabel": {
+    "defaultMessage": "Startup behavior"
+  },
+  "settings.preference.startupRestore": {
+    "defaultMessage": "Restore workspace"
+  },
+  "settings.preference.startupRestoreDetail": {
+    "defaultMessage": "Return to the last space with nothing loaded. Saved tabs load when selected."
+  },
+  "settings.preference.startupNewTab": {
+    "defaultMessage": "Open a new tab"
+  },
+  "settings.preference.startupNewTabDetail": {
+    "defaultMessage": "Start with the search box. Your saved tabs stay in the sidebar."
+  },
+  "settings.preference.startupHomepage": {
+    "defaultMessage": "Open a specific page"
+  },
+  "settings.preference.startupHomepageDetail": {
+    "defaultMessage": "Open your chosen page when starting Sol."
+  },
+  "settings.preference.homepageError": {
+    "defaultMessage": "Enter a website address, for example example.com."
+  },
+  "settings.preference.homepage": {
+    "defaultMessage": "Page address"
+  },
+  "common.save": {
+    "defaultMessage": "Save"
+  },
+  "settings.preference.startupNote": {
+    "defaultMessage": "Applies on the next start. Links opened from other apps open directly."
+  },
+  "settings.preference.keyboardCategory": {
+    "defaultMessage": "KEYBOARD"
+  },
+  "settings.preference.keyboardTitle": {
+    "defaultMessage": "Browser shortcuts"
+  },
+  "settings.preference.keyboardReset": {
+    "defaultMessage": "Reset all"
+  },
+  "settings.preference.keyboardDetail": {
+    "defaultMessage": "Click a shortcut and press a new combination. Escape cancels. System and space shortcuts keep their defaults."
+  },
+  "settings.preference.keyboardFixed": {
+    "defaultMessage": "Fixed shortcut"
+  },
+  "settings.preference.keyboardRecord": {
+    "defaultMessage": "Press keys…"
+  },
+  "settings.preference.keyboardResetOne": {
+    "defaultMessage": "Reset shortcut"
+  },
+  "settings.preference.hours": {
+    "defaultMessage": "{count, plural, one {# hour} other {# hours}}"
+  },
+  "settings.preference.minutes": {
+    "defaultMessage": "{count, plural, one {# minute} other {# minutes}}"
+  },
+  "settings.preference.days": {
+    "defaultMessage": "{count, plural, one {# day} other {# days}}"
+  },
+  "settings.preference.keyboardChange": {
+    "defaultMessage": "Change shortcut for {action}"
+  },
+  "settings.preference.keyboardDefault": {
+    "defaultMessage": "Default: {keys}"
+  },
+  "settings.preference.keyboardResetAction": {
+    "defaultMessage": "Reset {action} shortcut"
+  },
+  "settings.description.releases": {
+    "defaultMessage": "Every release, a little better. The notes live on our website."
+  },
+  "settings.description.search": {
+    "defaultMessage": "Find things with your preferred search engine."
+  },
+  "settings.description.siteSearch": {
+    "defaultMessage": "Search your sites directly from the command bar."
+  },
+  "settings.description.downloads": {
+    "defaultMessage": "Keep new downloads where you want them."
+  },
+  "settings.description.startup": {
+    "defaultMessage": "Choose what opens when you start Sol."
+  },
+  "settings.description.links": {
+    "defaultMessage": "Little Sol is a small window for quick looks at a link."
+  },
+  "settings.description.tabs": {
+    "defaultMessage": "Keep Today tidy without losing your saved tabs."
+  },
+  "settings.description.integrations": {
+    "defaultMessage": "Choose which services Sol integrates with across all tabs and windows."
+  },
+  "settings.description.keyboard": {
+    "defaultMessage": "Make familiar actions feel natural."
+  },
+  "settings.description.passwords": {
+    "defaultMessage": "Your sign-ins, kept with the right profile."
+  },
+  "settings.description.profiles": {
+    "defaultMessage": "Keep work, personal browsing and website accounts separate."
+  },
+  "settings.description.import": {
+    "defaultMessage": "Move in from Zen, Chrome, Edge or Arc."
+  },
+  "settings.description.appearance": {
+    "defaultMessage": "Make {space} your own."
+  },
+  "settings.description.appearanceDefault": {
+    "defaultMessage": "Make your space your own."
+  },
+  "settings.appearance.current": {
+    "defaultMessage": "CURRENT SPACE"
+  },
+  "settings.appearance.space": {
+    "defaultMessage": "Your space"
+  },
+  "settings.appearance.detail": {
+    "defaultMessage": "Color, appearance and grain are saved for this space."
+  },
+  "settings.appearance.windows": {
+    "defaultMessage": "ALL WINDOWS"
+  },
+  "settings.appearance.background": {
+    "defaultMessage": "Window background"
+  },
+  "settings.appearance.backgroundDetail": {
+    "defaultMessage": "Let the desktop show softly through the sidebar and top bar, tinted with your space color."
+  },
+  "settings.appearance.material": {
+    "defaultMessage": "Background material"
+  },
+  "settings.appearance.solid": {
+    "defaultMessage": "Solid"
+  },
+  "settings.appearance.mica": {
+    "defaultMessage": "Mica (desktop wallpaper)"
+  },
+  "settings.appearance.acrylic": {
+    "defaultMessage": "Acrylic (windows behind)"
+  },
+  "settings.appearance.requirement": {
+    "defaultMessage": "Needs Windows 11 version 22H2 or later."
+  },
+  "settings.appearance.restart": {
+    "defaultMessage": "Restart Sol to turn it on."
+  },
+  "settings.appearance.inactive": {
+    "defaultMessage": "Windows shows a solid color while Sol is not the active window."
+  },
+  "settings.releases.description": {
+    "defaultMessage": "See what’s new in this version and every earlier one on sol-browser.app."
+  },
+  "settings.releases.open": {
+    "defaultMessage": "Open release notes"
+  },
+  "command.editAddress": {
+    "defaultMessage": "Edit address"
+  },
+  "command.resultGone": {
+    "defaultMessage": "That result is no longer available. Choose another result."
+  },
+  "command.exitActions": {
+    "defaultMessage": "Exit actions"
+  },
+  "command.exitActionsHint": {
+    "defaultMessage": "Exit actions (Escape)"
+  },
+  "command.actions": {
+    "defaultMessage": "Actions"
+  },
+  "command.exitSite": {
+    "defaultMessage": "Exit site search"
+  },
+  "command.searchActions": {
+    "defaultMessage": "Search actions"
+  },
+  "command.searchActionsButton": {
+    "defaultMessage": "Search Actions"
+  },
+  "command.address": {
+    "defaultMessage": "Search or enter URL"
+  },
+  "command.searchPlaceholder": {
+    "defaultMessage": "Search…"
+  },
+  "command.addressPlaceholder": {
+    "defaultMessage": "Search or Enter URL…"
+  },
+  "command.suggestions": {
+    "defaultMessage": "Suggestions"
+  },
+  "command.switchTab": {
+    "defaultMessage": "Switch to Tab"
+  },
+  "command.openSaved": {
+    "defaultMessage": "Open Saved Tab"
+  },
+  "command.noActions": {
+    "defaultMessage": "No matching actions."
+  },
+  "command.invalidInput": {
+    "defaultMessage": "Enter a web address, file path or search query."
+  },
+  "command.empty": {
+    "defaultMessage": "Search the web or find a tab."
+  },
+  "command.site": {
+    "defaultMessage": "Search {name}"
+  },
+  "command.sitePlaceholder": {
+    "defaultMessage": "Search {name}…"
+  },
+  "command.siteWithTab": {
+    "defaultMessage": "Search {name} with Tab"
+  },
+  "command.sitePrompt": {
+    "defaultMessage": "Enter a search for {name}."
+  },
+  "command.siteQuery": {
+    "defaultMessage": "Search {name} for {query}"
+  },
+  "command.webQuery": {
+    "defaultMessage": "{query} — Search {engine}"
+  },
+  "command.file": {
+    "defaultMessage": "Open file"
+  },
+  "command.website": {
+    "defaultMessage": "Go to website"
+  },
+  "command.unpin": {
+    "defaultMessage": "Unpin Tab"
+  },
+  "command.addressStart": {
+    "defaultMessage": "Search or enter address"
+  },
+  "command.action.settings": {
+    "defaultMessage": "Settings"
+  },
+  "command.action.siteSearchSettings": {
+    "defaultMessage": "Site Search Settings"
+  },
+  "command.action.downloads": {
+    "defaultMessage": "Downloads"
+  },
+  "command.action.historyPage": {
+    "defaultMessage": "View History"
+  },
+  "command.action.reopenClosed": {
+    "defaultMessage": "Reopen Last Closed Tab"
+  },
+  "command.action.sidebar": {
+    "defaultMessage": "Toggle Sidebar"
+  },
+  "command.action.newWindow": {
+    "defaultMessage": "New Window"
+  },
+  "command.action.newPrivateWindow": {
+    "defaultMessage": "New Private Window"
+  },
+  "command.action.reload": {
+    "defaultMessage": "Reload Page"
+  },
+  "command.action.reloadBypass": {
+    "defaultMessage": "Reload Ignoring Cache"
+  },
+  "command.action.pin": {
+    "defaultMessage": "Pin Tab"
+  },
+  "command.action.back": {
+    "defaultMessage": "Go Back in History"
+  },
+  "command.action.forward": {
+    "defaultMessage": "Go Forward in History"
+  },
+  "command.action.devTools": {
+    "defaultMessage": "Developer Tools"
+  },
+  "command.action.print": {
+    "defaultMessage": "Print Page"
+  },
+  "command.action.copyUrl": {
+    "defaultMessage": "Copy Link Without Trackers"
+  },
+  "command.action.capture": {
+    "defaultMessage": "Capture Area or Element"
+  },
+  "command.action.screenshot": {
+    "defaultMessage": "Take Screenshot"
+  },
+  "command.action.fullPageScreenshot": {
+    "defaultMessage": "Screenshot Full Page"
+  },
+  "command.action.fullscreen": {
+    "defaultMessage": "Toggle Full Screen"
+  },
+  "command.action.newGoogleDoc": {
+    "defaultMessage": "New Google Doc"
+  },
+  "command.action.newWordDoc": {
+    "defaultMessage": "New Word Document"
+  },
+  "command.action.newFigmaDesign": {
+    "defaultMessage": "New Figma Design"
+  },
+  "command.action.newNote": {
+    "defaultMessage": "New Note"
+  },
+  "toolbar.menu": {
+    "defaultMessage": "Browser menu"
+  },
+  "toolbar.private": {
+    "defaultMessage": "Private"
+  },
+  "toolbar.privateHint": {
+    "defaultMessage": "Private window: history, cookies and site data from this window are not kept after it closes. Websites, your network and downloads you save can still see what you do."
+  },
+  "toolbar.hideSidebar": {
+    "defaultMessage": "Hide sidebar"
+  },
+  "toolbar.showSidebar": {
+    "defaultMessage": "Show sidebar"
+  },
+  "toolbar.navigation": {
+    "defaultMessage": "Page navigation"
+  },
+  "toolbar.back": {
+    "defaultMessage": "Back"
+  },
+  "toolbar.forward": {
+    "defaultMessage": "Forward"
+  },
+  "toolbar.stop": {
+    "defaultMessage": "Stop loading"
+  },
+  "toolbar.reload": {
+    "defaultMessage": "Reload"
+  },
+  "toolbar.dismiss": {
+    "defaultMessage": "Dismiss"
+  },
+  "toolbar.translateOffer": { "defaultMessage": "Translate?" },
+  "toolbar.translateTo": { "defaultMessage": "Translate page to {language}" },
+  "translation.title": { "defaultMessage": "Page translation" },
+  "translation.question": { "defaultMessage": "Translate this page to {language}?" },
+  "translation.translated": { "defaultMessage": "Translated from {language}" },
+  "translation.working": { "defaultMessage": "Translating to {language}…" },
+  "translation.error": { "defaultMessage": "The page could not be translated" },
+  "translation.start": { "defaultMessage": "Translate" },
+  "translation.original": { "defaultMessage": "Use Original" },
+  "translation.options": { "defaultMessage": "Options" },
+  "translation.choose": { "defaultMessage": "Choose Another Language" },
+  "translation.never": { "defaultMessage": "Never Translate This Site" },
+  "translation.settings": { "defaultMessage": "Language Settings" },
+  "translation.back": { "defaultMessage": "Back" },
+  "settings.section.languages": { "defaultMessage": "Languages" },
+  "settings.description.languages": { "defaultMessage": "Choose how Sol translates web pages." },
+  "settings.translation.target": { "defaultMessage": "Translate pages into" },
+  "settings.translation.offers": { "defaultMessage": "Offer to translate pages" },
+  "settings.translation.excluded": { "defaultMessage": "Excluded sites" },
+  "settings.translation.remove": { "defaultMessage": "Remove" },
+  "settings.translation.removeSite": { "defaultMessage": "Remove {site} from excluded sites" },
+  "translation.downloading": { "defaultMessage": "Translation model downloading" },
+  "translation.downloadProgress": { "defaultMessage": "Translation model download, {percent}%" },
+  "translation.selectionTitle": { "defaultMessage": "Translate selected text" },
+  "translation.selectionSame": { "defaultMessage": "This text is already in {language}." },
+  "translation.selectionUnavailable": { "defaultMessage": "Sol could not detect a supported language for this selection." },
+  "translation.selectionError": { "defaultMessage": "The selected text could not be translated." },
+  "translation.selectionCopy": { "defaultMessage": "Copy translation" },
+  "translation.selectionCopied": { "defaultMessage": "Copied" },
+  "translation.selectionCopyError": { "defaultMessage": "Could not copy the translation." },
+  "translation.close": { "defaultMessage": "Close" },
+  "settings.translation.known": { "defaultMessage": "Languages you know" },
+  "settings.translation.knownDetail": { "defaultMessage": "Sol skips automatic translation offers for pages in these languages." },
+  "settings.translation.addKnown": { "defaultMessage": "Add a language" },
+  "settings.translation.chooseKnown": { "defaultMessage": "Choose a language" },
+  "settings.translation.removeKnown": { "defaultMessage": "Remove {language} from languages you know" },
+  "native.menu.TranslateSelection": { "defaultMessage": "Translate selected text" },
+  "native.menu.TranslationRestored": { "defaultMessage": "Original restored. Press" },
+  "native.menu.TranslationUndo": { "defaultMessage": "to undo." },
+  "toolbar.copy": {
+    "defaultMessage": "Copy link"
+  },
+  "toolbar.address": {
+    "defaultMessage": "Website address"
+  },
+  "toolbar.go": {
+    "defaultMessage": "Go"
+  },
+  "toolbar.extensions": {
+    "defaultMessage": "Pinned extensions"
+  },
+  "toolbar.minimize": {
+    "defaultMessage": "Minimize"
+  },
+  "toolbar.restore": {
+    "defaultMessage": "Restore"
+  },
+  "toolbar.maximize": {
+    "defaultMessage": "Maximize"
+  },
+  "toolbar.close": {
+    "defaultMessage": "Close window"
+  },
+  "toolbar.websiteArea": {
+    "defaultMessage": "Native website area"
+  },
+  "toolbar.crash": {
+    "defaultMessage": "This page stopped working."
+  },
+  "toolbar.crashHint": {
+    "defaultMessage": "Your saved tab is still here. Reload to try again."
+  },
+  "toolbar.reloadPage": {
+    "defaultMessage": "Reload page"
+  },
+  "toolbar.saving": {
+    "defaultMessage": "Saving…"
+  },
+  "toolbar.loading": {
+    "defaultMessage": "Loading page…"
+  },
+  "toolbar.saved": {
+    "defaultMessage": "Saved locally"
+  },
+  "toolbar.workspaceLoading": {
+    "defaultMessage": "Loading workspace…"
+  },
+  "toolbar.connected": {
+    "defaultMessage": "Native connected · architecture experiment"
+  },
+  "toolbar.connecting": {
+    "defaultMessage": "Connecting to native host…"
+  },
+  "toolbar.copied": {
+    "defaultMessage": "Copied Current URL {url}"
+  },
+  "toolbar.zoom": {
+    "defaultMessage": "Zoom {zoom}%, reset to 100%"
+  },
+  "toolbar.siteSettings": {
+    "defaultMessage": "Site settings"
+  },
+  "toolbar.siteCamera": {
+    "defaultMessage": "Site settings — using your camera"
+  },
+  "toolbar.siteMic": {
+    "defaultMessage": "Site settings — using your microphone"
+  },
+  "toolbar.siteCameraMic": {
+    "defaultMessage": "Site settings — using your camera and microphone"
+  },
+  "sidebar.badge.x": {
+    "defaultMessage": "Unread X notifications"
+  },
+  "sidebar.badge.messages": {
+    "defaultMessage": "Unread messages"
+  },
+  "sidebar.tab.back": {
+    "defaultMessage": "Back to pinned URL for {name}"
+  },
+  "sidebar.tab.reset": {
+    "defaultMessage": "Reset {name}"
+  },
+  "sidebar.tab.open": {
+    "defaultMessage": "Open {name}"
+  },
+  "sidebar.tab.unmute": {
+    "defaultMessage": "Unmute {name}"
+  },
+  "sidebar.tab.mute": {
+    "defaultMessage": "Mute {name}"
+  },
+  "sidebar.tab.unmuteHint": {
+    "defaultMessage": "Unmute tab"
+  },
+  "sidebar.tab.muteHint": {
+    "defaultMessage": "Mute tab"
+  },
+  "sidebar.rename": {
+    "defaultMessage": "Rename entry"
+  },
+  "sidebar.renameNamed": {
+    "defaultMessage": "Rename {name}"
+  },
+  "sidebar.camera": {
+    "defaultMessage": "Using camera"
+  },
+  "sidebar.microphone": {
+    "defaultMessage": "Using microphone"
+  },
+  "sidebar.cameraHint": {
+    "defaultMessage": "Using your camera"
+  },
+  "sidebar.microphoneHint": {
+    "defaultMessage": "Using your microphone"
+  },
+  "sidebar.tab.close": {
+    "defaultMessage": "Close {name}"
+  },
+  "sidebar.tab.closePage": {
+    "defaultMessage": "Close page {name}"
+  },
+  "sidebar.tab.keepPin": {
+    "defaultMessage": "Close page, keep pin"
+  },
+  "sidebar.tab.archive": {
+    "defaultMessage": "Archive tab"
+  },
+  "sidebar.tab.removePin": {
+    "defaultMessage": "Remove from Pinned"
+  },
+  "sidebar.tab.removeNamedPin": {
+    "defaultMessage": "Remove {name} from Pinned"
+  },
+  "sidebar.tab.archiveNamed": {
+    "defaultMessage": "Archive {name}"
+  },
+  "sidebar.tab.away": {
+    "defaultMessage": "Away from saved address"
+  },
+  "sidebar.tab.pinnedHint": {
+    "defaultMessage": "Back to pinned url"
+  },
+  "sidebar.folder.deletePrompt": {
+    "defaultMessage": "Delete “{name}”?"
+  },
+  "sidebar.folder.archiveTabs": {
+    "defaultMessage": "{count, plural, one {# tab will be closed and moved to Archive.} other {# tabs will be closed and moved to Archive.}}"
+  },
+  "sidebar.folder.archiveNested": {
+    "defaultMessage": "{count, plural, one {# tab in this folder and its subfolders will be closed and moved to Archive.} other {# tabs in this folder and its subfolders will be closed and moved to Archive.}}"
+  },
+  "sidebar.folder.changed": {
+    "defaultMessage": "Your workspace changed. Review the updated count first."
+  },
+  "sidebar.folder.removing": {
+    "defaultMessage": "Removing…"
+  },
+  "sidebar.folder.review": {
+    "defaultMessage": "Review"
+  },
+  "sidebar.folder.delete": {
+    "defaultMessage": "Delete folder"
+  },
+  "sidebar.split.out": {
+    "defaultMessage": "Out of split"
+  },
+  "sidebar.preview": {
+    "defaultMessage": "Preview: {name}"
+  },
+  "sidebar.previewLink": {
+    "defaultMessage": "link preview"
+  },
+  "space.name": {
+    "defaultMessage": "Space name"
+  },
+  "space.rename": {
+    "defaultMessage": "Rename space"
+  },
+  "space.edit": {
+    "defaultMessage": "Edit space"
+  },
+  "space.editButton": {
+    "defaultMessage": "Edit"
+  },
+  "space.label": {
+    "defaultMessage": "Space"
+  },
+  "space.renameNamed": {
+    "defaultMessage": "Rename space {name}"
+  },
+  "settings.password.category": {
+    "defaultMessage": "PASSWORDS"
+  },
+  "settings.password.title": {
+    "defaultMessage": "A home for your sign-ins"
+  },
+  "settings.password.detail": {
+    "defaultMessage": "Save passwords when you sign in, then fill them on your next visit. Each browsing profile keeps its own passwords."
+  },
+  "settings.password.profile": {
+    "defaultMessage": "Browsing profile"
+  },
+  "settings.password.unavailable": {
+    "defaultMessage": "Password management is available in a regular browsing window."
+  },
+  "settings.password.saved": {
+    "defaultMessage": "Saved passwords"
+  },
+  "settings.password.manage": {
+    "defaultMessage": "Search, add, edit or remove passwords."
+  },
+  "settings.password.manageProfile": {
+    "defaultMessage": "Search, add, edit or remove passwords in {name}."
+  },
+  "settings.password.open": {
+    "defaultMessage": "Open manager"
+  },
+  "settings.password.saving": {
+    "defaultMessage": "Saving and sign-in"
+  },
+  "settings.password.savingDetail": {
+    "defaultMessage": "Manage password saving, automatic sign-in and sites you’ve excluded."
+  },
+  "settings.password.configure": {
+    "defaultMessage": "Configure"
+  },
+  "settings.password.protected": {
+    "defaultMessage": "Protected on this computer"
+  },
+  "settings.password.protectedDetail": {
+    "defaultMessage": "Passwords are stored locally in Chromium’s encrypted password store. Windows may ask you to verify your identity before showing or changing a password."
+  },
+  "settings.password.privacy": {
+    "defaultMessage": "Private browsing does not save new passwords. Password sync between devices is not available."
+  },
+  "native.menu.SetDefault": {
+    "defaultMessage": "Set Sol as Default Browser"
+  },
+  "native.menu.CheckUpdates": {
+    "defaultMessage": "Check for Updates"
+  },
+  "native.menu.NewTab": {
+    "defaultMessage": "New Tab"
+  },
+  "native.menu.NewWindow": {
+    "defaultMessage": "New Window"
+  },
+  "native.menu.NewPrivate": {
+    "defaultMessage": "New Private Window"
+  },
+  "native.menu.Spaces": {
+    "defaultMessage": "Spaces"
+  },
+  "native.menu.NewSpace": {
+    "defaultMessage": "New Space"
+  },
+  "native.menu.RenameSpace": {
+    "defaultMessage": "Rename Space"
+  },
+  "native.menu.NextSpace": {
+    "defaultMessage": "Next Space"
+  },
+  "native.menu.PreviousSpace": {
+    "defaultMessage": "Previous Space"
+  },
+  "native.menu.Tabs": {
+    "defaultMessage": "Tabs"
+  },
+  "native.menu.CommandBar": {
+    "defaultMessage": "Open Command Bar"
+  },
+  "native.menu.PinTab": {
+    "defaultMessage": "Pin Tab"
+  },
+  "native.menu.NewFolder": {
+    "defaultMessage": "New Folder"
+  },
+  "native.menu.RecentTab": {
+    "defaultMessage": "Recent Tab"
+  },
+  "native.menu.NextTab": {
+    "defaultMessage": "Next Tab"
+  },
+  "native.menu.PreviousTab": {
+    "defaultMessage": "Previous Tab"
+  },
+  "native.menu.Reopen": {
+    "defaultMessage": "Reopen Last Closed Tab"
+  },
+  "native.menu.Archive": {
+    "defaultMessage": "Archive"
+  },
+  "native.menu.Extensions": {
+    "defaultMessage": "Extensions"
+  },
+  "native.menu.AddExtension": {
+    "defaultMessage": "Add Extension"
+  },
+  "native.menu.ManageExtensions": {
+    "defaultMessage": "Manage Extensions"
+  },
+  "native.menu.PinTopBar": {
+    "defaultMessage": "Pin to Top Bar"
+  },
+  "native.menu.UnpinTopBar": {
+    "defaultMessage": "Unpin from Top Bar"
+  },
+  "native.menu.Developer": {
+    "defaultMessage": "Developer"
+  },
+  "native.menu.DeveloperTools": {
+    "defaultMessage": "Developer Tools"
+  },
+  "native.menu.ReloadBypass": {
+    "defaultMessage": "Reload Ignoring Cache"
+  },
+  "native.menu.History": {
+    "defaultMessage": "History"
+  },
+  "native.menu.Downloads": {
+    "defaultMessage": "Downloads"
+  },
+  "native.menu.Passwords": {
+    "defaultMessage": "Passwords"
+  },
+  "native.menu.PagePasswords": {
+    "defaultMessage": "Passwords for This Page"
+  },
+  "native.menu.ManagePasswords": {
+    "defaultMessage": "Manage Passwords"
+  },
+  "native.menu.Theme": {
+    "defaultMessage": "Theme"
+  },
+  "native.menu.Print": {
+    "defaultMessage": "Print…"
+  },
+  "native.menu.CleanCopy": {
+    "defaultMessage": "Copy Link Without Trackers"
+  },
+  "native.menu.Screenshot": {
+    "defaultMessage": "Screenshot"
+  },
+  "native.menu.SelectArea": {
+    "defaultMessage": "Select Area or Element…"
+  },
+  "native.menu.VisibleArea": {
+    "defaultMessage": "Visible Area"
+  },
+  "native.menu.FullPage": {
+    "defaultMessage": "Full Page"
+  },
+  "native.menu.CloseWindow": {
+    "defaultMessage": "Close Window"
+  },
+  "native.menu.CopyLink": {
+    "defaultMessage": "Copy Link"
+  },
+  "native.menu.SuperCopy": {
+    "defaultMessage": "Super Copy (without trackers)"
+  },
+  "native.menu.FullHistory": {
+    "defaultMessage": "Show full history"
+  },
+  "native.menu.AnotherProfile": {
+    "defaultMessage": "{name} (another profile)"
+  },
+  "native.menu.OpenExtension": {
+    "defaultMessage": "Open {name}"
+  },
+  "native.menu.NumberedSpace": {
+    "defaultMessage": "Space {name}"
+  },
+  "native.sidebar.SetProfile": {
+    "defaultMessage": "Set Profile"
+  },
+  "native.sidebar.NewProfile": {
+    "defaultMessage": "New Profile..."
+  },
+  "native.sidebar.ExportSpace": {
+    "defaultMessage": "Export \"{name}\" into Folder"
+  },
+  "native.sidebar.EditThemeMore": {
+    "defaultMessage": "Edit Theme..."
+  },
+  "native.sidebar.NewFolderTitle": {
+    "defaultMessage": "New Folder"
+  },
+  "native.sidebar.DeleteSpace": {
+    "defaultMessage": "Delete Space"
+  },
+  "native.sidebar.NewTab": {
+    "defaultMessage": "New tab"
+  },
+  "native.sidebar.OpenTab": {
+    "defaultMessage": "Open tab"
+  },
+  "native.sidebar.Rename": {
+    "defaultMessage": "Rename"
+  },
+  "native.sidebar.DuplicateTab": {
+    "defaultMessage": "Duplicate tab"
+  },
+  "native.sidebar.Detach": {
+    "defaultMessage": "Move to new window"
+  },
+  "native.sidebar.UnmuteTab": {
+    "defaultMessage": "Unmute tab"
+  },
+  "native.sidebar.MuteTab": {
+    "defaultMessage": "Mute tab"
+  },
+  "native.sidebar.CloseTab": {
+    "defaultMessage": "Close tab"
+  },
+  "native.sidebar.NewFolder": {
+    "defaultMessage": "New folder"
+  },
+  "native.sidebar.NewSpace": {
+    "defaultMessage": "New space"
+  },
+  "native.sidebar.Archive": {
+    "defaultMessage": "Archive"
+  },
+  "native.sidebar.EditTheme": {
+    "defaultMessage": "Edit theme"
+  },
+  "native.sidebar.RestoreTab": {
+    "defaultMessage": "Restore tab"
+  },
+  "native.sidebar.CopyLink": {
+    "defaultMessage": "Copy Link"
+  },
+  "native.sidebar.RenameMore": {
+    "defaultMessage": "Rename…"
+  },
+  "native.sidebar.WebsiteTitle": {
+    "defaultMessage": "Use Website Title"
+  },
+  "native.sidebar.Unmute": {
+    "defaultMessage": "Unmute"
+  },
+  "native.sidebar.Mute": {
+    "defaultMessage": "Mute"
+  },
+  "native.sidebar.ShowBadge": {
+    "defaultMessage": "Show Notification Badge"
+  },
+  "native.sidebar.HideBadge": {
+    "defaultMessage": "Hide Notification Badge"
+  },
+  "native.sidebar.EditPinned": {
+    "defaultMessage": "Edit Pinned Page"
+  },
+  "native.sidebar.ReplacePinned": {
+    "defaultMessage": "Replace Pinned URL with Current"
+  },
+  "native.sidebar.EditMore": {
+    "defaultMessage": "Edit…"
+  },
+  "native.sidebar.OpenSplit": {
+    "defaultMessage": "Open in Split View"
+  },
+  "native.sidebar.AddSplit": {
+    "defaultMessage": "Add Split View"
+  },
+  "native.sidebar.Duplicate": {
+    "defaultMessage": "Duplicate"
+  },
+  "native.sidebar.NewSpaceMore": {
+    "defaultMessage": "New Space…"
+  },
+  "native.sidebar.NewWindow": {
+    "defaultMessage": "New Window"
+  },
+  "native.sidebar.MoveTo": {
+    "defaultMessage": "Move to"
+  },
+  "native.sidebar.Unload": {
+    "defaultMessage": "Unload Tab"
+  },
+  "native.sidebar.Unpin": {
+    "defaultMessage": "Remove Pin"
+  },
+  "native.sidebar.RemoveFavorite": {
+    "defaultMessage": "Remove Favorite"
+  },
+  "native.sidebar.ArchiveOthers": {
+    "defaultMessage": "Archive Other Tabs"
+  },
+  "native.sidebar.ArchiveTabTitle": {
+    "defaultMessage": "Archive Tab"
+  },
+  "native.sidebar.ArchiveBelow": {
+    "defaultMessage": "Archive Tabs Below"
+  },
+  "native.sidebar.SwitchTab": {
+    "defaultMessage": "Switch to tab"
+  },
+  "native.sidebar.Collapse": {
+    "defaultMessage": "Collapse folder"
+  },
+  "native.sidebar.Expand": {
+    "defaultMessage": "Expand folder"
+  },
+  "native.sidebar.UnpinTab": {
+    "defaultMessage": "Unpin tab"
+  },
+  "native.sidebar.PinTab": {
+    "defaultMessage": "Pin tab"
+  },
+  "native.sidebar.WebsiteTitleLower": {
+    "defaultMessage": "Use website title"
+  },
+  "native.sidebar.NestedFolder": {
+    "defaultMessage": "New folder inside"
+  },
+  "native.sidebar.ResetAddress": {
+    "defaultMessage": "Reset to saved address"
+  },
+  "native.sidebar.Pinned": {
+    "defaultMessage": "Pinned"
+  },
+  "native.sidebar.Favorites": {
+    "defaultMessage": "Favorites"
+  },
+  "native.sidebar.Today": {
+    "defaultMessage": "Today"
+  },
+  "native.sidebar.Folder": {
+    "defaultMessage": "Folder"
+  },
+  "native.sidebar.Space": {
+    "defaultMessage": "Space"
+  },
+  "native.sidebar.MoveUp": {
+    "defaultMessage": "Move up"
+  },
+  "native.sidebar.MoveDown": {
+    "defaultMessage": "Move down"
+  },
+  "native.sidebar.DeleteFolder": {
+    "defaultMessage": "Delete folder"
+  },
+  "native.sidebar.DeleteFolderMore": {
+    "defaultMessage": "Delete folder…"
+  },
+  "native.sidebar.KeepPin": {
+    "defaultMessage": "Close page, keep pin"
+  },
+  "native.sidebar.ArchiveTab": {
+    "defaultMessage": "Archive tab"
+  },
+  "native.sidebar.RemoveSidebar": {
+    "defaultMessage": "Remove from sidebar"
+  },
+  "native.sidebar.OpenGroup": {
+    "defaultMessage": "Open split view"
+  },
+  "native.sidebar.RenameFirst": {
+    "defaultMessage": "Rename first tab"
+  },
+  "native.sidebar.RenameSecond": {
+    "defaultMessage": "Rename second tab"
+  },
+  "native.sidebar.RenameThird": {
+    "defaultMessage": "Rename third tab"
+  },
+  "native.sidebar.RenameFourth": {
+    "defaultMessage": "Rename fourth tab"
+  },
+  "native.sidebar.UnpinSplit": {
+    "defaultMessage": "Unpin split view"
+  },
+  "native.sidebar.PinSplit": {
+    "defaultMessage": "Pin split view"
+  },
+  "native.sidebar.Swap": {
+    "defaultMessage": "Swap panes"
+  },
+  "native.sidebar.Separate": {
+    "defaultMessage": "Separate tabs"
+  },
+  "native.sidebar.DisableIntegration": {
+    "defaultMessage": "Disable {name} Integration (All Tabs)"
+  },
+  "native.sidebar.EnableIntegration": {
+    "defaultMessage": "Enable {name} Integration (All Tabs)"
+  },
+  "history.title": {
+    "defaultMessage": "History"
+  },
+  "history.subtitle": {
+    "defaultMessage": "Pages you visited in Sol"
+  },
+  "history.searching": {
+    "defaultMessage": "Searching…"
+  },
+  "history.results": {
+    "defaultMessage": "{count, plural, one {{shown} page} other {{shown} pages}} matching “{query}”"
+  },
+  "history.clearOpen": {
+    "defaultMessage": "Clear history…"
+  },
+  "history.selection": {
+    "defaultMessage": "Selection"
+  },
+  "history.selected": {
+    "defaultMessage": "{count, number} selected"
+  },
+  "history.deleteSelected": {
+    "defaultMessage": "Delete selected"
+  },
+  "history.delete": {
+    "defaultMessage": "Delete"
+  },
+  "history.search": {
+    "defaultMessage": "Search history"
+  },
+  "history.clearSearch": {
+    "defaultMessage": "Clear search"
+  },
+  "history.clear": {
+    "defaultMessage": "Clear history"
+  },
+  "history.clearTitle": {
+    "defaultMessage": "Clear browsing history"
+  },
+  "history.clearDetail": {
+    "defaultMessage": "Removes pages from Sol's history. Open tabs, saved tabs and downloads stay."
+  },
+  "history.clearWithRange": {
+    "defaultMessage": "Clear history: {range}"
+  },
+  "history.days": {
+    "defaultMessage": "Days"
+  },
+  "history.visited": {
+    "defaultMessage": "Visited pages"
+  },
+  "history.pages": {
+    "defaultMessage": "{count, plural, one {# page} other {# pages}}"
+  },
+  "history.select": {
+    "defaultMessage": "Select {title}"
+  },
+  "history.removeNamed": {
+    "defaultMessage": "Remove {title} from history"
+  },
+  "history.remove": {
+    "defaultMessage": "Remove from history"
+  },
+  "history.noResults": {
+    "defaultMessage": "No matching pages"
+  },
+  "history.empty": {
+    "defaultMessage": "No history yet"
+  },
+  "history.searchHint": {
+    "defaultMessage": "Try a different word or part of the address."
+  },
+  "history.emptyDetail": {
+    "defaultMessage": "Pages you visit in Sol appear here."
+  },
+  "history.loading": {
+    "defaultMessage": "Loading…"
+  },
+  "history.more": {
+    "defaultMessage": "Show more"
+  },
+  "history.today": {
+    "defaultMessage": "Today"
+  },
+  "history.yesterday": {
+    "defaultMessage": "Yesterday"
+  },
+  "history.range.hour": {
+    "defaultMessage": "Last hour"
+  },
+  "history.range.day": {
+    "defaultMessage": "Last 24 hours"
+  },
+  "history.range.week": {
+    "defaultMessage": "Last 7 days"
+  },
+  "history.range.all": {
+    "defaultMessage": "All time"
+  },
+  "downloads.subtitle": {
+    "defaultMessage": "Files you downloaded in Sol"
+  },
+  "downloads.results": {
+    "defaultMessage": "{count, number} matching “{query}”"
+  },
+  "downloads.progressDetail": {
+    "defaultMessage": "{count, number} in progress · files are saved to your Downloads folder"
+  },
+  "downloads.clearOpen": {
+    "defaultMessage": "Clear list…"
+  },
+  "downloads.search": {
+    "defaultMessage": "Search downloads"
+  },
+  "downloads.clearLabel": {
+    "defaultMessage": "Clear downloads list"
+  },
+  "downloads.clearTitle": {
+    "defaultMessage": "Clear the downloads list"
+  },
+  "downloads.clearDetail": {
+    "defaultMessage": "Files stay on your computer; only the list is cleared."
+  },
+  "downloads.clearConfirm": {
+    "defaultMessage": "Clear downloads list: confirm"
+  },
+  "downloads.clear": {
+    "defaultMessage": "Clear list"
+  },
+  "downloads.progress": {
+    "defaultMessage": "In progress"
+  },
+  "downloads.progressCount": {
+    "defaultMessage": "{count, number} in progress"
+  },
+  "downloads.pause": {
+    "defaultMessage": "Pause"
+  },
+  "downloads.resume": {
+    "defaultMessage": "Resume"
+  },
+  "downloads.open": {
+    "defaultMessage": "Open {name}"
+  },
+  "downloads.pauseNamed": {
+    "defaultMessage": "Pause {name}"
+  },
+  "downloads.resumeNamed": {
+    "defaultMessage": "Resume {name}"
+  },
+  "downloads.cancelNamed": {
+    "defaultMessage": "Cancel {name}"
+  },
+  "downloads.showNamed": {
+    "defaultMessage": "Show {name} in File Explorer"
+  },
+  "downloads.copyNamed": {
+    "defaultMessage": "Copy {name}"
+  },
+  "downloads.recycleNamed": {
+    "defaultMessage": "Move {name} to Recycle Bin"
+  },
+  "downloads.removeNamed": {
+    "defaultMessage": "Remove {name} from list"
+  },
+  "downloads.show": {
+    "defaultMessage": "Show in File Explorer"
+  },
+  "downloads.copy": {
+    "defaultMessage": "Copy file"
+  },
+  "downloads.recycle": {
+    "defaultMessage": "Move to Recycle Bin"
+  },
+  "downloads.remove": {
+    "defaultMessage": "Remove from list"
+  },
+  "downloads.device": {
+    "defaultMessage": "This device"
+  },
+  "downloads.files": {
+    "defaultMessage": "{count, plural, one {# file} other {# files}}"
+  },
+  "downloads.none": {
+    "defaultMessage": "No downloads yet"
+  },
+  "downloads.noResults": {
+    "defaultMessage": "No matching downloads"
+  },
+  "downloads.searchHint": {
+    "defaultMessage": "Try a different part of the name or site."
+  },
+  "downloads.emptyDetail": {
+    "defaultMessage": "Files you download in Sol appear here."
+  },
+  "downloads.canceled": {
+    "defaultMessage": "Canceled"
+  },
+  "downloads.failed": {
+    "defaultMessage": "Failed"
+  },
+  "downloads.missing": {
+    "defaultMessage": "Deleted or moved"
+  },
+  "downloads.paused": {
+    "defaultMessage": "Paused · {size}"
+  },
+  "downloads.interrupted": {
+    "defaultMessage": "Failed — the download was interrupted"
+  },
+  "downloads.session": {
+    "defaultMessage": "This session"
+  },
+  "downloads.sessionEmpty": {
+    "defaultMessage": "Files you download this session appear here"
+  },
+  "downloads.showAll": {
+    "defaultMessage": "Show all downloads"
+  },
+  "downloads.source": {
+    "defaultMessage": "{type} from {origin}"
+  },
+  "downloads.file": {
+    "defaultMessage": "File"
+  },
+  "downloads.moreNamed": {
+    "defaultMessage": "More actions for {name}"
+  },
+  "downloads.more": {
+    "defaultMessage": "More"
+  },
+  "settings.site.saved": {
+    "defaultMessage": "Site saved."
+  },
+  "settings.site.invalid": {
+    "defaultMessage": "Enter a unique shortcut without spaces and an HTTP(S) search URL with one %s after the hostname. Up to 24 sites; shortcuts can include domains or @names."
+  },
+  "settings.site.inactive": {
+    "defaultMessage": "Inactive shortcuts"
+  },
+  "settings.site.title": {
+    "defaultMessage": "Site search"
+  },
+  "settings.site.inactiveDetail": {
+    "defaultMessage": "Activate a shortcut to use it in the command bar."
+  },
+  "settings.site.activeDetail": {
+    "defaultMessage": "To search a specific site, type its shortcut, then press the keyboard shortcut above."
+  },
+  "settings.site.add": {
+    "defaultMessage": "Add"
+  },
+  "settings.site.engine": {
+    "defaultMessage": "Search engine"
+  },
+  "settings.site.shortcut": {
+    "defaultMessage": "Shortcut"
+  },
+  "settings.site.activate": {
+    "defaultMessage": "Activate"
+  },
+  "settings.site.deactivate": {
+    "defaultMessage": "Deactivate"
+  },
+  "settings.site.inactiveEmpty": {
+    "defaultMessage": "No inactive shortcuts."
+  },
+  "settings.site.activeEmpty": {
+    "defaultMessage": "No site searches. Add one to get started."
+  },
+  "settings.site.key": {
+    "defaultMessage": "Keyboard shortcut"
+  },
+  "settings.site.keyDetail": {
+    "defaultMessage": "In the command bar, press this key after a site shortcut to search that site."
+  },
+  "settings.site.spaceOrTab": {
+    "defaultMessage": "Space or Tab"
+  },
+  "settings.site.editEngine": {
+    "defaultMessage": "Edit search engine"
+  },
+  "settings.site.addEngine": {
+    "defaultMessage": "Add search engine"
+  },
+  "settings.site.name": {
+    "defaultMessage": "Site search name"
+  },
+  "settings.site.keyword": {
+    "defaultMessage": "Site search shortcut"
+  },
+  "settings.site.url": {
+    "defaultMessage": "Site search URL"
+  },
+  "settings.site.urlDetail": {
+    "defaultMessage": "URL with %s in place of query"
+  },
+  "settings.site.activateNamed": {
+    "defaultMessage": "Activate {name}"
+  },
+  "settings.site.editNamed": {
+    "defaultMessage": "Edit {name}"
+  },
+  "settings.site.more": {
+    "defaultMessage": "More actions for {name}"
+  },
+  "settings.site.actions": {
+    "defaultMessage": "Actions for {name}"
+  },
+  "settings.profile.category": {
+    "defaultMessage": "YOUR BROWSING IDENTITIES"
+  },
+  "settings.profile.title": {
+    "defaultMessage": "A little separation."
+  },
+  "settings.profile.description": {
+    "defaultMessage": "Keep work, personal browsing and different accounts in their own place."
+  },
+  "settings.profile.create": {
+    "defaultMessage": "Create profile"
+  },
+  "settings.profile.current": {
+    "defaultMessage": "Current"
+  },
+  "settings.profile.rename": {
+    "defaultMessage": "Rename"
+  },
+  "settings.profile.renameNamed": {
+    "defaultMessage": "Rename profile {name}"
+  },
+  "settings.profile.original": {
+    "defaultMessage": "Original profile"
+  },
+  "settings.profile.spaceCount": {
+    "defaultMessage": "{count, plural, one {# Space} other {# Spaces}}"
+  },
+  "settings.profile.noSpaces": {
+    "defaultMessage": "Choose this profile from a Space’s Edit menu."
+  },
+  "settings.profile.shared": {
+    "defaultMessage": "Spaces in one profile share logins, history, extensions and Favorites."
+  },
+  "settings.profile.close": {
+    "defaultMessage": "Close profile dialog"
+  },
+  "settings.profile.renameTitle": {
+    "defaultMessage": "A new name. Same profile."
+  },
+  "settings.profile.createTitle": {
+    "defaultMessage": "Make room for another you."
+  },
+  "settings.profile.renameDetail": {
+    "defaultMessage": "Your Spaces and browsing data stay together."
+  },
+  "settings.profile.createDetail": {
+    "defaultMessage": "Give your profile a name, then choose the Spaces that belong here."
+  },
+  "settings.profile.name": {
+    "defaultMessage": "Profile name"
+  },
+  "settings.profile.placeholder": {
+    "defaultMessage": "Work, Personal, Side projects…"
+  },
+  "settings.profile.spaces": {
+    "defaultMessage": "SPACES"
+  },
+  "settings.profile.moveDetail": {
+    "defaultMessage": "Selected Spaces keep their tabs. Open tabs unload when they move to the new profile."
+  },
+  "settings.profile.saveName": {
+    "defaultMessage": "Save name"
+  },
+  "panel.editPin": {
+    "defaultMessage": "Edit Pinned Page"
+  },
+  "panel.title": {
+    "defaultMessage": "Title"
+  },
+  "panel.address": {
+    "defaultMessage": "Address"
+  },
+  "panel.moveQuestion": {
+    "defaultMessage": "Move “{title}” to {space}?"
+  },
+  "panel.moveDetail": {
+    "defaultMessage": "{space} uses another profile. The tab reloads there, so sign-ins and anything unsaved on the page stay behind."
+  },
+  "panel.move": {
+    "defaultMessage": "Move Tab"
+  },
+  "panel.restore": {
+    "defaultMessage": "Restore {title}"
+  },
+  "panel.emptyArchive": {
+    "defaultMessage": "Closed tabs from Today land here"
+  },
+  "linkPeek.label": {
+    "defaultMessage": "Link preview"
+  },
+  "linkPeek.loading": {
+    "defaultMessage": "Opening page…"
+  },
+  "linkPeek.actions": {
+    "defaultMessage": "Preview actions"
+  },
+  "linkPeek.closeHint": {
+    "defaultMessage": "Close preview (Esc)"
+  },
+  "linkPeek.close": {
+    "defaultMessage": "Close preview"
+  },
+  "linkPeek.keep": {
+    "defaultMessage": "Keep as a tab"
+  },
+  "linkPeek.keepToday": {
+    "defaultMessage": "Keep preview as a Today tab"
+  },
+  "linkPeek.splitUnavailable": {
+    "defaultMessage": "Source is already in a split or unavailable"
+  },
+  "linkPeek.split": {
+    "defaultMessage": "Open in split view"
+  },
+  "linkPeek.splitPreview": {
+    "defaultMessage": "Open preview in split view"
+  },
+  "little.open": {
+    "defaultMessage": "Open in {name}"
+  },
+  "little.openGeneric": {
+    "defaultMessage": "Open in Space"
+  },
+  "little.group": {
+    "defaultMessage": "Send page to a Space"
+  },
+  "little.other": {
+    "defaultMessage": "Open in another Space"
+  },
+  "site.thisPage": {
+    "defaultMessage": "This page"
+  },
+  "site.browserPage": {
+    "defaultMessage": "Browser page"
+  },
+  "site.secureDetail": {
+    "defaultMessage": "Connection is secure"
+  },
+  "site.insecureDetail": {
+    "defaultMessage": "Connection is not secure"
+  },
+  "site.onlySites": {
+    "defaultMessage": "Only websites have site settings"
+  },
+  "site.reset": {
+    "defaultMessage": "Reset permissions"
+  },
+  "site.reload": {
+    "defaultMessage": "Reload to apply"
+  },
+  "site.controls": {
+    "defaultMessage": "Site controls"
+  },
+  "site.share": {
+    "defaultMessage": "Share URL"
+  },
+  "site.capture": {
+    "defaultMessage": "Capture area or element"
+  },
+  "site.addExtensions": {
+    "defaultMessage": "Add extensions"
+  },
+  "site.autoPip": {
+    "defaultMessage": "Automatic Picture-in-Picture"
+  },
+  "site.boostEdit": {
+    "defaultMessage": "Edit Boost"
+  },
+  "site.boostCreate": {
+    "defaultMessage": "Boost this site"
+  },
+  "site.on": {
+    "defaultMessage": "On"
+  },
+  "site.off": {
+    "defaultMessage": "Off"
+  },
+  "site.connection": {
+    "defaultMessage": "Connection and permissions"
+  },
+  "site.secure": {
+    "defaultMessage": "Secure"
+  },
+  "site.insecure": {
+    "defaultMessage": "Not secure"
+  },
+  "site.more": {
+    "defaultMessage": "More site actions"
+  },
+  "site.camera": {
+    "defaultMessage": "Using your camera"
+  },
+  "site.microphone": {
+    "defaultMessage": "Using your microphone"
+  },
+  "site.cameraMicrophone": {
+    "defaultMessage": "Using your camera and microphone"
+  },
+  "site.permission.camera": {
+    "defaultMessage": "Camera"
+  },
+  "site.permission.microphone": {
+    "defaultMessage": "Microphone"
+  },
+  "site.permission.location": {
+    "defaultMessage": "Location"
+  },
+  "site.permission.notifications": {
+    "defaultMessage": "Notifications"
+  },
+  "site.permission.clipboard": {
+    "defaultMessage": "Clipboard"
+  },
+  "site.permission.popups": {
+    "defaultMessage": "Pop-ups and redirects"
+  },
+  "site.value.ask": {
+    "defaultMessage": "Ask"
+  },
+  "site.value.allow": {
+    "defaultMessage": "Allow"
+  },
+  "site.value.block": {
+    "defaultMessage": "Block"
+  },
+  "site.permissionAction": {
+    "defaultMessage": "{permission}: {action}"
+  },
+  "update.download": {
+    "defaultMessage": "Downloading {name}"
+  },
+  "update.downloadProgress": {
+    "defaultMessage": "{name}  ·  {percent}%  ·  keep browsing"
+  },
+  "update.update": {
+    "defaultMessage": "the update"
+  },
+  "update.almost": {
+    "defaultMessage": "Almost done…"
+  },
+  "update.ready": {
+    "defaultMessage": "{name} is ready"
+  },
+  "update.readyDetail": {
+    "defaultMessage": "Restart Sol to finish. It also installs the next time Sol starts."
+  },
+  "update.latest": {
+    "defaultMessage": "Sol is up to date"
+  },
+  "update.latestDetail": {
+    "defaultMessage": "You have the latest version, {version}."
+  },
+  "update.failed": {
+    "defaultMessage": "Couldn’t check for updates"
+  },
+  "update.failedDetail": {
+    "defaultMessage": "Check your connection and try again."
+  },
+  "update.notInstalled": {
+    "defaultMessage": "This copy does not update itself"
+  },
+  "update.notInstalledDetail": {
+    "defaultMessage": "Updates arrive with the installed Sol, which downloads them in the background."
+  },
+  "update.checking": {
+    "defaultMessage": "Checking for updates"
+  },
+  "update.checkingDetail": {
+    "defaultMessage": "Looking for a version newer than {version}…"
+  },
+  "update.error": {
+    "defaultMessage": "The browser did not answer. Close this window and try again."
+  },
+  "update.retry": {
+    "defaultMessage": "Try again"
+  },
+  "update.later": {
+    "defaultMessage": "Later"
+  },
+  "native.menu.PrivateLink": {
+    "defaultMessage": "Open link in private window"
+  },
+  "native.menu.LittleLink": {
+    "defaultMessage": "Open link in Little Sol"
+  },
+  "native.menu.Original": {
+    "defaultMessage": "Show original"
+  },
+  "native.menu.Translate": {
+    "defaultMessage": "Translate page to {name}"
+  },
+  "native.menu.Inspect": {
+    "defaultMessage": "Inspect element"
+  },
+  "native.menu.NewLittle": {
+    "defaultMessage": "New Little Sol"
+  },
+  "native.menu.OpenSol": {
+    "defaultMessage": "Open Sol"
+  },
+  "native.menu.QuitSol": {
+    "defaultMessage": "Quit Sol"
+  },
+  "native.menu.ClearCache": {
+    "defaultMessage": "Clear Cache"
+  },
+  "native.menu.ClearCookies": {
+    "defaultMessage": "Clear Cookies"
+  },
+  "native.menu.SiteSettings": {
+    "defaultMessage": "All Site Settings"
+  },
+  "native.menu.Open": {
+    "defaultMessage": "Open"
+  },
+  "native.menu.Copy": {
+    "defaultMessage": "Copy"
+  },
+  "native.menu.Explorer": {
+    "defaultMessage": "Show in File Explorer"
+  },
+  "native.menu.RemoveList": {
+    "defaultMessage": "Remove from list"
+  },
+  "native.menu.Recycle": {
+    "defaultMessage": "Move to Recycle Bin"
+  },
+  "native.menu.Hotkey": {
+    "defaultMessage": "Sol — Ctrl+Alt+N opens Little Sol"
+  },
+  "native.menu.NewLittleHotkey": {
+    "defaultMessage": "New Little Sol\tCtrl+Alt+N"
+  },
+  "native.shortcut.Address": {
+    "defaultMessage": "Address bar"
+  },
+  "native.shortcut.NewTab": {
+    "defaultMessage": "New tab"
+  },
+  "native.shortcut.NewWindow": {
+    "defaultMessage": "New window"
+  },
+  "native.shortcut.NewPrivateWindow": {
+    "defaultMessage": "New private window"
+  },
+  "native.shortcut.CloseTab": {
+    "defaultMessage": "Close tab"
+  },
+  "native.shortcut.NextTab": {
+    "defaultMessage": "Next tab"
+  },
+  "native.shortcut.PreviousTab": {
+    "defaultMessage": "Previous tab"
+  },
+  "native.shortcut.Sidebar": {
+    "defaultMessage": "Toggle sidebar"
+  },
+  "native.shortcut.Pin": {
+    "defaultMessage": "Pin tab"
+  },
+  "native.shortcut.Back": {
+    "defaultMessage": "Back"
+  },
+  "native.shortcut.Forward": {
+    "defaultMessage": "Forward"
+  },
+  "native.shortcut.Reload": {
+    "defaultMessage": "Reload"
+  },
+  "native.shortcut.ReloadBypass": {
+    "defaultMessage": "Reload without cache"
+  },
+  "native.shortcut.Stop": {
+    "defaultMessage": "Stop / Escape"
+  },
+  "native.shortcut.CloseWindow": {
+    "defaultMessage": "Close window"
+  },
+  "native.shortcut.DevTools": {
+    "defaultMessage": "Developer tools"
+  },
+  "native.shortcut.History": {
+    "defaultMessage": "History"
+  },
+  "native.shortcut.Downloads": {
+    "defaultMessage": "Downloads"
+  },
+  "native.shortcut.HistoryPage": {
+    "defaultMessage": "Full history"
+  },
+  "native.shortcut.ReopenClosed": {
+    "defaultMessage": "Reopen closed tab"
+  },
+  "native.shortcut.Fullscreen": {
+    "defaultMessage": "Fullscreen"
+  },
+  "native.shortcut.Settings": {
+    "defaultMessage": "Settings"
+  },
+  "native.shortcut.PictureInPicture": {
+    "defaultMessage": "Picture-in-picture"
+  },
+  "native.shortcut.Print": {
+    "defaultMessage": "Print"
+  },
+  "native.shortcut.CopyUrl": {
+    "defaultMessage": "Copy address without trackers"
+  },
+  "native.shortcut.Capture": {
+    "defaultMessage": "Capture (area or element)"
+  },
+  "native.shortcut.Screenshot": {
+    "defaultMessage": "Screenshot"
+  },
+  "native.shortcut.FullPageScreenshot": {
+    "defaultMessage": "Full page screenshot"
+  },
+  "native.shortcut.RecentTab": {
+    "defaultMessage": "Recent tab"
+  },
+  "native.shortcut.RecentTabBack": {
+    "defaultMessage": "Recent tab (back)"
+  },
+  "native.shortcut.SplitFocusLeft": {
+    "defaultMessage": "Split View: pane to the left"
+  },
+  "native.shortcut.SplitFocusRight": {
+    "defaultMessage": "Split View: pane to the right"
+  },
+  "native.shortcut.SplitFocusUp": {
+    "defaultMessage": "Split View: pane above"
+  },
+  "native.shortcut.SplitFocusDown": {
+    "defaultMessage": "Split View: pane below"
+  },
+  "native.shortcut.SplitExpand": {
+    "defaultMessage": "Split View: expand or restore pane"
+  },
+  "native.shortcut.FocusPage": {
+    "defaultMessage": "Focus page"
+  },
+  "native.shortcut.Space": {
+    "defaultMessage": "Space {name}"
+  },
+  "welcome.title": {
+    "defaultMessage": "Welcome to Sol"
+  },
+  "welcome.introWords": {
+    "defaultMessage": "meet the internet, once more."
+  },
+  "welcome.close": {
+    "defaultMessage": "Close and open Sol"
+  },
+  "welcome.continue": {
+    "defaultMessage": "Continue"
+  },
+  "welcome.step": {
+    "defaultMessage": "Step {step, number} of {total, number}"
+  },
+  "welcome.importTitle": {
+    "defaultMessage": "Bring your browser with you"
+  },
+  "welcome.importDetail": {
+    "defaultMessage": "Pick the browser you used before: Sol brings your tabs, bookmarks, history and saved passwords."
+  },
+  "welcome.setupTitle": {
+    "defaultMessage": "Make Sol yours"
+  },
+  "welcome.defaultDetail": {
+    "defaultMessage": "Links from other apps open in Sol."
+  },
+  "welcome.makeDefault": {
+    "defaultMessage": "Make Sol the default"
+  },
+  "welcome.searchDetail": {
+    "defaultMessage": "What the address bar searches with. You can change it in Settings."
+  },
+  "welcome.start": {
+    "defaultMessage": "Start browsing"
+  },
+  "welcome.unmute": {
+    "defaultMessage": "Turn music on"
+  },
+  "welcome.mute": {
+    "defaultMessage": "Turn music off"
+  },
+  "welcome.musicOn": {
+    "defaultMessage": "Music on"
+  },
+  "welcome.musicOff": {
+    "defaultMessage": "Music off"
+  },
+  "import.source": {
+    "defaultMessage": "FROM ANOTHER BROWSER"
+  },
+  "import.choose": {
+    "defaultMessage": "Choose a browser"
+  },
+  "import.detail": {
+    "defaultMessage": "Bring your tabs, bookmarks, history and saved passwords into Sol. You’ll see everything before it’s imported."
+  },
+  "import.browser": {
+    "defaultMessage": "Browser"
+  },
+  "import.profile": {
+    "defaultMessage": "Profile"
+  },
+  "import.missing": {
+    "defaultMessage": "Not found"
+  },
+  "import.types": {
+    "defaultMessage": "What to import"
+  },
+  "import.primary": {
+    "defaultMessage": "Primary Password"
+  },
+  "import.reading": {
+    "defaultMessage": "Reading…"
+  },
+  "import.preview": {
+    "defaultMessage": "PREVIEW"
+  },
+  "import.importing": {
+    "defaultMessage": "Importing…"
+  },
+  "import.commit": {
+    "defaultMessage": "Import into Sol"
+  },
+  "import.previewNote": {
+    "defaultMessage": "Imported tabs start unloaded. Sol keeps your existing Spaces, passwords and cookies."
+  },
+  "import.done": {
+    "defaultMessage": "DONE"
+  },
+  "import.again": {
+    "defaultMessage": "Import something else"
+  },
+  "import.fileCategory": {
+    "defaultMessage": "FROM A FILE"
+  },
+  "import.file": {
+    "defaultMessage": "Import a file"
+  },
+  "import.arcFileNote": {
+    "defaultMessage": "Choose StorableSidebar.json to restore Spaces and their tabs from an Arc backup."
+  },
+  "import.fileWarning": {
+    "defaultMessage": "A password export is plain text. Delete it once the import is done."
+  },
+  "import.folder": {
+    "defaultMessage": "Choose folder…"
+  },
+  "import.passwordImport": {
+    "defaultMessage": "Import a password file…"
+  },
+  "import.passwordFile": {
+    "defaultMessage": "Password file (.csv)…"
+  },
+  "import.bookmarkFile": {
+    "defaultMessage": "Bookmarks file (.html)…"
+  },
+  "import.arcFile": {
+    "defaultMessage": "Arc sidebar (.json)…"
+  },
+  "import.arcFolder": {
+    "defaultMessage": "Choose the Arc data folder, or import a copy of StorableSidebar.json below."
+  },
+  "import.incorrect": {
+    "defaultMessage": "That Primary Password didn’t work. Try again."
+  },
+  "space.chooseIcon": {
+    "defaultMessage": "Choose space icon"
+  },
+  "space.emoji": {
+    "defaultMessage": "Choose an emoji"
+  },
+  "space.loadingEmoji": {
+    "defaultMessage": "Loading emoji…"
+  },
+  "space.nameHint": {
+    "defaultMessage": "Space name (optional)"
+  },
+  "space.limit": {
+    "defaultMessage": "Sol keeps up to 24 spaces."
+  },
+  "space.named": {
+    "defaultMessage": "Space {name}"
+  },
+  "media.playingTabs": {
+    "defaultMessage": "Playing tabs"
+  },
+  "media.nowPlaying": {
+    "defaultMessage": "Now playing: {title}"
+  },
+  "media.goto": {
+    "defaultMessage": "Go to tab"
+  },
+  "media.stopPlayer": {
+    "defaultMessage": "Stop and hide player"
+  },
+  "media.stop": {
+    "defaultMessage": "Stop and hide"
+  },
+  "media.seek": {
+    "defaultMessage": "Seek"
+  },
+  "media.previous": {
+    "defaultMessage": "Previous track"
+  },
+  "media.next": {
+    "defaultMessage": "Next track"
+  },
+  "media.pause": {
+    "defaultMessage": "Pause"
+  },
+  "media.play": {
+    "defaultMessage": "Play"
+  },
+  "media.pip": {
+    "defaultMessage": "Picture-in-picture"
+  },
+  "theme.title": {
+    "defaultMessage": "Theme"
+  },
+  "theme.reset": {
+    "defaultMessage": "Reset theme"
+  },
+  "theme.rotateDrag": {
+    "defaultMessage": "Drag empty space to rotate the palette"
+  },
+  "theme.rotate": {
+    "defaultMessage": "Rotate palette"
+  },
+  "theme.rotateHint": {
+    "defaultMessage": "Rotate palette · {degrees}°. Drag around the center; double-click to reset."
+  },
+  "theme.countLabel": {
+    "defaultMessage": "Number of colors"
+  },
+  "theme.count": {
+    "defaultMessage": "{count, plural, one {# color} other {# colors}}"
+  },
+  "theme.presets": {
+    "defaultMessage": "Color palettes"
+  },
+  "theme.brightness": {
+    "defaultMessage": "Brightness"
+  },
+  "theme.grain": {
+    "defaultMessage": "Grain"
+  },
+  "theme.mode.light": {
+    "defaultMessage": "Light"
+  },
+  "theme.mode.dark": {
+    "defaultMessage": "Dark"
+  },
+  "theme.mode.system": {
+    "defaultMessage": "Follow system"
+  },
+  "theme.create": {
+    "defaultMessage": "Create space"
+  },
+  "theme.done": {
+    "defaultMessage": "Done"
+  },
+  "theme.saved": {
+    "defaultMessage": "Theme saved"
+  },
+  "theme.color": {
+    "defaultMessage": "{index, select, 0 {Primary color} 1 {Second color} other {Third color}}. Drag to change hue; drag exposed edge to resize."
+  },
+  "theme.saturation": {
+    "defaultMessage": "{index, select, 0 {Primary color saturation} 1 {Second color saturation} other {Third color saturation}}"
+  },
+  "import.arcProfile": {
+    "defaultMessage": "Spaces bring their Arc profile assignments. History and passwords from the selected Arc profile go to \"{profile}\" in Sol."
+  },
+  "import.otherProfile": {
+    "defaultMessage": "Imported data is added to the \"{profile}\" browsing profile."
+  },
+  "import.found": {
+    "defaultMessage": "{count, plural, one {# profile found} other {# profiles found}}"
+  },
+  "import.noProfile": {
+    "defaultMessage": "No {name} profile selected"
+  },
+  "import.otherFolder": {
+    "defaultMessage": "If {name} keeps its data somewhere else, choose its “User Data” folder or one of its profiles."
+  },
+  "import.locked": {
+    "defaultMessage": "This {name} profile is locked with a Primary Password."
+  },
+  "import.consent": {
+    "defaultMessage": "Sol will read this {name} profile on this PC without changing it. Close {name} first so its files aren’t locked."
+  },
+  "import.passwordConsent": {
+    "defaultMessage": "Passwords are unlocked with your Windows account and saved only to Sol’s password manager."
+  },
+  "import.read": {
+    "defaultMessage": "Allow Sol to read {name}"
+  },
+  "import.previewReady": {
+    "defaultMessage": "Ready to import from {name}"
+  },
+  "import.previewEmpty": {
+    "defaultMessage": "Nothing to import from {name}"
+  },
+  "import.skipped": {
+    "defaultMessage": "{count, number} entries skipped (never-save sites, app or non-website sign-ins)."
+  },
+  "import.unreadable": {
+    "defaultMessage": "{count, number} passwords couldn’t be unlocked."
+  },
+  "import.doneTitle": {
+    "defaultMessage": "Imported from {name}"
+  },
+  "import.donePartial": {
+    "defaultMessage": "Imported from {name}, with some problems"
+  },
+  "import.doneSpaces": {
+    "defaultMessage": "Find your imported {count, plural, one {Space} other {Spaces}} in the sidebar."
+  },
+  "welcome.import.browsers": {
+    "defaultMessage": "Browsers to import from"
+  },
+  "welcome.import.looking": {
+    "defaultMessage": "Looking…"
+  },
+  "welcome.import.onPc": {
+    "defaultMessage": "Found on this PC"
+  },
+  "welcome.import.notOnPc": {
+    "defaultMessage": "Not on this PC"
+  },
+  "welcome.import.profiles": {
+    "defaultMessage": "{count, plural, one {# profile} other {# profiles}}"
+  },
+  "welcome.import.skip": {
+    "defaultMessage": "Skip"
+  },
+  "welcome.import.from": {
+    "defaultMessage": "From {name}"
+  },
+  "welcome.import.profile": {
+    "defaultMessage": "{name} profile"
+  },
+  "welcome.import.bring": {
+    "defaultMessage": "What to bring"
+  },
+  "welcome.import.arc": {
+    "defaultMessage": "Spaces bring their Arc profile assignments. History and passwords come from the selected Arc profile and go to Sol’s Default profile."
+  },
+  "welcome.import.primary": {
+    "defaultMessage": "{name} keeps its passwords behind a Primary Password. Enter it to bring them; it is used once and not kept."
+  },
+  "welcome.import.allBrowsers": {
+    "defaultMessage": "Browsers"
+  },
+  "welcome.import.import": {
+    "defaultMessage": "Import"
+  },
+  "welcome.import.working": {
+    "defaultMessage": "Bringing {items} into Sol…"
+  },
+  "welcome.import.reading": {
+    "defaultMessage": "Reading {name}…"
+  },
+  "welcome.import.completed": {
+    "defaultMessage": "Brought over from {name}"
+  },
+  "welcome.import.another": {
+    "defaultMessage": "Another browser"
+  },
+  "import.data.tabs.zen": {
+    "defaultMessage": "Tabs, Spaces and bookmarks"
+  },
+  "import.data.tabs.zenHint": {
+    "defaultMessage": "Open and pinned tabs, folders, Essentials and bookmarks"
+  },
+  "import.data.tabs.arc": {
+    "defaultMessage": "Spaces and sidebar tabs"
+  },
+  "import.data.tabs.arcHint": {
+    "defaultMessage": "All Spaces, Favorites, folders, Pinned and Today tabs, Split Views and archived tabs"
+  },
+  "import.data.tabs.chromium": {
+    "defaultMessage": "Open and pinned tabs"
+  },
+  "import.data.tabs.chromiumHint": {
+    "defaultMessage": "From {name}'s last session"
+  },
+  "import.data.bookmarks": {
+    "defaultMessage": "Bookmarks"
+  },
+  "import.data.bookmarksHint": {
+    "defaultMessage": "Added as a folder in a new Space"
+  },
+  "import.data.historyHint": {
+    "defaultMessage": "The last 90 days"
+  },
+  "import.data.cookies": {
+    "defaultMessage": "Cookies and sign-ins"
+  },
+  "import.data.cookiesHint": {
+    "defaultMessage": "Keeps you signed in on many sites"
+  },
+  "split.view": {
+    "defaultMessage": "Split view, {count, number} tabs"
+  },
+  "split.navigation": {
+    "defaultMessage": "Navigation for {title}"
+  },
+  "split.back": {
+    "defaultMessage": "Back in {title}"
+  },
+  "split.forward": {
+    "defaultMessage": "Forward in {title}"
+  },
+  "split.reload": {
+    "defaultMessage": "Reload {title}"
+  },
+  "split.stop": {
+    "defaultMessage": "Stop loading {title}"
+  },
+  "split.copy": {
+    "defaultMessage": "Copy page URL"
+  },
+  "split.copyNamed": {
+    "defaultMessage": "Copy URL of {title}"
+  },
+  "split.edit": {
+    "defaultMessage": "Edit address of {title}"
+  },
+  "split.site": {
+    "defaultMessage": "Site settings and extensions"
+  },
+  "split.siteNamed": {
+    "defaultMessage": "Site settings for {title}"
+  },
+  "split.layout": {
+    "defaultMessage": "Layout"
+  },
+  "split.layoutNamed": {
+    "defaultMessage": "Layout options for {title}"
+  },
+  "split.restore": {
+    "defaultMessage": "Restore split"
+  },
+  "split.expand": {
+    "defaultMessage": "Expand pane"
+  },
+  "split.expandNamed": {
+    "defaultMessage": "Expand {title}"
+  },
+  "split.close": {
+    "defaultMessage": "Close this page"
+  },
+  "history.clearShort": {
+    "defaultMessage": "Clear…"
+  },
+  "history.clearFrom": {
+    "defaultMessage": "Clear browsing history from"
+  },
+  "history.emptyShort": {
+    "defaultMessage": "Pages you visit appear here"
+  },
+  "history.all": {
+    "defaultMessage": "Show all history"
+  },
+  "capture.hint": {
+    "defaultMessage": "Drag or click on the page to select a region. Press ESC to cancel."
+  },
+  "capture.saveFull": {
+    "defaultMessage": "Save full page"
+  },
+  "capture.saveVisible": {
+    "defaultMessage": "Save visible"
+  },
+  "capture.copy": {
+    "defaultMessage": "Copy"
+  },
+  "capture.download": {
+    "defaultMessage": "Download"
+  },
+  "integrations.now": {
+    "defaultMessage": "Current local time {time}"
+  },
+  "integrations.otherEvents": {
+    "defaultMessage": "Other events"
+  },
+  "integrations.join": {
+    "defaultMessage": "Join meeting"
+  },
+  "integrations.agenda": {
+    "defaultMessage": "Hourly agenda"
+  },
+  "integrations.compose": {
+    "defaultMessage": "Compose email"
+  },
+  "integrations.preview": {
+    "defaultMessage": "{name} preview"
+  },
+  "integrations.recent": {
+    "defaultMessage": "Recent pages"
+  },
+  "integrations.inboxLoading": {
+    "defaultMessage": "Preparing inbox preview…"
+  },
+  "integrations.loading": {
+    "defaultMessage": "Loading preview…"
+  },
+  "integrations.outlook": {
+    "defaultMessage": "Outlook needs you to sign in."
+  },
+  "integrations.outlookSignIn": {
+    "defaultMessage": "Sign in to Outlook"
+  },
+  "integrations.openPinned": {
+    "defaultMessage": "Open this pinned tab to load its preview."
+  },
+  "integrations.inboxUnavailable": {
+    "defaultMessage": "Inbox preview unavailable."
+  },
+  "integrations.calendarUnknown": {
+    "defaultMessage": "This calendar view is not recognized yet."
+  },
+  "integrations.noMail": {
+    "defaultMessage": "No unread mail from the last week."
+  },
+  "integrations.noPages": {
+    "defaultMessage": "Pages you visit in this profile will appear here."
+  },
+  "integrations.refresh": {
+    "defaultMessage": "Refresh preview"
+  },
+  "integrations.openCalendar": {
+    "defaultMessage": "Open calendar"
+  },
+  "settings.integration.gmail": {
+    "defaultMessage": "Inbox preview and compose"
+  },
+  "settings.integration.outlookMail": {
+    "defaultMessage": "Inbox preview and compose"
+  },
+  "settings.integration.googleCalendar": {
+    "defaultMessage": "Agenda and meeting links"
+  },
+  "settings.integration.figma": {
+    "defaultMessage": "Recent pages and new designs"
+  },
+  "settings.integration.whatsapp": {
+    "defaultMessage": "Unread badge and startup loading"
+  },
+  "settings.integration.twitter": {
+    "defaultMessage": "Unread badge and startup loading"
+  },
+  "settings.integration.spotify": {
+    "defaultMessage": "Sidebar mini-player"
+  },
+  "settings.integration.youtube": {
+    "defaultMessage": "Video button and automatic picture-in-picture"
+  },
+  "settings.integration.googleMeet": {
+    "defaultMessage": "Video button and automatic picture-in-picture"
+  },
+  "settings.integration.googleDocs": {
+    "defaultMessage": "New document commands"
+  },
+  "settings.integration.word": {
+    "defaultMessage": "New document commands"
+  },
+  "sidebar.width": {
+    "defaultMessage": "Sidebar width"
+  },
+  "emoji.search": {
+    "defaultMessage": "Search emoji"
+  },
+  "emoji.groups": {
+    "defaultMessage": "Emoji categories"
+  },
+  "emoji.label": {
+    "defaultMessage": "Emoji"
+  },
+  "emoji.named": {
+    "defaultMessage": "Emoji {emoji}: {name}"
+  },
+  "emoji.empty": {
+    "defaultMessage": "No emoji found"
+  },
+  "emoji.letter": {
+    "defaultMessage": "Use first letter"
+  },
+  "devtools.placement": {
+    "defaultMessage": "Developer tools placement"
+  },
+  "devtools.title": {
+    "defaultMessage": "Developer tools"
+  },
+  "devtools.toggle": {
+    "defaultMessage": "Toggle device preview"
+  },
+  "devtools.toggleHint": {
+    "defaultMessage": "Toggle device preview (Ctrl+Shift+M)"
+  },
+  "devtools.toggleUnavailable": {
+    "defaultMessage": "Device preview works on the tab shown in the browser"
+  },
+  "devtools.left": {
+    "defaultMessage": "Dock left"
+  },
+  "devtools.bottom": {
+    "defaultMessage": "Dock bottom"
+  },
+  "devtools.right": {
+    "defaultMessage": "Dock right"
+  },
+  "devtools.separate": {
+    "defaultMessage": "Separate window"
+  },
+  "devtools.separateHint": {
+    "defaultMessage": "Separate window (Ctrl+Shift+D to dock)"
+  },
+  "devtools.close": {
+    "defaultMessage": "Close developer tools"
+  },
+  "devtools.closeHint": {
+    "defaultMessage": "Close developer tools (F12)"
+  },
+  "devtools.size": {
+    "defaultMessage": "Developer tools size"
+  },
+  "devtools.attach": {
+    "defaultMessage": "Developer tools — separate window · Attach:"
+  },
+  "device.title": {
+    "defaultMessage": "Device preview"
+  },
+  "device.preset": {
+    "defaultMessage": "Device preset"
+  },
+  "device.responsive": {
+    "defaultMessage": "Responsive"
+  },
+  "device.applying": {
+    "defaultMessage": "Applying…"
+  },
+  "device.actualScale": {
+    "defaultMessage": "Actual preview scale"
+  },
+  "device.mobile": {
+    "defaultMessage": "Mobile browser"
+  },
+  "device.mobileHint": {
+    "defaultMessage": "Mobile browser (Android Chrome; reload for server-selected content)"
+  },
+  "device.touch": {
+    "defaultMessage": "Touch input"
+  },
+  "device.touchHint": {
+    "defaultMessage": "Emulate touch input"
+  },
+  "device.close": {
+    "defaultMessage": "Close device preview"
+  },
+  "device.closeHint": {
+    "defaultMessage": "Close device preview (Ctrl+Shift+M)"
+  },
+  "device.width": {
+    "defaultMessage": "Viewport width"
+  },
+  "device.height": {
+    "defaultMessage": "Viewport height"
+  },
+  "device.rotate": {
+    "defaultMessage": "Rotate device"
+  },
+  "device.scale": {
+    "defaultMessage": "Preview scale"
+  },
+  "device.fit": {
+    "defaultMessage": "Fit"
+  },
+  "device.dpr": {
+    "defaultMessage": "Device pixel ratio"
+  },
+  "boost.off": {
+    "defaultMessage": "Turn this Boost off"
+  },
+  "boost.on": {
+    "defaultMessage": "Turn this Boost on"
+  },
+  "boost.tint": {
+    "defaultMessage": "Tint colour"
+  },
+  "boost.accentHint": {
+    "defaultMessage": "Accent colour: links, selection, form controls"
+  },
+  "boost.random": {
+    "defaultMessage": "Random colour"
+  },
+  "boost.dark": {
+    "defaultMessage": "Dark mode"
+  },
+  "boost.adjustHint": {
+    "defaultMessage": "Brightness, contrast and saturation"
+  },
+  "boost.adjust": {
+    "defaultMessage": "Adjust colours"
+  },
+  "boost.remove": {
+    "defaultMessage": "Remove colour changes"
+  },
+  "boost.contrast": {
+    "defaultMessage": "Contrast"
+  },
+  "boost.saturation": {
+    "defaultMessage": "Saturation"
+  },
+  "boost.font": {
+    "defaultMessage": "Font"
+  },
+  "boost.size": {
+    "defaultMessage": "Size"
+  },
+  "boost.case": {
+    "defaultMessage": "Case"
+  },
+  "boost.caseHint": {
+    "defaultMessage": "Letter case: {mode}"
+  },
+  "boost.stopZap": {
+    "defaultMessage": "Done zapping"
+  },
+  "boost.zap": {
+    "defaultMessage": "Zap"
+  },
+  "boost.zapHint": {
+    "defaultMessage": "Click elements on the page to hide them. Esc finishes."
+  },
+  "boost.hidden": {
+    "defaultMessage": "Zapped elements"
+  },
+  "boost.unhide": {
+    "defaultMessage": "Unzap"
+  },
+  "boost.unhideNamed": {
+    "defaultMessage": "Unzap {name}"
+  },
+  "boost.cancelFocus": {
+    "defaultMessage": "Cancel focus"
+  },
+  "boost.unfocus": {
+    "defaultMessage": "Unfocus"
+  },
+  "boost.focus": {
+    "defaultMessage": "Focus"
+  },
+  "boost.focusHint": {
+    "defaultMessage": "Click the part of the page to keep. Everything else is hidden."
+  },
+  "boost.code": {
+    "defaultMessage": "Code"
+  },
+  "boost.css": {
+    "defaultMessage": "CSS for {host}"
+  },
+  "boost.closed": {
+    "defaultMessage": "The page this editor was opened from is closed: Zap and Focus need it open."
+  },
+  "boost.reset": {
+    "defaultMessage": "Reset Boost"
+  },
+  "native.window.Copied": {
+    "defaultMessage": "Copied current URL"
+  },
+  "native.window.CopyClean": {
+    "defaultMessage": "Copied link without trackers"
+  },
+  "native.window.ClipboardBusy": {
+    "defaultMessage": "The clipboard is busy. Try again."
+  },
+  "native.window.CopyFailed": {
+    "defaultMessage": "Could not copy the page address"
+  },
+  "native.window.NoRecent": {
+    "defaultMessage": "No recently closed tabs"
+  },
+  "native.window.CaptureError": {
+    "defaultMessage": "Could not take the screenshot."
+  },
+  "native.window.CaptureOpen": {
+    "defaultMessage": "Open a page to capture it."
+  },
+  "native.window.CaptureSavedCopied": {
+    "defaultMessage": "Screenshot saved and copied"
+  },
+  "native.window.CaptureCopied": {
+    "defaultMessage": "Screenshot copied"
+  },
+  "native.window.CaptureSaved": {
+    "defaultMessage": "Screenshot saved"
+  },
+  "native.window.UpdateTitle": {
+    "defaultMessage": "Check for Updates — Sol"
+  },
+  "native.window.DownloadLocation": {
+    "defaultMessage": "Download location"
+  },
+  "split.unresponsive": {
+    "defaultMessage": "This page stopped responding."
+  },
+  "native.menu.SplitColumns": {
+    "defaultMessage": "Side by side"
+  },
+  "native.menu.SplitRows": {
+    "defaultMessage": "Top and bottom"
+  },
+  "native.menu.SplitMainLeft": {
+    "defaultMessage": "Main on the left"
+  },
+  "native.menu.SplitMainTop": {
+    "defaultMessage": "Main on top"
+  },
+  "native.menu.SplitGrid": {
+    "defaultMessage": "Grid 2 × 2"
+  },
+  "native.menu.SplitColumnCount": {
+    "defaultMessage": "{name} columns",
+    "description": "Split view layout with three or four columns. The name argument is that number."
+  },
+  "native.menu.SplitEqual": {
+    "defaultMessage": "Equal sizes"
+  },
+  "native.menu.SplitSwapWith": {
+    "defaultMessage": "Swap with"
+  },
+  "native.menu.SplitRemove": {
+    "defaultMessage": "Remove from split"
+  },
+  "native.window.CaptureDialog": {
+    "defaultMessage": "Save screenshot"
+  },
+  "import.preview.spaces": {
+    "defaultMessage": "{count, plural, one {# Space} other {# Spaces}}"
+  },
+  "import.report.spaces": {
+    "defaultMessage": "{count, plural, one {# Space} other {# Spaces}} added"
+  },
+  "import.preview.tabs": {
+    "defaultMessage": "{count, plural, one {# tab} other {# tabs}}"
+  },
+  "import.report.tabs": {
+    "defaultMessage": "{count, plural, one {# tab} other {# tabs}} added"
+  },
+  "import.preview.folders": {
+    "defaultMessage": "{count, plural, one {# folder} other {# folders}}"
+  },
+  "import.report.folders": {
+    "defaultMessage": "{count, plural, one {# folder} other {# folders}} added"
+  },
+  "import.preview.favorites": {
+    "defaultMessage": "{count, plural, one {# Favorite} other {# Favorites}}"
+  },
+  "import.report.favorites": {
+    "defaultMessage": "{count, plural, one {# Favorite} other {# Favorites}} added"
+  },
+  "import.preview.splits": {
+    "defaultMessage": "{count, plural, one {# Split View} other {# Split Views}}"
+  },
+  "import.report.splits": {
+    "defaultMessage": "{count, plural, one {# Split View} other {# Split Views}} added"
+  },
+  "import.preview.archived": {
+    "defaultMessage": "{count, plural, one {# archived tab} other {# archived tabs}}"
+  },
+  "import.report.archived": {
+    "defaultMessage": "{count, plural, one {# archived tab} other {# archived tabs}} added"
+  },
+  "import.preview.bookmarks": {
+    "defaultMessage": "{count, plural, one {# bookmark} other {# bookmarks}}"
+  },
+  "import.report.bookmarks": {
+    "defaultMessage": "{count, plural, one {# bookmark} other {# bookmarks}} added"
+  },
+  "import.preview.favicons": {
+    "defaultMessage": "{count, plural, one {# site icon} other {# site icons}}"
+  },
+  "import.report.favicons": {
+    "defaultMessage": "{count, plural, one {# site icon} other {# site icons}} added"
+  },
+  "import.preview.history": {
+    "defaultMessage": "{count, plural, one {# history visit} other {# history visits}}"
+  },
+  "import.report.history": {
+    "defaultMessage": "{count, plural, one {# history visit} other {# history visits}} added"
+  },
+  "import.preview.cookies": {
+    "defaultMessage": "{count, plural, one {# cookie} other {# cookies}}"
+  },
+  "import.preview.passwords": {
+    "defaultMessage": "{count, plural, one {# saved password} other {# saved passwords}}"
+  },
+  "import.report.cookies": {
+    "defaultMessage": "{count, plural, one {# cookie} other {# cookies}} added, {kept, number} already in Sol"
+  },
+  "import.report.passwords": {
+    "defaultMessage": "{count, plural, one {# password} other {# passwords}} saved{existing, plural, =0 {} other {, # already saved}}{failed, plural, =0 {} other {, # not saved}}"
+  },
+  "welcome.import.wrongPassword": {
+    "defaultMessage": "That Primary Password is not right."
+  },
+  "welcome.import.emptyProfile": {
+    "defaultMessage": "Nothing to bring from this {name} profile."
+  },
+  "toolbar.extensionPage": {
+    "defaultMessage": "Extension page"
+  },
+  "native.window.ExitFullscreen": {
+    "defaultMessage": "Press {name} to exit full screen",
+    "description": "Toast shown when entering fullscreen. Keep the {name} placeholder for the Esc key cap."
+  }
+}

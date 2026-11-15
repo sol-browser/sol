@@ -1,4 +1,5 @@
 #include "windows/page_capture.h"
+#include "interface_strings.h"
 #include "windows/image_scale.h"
 #include <windows.h>
 #include <shlobj.h>
@@ -96,6 +97,9 @@ double Number(CefRefPtr<CefDictionaryValue> dictionary, const char* key) {
   return type == VTYPE_INT ? dictionary->GetInt(key) : type == VTYPE_DOUBLE ? dictionary->GetDouble(key) : std::nan("");
 }
 
+const char* CaptureText(const State& state, InterfaceMessage id) {
+  return InterfaceText(state.session ? state.session->interface_locale : "en", id);
+}
 void Record(const std::shared_ptr<State>& state, bool ok, bool region, bool full, bool saved, bool copied) {
   auto details = CefDictionaryValue::Create();
   details->SetBool("ok", ok); details->SetBool("full", full); details->SetBool("region", region);
@@ -169,7 +173,7 @@ class Capture final : public CefDevToolsMessageObserver {
     finished_ = true;
     registration_ = nullptr;
     if (const auto state = state_.lock()) {
-      if (state->workspace) state->workspace->Notify("Could not take the screenshot.");
+      if (state->workspace) state->workspace->Notify(CaptureText(*state, InterfaceMessage::WindowCaptureError));
       Record(state, false, region_, full_, false, false);
     }
     if (done_callback_) done_callback_();
@@ -200,8 +204,9 @@ void DeliverScreenshot(const std::shared_ptr<State>& state, std::string png, Scr
   const auto finish = [](const std::shared_ptr<State>& state, bool saved, bool copied, bool region, bool full) {
     const bool ok = saved || copied;
     if (ok && state->embedded)
-      state->embedded->Notify("copy", copied ? (saved ? L"Screenshot saved and copied" : L"Screenshot copied") : L"Screenshot saved");
-    else if (!ok && state->workspace) state->workspace->Notify("Could not take the screenshot.");
+      state->embedded->Notify("copy", CefString(CaptureText(*state, copied ? (saved ? InterfaceMessage::WindowCaptureSavedCopied :
+          InterfaceMessage::WindowCaptureCopied) : InterfaceMessage::WindowCaptureSaved)).ToWString());
+    else if (!ok && state->workspace) state->workspace->Notify(CaptureText(*state, InterfaceMessage::WindowCaptureError));
     Record(state, ok, region, full, saved, copied);
   };
   if (action == ScreenshotAction::Copy) { finish(state, false, copied, region, full); return; }
@@ -213,7 +218,7 @@ void DeliverScreenshot(const std::shared_ptr<State>& state, std::string png, Scr
   if (target.ask && host) {
     // As with a download: Windows' "Save as", in the download folder, with the name filled in.
     auto picture = std::make_shared<std::string>(std::move(png));
-    host->RunFileDialog(FILE_DIALOG_SAVE, "Save screenshot", (target.directory / name).wstring(), {".png"},
+    host->RunFileDialog(FILE_DIALOG_SAVE, CaptureText(*state, InterfaceMessage::WindowCaptureDialog), (target.directory / name).wstring(), {".png"},
         new SaveChosen([finish, downloads, url, weak = std::weak_ptr<State>(state), picture, copied, region, full](const std::vector<CefString>& paths) {
           const auto state = weak.lock();
           if (!state) return;
@@ -256,7 +261,7 @@ void CapturePage(const std::shared_ptr<State>& state, bool full_page) {
 
 void StartCapturePicker(const std::shared_ptr<State>& state) {
   if (!state || !state->workspace || state->workspace->WindowClosing()) return;
-  if (!state->content) { state->workspace->Notify("Open a page to capture it."); return; }
+  if (!state->content) { state->workspace->Notify(CaptureText(*state, InterfaceMessage::WindowCaptureOpen)); return; }
   if (!state->capture_window) state->capture_window = std::make_shared<CaptureWindow>(state);
   state->capture_window->Start();
 }

@@ -1,4 +1,6 @@
 #include "workspace/controller.h"
+#include "app/session.h"
+#include "interface_strings.h"
 #include "web_url.h"
 #include "navigation/url_clean.h"
 #include "windows/clipboard.h"
@@ -30,9 +32,14 @@ int WorkspaceController::CopyTabLink(const std::string& id, std::string& error, 
   bool stripped = false;
   const std::string text = clean ? StripTrackingParameters(ShownAddress(url), &stripped) : std::string(ShownAddress(url));
   if (const int code = CopyLinkText(state && state->window ? state->window->GetWindowHandle() : nullptr, CefString(text).ToWString())) {
-    error = code == 409 ? "The clipboard is busy. Try again." : "Could not copy the page address"; return code;
+    const auto locale = state && state->session ? state->session->interface_locale : "en";
+    error = InterfaceText(locale, code == 409 ? InterfaceMessage::WindowClipboardBusy : InterfaceMessage::WindowCopyFailed); return code;
   }
-  if (state && state->embedded) state->embedded->Notify("copy", stripped ? L"Copied link without trackers" : L"Copied current URL");
+  if (state && state->embedded) {
+    const auto locale = state->session ? state->session->interface_locale : "en";
+    const auto label = stripped ? InterfaceMessage::WindowCopyClean : InterfaceMessage::WindowCopied;
+    state->embedded->Notify("copy", CefString(InterfaceText(locale, label)).ToWString());
+  }
   if (state) { auto details = CefDictionaryValue::Create(); details->SetBool("clean", clean); details->SetBool("stripped", stripped); state->Record("tab_link_copied", details); }
   return 0;
 }

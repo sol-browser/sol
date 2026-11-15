@@ -5,7 +5,8 @@ import { Icon } from './Icon';
 import { WindowCaptionIcon } from './WindowCaptionIcon';
 import { WelcomeImport } from './WelcomeImport';
 import { createSky, type Sky } from './welcome-gl';
-import { WELCOME_TIMELINE, WELCOME_WORDS, easeInOut, exitAt, welcomeAt } from './welcome-timeline';
+import { useMessages } from './i18n';
+import { WELCOME_TIMELINE, easeInOut, exitAt, welcomeAt } from './welcome-timeline';
 import { BANDS, loadSpectrum, type Spectrum } from './welcome-audio';
 import './welcome.css';
 
@@ -56,6 +57,9 @@ function layout(width: number, height: number, steps: number) {
  * with the welcome music when Sol has one.
  */
 export function Welcome() {
+  const t = useMessages();
+  const introWords = t('welcome.introWords').trim().split(/\s+/u);
+  const introWordCount = introWords.length;
   const root = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const logo = useRef<HTMLDivElement>(null);
@@ -100,7 +104,7 @@ export function Welcome() {
     const tick = (now: number) => {
       const t = (now - start) / 1000;
       clock.current = t;
-      const f = welcomeAt(t);
+      const f = welcomeAt(t, introWordCount);
       const dt = Math.min(0.05, Math.max(0, t - last));
       last = t;
       const steps = stepAt.current === null ? 0 : Math.min(1, (t - stepAt.current) / STEP_MOVE);
@@ -142,7 +146,7 @@ export function Welcome() {
     };
     frame = requestAnimationFrame(tick);
     return () => { cancelAnimationFrame(frame); observer.disconnect(); sky?.dispose(); sky = null; };
-  }, [state !== null, music]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state !== null, music, introWordCount]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const toSteps = () => {
     if (stepAt.current !== null) return;
@@ -164,58 +168,58 @@ export function Welcome() {
   const makeDefault = () =>
     void welcomeQuery({ method: 'welcome.makeDefault' }).then(raw => setState(parseState(raw))).catch(e => setError(String(e)));
 
-  return <div ref={root} className="welcome" data-step={step} aria-label="Welcome to Sol">
+  return <div ref={root} className="welcome" data-step={step} aria-label={t('welcome.title')}>
     <canvas ref={canvas} className="welcome-sky" aria-hidden="true" tabIndex={-1} />
     <div className="welcome-drag" aria-hidden="true" />
     <span className="welcome-caption">
-      <button className="caption-button" type="button" aria-label="Minimize" onClick={() => void welcomeQuery({ method: 'welcome.window', action: 'minimize' })}><WindowCaptionIcon name="minimize" /></button>
-      <button className="caption-button window-close" type="button" aria-label="Close and open Sol" onClick={() => void welcomeQuery({ method: 'welcome.window', action: 'close' })}><WindowCaptionIcon name="close" /></button>
+      <button className="caption-button" type="button" aria-label={t('toolbar.minimize')} onClick={() => void welcomeQuery({ method: 'welcome.window', action: 'minimize' })}><WindowCaptionIcon name="minimize" /></button>
+      <button className="caption-button window-close" type="button" aria-label={t('welcome.close')} onClick={() => void welcomeQuery({ method: 'welcome.window', action: 'close' })}><WindowCaptionIcon name="close" /></button>
     </span>
     <div ref={logo} className="welcome-logo" aria-hidden="true">
       <svg viewBox={LOGO_VIEW}><path d={LOGO_PATH} fillRule="evenodd" /></svg>
     </div>
     {step === 'intro' && <>
       <h1 className="welcome-title">
-        {WELCOME_WORDS.map((word, i) => <span key={word} ref={element => { words.current[i] = element; }} className="welcome-word">{word}</span>)}
+        {introWords.map((word, i) => <span key={i} ref={element => { words.current[i] = element; }} className="welcome-word">{word}</span>)}
       </h1>
-      <button ref={button} type="button" className="welcome-go" aria-label="Continue" title="Continue" disabled={!ready} onClick={toSteps}>
+      <button ref={button} type="button" className="welcome-go" aria-label={t('welcome.continue')} title={t('welcome.continue')} disabled={!ready} onClick={toSteps}>
         <ArrowRight size={22} strokeWidth={2} aria-hidden="true" /></button>
     </>}
     {step !== 'intro' && <div ref={panel} className="welcome-panel" style={{ opacity: 0 }}>
       {step === 'import' ? <section aria-labelledby="welcome-import-title">
-        <p className="welcome-eyebrow">Step 1 of 2</p>
-        <h2 id="welcome-import-title">Bring your browser with you</h2>
-        <p className="welcome-lead">Pick the browser you used before: Sol brings your tabs, bookmarks, history and saved passwords.</p>
+        <p className="welcome-eyebrow">{t('welcome.step', { step: 1, total: 2 })}</p>
+        <h2 id="welcome-import-title">{t('welcome.importTitle')}</h2>
+        <p className="welcome-lead">{t('welcome.importDetail')}</p>
         <WelcomeImport query={welcomeQuery} ready={!!state?.ready} onDone={() => setStep('setup')} />
       </section> : <section aria-labelledby="welcome-setup-title">
-        <p className="welcome-eyebrow">Step 2 of 2</p>
-        <h2 id="welcome-setup-title">Make Sol yours</h2>
+        <p className="welcome-eyebrow">{t('welcome.step', { step: 2, total: 2 })}</p>
+        <h2 id="welcome-setup-title">{t('welcome.setupTitle')}</h2>
         <div className="welcome-choice">
           <div>
-            <h3>Default browser</h3>
-            <p>Links from other apps open in Sol.</p>
+            <h3>{t('settings.default.title')}</h3>
+            <p>{t('welcome.defaultDetail')}</p>
           </div>
-          {state?.defaultBrowser.isDefault ? <span className="welcome-done"><Check size={16} aria-hidden="true" />Sol is your default browser</span> :
-            <button type="button" className="welcome-secondary" onClick={makeDefault}>Make Sol the default</button>}
+          {state?.defaultBrowser.isDefault ? <span className="welcome-done"><Check size={16} aria-hidden="true" />{t('settings.default.active')}</span> :
+            <button type="button" className="welcome-secondary" onClick={makeDefault}>{t('welcome.makeDefault')}</button>}
         </div>
         <div className="welcome-choice">
           <div>
-            <h3>Search engine</h3>
-            <p>What the address bar searches with. You can change it in Settings.</p>
+            <h3>{t('settings.site.engine')}</h3>
+            <p>{t('welcome.searchDetail')}</p>
           </div>
-          <div className="welcome-engines" role="radiogroup" aria-label="Search engine">
+          <div className="welcome-engines" role="radiogroup" aria-label={t('settings.site.engine')}>
             {ENGINES.map(engine => <button key={engine.id} type="button" role="radio" aria-checked={state?.searchEngine === engine.id}
               onClick={() => setEngine(engine.id)}>{engine.name}</button>)}
           </div>
         </div>
         <div className="welcome-actions">
-          <button type="button" className="welcome-secondary" onClick={() => setStep('import')}>Back</button>
-          <button type="button" className="welcome-primary" onClick={finish}>Start browsing<ArrowRight size={16} aria-hidden="true" /></button>
+          <button type="button" className="welcome-secondary" onClick={() => setStep('import')}>{t('toolbar.back')}</button>
+          <button type="button" className="welcome-primary" onClick={finish}>{t('welcome.start')}<ArrowRight size={16} aria-hidden="true" /></button>
         </div>
       </section>}
       {error && <p className="welcome-error" role="alert">{error}</p>}
     </div>}
-    {music && <button type="button" className="welcome-sound" aria-label={muted ? 'Turn music on' : 'Turn music off'} title={muted ? 'Music on' : 'Music off'}
+    {music && <button type="button" className="welcome-sound" aria-label={muted ? t('welcome.unmute') : t('welcome.mute')} title={muted ? t('welcome.musicOn') : t('welcome.musicOff')}
       aria-pressed={!muted} onClick={toggleMusic}><Icon name={muted ? 'muted' : 'speaker'} /></button>}
   </div>;
 }

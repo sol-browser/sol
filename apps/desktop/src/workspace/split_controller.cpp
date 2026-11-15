@@ -1,4 +1,6 @@
 #include "workspace/controller.h"
+#include "app/session.h"
+#include "interface_strings.h"
 #include "windows/pointer.h"
 #include "windows/embedded_content.h"
 #include "windows/focus.h"
@@ -341,25 +343,29 @@ bool WorkspaceController::HandleSplit(CefRefPtr<CefDictionaryValue> request, Rep
       };
     };
     MenuPopup::Builder menu;
-    static const std::map<std::string,std::pair<const char*,const char*>> names{
-      {"columns",{"Side by side","columns"}},{"rows",{"Top and bottom","rows"}},{"main-left",{"Main on the left","mainLeft"}},
-      {"main-top",{"Main on top","mainTop"}},{"grid",{"Grid 2 \u00d7 2","grid"}}};
+    const std::string_view locale = session_ ? session_->interface_locale : "en";
+    const auto label = [locale](InterfaceMessage message) { return InterfaceText(locale, message); };
+    static const std::map<std::string,std::pair<InterfaceMessage,const char*>> names{
+      {"columns",{InterfaceMessage::MenuSplitColumns,"columns"}},{"rows",{InterfaceMessage::MenuSplitRows,"rows"}},
+      {"main-left",{InterfaceMessage::MenuSplitMainLeft,"mainLeft"}},{"main-top",{InterfaceMessage::MenuSplitMainTop,"mainTop"}},
+      {"grid",{InterfaceMessage::MenuSplitGrid,"grid"}}};
     for (const auto& preset : SplitMenuPresets(count)) {
       auto layout = SplitPreset(preset,count);
       const bool current = layout && RelabelSplitSlots(*layout,SplitReadingOrder(split->layout)) == split->layout;
-      const auto& [label,icon] = names.at(preset);
-      std::string text = label; if (preset == "columns" && count > 2) text = std::to_string(count) + " columns";
+      const auto& [message,icon] = names.at(preset);
+      const std::string text = preset == "columns" && count > 2 ?
+          InterfaceTextWithName(locale, InterfaceMessage::MenuSplitColumnCount, std::to_string(count)) : label(message);
       menu.Add(text,icon,run([preset](WorkspaceController& self,const SplitGroup& group) {
         auto chosen = SplitPreset(preset,static_cast<int>(group.pages.size()));
         if (chosen) self.CommitSplitLayout(group,RelabelSplitSlots(*chosen,SplitReadingOrder(group.layout)),preset == "grid",{});
       }),"",true,current);
     }
-    menu.Add("Equal sizes","columns",run([](WorkspaceController& self,const SplitGroup& group) {
+    menu.Add(label(InterfaceMessage::MenuSplitEqual),"columns",run([](WorkspaceController& self,const SplitGroup& group) {
       self.CommitSplitLayout(group,EqualizeSplitLayout(group.layout),group.linked,{});
     }),"",split->layout != EqualizeSplitLayout(split->layout));
     menu.Separator();
     if (count > 2) {
-      auto& swap = menu.Submenu("Swap with","swap");
+      auto& swap = menu.Submenu(label(InterfaceMessage::MenuSplitSwapWith),"swap");
       // Each page with the icon the sidebar shows for it. The snapshot is held
       // while its rows are read (child values belong to it).
       const auto snapshot = Snapshot(); const auto rows = snapshot->GetList("nodes");
@@ -378,11 +384,11 @@ bool WorkspaceController::HandleSplit(CefRefPtr<CefDictionaryValue> request, Rep
           self.Dispatch(command,{},true);
         }),"",true,false,icons.contains(other) ? icons.at(other) : "");
       }
-    } else menu.Add("Swap panes","swap",run([](WorkspaceController& self,const SplitGroup& group) {
+    } else menu.Add(label(InterfaceMessage::SidebarSwap),"swap",run([](WorkspaceController& self,const SplitGroup& group) {
       TreeCommand command{TreeAction::SwapSplit}; command.id = group.anchor; self.Dispatch(command,{},true);
     }));
     menu.Separator();
-    menu.Add(count > 2 ? "Remove from split" : "Separate tabs","unlink",run([id,count](WorkspaceController& self,const SplitGroup& group) {
+    menu.Add(label(count > 2 ? InterfaceMessage::MenuSplitRemove : InterfaceMessage::SidebarSeparate),"unlink",run([id,count](WorkspaceController& self,const SplitGroup& group) {
       TreeCommand command{count > 2 ? TreeAction::RemoveSplitPane : TreeAction::RemoveSplit}; command.id = group.anchor; command.parent = count > 2 ? id : "";
       self.Dispatch(command,{},true);
     }));
@@ -431,8 +437,12 @@ bool WorkspaceController::HandleSplit(CefRefPtr<CefDictionaryValue> request, Rep
       if (node == tree_.nodes.end()) { done(409,"Split pane is unavailable",nullptr); return true; }
       const auto address = browser && browser->GetMainFrame() ? browser->GetMainFrame()->GetURL() : CefString(node->url);
       const int code = CopyLinkText(state->window->GetWindowHandle(),address.ToWString());
-      if (code) { done(code,code == 409 ? "The clipboard is busy. Try again." : "Could not copy the page address",nullptr); return true; }
-      if (state->embedded) state->embedded->Notify("copy",L"Copied current URL");
+      const std::string_view locale = session_ ? session_->interface_locale : "en";
+      if (code) {
+        done(code, InterfaceText(locale, code == 409 ? InterfaceMessage::WindowClipboardBusy : InterfaceMessage::WindowCopyFailed), nullptr);
+        return true;
+      }
+      if (state->embedded) state->embedded->Notify("copy", CefString(InterfaceText(locale, InterfaceMessage::WindowCopied)).ToWString());
     } else if (navigation == "reload") Reload();
     else if (browser) {
       if (navigation == "back") NavigateHistory(false);

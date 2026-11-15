@@ -1,6 +1,8 @@
 // Settings → Import: shapes of the native "import.*" replies and per-browser
 // choices. Native code owns all reading/decrypting; this UI only ever sees
 // names and counts, never paths, cookie values or passwords.
+import type { MessageId, Translate } from './i18n.ts';
+
 export type ImportSourceId = 'zen' | 'chrome' | 'edge' | 'arc';
 export type DataType = 'tabs' | 'bookmarks' | 'history' | 'cookies' | 'passwords';
 export type ImportProfile = { id: string; name: string };
@@ -41,6 +43,18 @@ function chromium(name: string) {
     { type: 'history', label: 'History', hint: 'The last 90 days' },
     { type: 'passwords', label: 'Saved passwords', hint: '' },
   ] as const;
+}
+export function importTypeText(source: ImportSourceId, type: DataType, t: Translate, name: string) {
+  switch (type) {
+    case 'tabs':
+      if (source === 'zen') return { label: t('import.data.tabs.zen'), hint: t('import.data.tabs.zenHint') };
+      if (source === 'arc') return { label: t('import.data.tabs.arc'), hint: t('import.data.tabs.arcHint') };
+      return { label: t('import.data.tabs.chromium'), hint: t('import.data.tabs.chromiumHint', { name }) };
+    case 'history': return { label: t('history.title'), hint: t('import.data.historyHint') };
+    case 'bookmarks': return { label: t('import.data.bookmarks'), hint: t('import.data.bookmarksHint') };
+    case 'cookies': return { label: t('import.data.cookies'), hint: t('import.data.cookiesHint') };
+    case 'passwords': return { label: t('settings.password.saved'), hint: '' };
+  }
 }
 export function defaultTypes(source: ImportSourceId): Record<DataType, boolean> {
   const on = new Set(DATA_TYPES[source].map(item => item.type));
@@ -92,36 +106,40 @@ export function parseReport(raw: string): ImportReport {
   };
 }
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en')} ${n === 1 ? one : many}`;
+const itemLine = (t: Translate | undefined, id: MessageId, count: number, name: string, added = false) =>
+  t?.(id, { count }) ?? `${plural(count, name)}${added ? ' added' : ''}`;
 // Preview lines, only for data that was found.
-export function previewLines(p: ImportPreview): string[] {
+export function previewLines(p: ImportPreview, t?: Translate): string[] {
   const lines: string[] = [];
-  if (p.spaces) lines.push(plural(p.spaces, 'Space'));
-  if (p.tabs) lines.push(plural(p.tabs, 'tab'));
-  if (p.folders) lines.push(plural(p.folders, 'folder'));
-  if (p.favorites) lines.push(plural(p.favorites, 'Favorite'));
-  if (p.splits) lines.push(plural(p.splits, 'Split View'));
-  if (p.archived) lines.push(plural(p.archived, 'archived tab'));
-  if (p.bookmarks) lines.push(plural(p.bookmarks, 'bookmark'));
-  if (p.favicons) lines.push(plural(p.favicons, 'site icon'));
-  if (p.history) lines.push(plural(p.history, 'history visit'));
-  if (p.cookies) lines.push(plural(p.cookies, 'cookie'));
-  if (p.passwords.ready) lines.push(plural(p.passwords.ready, 'saved password'));
+  if (p.spaces) lines.push(itemLine(t, 'import.preview.spaces', p.spaces, 'Space'));
+  if (p.tabs) lines.push(itemLine(t, 'import.preview.tabs', p.tabs, 'tab'));
+  if (p.folders) lines.push(itemLine(t, 'import.preview.folders', p.folders, 'folder'));
+  if (p.favorites) lines.push(itemLine(t, 'import.preview.favorites', p.favorites, 'Favorite'));
+  if (p.splits) lines.push(itemLine(t, 'import.preview.splits', p.splits, 'Split View'));
+  if (p.archived) lines.push(itemLine(t, 'import.preview.archived', p.archived, 'archived tab'));
+  if (p.bookmarks) lines.push(itemLine(t, 'import.preview.bookmarks', p.bookmarks, 'bookmark'));
+  if (p.favicons) lines.push(itemLine(t, 'import.preview.favicons', p.favicons, 'site icon'));
+  if (p.history) lines.push(itemLine(t, 'import.preview.history', p.history, 'history visit'));
+  if (p.cookies) lines.push(itemLine(t, 'import.preview.cookies', p.cookies, 'cookie'));
+  if (p.passwords.ready) lines.push(itemLine(t, 'import.preview.passwords', p.passwords.ready, 'saved password'));
   return lines;
 }
-export function reportLines(r: ImportReport): string[] {
+export function reportLines(r: ImportReport, t?: Translate): string[] {
   const lines: string[] = [];
-  if (r.spaces) lines.push(`${plural(r.spaces, 'Space')} added`);
-  if (r.tabs) lines.push(`${plural(r.tabs, 'tab')} added`);
-  if (r.bookmarks) lines.push(`${plural(r.bookmarks, 'bookmark')} added`);
-  if (r.folders) lines.push(`${plural(r.folders, 'folder')} added`);
-  if (r.favorites) lines.push(`${plural(r.favorites, 'Favorite')} added`);
-  if (r.splits) lines.push(`${plural(r.splits, 'Split View')} added`);
-  if (r.archived) lines.push(`${plural(r.archived, 'archived tab')} added`);
-  if (r.favicons) lines.push(`${plural(r.favicons, 'site icon')} added`);
-  if (r.history !== undefined) lines.push(`${plural(r.history, 'history visit')} added`);
-  if (r.cookies) lines.push(`${plural(r.cookies.written, 'cookie')} added, ${r.cookies.kept.toLocaleString('en')} already in Sol`);
+  if (r.spaces) lines.push(itemLine(t, 'import.report.spaces', r.spaces, 'Space', true));
+  if (r.tabs) lines.push(itemLine(t, 'import.report.tabs', r.tabs, 'tab', true));
+  if (r.bookmarks) lines.push(itemLine(t, 'import.report.bookmarks', r.bookmarks, 'bookmark', true));
+  if (r.folders) lines.push(itemLine(t, 'import.report.folders', r.folders, 'folder', true));
+  if (r.favorites) lines.push(itemLine(t, 'import.report.favorites', r.favorites, 'Favorite', true));
+  if (r.splits) lines.push(itemLine(t, 'import.report.splits', r.splits, 'Split View', true));
+  if (r.archived) lines.push(itemLine(t, 'import.report.archived', r.archived, 'archived tab', true));
+  if (r.favicons) lines.push(itemLine(t, 'import.report.favicons', r.favicons, 'site icon', true));
+  if (r.history !== undefined) lines.push(itemLine(t, 'import.report.history', r.history, 'history visit', true));
+  if (r.cookies) lines.push(t?.('import.report.cookies', { count: r.cookies.written, kept: r.cookies.kept }) ??
+    `${plural(r.cookies.written, 'cookie')} added, ${r.cookies.kept.toLocaleString('en')} already in Sol`);
   const pw = r.passwords;
   if (pw.added || pw.existing || pw.failed)
-    lines.push(`${plural(pw.added, 'password')} saved${pw.existing ? `, ${pw.existing.toLocaleString('en')} already saved` : ''}${pw.failed ? `, ${pw.failed.toLocaleString('en')} not saved` : ''}`);
+    lines.push(t?.('import.report.passwords', { count: pw.added, existing: pw.existing, failed: pw.failed }) ??
+      `${plural(pw.added, 'password')} saved${pw.existing ? `, ${pw.existing.toLocaleString('en')} already saved` : ''}${pw.failed ? `, ${pw.failed.toLocaleString('en')} not saved` : ''}`);
   return lines;
 }

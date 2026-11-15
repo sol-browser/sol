@@ -27,7 +27,7 @@ def run(url: str, extra: list[str] | None = None, *, allow_failure: bool = False
         except subprocess.TimeoutExpired:
             subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True)
             raise RuntimeError(f"CEF did not shut down within {timeout}s: {directory}")
-    rows = [json.loads(line) for line in report.read_text().splitlines()] if report.exists() else []
+    rows = [json.loads(line) for line in report.read_text(encoding="utf-8").splitlines()] if report.exists() else []
     results = [row["details"] for row in rows if row["event"] == "probe_result"]
     passed = code == 0 and len(results) == 1 and results[0]["pass"] and any(r["event"] == "shutdown" for r in rows)
     if any(flag in ('--probe-workspace', '--probe-organization', '--probe-browsing') or flag.startswith('--probe-lifecycle') for flag in (extra or [])):

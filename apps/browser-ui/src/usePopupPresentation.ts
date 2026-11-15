@@ -18,6 +18,7 @@ export function usePopupPresentation(root: RefObject<HTMLElement | null>, reques
     if (!element || request === undefined || !ready) return;
     if (entry.current.request !== request) {
       entry.current.animation?.cancel(); entry.current = { request, presented: false };
+      if (kind === 'menu') element.style.removeProperty('--menu-window-width');
     }
     let disposed = false, sequence = 0, lastGeometry = '';
     let frame = 0, timer = 0;
@@ -34,6 +35,8 @@ export function usePopupPresentation(root: RefObject<HTMLElement | null>, reques
         if (disposed || mine !== sequence || entry.current.presented) return;
         const viewport = JSON.parse(raw) as { request: number; width: number; height: number };
         if (viewport.request !== request || !Number.isSafeInteger(viewport.width) || !Number.isSafeInteger(viewport.height)) return;
+        if (kind === 'menu' && viewport.width > 0 && viewport.width < element.offsetWidth)
+          element.style.setProperty('--menu-window-width', `${viewport.width}px`);
         // Warm openings already have the correct viewport and reveal directly.
         // Only an actual size change needs the next renderer layout frame.
         const fits = () => Math.abs(innerWidth - viewport.width) <= 1 && Math.abs(innerHeight - viewport.height) <= 1;

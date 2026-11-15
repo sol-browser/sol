@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { useMessages } from './i18n';
 import { Monitor, Sun, Moon, RotateCcw, RotateCw, Check } from 'lucide-react';
 import { DEFAULT_THEME, type Theme } from '../../../packages/browser-contracts/src';
 import { applyTheme } from './theme-apply';
@@ -12,10 +13,11 @@ type Props={theme:Theme|undefined;spaceId?:string;probe?:boolean;command:(reques
   heading?:ReactNode;intro?:ReactNode;footer?:ReactNode;label?:string;creating?:boolean;closeOnDone?:boolean;
   /** A space that does not exist yet: the theme is only previewed, and Create hands it over. */
   draft?:{ready:boolean;create:(theme:ThemeChoice)=>Promise<void>}};
-const modes=[{mode:'light',label:'Light',Icon:Sun},{mode:'dark',label:'Dark',Icon:Moon},{mode:'system',label:'Follow system',Icon:Monitor}] as const;
+const modes=[{mode:'light',Icon:Sun},{mode:'dark',Icon:Moon},{mode:'system',Icon:Monitor}] as const;
 type Drag={id:number;index:number;mode:'move'|'size';startX:number;startY:number;circle:OrbitPalette['circles'][number];x:number;y:number;radius:number;distance:number};
 
-export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,label='Theme',creating=false,closeOnDone=false,draft}:Props) {
+export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,label,creating=false,closeOnDone=false,draft}:Props) {
+  const t = useMessages();
   const drafting=useRef(!!draft).current;
   const [choice,setChoice]=useState<ThemeChoice>(()=>{
     const value=theme??DEFAULT_THEME;
@@ -54,7 +56,7 @@ export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,lab
   const circleUpdate=(index:number,circle:OrbitPalette['circles'][number],save=false)=>{
     const palette=orbitPalette(latest.current);palette.kind=0;palette.circles[index]=circle;paletteUpdate(palette,save);
   };
-  const finish=()=>{if(dirty.current)update(latest.current,true,'Theme saved');};
+  const finish=()=>{if(dirty.current)update(latest.current,true,t('theme.saved'));};
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;cancelAnimationFrame(frame.current);if(dirty.current&&!drafting)send(latest.current,true);};},[spaceId,send]);
   // The window shows the new space's colors while it is being set up.
   useEffect(()=>{if(drafting)update(latest.current,false);},[]);
@@ -135,13 +137,13 @@ export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,lab
   const reset=()=>update(DEFAULT_THEME,true,'Theme reset');
   const done=()=>{
     if(draft){if(!draft.ready)return;finish();void send.drain().then(()=>draft.create(latest.current)).catch(e=>setError(e instanceof Error?e.message:String(e)));return;}
-    finish();void send.drain().then(()=>closeOnDone?command({method:'panel.close'}):setAnnouncement('Theme saved')).catch(e=>setError(String(e)));
+    finish();void send.drain().then(()=>closeOnDone?command({method:'panel.close'}):setAnnouncement(t('theme.saved'))).catch(e=>setError(String(e)));
   };
-  return <section ref={root} className="popover theme-popover palette-editor orbit-editor" data-appearance={dark?'dark':'light'} aria-label={label}
+  return <section ref={root} className="popover theme-popover palette-editor orbit-editor" data-appearance={dark?'dark':'light'} aria-label={label ?? t('theme.title')}
     onPointerDownCapture={()=>{if(root.current)root.current.dataset.focusMode='pointer';}} style={{'--orbit-brightness':p.fill/100} as CSSProperties}>
-    <header className="orbit-header">{heading??<h2>Theme</h2>}<button type="button" className="orbit-reset" aria-label="Reset theme" title="Reset theme" onClick={reset}><RotateCcw size={16}/></button></header>
+    <header className="orbit-header">{heading??<h2>{t('theme.title')}</h2>}<button type="button" className="orbit-reset" aria-label={t('theme.reset')} title={t('theme.reset')} onClick={reset}><RotateCcw size={16}/></button></header>
     {intro}
-    <div className="palette-field orbit-field" ref={field} title="Drag empty space to rotate the palette" onPointerDown={pointStart} onPointerMove={pointMove} onPointerUp={pointEnd} onPointerCancel={pointEnd} onLostPointerCapture={pointEnd} onPointerLeave={e=>{if(!drag.current)e.currentTarget.dataset.resize='false';}}>
+    <div className="palette-field orbit-field" ref={field} title={t('theme.rotateDrag')} onPointerDown={pointStart} onPointerMove={pointMove} onPointerUp={pointEnd} onPointerCancel={pointEnd} onLostPointerCapture={pointEnd} onPointerLeave={e=>{if(!drag.current)e.currentTarget.dataset.resize='false';}}>
       <svg className="orbit-grid" viewBox={`0 0 ${fieldSize.width} ${fieldSize.height}`} aria-hidden="true">
         <g transform={`rotate(${p.rotation??0} ${fieldSize.width/2} ${fieldSize.height/2})`}>
         {[1,.7,.42].map(r=><circle key={r} cx={fieldSize.width/2} cy={fieldSize.height/2} r={ring*r}/>)}
@@ -149,28 +151,28 @@ export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,lab
         </g>
       </svg>
       <canvas className="orbit-colors" ref={canvas} aria-hidden="true" tabIndex={-1}/>
-      {p.circles.map((c,i)=>{const g=orbitGeometry(c,fieldSize.width,fieldSize.height,p.rotation);return <button key={i} type="button" className="palette-point orbit-disc" data-point={i} hidden={i>=p.count} aria-label={`${['Primary','Second','Third'][i]} color. Drag to change hue; drag exposed edge to resize.`} onKeyDown={e=>pointKey(e,i)} style={{left:g.x,top:g.y,width:g.radius*2,height:g.radius*2}}/>;})}
-      {p.circles.map((c,i)=><input key={i} className="orbit-size" data-size={i} hidden={i>=p.count} type="range" min={18} max={62} value={c.size} aria-label={`${['Primary','Second','Third'][i]} color saturation`} aria-valuetext={`${Math.round(circleSaturation(c.size)*100)}%`}
+      {p.circles.map((c,i)=>{const g=orbitGeometry(c,fieldSize.width,fieldSize.height,p.rotation);return <button key={i} type="button" className="palette-point orbit-disc" data-point={i} hidden={i>=p.count} aria-label={t('theme.color', { index: String(i) })} onKeyDown={e=>pointKey(e,i)} style={{left:g.x,top:g.y,width:g.radius*2,height:g.radius*2}}/>;})}
+      {p.circles.map((c,i)=><input key={i} className="orbit-size" data-size={i} hidden={i>=p.count} type="range" min={18} max={62} value={c.size} aria-label={t('theme.saturation', { index: String(i) })} aria-valuetext={`${Math.round(circleSaturation(c.size)*100)}%`}
         onChange={e=>circleUpdate(i,orbitResize(orbitPalette(latest.current).circles[i],Number(e.currentTarget.value),fieldSize.width,fieldSize.height))} onKeyUp={finish} onBlur={finish}/>)}
-      <button type="button" className="orbit-turn" role="slider" aria-label="Rotate palette" aria-valuemin={0} aria-valuemax={359} aria-valuenow={p.rotation??0} aria-valuetext={`${p.rotation??0}°`} title={`Rotate palette · ${p.rotation??0}°. Drag around the center; double-click to reset.`}
+      <button type="button" className="orbit-turn" role="slider" aria-label={t('theme.rotate')} aria-valuemin={0} aria-valuemax={359} aria-valuenow={p.rotation??0} aria-valuetext={`${p.rotation??0}°`} title={t('theme.rotateHint', { degrees: p.rotation ?? 0 })}
         onPointerDown={turnStart} onPointerMove={turnMove} onPointerUp={turnEnd} onPointerCancel={turnEnd} onLostPointerCapture={turnEnd} onKeyDown={turnKey} onDoubleClick={()=>paletteUpdate({...orbitPalette(latest.current),rotation:0},true)}><RotateCw size={15} style={{transform:`rotate(${p.rotation??0}deg)`}}/></button>
     </div>
-    <div className="orbit-tools"><div className="orbit-count" role="group" aria-label="Number of colors">{[1,2,3].map(count=><button type="button" key={count} data-count={count} aria-label={`${count} ${count===1?'color':'colors'}`} aria-pressed={p.count===count} onClick={()=>paletteUpdate({...orbitPalette(latest.current),count},true)}><span aria-hidden="true">{'● '.repeat(count).trim()}</span></button>)}</div>
-      <div className="orbit-presets" role="group" aria-label="Color palettes">{ORBIT_PRESETS.map(preset=><button key={preset.name} type="button" className="orbit-preset" title={preset.name} aria-label={preset.name} aria-pressed={p.kind===preset.kind&&p.circles.every((c,i)=>c.hue===preset.hues[i])}
+    <div className="orbit-tools"><div className="orbit-count" role="group" aria-label={t('theme.countLabel')}>{[1,2,3].map(count=><button type="button" key={count} data-count={count} aria-label={t('theme.count', { count })} aria-pressed={p.count===count} onClick={()=>paletteUpdate({...orbitPalette(latest.current),count},true)}><span aria-hidden="true">{'● '.repeat(count).trim()}</span></button>)}</div>
+      <div className="orbit-presets" role="group" aria-label={t('theme.presets')}>{ORBIT_PRESETS.map(preset=><button key={preset.name} type="button" className="orbit-preset" title={preset.name} aria-label={preset.name} aria-pressed={p.kind===preset.kind&&p.circles.every((c,i)=>c.hue===preset.hues[i])}
         style={{background:`linear-gradient(135deg,${preset.hues.map(h=>`rgb(${circleRgb({hue:h,distance:850,size:43},{...p,kind:preset.kind},dark).join(' ')})`).join(',')})`}}
         onClick={()=>{const next=orbitPalette(latest.current);paletteUpdate({...next,kind:preset.kind,circles:next.circles.map((c,i)=>({...c,hue:preset.hues[i]}))},true);}}/>)}</div></div>
     <div className="orbit-materials"><div className="orbit-brightness">
       <div className="orbit-level"><Sun size={17} aria-hidden="true"/><output aria-hidden="true">{p.fill}%</output></div>
       <div className="orbit-fill-well"><div className="orbit-bars" aria-hidden="true">{Array.from({length:17},(_,i)=><span key={i} data-on={p.fill>0&&i/16*100<=p.fill}/>)}</div>
-        <input className="palette-fill" type="range" min={0} max={100} value={p.fill} aria-label="Brightness" aria-valuetext={`${p.fill}%`} onChange={e=>paletteUpdate({...orbitPalette(latest.current),fill:Number(e.currentTarget.value)})} onPointerUp={finish} onPointerCancel={finish} onKeyUp={finish} onBlur={finish}/></div>
-    </div><div className="palette-dial orbit-dial" title="Grain" onPointerDown={e=>{if(e.button!==0||grainDrag.current!==null)return;e.preventDefault();grainDrag.current=e.pointerId;e.currentTarget.querySelector('input')?.focus();e.currentTarget.setPointerCapture(e.pointerId);e.currentTarget.dataset.dragging='true';grainMove(e);}}
+        <input className="palette-fill" type="range" min={0} max={100} value={p.fill} aria-label={t('theme.brightness')} aria-valuetext={`${p.fill}%`} onChange={e=>paletteUpdate({...orbitPalette(latest.current),fill:Number(e.currentTarget.value)})} onPointerUp={finish} onPointerCancel={finish} onKeyUp={finish} onBlur={finish}/></div>
+    </div><div className="palette-dial orbit-dial" title={t('theme.grain')} onPointerDown={e=>{if(e.button!==0||grainDrag.current!==null)return;e.preventDefault();grainDrag.current=e.pointerId;e.currentTarget.querySelector('input')?.focus();e.currentTarget.setPointerCapture(e.pointerId);e.currentTarget.dataset.dragging='true';grainMove(e);}}
       onPointerMove={grainMove} onPointerUp={grainEnd} onPointerCancel={grainEnd} onLostPointerCapture={grainEnd}>
       <svg viewBox="0 0 150 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">{Array.from({length:41},(_,i)=>{const a=Math.PI+i*Math.PI/40,r=67,inner=r-(i%5===0?14:9);return <line key={i} x1={75+Math.cos(a)*inner} y1={88+Math.sin(a)*inner} x2={75+Math.cos(a)*r} y2={88+Math.sin(a)*r} stroke={choice.noise>0&&i/40*100<=choice.noise?`hsl(${38-i*2.1} 66% 67%)`:'var(--orbit-tick)'} strokeWidth={i%5===0?2:1.35} strokeLinecap="round"/>;})}</svg>
       <span className="orbit-dial-core"><output aria-hidden="true">{choice.noise}<small>%</small></output></span>
-      <input className="palette-noise" type="range" min={0} max={100} value={choice.noise} aria-label="Grain" aria-valuetext={`${choice.noise}%`} onChange={e=>update({...latest.current,noise:Number(e.currentTarget.value)},false)} onKeyUp={finish} onBlur={finish}/>
+      <input className="palette-noise" type="range" min={0} max={100} value={choice.noise} aria-label={t('theme.grain')} aria-valuetext={`${choice.noise}%`} onChange={e=>update({...latest.current,noise:Number(e.currentTarget.value)},false)} onKeyUp={finish} onBlur={finish}/>
     </div></div>
-    <div className="orbit-bottom"><div className="orbit-modes" role="group" aria-label="Appearance">{modes.map(({mode,label,Icon})=><button key={mode} type="button" aria-label={label} title={label} aria-pressed={choice.mode===mode} onClick={()=>update({...latest.current,mode},true,label)}><Icon size={16}/></button>)}</div>
-      <button type="button" className="orbit-done" disabled={!!draft&&!draft.ready} onClick={done}>{creating||draft?'Create space':closeOnDone?'Done':'Save'}<Check size={15}/></button></div>
+    <div className="orbit-bottom"><div className="orbit-modes" role="group" aria-label={t('settings.section.appearance')}>{modes.map(({mode,Icon})=><button key={mode} data-mode={mode} type="button" aria-label={t(`theme.mode.${mode}`)} title={t(`theme.mode.${mode}`)} aria-pressed={choice.mode===mode} onClick={()=>update({...latest.current,mode},true,t(`theme.mode.${mode}`))}><Icon size={16}/></button>)}</div>
+      <button type="button" className="orbit-done" disabled={!!draft&&!draft.ready} onClick={done}>{creating||draft?t('theme.create'):closeOnDone?t('theme.done'):t('common.save')}<Check size={15}/></button></div>
     {footer}<span className="sr-only" aria-live="polite">{announcement}</span>{error&&<p className="popover-error" role="alert">{error}</p>}
   </section>;
 }

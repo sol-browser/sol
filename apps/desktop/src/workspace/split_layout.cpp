@@ -74,6 +74,7 @@ void Rebalance(std::vector<SplitNode>& children) {
   if (children.empty()) return;  // Nothing to share out (and no division by zero).
   long long total = 0;
   for (const auto& child : children) total += std::max(1, child.weight);
+  if (total <= 0) return;  // Never: every child adds at least 1. Stated for the division below.
   int sum = 0;
   for (auto& child : children) { child.weight = static_cast<int>(10000LL * std::max(1, child.weight) / total); sum += child.weight; }
   children.back().weight += 10000 - sum;

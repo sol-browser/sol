@@ -33,7 +33,8 @@ def main():
         def saved():
             with sqlite3.connect(db) as connection:
                 return {"nodes": connection.execute("SELECT * FROM nodes ORDER BY id").fetchall(),
-                        "state": connection.execute("SELECT * FROM state").fetchall()}
+                        "state": connection.execute("SELECT * FROM state").fetchall(),
+                        "spaces": connection.execute("SELECT id, name FROM spaces ORDER BY position").fetchall()}
         before = saved()
         first_requests = dict(requests)
         second, _ = run(url, ["--probe-workspace"], profile=profile)
@@ -41,10 +42,12 @@ def main():
         with sqlite3.connect(db) as connection:
             metadata = connection.execute("SELECT title,page_title,custom_title FROM nodes WHERE kind=0 ORDER BY title").fetchall()
             width = connection.execute("SELECT sidebar_width FROM state").fetchone()[0]
-        passed = before == after and requests == {"/fixture": 1, "/fixture?saved": 2} and width == 336 and all(
+        unnamed_space_persisted = len(after['spaces']) == 1 and after['spaces'][0][1] == ''
+        passed = before == after and unnamed_space_persisted and requests == {"/fixture": 1, "/fixture?saved": 2} and width == 336 and all(
             title == 'Workspace real page' and custom == 0 for _, title, custom in metadata)
         result = {"passed": passed, "first_run": first.name, "second_run": second.name,
                   "same_nodes_and_revision_after_restart": before == after,
+                  "empty_space_name_after_restart": unnamed_space_persisted,
                   "document_requests_first": first_requests, "document_requests_total": dict(requests),
                   "saved": after, "profile": str(profile), "page_titles": metadata, "sidebar_width": width}
         (second / "workspace.json").write_text(json.dumps(result, indent=2) + "\n")

@@ -2,8 +2,9 @@ import type { Snapshot, TreeNode } from '../../../packages/browser-contracts/src
 import { resolveNavigationInput, searchEngines } from './navigation-input.ts';
 import { normalizeInput, predictSites, predictionToken, websiteAddress } from './navigation-prediction.ts';
 import { displayTitle } from './sidebar-model.ts';
-import { internalPage, shownAddress } from './internal-pages.ts';
+import { internalPage, internalPageTitle, shownAddress } from './internal-pages.ts';
 import { commandActions, commandActionAvailable, type CommandActionId } from './command-actions.ts';
+import type { Translate } from './i18n.ts';
 import type { IconName } from './Icon';
 
 export type CommandRow = { key: string; title: string; detail: string; icon?: string; actionIcon?: IconName;
@@ -24,18 +25,19 @@ export function parseHistoryReply(raw: string): { text: string; visits: HistoryE
     return { url: e.url, title: e.title };
   }) };
 }
-export function siteLabel(url: string): string {
-  const page = internalPage(url); if (page) return page.title;
+export function siteLabel(url: string, translate?: Translate): string {
+  const page = internalPage(url); if (page) return internalPageTitle(page, translate);
   try { return new URL(url).host.replace(/^www\./u, ''); } catch { return url; }
 }
-export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'navigate', sourceUrl: string, history: HistoryEntry[] = [], completions: string[] = [], { actionsOnly = false, includeActions = true }: { actionsOnly?: boolean; includeActions?: boolean } = {}): CommandRow[] {
+export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'navigate', sourceUrl: string, history: HistoryEntry[] = [], completions: string[] = [], { actionsOnly = false, includeActions = true, translate }: { actionsOnly?: boolean; includeActions?: boolean; translate?: Translate } = {}): CommandRow[] {
   const text = input.trim();
   const query = normalizeInput(text);
   const actionWords = query.split(/\s+/u).filter(Boolean);
   const actions = (includeActions ? commandActions : []).filter(action => commandActionAvailable(snapshot, action)).map(action => {
     const unpin = action.id === 'pin' && snapshot.nodes?.find(node => node.id === snapshot.activeId)?.pinned;
-    const title = unpin ? 'Unpin Tab' : action.title;
-    const labels = [title, ...action.aliases].map(normalizeInput);
+    const english = unpin ? 'Unpin Tab' : action.title;
+    const title = translate?.(unpin ? 'command.unpin' : `command.action.${action.id}`) ?? english;
+    const labels = [title, english, ...action.aliases].map(normalizeInput);
     return { row: { key: `action:${action.id}`, title, detail: '', kind: 'action', actionIcon: unpin ? 'unpin' : action.icon,
       shortcut: snapshot.shortcutLabels?.[action.id], action: { method: 'command.action', action: action.id } } as CommandRow,
       exact: !!query && labels.includes(query), matches: labels.some(label => actionWords.every(word => label.includes(word))) };
@@ -47,21 +49,21 @@ export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'na
   const tabs = (snapshot.nodes ?? []).filter(n => n.kind === 'tab' && !n.archived && !n.closing);
   const current = tabs.find(n => n.id === snapshot.activeId);
   let primary: CommandRow | undefined;
-  const tabRow = (n: TreeNode): CommandRow => ({ key: n.id, title: displayTitle(n) || siteLabel(n.currentUrl || n.url),
-    detail: siteLabel(n.currentUrl || n.url), icon: n.favicon, kind: 'tab', live: n.live, editText: shownAddress(n.currentUrl || n.url),
+  const tabRow = (n: TreeNode): CommandRow => ({ key: n.id, title: displayTitle(n) || siteLabel(n.currentUrl || n.url, translate),
+    detail: siteLabel(n.currentUrl || n.url, translate), icon: n.favicon, kind: 'tab', live: n.live, editText: shownAddress(n.currentUrl || n.url),
     action: { method: 'command.activate', id: n.id } });
   const unchanged = mode === 'navigate' && text === sourceUrl && !!current;
   if (unchanged) primary = { ...tabRow(current), key: 'current', kind: 'current', editText: undefined,
-    action: { method: 'command.submit', url: sourceUrl }, detail: siteLabel(sourceUrl) };
+    action: { method: 'command.submit', url: sourceUrl }, detail: siteLabel(sourceUrl, translate) };
   else if (internalPage(text)) {
     const page = internalPage(text)!;
-    primary = { key: 'destination', title: page.title, detail: page.address, kind: 'visit', action: { method: 'command.submit', url: page.address } };
+    primary = { key: 'destination', title: internalPageTitle(page, translate), detail: page.address, kind: 'visit', action: { method: 'command.submit', url: page.address } };
   } else if (text) {
     try {
       const engine = snapshot.searchEngine ?? 'google';
       const destination = resolveNavigationInput(text, engine);
-      primary = { key: 'destination', title: destination.search ? `${text} — Search ${searchEngines[engine].title}` : text,
-        detail: destination.search ? '' : destination.url.startsWith('file:') ? 'Open file' : 'Go to website', kind: destination.search ? 'search' : 'visit',
+      primary = { key: 'destination', title: destination.search ? (translate?.('command.webQuery', { query: text, engine: searchEngines[engine].title }) ?? `${text} — Search ${searchEngines[engine].title}`) : text,
+        detail: destination.search ? '' : destination.url.startsWith('file:') ? (translate?.('command.file') ?? 'Open file') : (translate?.('command.website') ?? 'Go to website'), kind: destination.search ? 'search' : 'visit',
         action: { method: 'command.submit', url: destination.url } };
     } catch { /* Invalid input still permits switching to a matching saved tab. */ }
   }

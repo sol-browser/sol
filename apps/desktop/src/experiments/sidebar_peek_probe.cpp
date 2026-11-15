@@ -27,7 +27,7 @@ await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
 const update=document.querySelector('[data-action="restart-to-update"]');
 const box=update?.getBoundingClientRect();
 const hit=box&&document.elementFromPoint(box.x+box.width/2,box.y+box.height/2);
-console.info('RED_PEEK:'+JSON.stringify({updateVisible:!!update&&!!box&&box.width>0&&box.height>0,updateClickable:!!update&&!!hit&&update.contains(hit),updateVersion:update?.title==='Sol 0.1.999 is ready',mediaVisible:document.querySelector('.media-stack')?.textContent?.includes('Synthetic media')===true}));
+console.info('RED_PEEK:'+JSON.stringify({updateVisible:!!update&&!!box&&box.width>0&&box.height>0,updateClickable:!!update&&!!hit&&update.contains(hit),updateVersion:update?.title.includes('0.1.999'),mediaVisible:document.querySelector('.media-stack')?.textContent?.includes('Synthetic media')===true}));
 // Click in the same render as the synthetic snapshot. A subsequent real
 // snapshot can remove the synthetic notice before the next task.
 update?.click();
@@ -204,6 +204,21 @@ void CheckXBadge(CefRefPtr<CefBrowser> browser, bool floating) {
       persistent:false, onSuccess:raw=>resolve(JSON.parse(raw)), onFailure:(code,message)=>reject({code,message})}));
     const read = () => q({method:'browser.getSnapshot'});
     const report = data => console.info('RED_PEEK:'+JSON.stringify({xBadge:floating?'floating':'docked', ...data}));
+    const newTab = document.querySelector('.new-tab');
+    const sidebar = document.querySelector('#browser-sidebar');
+    let narrowOverflow;
+    if (newTab && sidebar) {
+      const narrow = newTab.cloneNode(true);
+      narrow.style.cssText = 'position:absolute;visibility:hidden;width:150px';
+      const label = narrow.querySelector('span');
+      label.textContent += ' ' + label.textContent;
+      sidebar.append(narrow);
+      narrowOverflow = narrow.scrollWidth > narrow.clientWidth + 1;
+      narrow.remove();
+    }
+    console.info('RED_PEEK:'+JSON.stringify({localeHost:floating?'floating':'docked',
+      locale:document.documentElement.lang,newTab:newTab?.querySelector('span')?.textContent,
+      sidebarLabel:sidebar?.getAttribute('aria-label'),overflow:newTab && newTab.scrollWidth > newTab.clientWidth + 1,narrowOverflow}));
     const wait = async predicate => {
       for (let i=0;i<40;i++) {
         if (await predicate()) return true;
@@ -216,7 +231,7 @@ void CheckXBadge(CefRefPtr<CefBrowser> browser, bool floating) {
       const pin = first.nodes.find(n=>n.title==='X fixture');
       const id = pin.id;
       const row = document.querySelector(`[data-node-id="${id}"]`);
-      const badge = () => row?.querySelector('[aria-label="Unread X notifications"]');
+      const badge = () => row?.querySelector('[data-provider="x"]');
       const setHidden = hidden => q({method:'tab.setXBadgeHidden',id,hidden});
       const setIntegration = enabled => q({method:'tab.setIntegration',id,provider:'twitter',enabled});
       if (floating) {
@@ -346,10 +361,11 @@ void CheckPinnedHint(const std::shared_ptr<State>& s, bool floating) {
         const auto page = state->workspace->LiveBrowser(id);
         if (!page) return;
         page->GetMainFrame()->LoadURL(home.substr(0, home.rfind('/')) + "/pinned-away");
-        const std::string script = std::string("(async(floating)=>{") + R"JS(
+        auto pin_id = CefValue::Create(); pin_id->SetString(id);
+        const std::string script = std::string("(async(floating,id)=>{") + R"JS(
           const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-          const wait=async check=>{for(let i=0;i<25;i++){const result=check();if(result)return result;await pause(40);}};
-          const row=await wait(()=>document.querySelector('.tree-row[data-pinned-away=true] .node-icon[aria-label="Back to pinned URL for Edited in modal"]')?.closest('.tree-row'));
+          const wait=async check=>{for(let i=0;i<25;i++){const result=await check();if(result)return result;await pause(40);}};
+          const row=await wait(()=>document.querySelector(`[data-node-id="${CSS.escape(id)}"] .tree-row[data-pinned-away=true]`));
           if(!row)return null;
           const icon=row.querySelector('.node-icon'), title=row.querySelector('.node-title'), hint=row.querySelector('.pinned-reset-hint');
           row.scrollIntoView({block:'nearest'});
@@ -357,7 +373,7 @@ void CheckPinnedHint(const std::shared_ptr<State>& s, bool floating) {
           const hidden=getComputedStyle(hint).opacity==='0'&&getComputedStyle(icon).backgroundColor==='rgba(0, 0, 0, 0)';
           icon.addEventListener('pointerenter',async event=>{
             await pause(220);
-            const shown=event.isTrusted&&icon.matches(':hover')&&getComputedStyle(hint).opacity==='1'&&hint.textContent==='Back to pinned url';
+            const shown=event.isTrusted&&icon.matches(':hover')&&getComputedStyle(hint).opacity==='1'&&hint.textContent.trim().length>0;
             const lifted=titleY-title.getBoundingClientRect().top>=4;
             const sameHeight=height===row.getBoundingClientRect().height;
             const arrowCursor=getComputedStyle(icon).cursor==='default';
@@ -371,18 +387,19 @@ void CheckPinnedHint(const std::shared_ptr<State>& s, bool floating) {
             icon.style.removeProperty('transition');
             const iconHeight=icon.getBoundingClientRect().height;
             const highlight=iconHeight>=height-2&&light==='rgba(0, 0, 0, 0.09)'&&dark==='rgba(255, 255, 255, 0.14)';
-            const id=row.closest('[data-node-id]').dataset.nodeId;
             icon.click();
-            const cleared=await wait(()=>row.dataset.pinnedAway==='false'&&!row.querySelector('.pinned-reset-hint'));
-            const snapshot=await new Promise(resolve=>window.cefQuery({request:'{"method":"browser.getSnapshot"}',persistent:false,
-              onSuccess:raw=>resolve(JSON.parse(raw)),onFailure:()=>resolve(null)}));
-            const pin=snapshot?.nodes.find(n=>n.id===id);
-            const atHome=!!cleared&&snapshot?.activeId===id&&pin?.currentUrl===pin?.url&&pin?.url.endsWith('/pinned-saved');
+            const atHome=!!await wait(async()=>{
+              if(row.dataset.pinnedAway!=='false'||row.querySelector('.pinned-reset-hint'))return false;
+              const snapshot=await new Promise(resolve=>window.cefQuery({request:'{"method":"browser.getSnapshot"}',persistent:false,
+                onSuccess:raw=>resolve(JSON.parse(raw)),onFailure:()=>resolve(null)}));
+              const pin=snapshot?.nodes.find(n=>n.id===id);
+              return snapshot?.activeId===id&&pin?.currentUrl===pin?.url&&pin?.url.endsWith('/pinned-saved');
+            });
             console.info('RED_PEEK:'+JSON.stringify({pinnedHint:floating?'floating':'docked',hidden,shown,lifted,sameHeight,arrowCursor,highlight,atHome,light,dark,height,iconHeight}));
           },{once:true});
           const box=icon.getBoundingClientRect();
           return {x:Math.round(box.x+box.width/2),y:Math.round(box.y+box.height/2)};
-        })()JS" + (floating ? "true)" : "false)");
+        })()JS" + (floating ? "true," : "false,") + CefWriteJSON(pin_id, JSON_WRITER_DEFAULT).ToString() + ")";
         CefRefPtr<PinnedHintHover> observer = new PinnedHintHover;
         const auto registration = host->GetHost()->AddDevToolsMessageObserver(observer);
         auto params = CefDictionaryValue::Create(); params->SetString("expression", script);
@@ -409,7 +426,7 @@ void CheckFigmaCreate(std::weak_ptr<State> weak, Hover invoke, std::shared_ptr<P
     const auto hover=s->panel_popup->hover_panel();
     if (const auto browser=hover&&hover->is_presented()?hover->browser():nullptr) {
       const auto frame=browser->GetMainFrame();
-      frame->ExecuteJavaScript("document.querySelector('[aria-label=\"New Figma Design\"]')?.click()",frame->GetURL(),0);
+      frame->ExecuteJavaScript("document.querySelector('[data-action=\"createFigma\"]')?.click()",frame->GetURL(),0);
     }
     CefPostDelayedTask(TID_UI,base::BindOnce([](std::weak_ptr<State> weak,std::string node,size_t count,std::shared_ptr<POINT> cursor){
       const auto s=weak.lock();if(!s)return;

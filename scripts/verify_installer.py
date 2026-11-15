@@ -227,6 +227,15 @@ def source_map(root, build, sdk):
                 sources[name.casefold()] = path
     for relative, path in inventory(root / 'apps/browser-ui/dist').values():
         sources[('ui/' + relative).casefold()] = path
+    for relative, path in inventory(root / 'apps/desktop/translator').values():
+        sources[('translator/' + relative).casefold()] = path
+    for relative, path in inventory(root / 'licenses/translation').values():
+        sources[('licenses/translation/' + relative).casefold()] = path
+    lock = json.loads((root / 'cmake/translation-engine.lock.json').read_text())
+    for package in lock['packages']:
+        for name in package['files'].values():
+            relative = relative_name(name)
+            sources[('translator/' + relative).casefold()] = root / 'third_party/translation-engine' / relative
     return sources
 
 
@@ -303,11 +312,11 @@ def verify(root, build_directory, version, test_variant=False):
         require_plain(source)
         if path.stat().st_size != source.stat().st_size or sha256(path) != sha256(source):
             raise ValueError('Stage differs from source: ' + str(path) + ' / ' + str(source))
-        # Independently require every CEF runtime file in the build to match SDK.
+        # Verify runtime files in the build as well as in the installer stage.
         if not key.startswith(('ui/', 'licenses/')) and key not in ('sol.dll', 'sol-tray.exe', 'velopack_libc.dll'):
             built = build / actual[key][0]
             if not built.is_file() or sha256(built) != sha256(source):
-                raise ValueError('Build contains stale/missing CEF runtime: ' + str(built))
+                raise ValueError('Build contains a stale or missing runtime file: ' + str(built))
     if sha256(build / 'ui/index.html') != sha256(root / 'apps/browser-ui/dist/index.html'):
         raise ValueError('Build UI entry disagrees with current dist')
     bootstrap = compare_bootstrap(sdk / 'Release/bootstrap.exe', build / 'sol.exe', False)

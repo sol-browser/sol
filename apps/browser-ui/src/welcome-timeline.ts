@@ -30,14 +30,15 @@ export type WelcomeFrame = {
   outro: number;  // 0..1 after the music: the light calms
 };
 /** Where everything is at |t| seconds (eased, 0..1 each). */
-export function welcomeAt(t: number): WelcomeFrame {
+export function welcomeAt(t: number, wordCount: number = WELCOME_WORDS.length): WelcomeFrame {
   const T = WELCOME_TIMELINE, w = T.words;
+  const wordStep = w.step * (WELCOME_WORDS.length - 1) / Math.max(1, wordCount - 1);
   return {
     stars: easeInOut(span(t, T.stars)),
     hole: easeInOut(span(t, T.hole)),
     smoke: easeInOut(span(t, T.smoke)),
     logo: easeInOut(span(t, T.logo)),
-    words: WELCOME_WORDS.map((_, i) => easeOut((t - w.start - i * w.step) / w.duration)),
+    words: Array.from({ length: wordCount }, (_, i) => easeOut((t - w.start - i * wordStep) / w.duration)),
     button: easeOut(span(t, T.button)),
     outro: easeInOut((t - T.music) / T.settle),
   };

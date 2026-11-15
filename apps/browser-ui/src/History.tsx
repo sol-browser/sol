@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useMessages } from './i18n';
 import { Icon } from './Icon';
 import { CLEAR_LABELS, groupByDay, host, parseHistoryPage, timeLabel, type ClearRange, type VisitRow } from './history-model';
 
@@ -6,6 +7,8 @@ type Query = (request: object) => Promise<string>;
 
 /** Arc-like history popover: search, visits by day, delete, clear a time range. */
 export function HistoryPanel({ query, onReady }: { query: Query; onReady?: () => void }) {
+  const t = useMessages();
+  const locale = document.documentElement.lang || 'en-US';
   const [search, setSearch] = useState('');
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [more, setMore] = useState(false);
@@ -38,16 +41,16 @@ export function HistoryPanel({ query, onReady }: { query: Query; onReady?: () =>
     try { await query({ method: 'history.clear', range }); setClearing(false); await load(search); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
-  const groups = groupByDay(visits);
-  return <section className="popover history-popover" aria-label="History">
-    <header><h2>History</h2>
-      <button type="button" className="popover-text-button" aria-expanded={clearing} onClick={() => setClearing(!clearing)}>Clear…</button></header>
-    {clearing && <div className="history-clear" role="group" aria-label="Clear history">
-      <span>Clear browsing history from</span>
+  const groups = groupByDay(visits, Date.now(), { locale, today: t('history.today'), yesterday: t('history.yesterday') });
+  return <section className="popover history-popover" aria-label={t('history.title')}>
+    <header><h2>{t('history.title')}</h2>
+      <button type="button" className="popover-text-button" data-action="clear" aria-expanded={clearing} onClick={() => setClearing(!clearing)}>{t('history.clearShort')}</button></header>
+    {clearing && <div className="history-clear" role="group" aria-label={t('history.clear')}>
+      <span>{t('history.clearFrom')}</span>
       <span className="history-clear-options">{(Object.keys(CLEAR_LABELS) as ClearRange[]).map(range =>
-        <button key={range} type="button" aria-label={`Clear history: ${CLEAR_LABELS[range]}`} onClick={() => void clear(range)}>{CLEAR_LABELS[range]}</button>)}</span>
+        <button key={range} type="button" data-range={range} aria-label={t('history.clearWithRange', { range: t(`history.range.${range}`) })} onClick={() => void clear(range)}>{t(`history.range.${range}`)}</button>)}</span>
     </div>}
-    <label className="history-search"><Icon name="search" /><input ref={input} value={search} placeholder="Search history" aria-label="Search history"
+    <label className="history-search"><Icon name="search" /><input ref={input} value={search} placeholder={t('history.search')} aria-label={t('history.search')}
       spellCheck={false} autoComplete="off" maxLength={200} onChange={e => setSearch(e.target.value)} /></label>
     {groups.length ? <div className="history-scroll">{groups.map(group => <div key={group.label + group.visits[0].id} className="history-day">
       <h3>{group.label}</h3>
@@ -55,17 +58,17 @@ export function HistoryPanel({ query, onReady }: { query: Query; onReady?: () =>
         <button type="button" className="history-open" title={visit.url} onClick={() => void query({ method: 'history.open', url: visit.url }).catch(e => setError(String(e)))}>
           <HistoryMark visit={visit} />
           <span className="history-text"><span>{visit.title || host(visit.url)}</span><span>{host(visit.url)}</span></span>
-          <span className="history-time">{timeLabel(visit.visitedAt, hour12)}</span>
+          <span className="history-time">{timeLabel(visit.visitedAt, hour12, locale)}</span>
         </button>
-        <button type="button" className="history-delete" aria-label={`Remove ${visit.title || host(visit.url)} from history`} title="Remove from history"
+        <button type="button" className="history-delete" aria-label={t('history.removeNamed', { title: visit.title || host(visit.url) })} title={t('history.remove')}
           onClick={() => void remove(visit.id)}><Icon name="close" /></button>
       </li>)}</ul>
     </div>)}
-      {more && <button type="button" className="popover-text-button history-more" onClick={() => void load(search, visits.at(-1)?.visitedAt ?? 0)}>Show more</button>}
-    </div> : <p className="popover-empty"><Icon name="history" />{search ? 'No matching pages' : 'Pages you visit appear here'}</p>}
+      {more && <button type="button" className="popover-text-button history-more" onClick={() => void load(search, visits.at(-1)?.visitedAt ?? 0)}>{t('history.more')}</button>}
+    </div> : <p className="popover-empty"><Icon name="history" />{search ? t('history.noResults') : t('history.emptyShort')}</p>}
     <footer className="history-footer">
       <button type="button" className="popover-text-button" onClick={() => void query({ method: 'history.openPage' }).catch(e => setError(String(e)))}>
-        Show all history<span className="history-shortcut">Ctrl+Shift+H</span></button>
+        {t('history.all')}<span className="history-shortcut">Ctrl+Shift+H</span></button>
     </footer>
     {error && <p className="popover-error" role="alert">{error}</p>}
   </section>;

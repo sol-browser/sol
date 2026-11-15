@@ -24,15 +24,15 @@ class MenuPopup : public std::enable_shared_from_this<MenuPopup> {
     CefRefPtr<CefListValue> items() const;
     // Adds a row running |action|; returns its id.
     void Add(const std::string& label, const std::string& icon, std::function<void()> action, const std::string& shortcut = "",
-             bool enabled = true, bool checked = false, const std::string& image = "");
+             bool enabled = true, bool checked = false, const std::string& image = "", const std::string& key = "");
     void Separator();
     // Rows added to the returned builder form the submenu.
-    Builder& Submenu(const std::string& label, const std::string& icon, bool enabled = true);
+    Builder& Submenu(const std::string& label, const std::string& icon, bool enabled = true, const std::string& key = "");
     std::map<std::string, std::function<void()>>& actions() { return *actions_; }
    private:
     Builder(std::shared_ptr<std::map<std::string, std::function<void()>>> actions, std::shared_ptr<int> next);
     struct Entry {
-      std::string id, label, icon, shortcut, image;
+      std::string id, key, label, icon, shortcut, image;
       bool enabled = true, checked = false, separator = false;
       std::unique_ptr<Builder> submenu;
     };

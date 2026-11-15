@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useMessages } from './i18n';
 import type { IntegrationCard as Card } from './integrations';
 import { Icon } from './Icon';
 
@@ -31,6 +32,7 @@ function VisitTime({ visitedAt, now }: { visitedAt: number; now: number }) {
 }
 
 function CalendarNow({ active }: { active: boolean }) {
+  const t = useMessages();
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     if (!active) return;
@@ -46,12 +48,13 @@ function CalendarNow({ active }: { active: boolean }) {
   const minute = localMinute(now);
   const label = timeLabel.format(minute * 60000);
   return <div className="integration-now" style={{ '--now-position': `${minute / 14.4}%` } as CSSProperties}>
-    <time dateTime={now.toISOString()} aria-label={`Current local time ${label}`}>{label}</time>
+    <time dateTime={now.toISOString()} aria-label={t('integrations.now', { time: label })}>{label}</time>
   </div>;
 }
 
 function CalendarAgenda({ items, open, join, active }: { items: Card['items']; open: (index: number) => void;
   join: (index: number) => void; active: boolean }) {
+  const t = useMessages();
   const entries = items.map((item, index) => ({ item, index }));
   const timed = entries.flatMap(entry => entry.item.startMinute === undefined ? [] : [{ ...entry, start: entry.item.startMinute }])
     .sort((a, b) => a.start - b.start);
@@ -78,15 +81,15 @@ function CalendarAgenda({ items, open, join, active }: { items: Card['items']; o
   }
   return <>
     {untimed.length > 0 && <>
-      <p className="integration-untimed-label">Other events</p>
+      <p className="integration-untimed-label">{t('integrations.otherEvents')}</p>
       <ul className="integration-untimed">{untimed.map(({ item, index }) => <li className="integration-item" key={item.token}>
         <button type="button" className="archive-row" title={item.title} onClick={() => open(index)}>
           <span className="archive-text"><span>{item.title}</span></span>
         </button>
-        {item.join && <button type="button" className="popover-text-button integration-join" onClick={() => join(index)}>Join meeting</button>}
+        {item.join && <button type="button" className="popover-text-button integration-join" onClick={() => join(index)}>{t('integrations.join')}</button>}
       </li>)}</ul>
     </>}
-    <div className="integration-agenda" ref={viewport} aria-label="Hourly agenda">
+    <div className="integration-agenda" ref={viewport} aria-label={t('integrations.agenda')}>
       <div className="integration-day" style={{ '--hour-height': `${hourHeight}px` } as CSSProperties}>
         <ol className="integration-hours" aria-hidden="true">
           {Array.from({ length: 24 }, (_, hour) => <li key={hour} className="integration-hour">{hourLabel.format(hour * 3600000)}</li>)}
@@ -100,7 +103,7 @@ function CalendarAgenda({ items, open, join, active }: { items: Card['items']; o
               <button type="button" className="integration-event-open" title={`${item.title} · ${time}`} onClick={() => open(index)}>
                 <span>{item.title}</span><small>{time}</small>
               </button>
-              {item.join && <button type="button" className="popover-text-button integration-join" aria-label="Join meeting" title="Join meeting" onClick={() => join(index)}>
+              {item.join && <button type="button" className="popover-text-button integration-join" aria-label={t('integrations.join')} title={t('integrations.join')} onClick={() => join(index)}>
                 <Icon name="camera" />
               </button>}
             </div>;
@@ -114,28 +117,29 @@ function CalendarAgenda({ items, open, join, active }: { items: Card['items']; o
 
 export function IntegrationCard({ card, open, join, control, active }: { card: Card; active: boolean; open: (index: number) => void;
   join: (index: number) => void; control: (action: 'open' | 'refresh' | 'compose' | 'createFigma') => void }) {
+  const t = useMessages();
   const mail=card.kind==='mail', calendar=card.kind==='calendar', figma=card.service==='figma';
   const mark = serviceMarks[card.service as keyof typeof serviceMarks];
   const hasAddAction = figma || (mail && card.composeAvailable === true);
-  const addLabel = figma ? 'New Figma Design' : 'Compose email';
+  const addLabel = figma ? t('command.action.newFigmaDesign') : t('integrations.compose');
   const now = figma ? Date.now() : 0;
   return <section className="popover integration-popover" data-kind={card.kind} data-service={card.service}
-    data-add-action={hasAddAction} aria-label={`${card.name} preview`}>
+    data-add-action={hasAddAction} aria-label={t('integrations.preview', { name: card.name })}>
     {!mail && !calendar && !figma && <header>
       <span className="integration-mark" aria-hidden="true">{mark}</span>
-      <div className="integration-identity"><h2>{card.name}</h2><span>Recent pages</span></div>
+      <div className="integration-identity"><h2>{card.name}</h2><span>{t('integrations.recent')}</span></div>
     </header>}
     {hasAddAction &&
-      <button type="button" className="popover-text-button integration-add" aria-label={addLabel} title={addLabel} onClick={()=>control(figma?'createFigma':'compose')}><Icon name="plus" /></button>
+      <button type="button" className="popover-text-button integration-add" data-action={figma ? 'createFigma' : 'compose'} aria-label={addLabel} title={addLabel} onClick={()=>control(figma?'createFigma':'compose')}><Icon name="plus" /></button>
     }
-    {card.loading ? <p className="popover-empty" role="status">{mail?'Preparing inbox preview…':'Loading preview…'}</p> : card.status==='signInRequired' ? <>
-      <p className="popover-empty">Outlook needs you to sign in.</p>
-      <button type="button" className="popover-text-button" onClick={()=>control('open')}>Sign in to Outlook</button>
+    {card.loading ? <p className="popover-empty" role="status">{mail?t('integrations.inboxLoading'):t('integrations.loading')}</p> : card.status==='signInRequired' ? <>
+      <p className="popover-empty">{t('integrations.outlook')}</p>
+      <button type="button" className="popover-text-button" onClick={()=>control('open')}>{t('integrations.outlookSignIn')}</button>
     </> : card.status==='openTab' ? <>
-      <p className="popover-empty">Open this pinned tab to load its preview.</p>{!mail && <button className="popover-text-button" onClick={()=>control('open')}>Open {card.name}</button>}
+      <p className="popover-empty">{t('integrations.openPinned')}</p>{!mail && <button className="popover-text-button" onClick={()=>control('open')}>{t('downloads.open', { name: card.name })}</button>}
     </> : card.status==='unsupported' ? <>
-      <p className="popover-empty">{mail?'Inbox preview unavailable.':'This calendar view is not recognized yet.'}</p>
-      {!mail && <button className="popover-text-button" onClick={()=>control('open')}>Open {card.name}</button>}
+      <p className="popover-empty">{mail?t('integrations.inboxUnavailable'):t('integrations.calendarUnknown')}</p>
+      {!mail && <button className="popover-text-button" onClick={()=>control('open')}>{t('downloads.open', { name: card.name })}</button>}
     </> : calendar ? <CalendarAgenda items={card.items} open={open} join={join} active={active} /> : card.items.length && mail ?
       <ul className="integration-mail-feed">{card.items.map((item, index) => <li className="integration-item" key={item.token}>
         <button type="button" className="archive-row integration-message" title={item.title} onClick={() => open(index)}>
@@ -156,10 +160,10 @@ export function IntegrationCard({ card, open, join, control, active }: { card: C
         <Icon name="history" /><span className="archive-text"><span>{item.title || item.url}</span>
           {(item.detail||item.url) && <span>{item.detail || (item.url?new URL(item.url).hostname:'')}</span>}</span><Icon name="arrow" className="archive-go" />
       </button></li>)}</ul> :
-      <p className="popover-empty">{mail?'No unread mail from the last week.':'Pages you visit in this profile will appear here.'}</p>}
+      <p className="popover-empty">{mail?t('integrations.noMail'):t('integrations.noPages')}</p>}
     {calendar && <footer className="integration-controls">
-      <button type="button" className="popover-text-button" aria-label="Refresh preview" title="Refresh preview" onClick={()=>control('refresh')}><Icon name="reload" /></button>
-      <button type="button" className="popover-text-button" aria-label="Open calendar" title="Open calendar" onClick={()=>control('open')}><Icon name="arrow" /></button>
+      <button type="button" className="popover-text-button" aria-label={t('integrations.refresh')} title={t('integrations.refresh')} onClick={()=>control('refresh')}><Icon name="reload" /></button>
+      <button type="button" className="popover-text-button" aria-label={t('integrations.openCalendar')} title={t('integrations.openCalendar')} onClick={()=>control('open')}><Icon name="arrow" /></button>
     </footer>}
   </section>;
 }

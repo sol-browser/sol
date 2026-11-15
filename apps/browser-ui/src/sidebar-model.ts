@@ -1,4 +1,5 @@
-import type { TreeNode, TreeMutation } from '../../../packages/browser-contracts/src/index';
+import type { SpaceInfo, TreeNode, TreeMutation } from '../../../packages/browser-contracts/src/index';
+import type { Translate } from './i18n';
 
 export type Section = 'favorites' | 'pinned' | 'today';
 export function displayTitle(node: TreeNode): string {
@@ -54,6 +55,9 @@ export function spaceGlyph(space: { name: string; icon: string }): string {
   if (space.icon) return space.icon;
   const letter = [...space.name.trim()][0] ?? '•';
   return letter.toLocaleUpperCase();
+}
+export function spaceDisplayName(space: Pick<SpaceInfo, 'name' | 'position'>, t: Translate): string {
+  return space.name || t('native.menu.NumberedSpace', { name: String(space.position + 1) });
 }
 /** The space after/before |current| in switcher order, if any. */
 export function neighborSpace(spaces: { id: string; position: number }[], current: string, step: 1 | -1): string | undefined {

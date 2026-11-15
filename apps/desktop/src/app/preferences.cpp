@@ -1,5 +1,8 @@
 #include "app/preferences.h"
+#include "app/windows_locale.h"
 #include "navigation/shortcut_settings.h"
+#include "translation/model_catalog.h"
+#include "translation/page_translation_model.h"
 #include <sqlite3.h>
 #include <windows.h>
 #include <algorithm>
@@ -44,6 +47,10 @@ bool Decode(const std::string& json, Preferences& value) {
       data->GetType("askDownload") != VTYPE_BOOL || data->GetType("startup") != VTYPE_STRING ||
       data->GetType("homepage") != VTYPE_STRING || data->GetString("homepage").length() > 4096 || data->GetType("shortcuts") != VTYPE_DICTIONARY) return false;
   value.search_engine = data->GetString("searchEngine"); value.download_directory = data->GetString("downloadDirectory").ToWString();
+  if (data->GetType("interfaceLanguage") == VTYPE_STRING) {
+    const auto language = data->GetString("interfaceLanguage").ToString();
+    if (ValidInterfaceLanguage(language)) value.interface_language = language;
+  }
   if (data->HasKey("integrations")) {
     if (data->GetType("integrations") != VTYPE_DICTIONARY) return false;
     const auto integrations = data->GetDictionary("integrations");
@@ -68,6 +75,28 @@ bool Decode(const std::string& json, Preferences& value) {
   if (data->HasKey("searchSuggestions")) {
     if (data->GetType("searchSuggestions") != VTYPE_BOOL) return false;
     value.search_suggestions = data->GetBool("searchSuggestions");
+  }
+  if (data->HasKey("translationTarget")) {
+    if (data->GetType("translationTarget") != VTYPE_STRING) return false;
+    auto target = data->GetString("translationTarget").ToString();
+    if (target != "system" && !HasTranslationTarget(target)) return false;
+    value.translation_target = std::move(target);
+  }
+  if (data->HasKey("translationOffers")) {
+    if (data->GetType("translationOffers") != VTYPE_BOOL) return false;
+    value.translation_offers = data->GetBool("translationOffers");
+  }
+  if (data->HasKey("translationKnownLanguages") &&
+      !ReadTranslationKnownLanguages(data->GetList("translationKnownLanguages"), value.translation_known_languages)) return false;
+  if (data->HasKey("translationExcludedSites")) {
+    const auto sites = data->GetList("translationExcludedSites");
+    if (!sites || sites->GetSize() > 500) return false;
+    for (size_t i = 0; i < sites->GetSize(); ++i) {
+      if (sites->GetType(i) != VTYPE_STRING) return false;
+      const auto site = sites->GetString(i).ToString();
+      if (site.size() > 300 || !ValidHomepage(site)) return false;
+      value.translation_excluded_sites.insert(site);
+    }
   }
   if (data->HasKey("siteSearches") && (data->GetType("siteSearches") != VTYPE_LIST ||
       !ReadSiteSearches(data->GetList("siteSearches"), value.site_searches))) return false;
@@ -147,6 +176,19 @@ CefRefPtr<CefDictionaryValue> IntegrationSettingsDictionary(const IntegrationSet
   return result;
 }
 bool ValidSearchEngine(const std::string& engine) { return engine == "google" || engine == "duckduckgo" || engine == "bing" || engine == "brave"; }
+bool ReadTranslationKnownLanguages(CefRefPtr<CefListValue> list, std::set<std::string>& languages) {
+  if (!list || list->GetSize() > 100) return false;
+  std::set<std::string> parsed;
+  for (size_t i = 0; i < list->GetSize(); ++i) {
+    if (list->GetType(i) != VTYPE_STRING) return false;
+    auto code = list->GetString(i).ToString();
+    if (!ValidLanguageCode(code)) return false;
+    const bool added = parsed.insert(std::move(code)).second;
+    if (!added) return false;
+  }
+  languages = std::move(parsed);
+  return true;
+}
 bool ReadSiteSearches(CefRefPtr<CefListValue> list, std::vector<SiteSearch>& sites) {
   if (!list || list->GetSize() > 24) return false;
   std::vector<SiteSearch> result; std::set<std::string> keywords;
@@ -229,8 +271,17 @@ BrowserPreferences::BrowserPreferences(std::filesystem::path path) : path_(std::
 }
 CefRefPtr<CefDictionaryValue> BrowserPreferences::ToDictionary(const Preferences& value) {
   auto data = CefDictionaryValue::Create(); data->SetInt("schema", 1); data->SetString("searchEngine", value.search_engine);
+  data->SetString("interfaceLanguage", value.interface_language);
   data->SetString("downloadDirectory", value.download_directory.wstring()); data->SetBool("askDownload", value.ask_download);
   data->SetBool("searchSuggestions", value.search_suggestions);
+  data->SetString("translationTarget", value.translation_target);
+  data->SetBool("translationOffers", value.translation_offers);
+  auto known = CefListValue::Create();
+  for (const auto& language : value.translation_known_languages) known->SetString(known->GetSize(), language);
+  data->SetList("translationKnownLanguages", known);
+  auto excluded = CefListValue::Create();
+  for (const auto& site : value.translation_excluded_sites) excluded->SetString(excluded->GetSize(), site);
+  data->SetList("translationExcludedSites", excluded);
   data->SetString("notesProvider", value.notes_provider);
   data->SetDictionary("integrations", IntegrationSettingsDictionary(value.integrations));
   data->SetList("siteSearches", SiteSearchList(value.site_searches));

@@ -1,0 +1,2938 @@
+{
+  "settings.title": {
+    "defaultMessage": "Налаштування"
+  },
+  "settings.section.general": {
+    "defaultMessage": "Загальні"
+  },
+  "settings.section.appearance": {
+    "defaultMessage": "Оформлення"
+  },
+  "settings.section.search": {
+    "defaultMessage": "Пошук"
+  },
+  "settings.section.siteSearch": {
+    "defaultMessage": "Керування пошуковими системами й пошуком на сайтах"
+  },
+  "settings.section.downloads": {
+    "defaultMessage": "Завантаження"
+  },
+  "settings.section.startup": {
+    "defaultMessage": "Під час запуску"
+  },
+  "settings.section.links": {
+    "defaultMessage": "Посилання"
+  },
+  "settings.section.tabs": {
+    "defaultMessage": "Вкладки"
+  },
+  "settings.section.integrations": {
+    "defaultMessage": "Інтеграції"
+  },
+  "settings.section.profiles": {
+    "defaultMessage": "Профілі"
+  },
+  "settings.section.passwords": {
+    "defaultMessage": "Паролі"
+  },
+  "settings.section.keyboard": {
+    "defaultMessage": "Клавіатурні скорочення"
+  },
+  "settings.section.import": {
+    "defaultMessage": "Імпорт"
+  },
+  "settings.section.releases": {
+    "defaultMessage": "Що нового"
+  },
+  "settings.general.description": {
+    "defaultMessage": "Основні налаштування браузера Sol."
+  },
+  "settings.language.title": {
+    "defaultMessage": "Мова інтерфейсу"
+  },
+  "settings.language.system": {
+    "defaultMessage": "Як у Windows"
+  },
+  "settings.language.restart": {
+    "defaultMessage": "Вийдіть із Sol і відкрийте його знову, щоб застосувати вибрану мову."
+  },
+  "settings.default.category": {
+    "defaultMessage": "БРАУЗЕР"
+  },
+  "settings.default.badge": {
+    "defaultMessage": "Типовий"
+  },
+  "settings.default.active": {
+    "defaultMessage": "Sol — ваш типовий браузер"
+  },
+  "settings.default.inactive": {
+    "defaultMessage": "Зробіть Sol типовим браузером"
+  },
+  "settings.default.title": {
+    "defaultMessage": "Типовий браузер"
+  },
+  "settings.default.activeDescription": {
+    "defaultMessage": "Вебпосилання вже відкриваються в Sol."
+  },
+  "settings.default.description": {
+    "defaultMessage": "Відкривайте посилання з інших програм у Sol."
+  },
+  "settings.default.manage": {
+    "defaultMessage": "Керувати в Windows"
+  },
+  "settings.default.make": {
+    "defaultMessage": "Зробити типовим"
+  },
+  "settings.default.check": {
+    "defaultMessage": "Перевірити стан"
+  },
+  "settings.default.install": {
+    "defaultMessage": "Установіть Sol, щоб вибрати його в параметрах типових програм Windows."
+  },
+  "settings.default.unknown": {
+    "defaultMessage": "Не вдалося визначити типовий браузер. Перевірте його в параметрах типових програм Windows."
+  },
+  "settings.default.opened": {
+    "defaultMessage": "Виберіть «Зробити типовим» у Windows і поверніться сюди. Стан оновиться автоматично."
+  },
+  "settings.notes.category": {
+    "defaultMessage": "НОВІ ДОКУМЕНТИ"
+  },
+  "settings.notes.title": {
+    "defaultMessage": "Де відкривати нові нотатки"
+  },
+  "settings.notes.description": {
+    "defaultMessage": "Команда «Нова нотатка» створює документ із панелі команд."
+  },
+  "settings.notes.provider": {
+    "defaultMessage": "Типова програма для нотаток"
+  },
+  "settings.notes.disabled": {
+    "defaultMessage": "Сервіси вимкнено"
+  },
+  "settings.extensions.title": {
+    "defaultMessage": "Розширення"
+  },
+  "settings.extensions.description": {
+    "defaultMessage": "Керуйте розширеннями, доданими до Sol."
+  },
+  "settings.extensions.manage": {
+    "defaultMessage": "Керувати розширеннями"
+  },
+  "settings.clock.category": {
+    "defaultMessage": "ДАТА Й ЧАС"
+  },
+  "settings.clock.title": {
+    "defaultMessage": "Формат часу"
+  },
+  "settings.clock.description": {
+    "defaultMessage": "Формат відображення часу в історії та завантаженнях."
+  },
+  "settings.clock.label": {
+    "defaultMessage": "Показувати час у форматі"
+  },
+  "settings.clock.system": {
+    "defaultMessage": "Як у Windows ({example})"
+  },
+  "settings.clock.12": {
+    "defaultMessage": "12-годинний ({example})"
+  },
+  "settings.clock.24": {
+    "defaultMessage": "24-годинний ({example})"
+  },
+  "sidebar.label": {
+    "defaultMessage": "Вкладки й папки"
+  },
+  "sidebar.favorites": {
+    "defaultMessage": "Улюблене"
+  },
+  "sidebar.pinned": {
+    "defaultMessage": "Закріплені"
+  },
+  "sidebar.today": {
+    "defaultMessage": "Сьогодні"
+  },
+  "sidebar.favorites.empty": {
+    "defaultMessage": "Перетягніть сюди вкладки, якими часто користуєтеся."
+  },
+  "sidebar.pinned.empty": {
+    "defaultMessage": "Зберігайте тут вкладки й папки."
+  },
+  "sidebar.tab.new": {
+    "defaultMessage": "Нова вкладка"
+  },
+  "sidebar.archive": {
+    "defaultMessage": "Архів"
+  },
+  "sidebar.archive.title": {
+    "defaultMessage": "Архівовані вкладки"
+  },
+  "sidebar.spaces": {
+    "defaultMessage": "Простори"
+  },
+  "sidebar.space.new": {
+    "defaultMessage": "Новий простір"
+  },
+  "sidebar.space.confirmDelete": {
+    "defaultMessage": "Видалити простір «{name}» і його вкладки?"
+  },
+  "sidebar.space.delete": {
+    "defaultMessage": "Видалити простір"
+  },
+  "sidebar.update.ready": {
+    "defaultMessage": "Sol {version} готовий до встановлення"
+  },
+  "sidebar.update.restart": {
+    "defaultMessage": "Перезапустити для оновлення"
+  },
+  "sidebar.clear.confirm": {
+    "defaultMessage": "Закрити {count, plural, one {# вкладку} few {# вкладки} many {# вкладок} other {# вкладки}}?"
+  },
+  "sidebar.clear.action": {
+    "defaultMessage": "Очистити"
+  },
+  "sidebar.clear.title": {
+    "defaultMessage": "Закрити вкладки «Сьогодні», крім відкритої на екрані"
+  },
+  "common.cancel": {
+    "defaultMessage": "Скасувати"
+  },
+  "native.settings.title": {
+    "defaultMessage": "Налаштування — Sol"
+  },
+  "settings.preference.windowsKeys": {
+    "defaultMessage": "Комбінації з клавішею Windows зарезервовано."
+  },
+  "settings.preference.invalidKey": {
+    "defaultMessage": "Ця клавіша не підтримується."
+  },
+  "settings.preference.today": {
+    "defaultMessage": "СЬОГОДНІ"
+  },
+  "settings.preference.autoArchive": {
+    "defaultMessage": "Автоматично архівувати неактивні вкладки"
+  },
+  "settings.preference.autoArchiveDetail": {
+    "defaultMessage": "Неактивні вкладки зі «Сьогодні» переміщуються в архів. Їх можна відновити, зокрема групи розділеного перегляду."
+  },
+  "settings.preference.archiveAfter": {
+    "defaultMessage": "Архівувати вкладки через"
+  },
+  "settings.preference.never": {
+    "defaultMessage": "Ніколи"
+  },
+  "settings.preference.archiveScope": {
+    "defaultMessage": "Діє в усіх просторах і вікнах. Закріплені, улюблені й видимі вкладки, захищені медіа та незбережена робота залишаються."
+  },
+  "settings.preference.unloadAfter": {
+    "defaultMessage": "Вивантажувати неактивні вкладки через"
+  },
+  "settings.preference.unloadDetail": {
+    "defaultMessage": "Вивантажені вкладки залишаються на бічній панелі й завантажуються при відкритті. Позиція прокручування та історія переходів губляться. Вкладки, що відтворюють медіа, видимі й захищені вкладки залишаються завантаженими. Закріплені й улюблені вкладки вивантажуються лише на збереженій сторінці."
+  },
+  "settings.preference.autoPip": {
+    "defaultMessage": "Автоматичне «картинка в картинці»"
+  },
+  "settings.preference.autoPipDetail": {
+    "defaultMessage": "Коли ви залишаєте вкладку, де відтворюється відео зі звуком, воно продовжує грати в малому плаваючому вікні. Вікно закривається, коли ви повертаєтеся. Для окремих сайтів цю функцію можна ввімкнути в налаштуваннях сайту в адресному рядку."
+  },
+  "settings.preference.pip": {
+    "defaultMessage": "Кнопка «картинка в картинці» на відео"
+  },
+  "settings.preference.pipDetail": {
+    "defaultMessage": "Показувати маленьку кнопку біля краю відео, коли на нього наведено вказівник. Діє для сторінок, відкритих після зміни."
+  },
+  "settings.preference.searchCategory": {
+    "defaultMessage": "ПОШУКОВА СИСТЕМА"
+  },
+  "settings.preference.searchTitle": {
+    "defaultMessage": "Пошук з адресного рядка"
+  },
+  "settings.preference.searchDetail": {
+    "defaultMessage": "Виберіть, куди надсилати пошукові запити. Адреси сайтів і підказки зі збережених вкладок працюють як зазвичай."
+  },
+  "settings.preference.searchEngine": {
+    "defaultMessage": "Типова пошукова система"
+  },
+  "settings.preference.searchScope": {
+    "defaultMessage": "Зміни діють в усіх вікнах цього профілю."
+  },
+  "settings.preference.suggestions": {
+    "defaultMessage": "Пошукові підказки Google"
+  },
+  "settings.preference.suggestionsDetail": {
+    "defaultMessage": "Коли вибрано Google, текст запиту надсилається Google для підказок. Файли cookie й адреси сторінок не передаються."
+  },
+  "settings.preference.siteSearchDetail": {
+    "defaultMessage": "Задайте скорочення для сайтів і виберіть спосіб їх активації."
+  },
+  "settings.preference.manage": {
+    "defaultMessage": "Керувати"
+  },
+  "settings.preference.location": {
+    "defaultMessage": "РОЗТАШУВАННЯ"
+  },
+  "settings.preference.saveTo": {
+    "defaultMessage": "Папка завантажень"
+  },
+  "settings.preference.folderDetail": {
+    "defaultMessage": "Нові файли зберігатимуться в цій папці. Раніше завантажені файли залишаться на місці."
+  },
+  "settings.preference.systemFolder": {
+    "defaultMessage": "Системна папка «Завантаження»"
+  },
+  "settings.preference.changeFolder": {
+    "defaultMessage": "Змінити папку"
+  },
+  "settings.preference.useSystemFolder": {
+    "defaultMessage": "Використовувати системну папку"
+  },
+  "settings.preference.askLocation": {
+    "defaultMessage": "Запитувати, куди зберігати кожен файл"
+  },
+  "settings.preference.askLocationDetail": {
+    "defaultMessage": "Вибирайте папку й назву файлу перед початком завантаження."
+  },
+  "settings.preference.littleCategory": {
+    "defaultMessage": "LITTLE SOL"
+  },
+  "settings.preference.littleTitle": {
+    "defaultMessage": "Швидкий перегляд без нових вкладок"
+  },
+  "settings.preference.littleDetail": {
+    "defaultMessage": "Збережіть сторінку через «Відкрити у просторі» або закрийте вікно після перегляду."
+  },
+  "settings.preference.littleHotkey": {
+    "defaultMessage": "Відкривати Little Sol через Ctrl+Alt+N у будь-якій програмі"
+  },
+  "settings.preference.littleHotkeyDetail": {
+    "defaultMessage": "Введіть адресу чи запит, щоб відкрити їх у Little Sol. Sol залишається в області сповіщень після закриття вікон і запускається там при вході у Windows. Звідти можна повністю вийти з Sol."
+  },
+  "settings.preference.littleClick": {
+    "defaultMessage": "Відкривати посилання в Little Sol із затиснутими Ctrl+Alt"
+  },
+  "settings.preference.littleClickDetail": {
+    "defaultMessage": "Утримуйте Ctrl+Alt, коли натискаєте посилання на сторінці."
+  },
+  "settings.preference.littleLinks": {
+    "defaultMessage": "Відкривати посилання з інших програм у Little Sol"
+  },
+  "settings.preference.littleLinksDetail": {
+    "defaultMessage": "Посилання з чату або листа відкривається в окремому малому вікні. Якщо вимкнути цей параметр, воно відкриватиметься у вкладці Sol."
+  },
+  "settings.preference.startupCategory": {
+    "defaultMessage": "ПІД ЧАС ЗАПУСКУ SOL"
+  },
+  "settings.preference.startupTitle": {
+    "defaultMessage": "Що відкривати під час запуску"
+  },
+  "settings.preference.startupDetail": {
+    "defaultMessage": "Збережені вкладки, папки й простори зберігаються за будь-якого вибору."
+  },
+  "settings.preference.startupLabel": {
+    "defaultMessage": "Дії під час запуску"
+  },
+  "settings.preference.startupRestore": {
+    "defaultMessage": "Відновити робочий простір"
+  },
+  "settings.preference.startupRestoreDetail": {
+    "defaultMessage": "Повернутися до останнього простору. Збережені вкладки завантажуються, коли ви їх відкриваєте."
+  },
+  "settings.preference.startupNewTab": {
+    "defaultMessage": "Відкрити нову вкладку"
+  },
+  "settings.preference.startupNewTabDetail": {
+    "defaultMessage": "Почати з поля пошуку. Збережені вкладки залишаються на бічній панелі."
+  },
+  "settings.preference.startupHomepage": {
+    "defaultMessage": "Відкрити вибрану сторінку"
+  },
+  "settings.preference.startupHomepageDetail": {
+    "defaultMessage": "Відкривати вибрану сторінку під час запуску Sol."
+  },
+  "settings.preference.homepageError": {
+    "defaultMessage": "Введіть адресу сайту, наприклад example.com."
+  },
+  "settings.preference.homepage": {
+    "defaultMessage": "Адреса сторінки"
+  },
+  "common.save": {
+    "defaultMessage": "Зберегти"
+  },
+  "settings.preference.startupNote": {
+    "defaultMessage": "Діє з наступного запуску. Посилання з інших програм відкриваються одразу."
+  },
+  "settings.preference.keyboardCategory": {
+    "defaultMessage": "КЛАВІАТУРА"
+  },
+  "settings.preference.keyboardTitle": {
+    "defaultMessage": "Клавіатурні скорочення браузера"
+  },
+  "settings.preference.keyboardReset": {
+    "defaultMessage": "Скинути всі"
+  },
+  "settings.preference.keyboardDetail": {
+    "defaultMessage": "Натисніть скорочення й введіть нову комбінацію. Escape скасовує зміну. Системні скорочення та скорочення просторів зберігають типові комбінації."
+  },
+  "settings.preference.keyboardFixed": {
+    "defaultMessage": "Незмінне скорочення"
+  },
+  "settings.preference.keyboardRecord": {
+    "defaultMessage": "Натисніть клавіші…"
+  },
+  "settings.preference.keyboardResetOne": {
+    "defaultMessage": "Скинути скорочення"
+  },
+  "settings.preference.hours": {
+    "defaultMessage": "{count, plural, one {# година} few {# години} many {# годин} other {# години}}"
+  },
+  "settings.preference.minutes": {
+    "defaultMessage": "{count, plural, one {# хвилина} few {# хвилини} many {# хвилин} other {# хвилини}}"
+  },
+  "settings.preference.days": {
+    "defaultMessage": "{count, plural, one {# день} few {# дні} many {# днів} other {# дня}}"
+  },
+  "settings.preference.keyboardChange": {
+    "defaultMessage": "Змінити скорочення для дії «{action}»"
+  },
+  "settings.preference.keyboardDefault": {
+    "defaultMessage": "Типове: {keys}"
+  },
+  "settings.preference.keyboardResetAction": {
+    "defaultMessage": "Скинути скорочення для дії «{action}»"
+  },
+  "settings.description.releases": {
+    "defaultMessage": "Що нового в кожній версії — на нашому сайті."
+  },
+  "settings.description.search": {
+    "defaultMessage": "Шукайте за допомогою улюбленої пошукової системи."
+  },
+  "settings.description.siteSearch": {
+    "defaultMessage": "Шукайте на вибраних сайтах прямо з панелі команд."
+  },
+  "settings.description.downloads": {
+    "defaultMessage": "Виберіть, де зберігати нові завантаження."
+  },
+  "settings.description.startup": {
+    "defaultMessage": "Виберіть, що відкривати під час запуску Sol."
+  },
+  "settings.description.links": {
+    "defaultMessage": "Little Sol — мале вікно для швидкого перегляду посилань."
+  },
+  "settings.description.tabs": {
+    "defaultMessage": "Підтримуйте порядок у «Сьогодні» та зберігайте потрібні вкладки."
+  },
+  "settings.description.integrations": {
+    "defaultMessage": "Виберіть сервіси для інтеграції з Sol в усіх вкладках і вікнах."
+  },
+  "settings.description.keyboard": {
+    "defaultMessage": "Налаштуйте клавіші для звичних дій."
+  },
+  "settings.description.passwords": {
+    "defaultMessage": "Ваші дані для входу зберігаються у відповідному профілі."
+  },
+  "settings.description.profiles": {
+    "defaultMessage": "Відокремте роботу, особистий перегляд і облікові записи на сайтах."
+  },
+  "settings.description.import": {
+    "defaultMessage": "Перенесіть дані із Zen, Chrome, Edge або Arc."
+  },
+  "settings.description.appearance": {
+    "defaultMessage": "Оформіть «{space}» на свій смак."
+  },
+  "settings.description.appearanceDefault": {
+    "defaultMessage": "Оформіть свій простір на власний смак."
+  },
+  "settings.appearance.current": {
+    "defaultMessage": "ПОТОЧНИЙ ПРОСТІР"
+  },
+  "settings.appearance.space": {
+    "defaultMessage": "Ваш простір"
+  },
+  "settings.appearance.detail": {
+    "defaultMessage": "Колір, тема й зернистість зберігаються для цього простору."
+  },
+  "settings.appearance.windows": {
+    "defaultMessage": "УСІ ВІКНА"
+  },
+  "settings.appearance.background": {
+    "defaultMessage": "Тло вікна"
+  },
+  "settings.appearance.backgroundDetail": {
+    "defaultMessage": "Просвічуйте робочий стіл крізь бічну й верхню панелі, тоновані кольором простору."
+  },
+  "settings.appearance.material": {
+    "defaultMessage": "Матеріал тла"
+  },
+  "settings.appearance.solid": {
+    "defaultMessage": "Суцільний колір"
+  },
+  "settings.appearance.mica": {
+    "defaultMessage": "Mica (шпалери робочого столу)"
+  },
+  "settings.appearance.acrylic": {
+    "defaultMessage": "Acrylic (вікна позаду)"
+  },
+  "settings.appearance.requirement": {
+    "defaultMessage": "Потрібна Windows 11 версії 22H2 або новішої."
+  },
+  "settings.appearance.restart": {
+    "defaultMessage": "Перезапустіть Sol, щоб увімкнути ефект."
+  },
+  "settings.appearance.inactive": {
+    "defaultMessage": "Коли вікно Sol неактивне, Windows показує суцільний колір."
+  },
+  "settings.releases.description": {
+    "defaultMessage": "Дізнайтеся, що нового в цій і попередніх версіях на sol-browser.app."
+  },
+  "settings.releases.open": {
+    "defaultMessage": "Відкрити примітки до випуску"
+  },
+  "command.editAddress": {
+    "defaultMessage": "Редагувати адресу"
+  },
+  "command.resultGone": {
+    "defaultMessage": "Цей результат уже недоступний. Виберіть інший."
+  },
+  "command.exitActions": {
+    "defaultMessage": "Вийти з режиму дій"
+  },
+  "command.exitActionsHint": {
+    "defaultMessage": "Вийти з режиму дій (Escape)"
+  },
+  "command.actions": {
+    "defaultMessage": "Дії"
+  },
+  "command.exitSite": {
+    "defaultMessage": "Вийти з пошуку на сайті"
+  },
+  "command.searchActions": {
+    "defaultMessage": "Шукати дії"
+  },
+  "command.searchActionsButton": {
+    "defaultMessage": "Пошук дій"
+  },
+  "command.address": {
+    "defaultMessage": "Знайти або ввести адресу"
+  },
+  "command.searchPlaceholder": {
+    "defaultMessage": "Пошук…"
+  },
+  "command.addressPlaceholder": {
+    "defaultMessage": "Знайти або ввести адресу…"
+  },
+  "command.suggestions": {
+    "defaultMessage": "Підказки"
+  },
+  "command.switchTab": {
+    "defaultMessage": "Перейти до вкладки"
+  },
+  "command.openSaved": {
+    "defaultMessage": "Відкрити збережену вкладку"
+  },
+  "command.noActions": {
+    "defaultMessage": "Відповідних дій немає."
+  },
+  "command.invalidInput": {
+    "defaultMessage": "Введіть вебадресу, шлях до файлу або пошуковий запит."
+  },
+  "command.empty": {
+    "defaultMessage": "Шукайте в інтернеті або знайдіть вкладку."
+  },
+  "command.site": {
+    "defaultMessage": "Пошук на сайті «{name}»"
+  },
+  "command.sitePlaceholder": {
+    "defaultMessage": "Пошук на сайті «{name}»…"
+  },
+  "command.siteWithTab": {
+    "defaultMessage": "Шукати на сайті «{name}» клавішею Tab"
+  },
+  "command.sitePrompt": {
+    "defaultMessage": "Введіть запит для пошуку на сайті «{name}»."
+  },
+  "command.siteQuery": {
+    "defaultMessage": "Шукати «{query}» на сайті «{name}»"
+  },
+  "command.webQuery": {
+    "defaultMessage": "{query} — пошук у {engine}"
+  },
+  "command.file": {
+    "defaultMessage": "Відкрити файл"
+  },
+  "command.website": {
+    "defaultMessage": "Перейти на сайт"
+  },
+  "command.unpin": {
+    "defaultMessage": "Відкріпити вкладку"
+  },
+  "command.addressStart": {
+    "defaultMessage": "Знайти або ввести адресу"
+  },
+  "command.action.settings": {
+    "defaultMessage": "Налаштування"
+  },
+  "command.action.siteSearchSettings": {
+    "defaultMessage": "Налаштування пошуку на сайтах"
+  },
+  "command.action.downloads": {
+    "defaultMessage": "Завантаження"
+  },
+  "command.action.historyPage": {
+    "defaultMessage": "Переглянути історію"
+  },
+  "command.action.reopenClosed": {
+    "defaultMessage": "Відкрити останню закриту вкладку"
+  },
+  "command.action.sidebar": {
+    "defaultMessage": "Перемкнути бічну панель"
+  },
+  "command.action.newWindow": {
+    "defaultMessage": "Нове вікно"
+  },
+  "command.action.newPrivateWindow": {
+    "defaultMessage": "Нове приватне вікно"
+  },
+  "command.action.reload": {
+    "defaultMessage": "Перезавантажити сторінку"
+  },
+  "command.action.reloadBypass": {
+    "defaultMessage": "Перезавантажити без кешу"
+  },
+  "command.action.pin": {
+    "defaultMessage": "Закріпити вкладку"
+  },
+  "command.action.back": {
+    "defaultMessage": "Повернутися в історії"
+  },
+  "command.action.forward": {
+    "defaultMessage": "Перейти вперед в історії"
+  },
+  "command.action.devTools": {
+    "defaultMessage": "Інструменти розробника"
+  },
+  "command.action.print": {
+    "defaultMessage": "Надрукувати сторінку"
+  },
+  "command.action.copyUrl": {
+    "defaultMessage": "Копіювати посилання без трекерів"
+  },
+  "command.action.capture": {
+    "defaultMessage": "Знімок області або елемента"
+  },
+  "command.action.screenshot": {
+    "defaultMessage": "Зробити знімок екрана"
+  },
+  "command.action.fullPageScreenshot": {
+    "defaultMessage": "Знімок усієї сторінки"
+  },
+  "command.action.fullscreen": {
+    "defaultMessage": "Перемкнути повноекранний режим"
+  },
+  "command.action.newGoogleDoc": {
+    "defaultMessage": "Новий документ Google"
+  },
+  "command.action.newWordDoc": {
+    "defaultMessage": "Новий документ Word"
+  },
+  "command.action.newFigmaDesign": {
+    "defaultMessage": "Новий дизайн Figma"
+  },
+  "command.action.newNote": {
+    "defaultMessage": "Нова нотатка"
+  },
+  "toolbar.menu": {
+    "defaultMessage": "Меню браузера"
+  },
+  "toolbar.private": {
+    "defaultMessage": "Приватне"
+  },
+  "toolbar.privateHint": {
+    "defaultMessage": "Приватне вікно. Після закриття історія, файли cookie й дані сайтів із цього вікна видаляються. Сайти й ваша мережа все одно можуть бачити вашу активність. Завантажені файли залишаються."
+  },
+  "toolbar.hideSidebar": {
+    "defaultMessage": "Приховати бічну панель"
+  },
+  "toolbar.showSidebar": {
+    "defaultMessage": "Показати бічну панель"
+  },
+  "toolbar.navigation": {
+    "defaultMessage": "Навігація сторінкою"
+  },
+  "toolbar.back": {
+    "defaultMessage": "Назад"
+  },
+  "toolbar.forward": {
+    "defaultMessage": "Уперед"
+  },
+  "toolbar.stop": {
+    "defaultMessage": "Зупинити завантаження"
+  },
+  "toolbar.reload": {
+    "defaultMessage": "Перезавантажити"
+  },
+  "toolbar.dismiss": {
+    "defaultMessage": "Закрити повідомлення"
+  },
+  "toolbar.translateOffer": { "defaultMessage": "Перекласти?" },
+  "toolbar.translateTo": { "defaultMessage": "Мова перекладу сторінки — {language}" },
+  "translation.title": { "defaultMessage": "Переклад сторінки" },
+  "translation.question": { "defaultMessage": "Перекласти цю сторінку? Мова перекладу: {language}" },
+  "translation.translated": { "defaultMessage": "Перекладено з мови: {language}" },
+  "translation.working": { "defaultMessage": "Триває переклад. Мова перекладу: {language}" },
+  "translation.error": { "defaultMessage": "Не вдалося перекласти сторінку" },
+  "translation.start": { "defaultMessage": "Перекласти" },
+  "translation.original": { "defaultMessage": "Показати оригінал" },
+  "translation.options": { "defaultMessage": "Параметри" },
+  "translation.choose": { "defaultMessage": "Вибрати іншу мову" },
+  "translation.never": { "defaultMessage": "Ніколи не перекладати цей сайт" },
+  "translation.settings": { "defaultMessage": "Налаштування мов" },
+  "translation.back": { "defaultMessage": "Назад" },
+  "settings.section.languages": { "defaultMessage": "Мови" },
+  "settings.description.languages": { "defaultMessage": "Налаштуйте переклад вебсторінок у Sol." },
+  "settings.translation.target": { "defaultMessage": "Мова перекладу сторінок" },
+  "settings.translation.offers": { "defaultMessage": "Пропонувати переклад сторінок" },
+  "settings.translation.excluded": { "defaultMessage": "Винятки для сайтів" },
+  "settings.translation.remove": { "defaultMessage": "Вилучити" },
+  "settings.translation.removeSite": { "defaultMessage": "Вилучити {site} зі списку винятків" },
+  "translation.downloading": { "defaultMessage": "Завантаження моделі перекладу" },
+  "translation.downloadProgress": { "defaultMessage": "Завантаження моделі перекладу, {percent}%" },
+  "translation.selectionTitle": { "defaultMessage": "Переклад виділеного тексту" },
+  "translation.selectionSame": { "defaultMessage": "Мова цього тексту вже відповідає вибраній ({language})." },
+  "translation.selectionUnavailable": { "defaultMessage": "Sol не вдалося визначити підтримувану мову виділеного тексту." },
+  "translation.selectionError": { "defaultMessage": "Не вдалося перекласти виділений текст." },
+  "translation.selectionCopy": { "defaultMessage": "Копіювати переклад" },
+  "translation.selectionCopied": { "defaultMessage": "Скопійовано" },
+  "translation.selectionCopyError": { "defaultMessage": "Не вдалося скопіювати переклад." },
+  "translation.close": { "defaultMessage": "Закрити" },
+  "settings.translation.known": { "defaultMessage": "Мови, які ви знаєте" },
+  "settings.translation.knownDetail": { "defaultMessage": "Sol не пропонуватиме автоматичний переклад сторінок цими мовами." },
+  "settings.translation.addKnown": { "defaultMessage": "Додати мову" },
+  "settings.translation.chooseKnown": { "defaultMessage": "Виберіть мову" },
+  "settings.translation.removeKnown": { "defaultMessage": "Вилучити мову «{language}» зі списку" },
+  "native.menu.TranslateSelection": { "defaultMessage": "Перекласти виділений текст" },
+  "native.menu.TranslationRestored": { "defaultMessage": "Показано оригінал. Натисніть" },
+  "native.menu.TranslationUndo": { "defaultMessage": "щоб скасувати." },
+  "toolbar.copy": {
+    "defaultMessage": "Копіювати посилання"
+  },
+  "toolbar.address": {
+    "defaultMessage": "Адреса сайту"
+  },
+  "toolbar.go": {
+    "defaultMessage": "Перейти"
+  },
+  "toolbar.extensions": {
+    "defaultMessage": "Закріплені розширення"
+  },
+  "toolbar.minimize": {
+    "defaultMessage": "Згорнути"
+  },
+  "toolbar.restore": {
+    "defaultMessage": "Відновити розмір"
+  },
+  "toolbar.maximize": {
+    "defaultMessage": "Розгорнути"
+  },
+  "toolbar.close": {
+    "defaultMessage": "Закрити вікно"
+  },
+  "toolbar.websiteArea": {
+    "defaultMessage": "Область вебсторінки"
+  },
+  "toolbar.crash": {
+    "defaultMessage": "Ця сторінка перестала працювати."
+  },
+  "toolbar.crashHint": {
+    "defaultMessage": "Збережена вкладка залишилася. Перезавантажте сторінку, щоб спробувати ще раз."
+  },
+  "toolbar.reloadPage": {
+    "defaultMessage": "Перезавантажити сторінку"
+  },
+  "toolbar.saving": {
+    "defaultMessage": "Збереження…"
+  },
+  "toolbar.loading": {
+    "defaultMessage": "Завантаження сторінки…"
+  },
+  "toolbar.saved": {
+    "defaultMessage": "Збережено на пристрої"
+  },
+  "toolbar.workspaceLoading": {
+    "defaultMessage": "Завантаження робочого простору…"
+  },
+  "toolbar.connected": {
+    "defaultMessage": "Підключено до нативної частини · експеримент архітектури"
+  },
+  "toolbar.connecting": {
+    "defaultMessage": "Підключення до нативної частини…"
+  },
+  "toolbar.copied": {
+    "defaultMessage": "Скопійовано поточну адресу {url}"
+  },
+  "toolbar.zoom": {
+    "defaultMessage": "Масштаб {zoom}%. Скинути до 100%"
+  },
+  "toolbar.siteSettings": {
+    "defaultMessage": "Налаштування сайту"
+  },
+  "toolbar.siteCamera": {
+    "defaultMessage": "Налаштування сайту — використовується камера"
+  },
+  "toolbar.siteMic": {
+    "defaultMessage": "Налаштування сайту — використовується мікрофон"
+  },
+  "toolbar.siteCameraMic": {
+    "defaultMessage": "Налаштування сайту — використовуються камера й мікрофон"
+  },
+  "sidebar.badge.x": {
+    "defaultMessage": "Непрочитані сповіщення X"
+  },
+  "sidebar.badge.messages": {
+    "defaultMessage": "Непрочитані повідомлення"
+  },
+  "sidebar.tab.back": {
+    "defaultMessage": "Повернути «{name}» до закріпленої адреси"
+  },
+  "sidebar.tab.reset": {
+    "defaultMessage": "Скинути «{name}»"
+  },
+  "sidebar.tab.open": {
+    "defaultMessage": "Відкрити «{name}»"
+  },
+  "sidebar.tab.unmute": {
+    "defaultMessage": "Увімкнути звук у «{name}»"
+  },
+  "sidebar.tab.mute": {
+    "defaultMessage": "Вимкнути звук у «{name}»"
+  },
+  "sidebar.tab.unmuteHint": {
+    "defaultMessage": "Увімкнути звук вкладки"
+  },
+  "sidebar.tab.muteHint": {
+    "defaultMessage": "Вимкнути звук вкладки"
+  },
+  "sidebar.rename": {
+    "defaultMessage": "Перейменувати елемент"
+  },
+  "sidebar.renameNamed": {
+    "defaultMessage": "Перейменувати «{name}»"
+  },
+  "sidebar.camera": {
+    "defaultMessage": "Камера використовується"
+  },
+  "sidebar.microphone": {
+    "defaultMessage": "Мікрофон використовується"
+  },
+  "sidebar.cameraHint": {
+    "defaultMessage": "Використовується ваша камера"
+  },
+  "sidebar.microphoneHint": {
+    "defaultMessage": "Використовується ваш мікрофон"
+  },
+  "sidebar.tab.close": {
+    "defaultMessage": "Закрити «{name}»"
+  },
+  "sidebar.tab.closePage": {
+    "defaultMessage": "Закрити сторінку «{name}»"
+  },
+  "sidebar.tab.keepPin": {
+    "defaultMessage": "Закрити сторінку й зберегти закріплення"
+  },
+  "sidebar.tab.archive": {
+    "defaultMessage": "Архівувати вкладку"
+  },
+  "sidebar.tab.removePin": {
+    "defaultMessage": "Відкріпити"
+  },
+  "sidebar.tab.removeNamedPin": {
+    "defaultMessage": "Відкріпити «{name}»"
+  },
+  "sidebar.tab.archiveNamed": {
+    "defaultMessage": "Архівувати «{name}»"
+  },
+  "sidebar.tab.away": {
+    "defaultMessage": "Відкрито іншу адресу"
+  },
+  "sidebar.tab.pinnedHint": {
+    "defaultMessage": "До закріпленої адреси"
+  },
+  "sidebar.folder.deletePrompt": {
+    "defaultMessage": "Видалити «{name}»?"
+  },
+  "sidebar.folder.archiveTabs": {
+    "defaultMessage": "{count, plural, one {# вкладку буде закрито й переміщено в архів.} few {# вкладки буде закрито й переміщено в архів.} many {# вкладок буде закрито й переміщено в архів.} other {# вкладки буде закрито й переміщено в архів.}}"
+  },
+  "sidebar.folder.archiveNested": {
+    "defaultMessage": "{count, plural, one {# вкладку в цій папці та її підпапках буде закрито й переміщено в архів.} few {# вкладки в цій папці та її підпапках буде закрито й переміщено в архів.} many {# вкладок у цій папці та її підпапках буде закрито й переміщено в архів.} other {# вкладки в цій папці та її підпапках буде закрито й переміщено в архів.}}"
+  },
+  "sidebar.folder.changed": {
+    "defaultMessage": "Робочий простір змінився. Спочатку перевірте оновлену кількість."
+  },
+  "sidebar.folder.removing": {
+    "defaultMessage": "Видалення…"
+  },
+  "sidebar.folder.review": {
+    "defaultMessage": "Перевірити"
+  },
+  "sidebar.folder.delete": {
+    "defaultMessage": "Видалити папку"
+  },
+  "sidebar.split.out": {
+    "defaultMessage": "Вийняти з розділеного перегляду"
+  },
+  "sidebar.preview": {
+    "defaultMessage": "Попередній перегляд: {name}"
+  },
+  "sidebar.previewLink": {
+    "defaultMessage": "посилання"
+  },
+  "space.name": {
+    "defaultMessage": "Назва простору"
+  },
+  "space.rename": {
+    "defaultMessage": "Перейменувати простір"
+  },
+  "space.edit": {
+    "defaultMessage": "Редагувати простір"
+  },
+  "space.editButton": {
+    "defaultMessage": "Редагувати"
+  },
+  "space.label": {
+    "defaultMessage": "Простір"
+  },
+  "space.renameNamed": {
+    "defaultMessage": "Перейменувати простір «{name}»"
+  },
+  "settings.password.category": {
+    "defaultMessage": "ПАРОЛІ"
+  },
+  "settings.password.title": {
+    "defaultMessage": "Дані для входу"
+  },
+  "settings.password.detail": {
+    "defaultMessage": "Зберігайте паролі під час входу, щоб заповнювати їх під час наступного відвідування. Кожен профіль зберігає власні паролі."
+  },
+  "settings.password.profile": {
+    "defaultMessage": "Профіль браузера"
+  },
+  "settings.password.unavailable": {
+    "defaultMessage": "Керувати паролями можна у звичайному вікні браузера."
+  },
+  "settings.password.saved": {
+    "defaultMessage": "Збережені паролі"
+  },
+  "settings.password.manage": {
+    "defaultMessage": "Шукайте, додавайте, редагуйте або видаляйте паролі."
+  },
+  "settings.password.manageProfile": {
+    "defaultMessage": "Шукайте, додавайте, редагуйте або видаляйте паролі у профілі «{name}»."
+  },
+  "settings.password.open": {
+    "defaultMessage": "Відкрити менеджер"
+  },
+  "settings.password.saving": {
+    "defaultMessage": "Збереження та вхід"
+  },
+  "settings.password.savingDetail": {
+    "defaultMessage": "Налаштовуйте збереження паролів, автоматичний вхід і винятки для сайтів."
+  },
+  "settings.password.configure": {
+    "defaultMessage": "Налаштувати"
+  },
+  "settings.password.protected": {
+    "defaultMessage": "Захист на цьому комп’ютері"
+  },
+  "settings.password.protectedDetail": {
+    "defaultMessage": "Паролі зберігаються локально в зашифрованому сховищі Chromium. Перед показом або зміною пароля Windows може попросити підтвердити вашу особу."
+  },
+  "settings.password.privacy": {
+    "defaultMessage": "У приватному режимі нові паролі не зберігаються. Синхронізація паролів між пристроями недоступна."
+  },
+  "native.menu.SetDefault": {
+    "defaultMessage": "Зробити Sol типовим браузером"
+  },
+  "native.menu.CheckUpdates": {
+    "defaultMessage": "Перевірити оновлення"
+  },
+  "native.menu.NewTab": {
+    "defaultMessage": "Нова вкладка"
+  },
+  "native.menu.NewWindow": {
+    "defaultMessage": "Нове вікно"
+  },
+  "native.menu.NewPrivate": {
+    "defaultMessage": "Нове приватне вікно"
+  },
+  "native.menu.Spaces": {
+    "defaultMessage": "Простори"
+  },
+  "native.menu.NewSpace": {
+    "defaultMessage": "Новий простір"
+  },
+  "native.menu.RenameSpace": {
+    "defaultMessage": "Перейменувати простір"
+  },
+  "native.menu.NextSpace": {
+    "defaultMessage": "Наступний простір"
+  },
+  "native.menu.PreviousSpace": {
+    "defaultMessage": "Попередній простір"
+  },
+  "native.menu.Tabs": {
+    "defaultMessage": "Вкладки"
+  },
+  "native.menu.CommandBar": {
+    "defaultMessage": "Відкрити панель команд"
+  },
+  "native.menu.PinTab": {
+    "defaultMessage": "Закріпити вкладку"
+  },
+  "native.menu.NewFolder": {
+    "defaultMessage": "Нова папка"
+  },
+  "native.menu.RecentTab": {
+    "defaultMessage": "Нещодавня вкладка"
+  },
+  "native.menu.NextTab": {
+    "defaultMessage": "Наступна вкладка"
+  },
+  "native.menu.PreviousTab": {
+    "defaultMessage": "Попередня вкладка"
+  },
+  "native.menu.Reopen": {
+    "defaultMessage": "Відкрити останню закриту вкладку"
+  },
+  "native.menu.Archive": {
+    "defaultMessage": "Архів"
+  },
+  "native.menu.Extensions": {
+    "defaultMessage": "Розширення"
+  },
+  "native.menu.AddExtension": {
+    "defaultMessage": "Додати розширення"
+  },
+  "native.menu.ManageExtensions": {
+    "defaultMessage": "Керувати розширеннями"
+  },
+  "native.menu.PinTopBar": {
+    "defaultMessage": "Закріпити на верхній панелі"
+  },
+  "native.menu.UnpinTopBar": {
+    "defaultMessage": "Відкріпити від верхньої панелі"
+  },
+  "native.menu.Developer": {
+    "defaultMessage": "Розробник"
+  },
+  "native.menu.DeveloperTools": {
+    "defaultMessage": "Інструменти розробника"
+  },
+  "native.menu.ReloadBypass": {
+    "defaultMessage": "Перезавантажити без кешу"
+  },
+  "native.menu.History": {
+    "defaultMessage": "Історія"
+  },
+  "native.menu.Downloads": {
+    "defaultMessage": "Завантаження"
+  },
+  "native.menu.Passwords": {
+    "defaultMessage": "Паролі"
+  },
+  "native.menu.PagePasswords": {
+    "defaultMessage": "Паролі для цієї сторінки"
+  },
+  "native.menu.ManagePasswords": {
+    "defaultMessage": "Керувати паролями"
+  },
+  "native.menu.Theme": {
+    "defaultMessage": "Тема"
+  },
+  "native.menu.Print": {
+    "defaultMessage": "Друкувати…"
+  },
+  "native.menu.CleanCopy": {
+    "defaultMessage": "Копіювати посилання без трекерів"
+  },
+  "native.menu.Screenshot": {
+    "defaultMessage": "Знімок екрана"
+  },
+  "native.menu.SelectArea": {
+    "defaultMessage": "Вибрати область або елемент…"
+  },
+  "native.menu.VisibleArea": {
+    "defaultMessage": "Видима область"
+  },
+  "native.menu.FullPage": {
+    "defaultMessage": "Уся сторінка"
+  },
+  "native.menu.CloseWindow": {
+    "defaultMessage": "Закрити вікно"
+  },
+  "native.menu.CopyLink": {
+    "defaultMessage": "Копіювати посилання"
+  },
+  "native.menu.SuperCopy": {
+    "defaultMessage": "Суперкопія (без трекерів)"
+  },
+  "native.menu.FullHistory": {
+    "defaultMessage": "Показати всю історію"
+  },
+  "native.menu.AnotherProfile": {
+    "defaultMessage": "{name} (інший профіль)"
+  },
+  "native.menu.OpenExtension": {
+    "defaultMessage": "Відкрити «{name}»"
+  },
+  "native.menu.NumberedSpace": {
+    "defaultMessage": "Простір {name}"
+  },
+  "native.sidebar.SetProfile": {
+    "defaultMessage": "Вибрати профіль"
+  },
+  "native.sidebar.NewProfile": {
+    "defaultMessage": "Новий профіль…"
+  },
+  "native.sidebar.ExportSpace": {
+    "defaultMessage": "Експортувати «{name}» в папку"
+  },
+  "native.sidebar.EditThemeMore": {
+    "defaultMessage": "Редагувати тему…"
+  },
+  "native.sidebar.NewFolderTitle": {
+    "defaultMessage": "Нова папка"
+  },
+  "native.sidebar.DeleteSpace": {
+    "defaultMessage": "Видалити простір"
+  },
+  "native.sidebar.NewTab": {
+    "defaultMessage": "Нова вкладка"
+  },
+  "native.sidebar.OpenTab": {
+    "defaultMessage": "Відкрити вкладку"
+  },
+  "native.sidebar.Rename": {
+    "defaultMessage": "Перейменувати"
+  },
+  "native.sidebar.DuplicateTab": {
+    "defaultMessage": "Дублювати вкладку"
+  },
+  "native.sidebar.Detach": {
+    "defaultMessage": "Перемістити в нове вікно"
+  },
+  "native.sidebar.UnmuteTab": {
+    "defaultMessage": "Увімкнути звук вкладки"
+  },
+  "native.sidebar.MuteTab": {
+    "defaultMessage": "Вимкнути звук вкладки"
+  },
+  "native.sidebar.CloseTab": {
+    "defaultMessage": "Закрити вкладку"
+  },
+  "native.sidebar.NewFolder": {
+    "defaultMessage": "Нова папка"
+  },
+  "native.sidebar.NewSpace": {
+    "defaultMessage": "Новий простір"
+  },
+  "native.sidebar.Archive": {
+    "defaultMessage": "Архів"
+  },
+  "native.sidebar.EditTheme": {
+    "defaultMessage": "Редагувати тему"
+  },
+  "native.sidebar.RestoreTab": {
+    "defaultMessage": "Відновити вкладку"
+  },
+  "native.sidebar.CopyLink": {
+    "defaultMessage": "Копіювати посилання"
+  },
+  "native.sidebar.RenameMore": {
+    "defaultMessage": "Перейменувати…"
+  },
+  "native.sidebar.WebsiteTitle": {
+    "defaultMessage": "Використати заголовок сайту"
+  },
+  "native.sidebar.Unmute": {
+    "defaultMessage": "Увімкнути звук"
+  },
+  "native.sidebar.Mute": {
+    "defaultMessage": "Вимкнути звук"
+  },
+  "native.sidebar.ShowBadge": {
+    "defaultMessage": "Показувати позначку сповіщень"
+  },
+  "native.sidebar.HideBadge": {
+    "defaultMessage": "Приховати позначку сповіщень"
+  },
+  "native.sidebar.EditPinned": {
+    "defaultMessage": "Редагувати закріплену сторінку"
+  },
+  "native.sidebar.ReplacePinned": {
+    "defaultMessage": "Замінити закріплену адресу поточною"
+  },
+  "native.sidebar.EditMore": {
+    "defaultMessage": "Редагувати…"
+  },
+  "native.sidebar.OpenSplit": {
+    "defaultMessage": "Відкрити в розділеному перегляді"
+  },
+  "native.sidebar.AddSplit": {
+    "defaultMessage": "Додати до розділеного перегляду"
+  },
+  "native.sidebar.Duplicate": {
+    "defaultMessage": "Дублювати"
+  },
+  "native.sidebar.NewSpaceMore": {
+    "defaultMessage": "Новий простір…"
+  },
+  "native.sidebar.NewWindow": {
+    "defaultMessage": "Нове вікно"
+  },
+  "native.sidebar.MoveTo": {
+    "defaultMessage": "Перемістити до"
+  },
+  "native.sidebar.Unload": {
+    "defaultMessage": "Вивантажити вкладку"
+  },
+  "native.sidebar.Unpin": {
+    "defaultMessage": "Відкріпити"
+  },
+  "native.sidebar.RemoveFavorite": {
+    "defaultMessage": "Видалити з улюблених"
+  },
+  "native.sidebar.ArchiveOthers": {
+    "defaultMessage": "Архівувати інші вкладки"
+  },
+  "native.sidebar.ArchiveTabTitle": {
+    "defaultMessage": "Архівувати вкладку"
+  },
+  "native.sidebar.ArchiveBelow": {
+    "defaultMessage": "Архівувати вкладки нижче"
+  },
+  "native.sidebar.SwitchTab": {
+    "defaultMessage": "Перейти до вкладки"
+  },
+  "native.sidebar.Collapse": {
+    "defaultMessage": "Згорнути папку"
+  },
+  "native.sidebar.Expand": {
+    "defaultMessage": "Розгорнути папку"
+  },
+  "native.sidebar.UnpinTab": {
+    "defaultMessage": "Відкріпити вкладку"
+  },
+  "native.sidebar.PinTab": {
+    "defaultMessage": "Закріпити вкладку"
+  },
+  "native.sidebar.WebsiteTitleLower": {
+    "defaultMessage": "Використати заголовок сайту"
+  },
+  "native.sidebar.NestedFolder": {
+    "defaultMessage": "Нова вкладена папка"
+  },
+  "native.sidebar.ResetAddress": {
+    "defaultMessage": "Повернутися до збереженої адреси"
+  },
+  "native.sidebar.Pinned": {
+    "defaultMessage": "Закріплені"
+  },
+  "native.sidebar.Favorites": {
+    "defaultMessage": "Улюблене"
+  },
+  "native.sidebar.Today": {
+    "defaultMessage": "Сьогодні"
+  },
+  "native.sidebar.Folder": {
+    "defaultMessage": "Папка"
+  },
+  "native.sidebar.Space": {
+    "defaultMessage": "Простір"
+  },
+  "native.sidebar.MoveUp": {
+    "defaultMessage": "Перемістити вище"
+  },
+  "native.sidebar.MoveDown": {
+    "defaultMessage": "Перемістити нижче"
+  },
+  "native.sidebar.DeleteFolder": {
+    "defaultMessage": "Видалити папку"
+  },
+  "native.sidebar.DeleteFolderMore": {
+    "defaultMessage": "Видалити папку…"
+  },
+  "native.sidebar.KeepPin": {
+    "defaultMessage": "Закрити сторінку й зберегти закріплення"
+  },
+  "native.sidebar.ArchiveTab": {
+    "defaultMessage": "Архівувати вкладку"
+  },
+  "native.sidebar.RemoveSidebar": {
+    "defaultMessage": "Видалити з бічної панелі"
+  },
+  "native.sidebar.OpenGroup": {
+    "defaultMessage": "Відкрити розділений перегляд"
+  },
+  "native.sidebar.RenameFirst": {
+    "defaultMessage": "Перейменувати першу вкладку"
+  },
+  "native.sidebar.RenameSecond": {
+    "defaultMessage": "Перейменувати другу вкладку"
+  },
+  "native.sidebar.RenameThird": {
+    "defaultMessage": "Перейменувати третю вкладку"
+  },
+  "native.sidebar.RenameFourth": {
+    "defaultMessage": "Перейменувати четверту вкладку"
+  },
+  "native.sidebar.UnpinSplit": {
+    "defaultMessage": "Відкріпити розділений перегляд"
+  },
+  "native.sidebar.PinSplit": {
+    "defaultMessage": "Закріпити розділений перегляд"
+  },
+  "native.sidebar.Swap": {
+    "defaultMessage": "Поміняти панелі місцями"
+  },
+  "native.sidebar.Separate": {
+    "defaultMessage": "Роз’єднати вкладки"
+  },
+  "native.sidebar.DisableIntegration": {
+    "defaultMessage": "Вимкнути інтеграцію з {name} (усі вкладки)"
+  },
+  "native.sidebar.EnableIntegration": {
+    "defaultMessage": "Увімкнути інтеграцію з {name} (усі вкладки)"
+  },
+  "history.title": {
+    "defaultMessage": "Історія"
+  },
+  "history.subtitle": {
+    "defaultMessage": "Сторінки, які ви відвідали в Sol"
+  },
+  "history.searching": {
+    "defaultMessage": "Пошук…"
+  },
+  "history.results": {
+    "defaultMessage": "{count, plural, one {{shown} сторінка} few {{shown} сторінки} many {{shown} сторінок} other {{shown} сторінки}} за запитом «{query}»"
+  },
+  "history.clearOpen": {
+    "defaultMessage": "Очистити історію…"
+  },
+  "history.selection": {
+    "defaultMessage": "Вибір"
+  },
+  "history.selected": {
+    "defaultMessage": "Вибрано: {count, number}"
+  },
+  "history.deleteSelected": {
+    "defaultMessage": "Видалити вибране"
+  },
+  "history.delete": {
+    "defaultMessage": "Видалити"
+  },
+  "history.search": {
+    "defaultMessage": "Пошук в історії"
+  },
+  "history.clearSearch": {
+    "defaultMessage": "Очистити пошук"
+  },
+  "history.clear": {
+    "defaultMessage": "Очистити історію"
+  },
+  "history.clearTitle": {
+    "defaultMessage": "Очистити історію перегляду"
+  },
+  "history.clearDetail": {
+    "defaultMessage": "Сторінки буде видалено з історії Sol. Відкриті й збережені вкладки та завантаження залишаться."
+  },
+  "history.clearWithRange": {
+    "defaultMessage": "Очистити історію: {range}"
+  },
+  "history.days": {
+    "defaultMessage": "Дні"
+  },
+  "history.visited": {
+    "defaultMessage": "Відвідані сторінки"
+  },
+  "history.pages": {
+    "defaultMessage": "{count, plural, one {# сторінка} few {# сторінки} many {# сторінок} other {# сторінки}}"
+  },
+  "history.select": {
+    "defaultMessage": "Вибрати «{title}»"
+  },
+  "history.removeNamed": {
+    "defaultMessage": "Видалити «{title}» з історії"
+  },
+  "history.remove": {
+    "defaultMessage": "Видалити з історії"
+  },
+  "history.noResults": {
+    "defaultMessage": "Відповідних сторінок немає"
+  },
+  "history.empty": {
+    "defaultMessage": "Історія ще порожня"
+  },
+  "history.searchHint": {
+    "defaultMessage": "Спробуйте інше слово або частину адреси."
+  },
+  "history.emptyDetail": {
+    "defaultMessage": "Тут з’являться сторінки, які ви відвідаєте в Sol."
+  },
+  "history.loading": {
+    "defaultMessage": "Завантаження…"
+  },
+  "history.more": {
+    "defaultMessage": "Показати більше"
+  },
+  "history.today": {
+    "defaultMessage": "Сьогодні"
+  },
+  "history.yesterday": {
+    "defaultMessage": "Учора"
+  },
+  "history.range.hour": {
+    "defaultMessage": "Остання година"
+  },
+  "history.range.day": {
+    "defaultMessage": "Останні 24 години"
+  },
+  "history.range.week": {
+    "defaultMessage": "Останні 7 днів"
+  },
+  "history.range.all": {
+    "defaultMessage": "За весь час"
+  },
+  "downloads.subtitle": {
+    "defaultMessage": "Файли, завантажені в Sol"
+  },
+  "downloads.results": {
+    "defaultMessage": "Знайдено {count, number} за запитом «{query}»"
+  },
+  "downloads.progressDetail": {
+    "defaultMessage": "Завантажуються: {count, number} · файли зберігаються в папці «Завантаження»"
+  },
+  "downloads.clearOpen": {
+    "defaultMessage": "Очистити список…"
+  },
+  "downloads.search": {
+    "defaultMessage": "Пошук у завантаженнях"
+  },
+  "downloads.clearLabel": {
+    "defaultMessage": "Очистити список завантажень"
+  },
+  "downloads.clearTitle": {
+    "defaultMessage": "Очистити список завантажень"
+  },
+  "downloads.clearDetail": {
+    "defaultMessage": "Файли залишаться на комп’ютері. Буде очищено лише список."
+  },
+  "downloads.clearConfirm": {
+    "defaultMessage": "Підтвердити очищення списку завантажень"
+  },
+  "downloads.clear": {
+    "defaultMessage": "Очистити список"
+  },
+  "downloads.progress": {
+    "defaultMessage": "Завантажуються"
+  },
+  "downloads.progressCount": {
+    "defaultMessage": "Завантажуються: {count, number}"
+  },
+  "downloads.pause": {
+    "defaultMessage": "Призупинити"
+  },
+  "downloads.resume": {
+    "defaultMessage": "Продовжити"
+  },
+  "downloads.open": {
+    "defaultMessage": "Відкрити «{name}»"
+  },
+  "downloads.pauseNamed": {
+    "defaultMessage": "Призупинити «{name}»"
+  },
+  "downloads.resumeNamed": {
+    "defaultMessage": "Продовжити «{name}»"
+  },
+  "downloads.cancelNamed": {
+    "defaultMessage": "Скасувати «{name}»"
+  },
+  "downloads.showNamed": {
+    "defaultMessage": "Показати «{name}» у Провіднику"
+  },
+  "downloads.copyNamed": {
+    "defaultMessage": "Копіювати «{name}»"
+  },
+  "downloads.recycleNamed": {
+    "defaultMessage": "Перемістити «{name}» до кошика"
+  },
+  "downloads.removeNamed": {
+    "defaultMessage": "Видалити «{name}» зі списку"
+  },
+  "downloads.show": {
+    "defaultMessage": "Показати в Провіднику"
+  },
+  "downloads.copy": {
+    "defaultMessage": "Копіювати файл"
+  },
+  "downloads.recycle": {
+    "defaultMessage": "Перемістити до кошика"
+  },
+  "downloads.remove": {
+    "defaultMessage": "Видалити зі списку"
+  },
+  "downloads.device": {
+    "defaultMessage": "Цей пристрій"
+  },
+  "downloads.files": {
+    "defaultMessage": "{count, plural, one {# файл} few {# файли} many {# файлів} other {# файлу}}"
+  },
+  "downloads.none": {
+    "defaultMessage": "Завантажень ще немає"
+  },
+  "downloads.noResults": {
+    "defaultMessage": "Відповідних завантажень немає"
+  },
+  "downloads.searchHint": {
+    "defaultMessage": "Спробуйте іншу частину назви файлу чи сайту."
+  },
+  "downloads.emptyDetail": {
+    "defaultMessage": "Тут з’являться файли, завантажені в Sol."
+  },
+  "downloads.canceled": {
+    "defaultMessage": "Скасовано"
+  },
+  "downloads.failed": {
+    "defaultMessage": "Помилка"
+  },
+  "downloads.missing": {
+    "defaultMessage": "Видалено або переміщено"
+  },
+  "downloads.paused": {
+    "defaultMessage": "Призупинено · {size}"
+  },
+  "downloads.interrupted": {
+    "defaultMessage": "Помилка — завантаження перервано"
+  },
+  "downloads.session": {
+    "defaultMessage": "Цей сеанс"
+  },
+  "downloads.sessionEmpty": {
+    "defaultMessage": "Тут з’являться файли, завантажені в цьому сеансі"
+  },
+  "downloads.showAll": {
+    "defaultMessage": "Показати всі завантаження"
+  },
+  "downloads.source": {
+    "defaultMessage": "{type} · {origin}"
+  },
+  "downloads.file": {
+    "defaultMessage": "Файл"
+  },
+  "downloads.moreNamed": {
+    "defaultMessage": "Інші дії з «{name}»"
+  },
+  "downloads.more": {
+    "defaultMessage": "Більше"
+  },
+  "settings.site.saved": {
+    "defaultMessage": "Сайт збережено."
+  },
+  "settings.site.invalid": {
+    "defaultMessage": "Введіть унікальне скорочення без пробілів та URL пошуку HTTP(S) з одним %s після імені хоста. Можна додати до 24 сайтів. Скорочення можуть містити домени або @імена."
+  },
+  "settings.site.inactive": {
+    "defaultMessage": "Неактивні скорочення"
+  },
+  "settings.site.title": {
+    "defaultMessage": "Пошук на сайтах"
+  },
+  "settings.site.inactiveDetail": {
+    "defaultMessage": "Активуйте скорочення, щоб використовувати його в панелі команд."
+  },
+  "settings.site.activeDetail": {
+    "defaultMessage": "Щоб шукати на сайті, введіть його скорочення й натисніть клавішу, вибрану вище."
+  },
+  "settings.site.add": {
+    "defaultMessage": "Додати"
+  },
+  "settings.site.engine": {
+    "defaultMessage": "Пошукова система"
+  },
+  "settings.site.shortcut": {
+    "defaultMessage": "Скорочення"
+  },
+  "settings.site.activate": {
+    "defaultMessage": "Активувати"
+  },
+  "settings.site.deactivate": {
+    "defaultMessage": "Деактивувати"
+  },
+  "settings.site.inactiveEmpty": {
+    "defaultMessage": "Неактивних скорочень немає."
+  },
+  "settings.site.activeEmpty": {
+    "defaultMessage": "Пошуки на сайтах ще не додано."
+  },
+  "settings.site.key": {
+    "defaultMessage": "Клавіша активації"
+  },
+  "settings.site.keyDetail": {
+    "defaultMessage": "У панелі команд введіть скорочення сайту, а потім натисніть цю клавішу."
+  },
+  "settings.site.spaceOrTab": {
+    "defaultMessage": "Пробіл або Tab"
+  },
+  "settings.site.editEngine": {
+    "defaultMessage": "Редагувати пошукову систему"
+  },
+  "settings.site.addEngine": {
+    "defaultMessage": "Додати пошукову систему"
+  },
+  "settings.site.name": {
+    "defaultMessage": "Назва пошуку на сайті"
+  },
+  "settings.site.keyword": {
+    "defaultMessage": "Скорочення для пошуку на сайті"
+  },
+  "settings.site.url": {
+    "defaultMessage": "URL пошуку на сайті"
+  },
+  "settings.site.urlDetail": {
+    "defaultMessage": "URL із %s замість запиту"
+  },
+  "settings.site.activateNamed": {
+    "defaultMessage": "Активувати «{name}»"
+  },
+  "settings.site.editNamed": {
+    "defaultMessage": "Редагувати «{name}»"
+  },
+  "settings.site.more": {
+    "defaultMessage": "Інші дії для «{name}»"
+  },
+  "settings.site.actions": {
+    "defaultMessage": "Дії для «{name}»"
+  },
+  "settings.profile.category": {
+    "defaultMessage": "ПРОФІЛІ БРАУЗЕРА"
+  },
+  "settings.profile.title": {
+    "defaultMessage": "Окремі профілі"
+  },
+  "settings.profile.description": {
+    "defaultMessage": "Зберігайте роботу, особистий перегляд і різні облікові записи окремо."
+  },
+  "settings.profile.create": {
+    "defaultMessage": "Створити профіль"
+  },
+  "settings.profile.current": {
+    "defaultMessage": "Поточний"
+  },
+  "settings.profile.rename": {
+    "defaultMessage": "Перейменувати"
+  },
+  "settings.profile.renameNamed": {
+    "defaultMessage": "Перейменувати профіль «{name}»"
+  },
+  "settings.profile.original": {
+    "defaultMessage": "Початковий профіль"
+  },
+  "settings.profile.spaceCount": {
+    "defaultMessage": "{count, plural, one {# простір} few {# простори} many {# просторів} other {# простору}}"
+  },
+  "settings.profile.noSpaces": {
+    "defaultMessage": "Виберіть цей профіль у меню редагування простору."
+  },
+  "settings.profile.shared": {
+    "defaultMessage": "Простори одного профілю спільно використовують дані для входу, історію, розширення й улюблені вкладки."
+  },
+  "settings.profile.close": {
+    "defaultMessage": "Закрити вікно профілю"
+  },
+  "settings.profile.renameTitle": {
+    "defaultMessage": "Нова назва профілю"
+  },
+  "settings.profile.createTitle": {
+    "defaultMessage": "Створення профілю"
+  },
+  "settings.profile.renameDetail": {
+    "defaultMessage": "Ваші простори й дані перегляду збережуться."
+  },
+  "settings.profile.createDetail": {
+    "defaultMessage": "Назвіть профіль, а потім виберіть простори для нього."
+  },
+  "settings.profile.name": {
+    "defaultMessage": "Назва профілю"
+  },
+  "settings.profile.placeholder": {
+    "defaultMessage": "Робота, Особисте, Проєкти…"
+  },
+  "settings.profile.spaces": {
+    "defaultMessage": "ПРОСТОРИ"
+  },
+  "settings.profile.moveDetail": {
+    "defaultMessage": "Вибрані простори збережуть вкладки. Відкриті вкладки буде вивантажено під час переміщення в новий профіль."
+  },
+  "settings.profile.saveName": {
+    "defaultMessage": "Зберегти назву"
+  },
+  "panel.editPin": {
+    "defaultMessage": "Редагувати закріплену сторінку"
+  },
+  "panel.title": {
+    "defaultMessage": "Заголовок"
+  },
+  "panel.address": {
+    "defaultMessage": "Адреса"
+  },
+  "panel.moveQuestion": {
+    "defaultMessage": "Перемістити «{title}» у простір «{space}»?"
+  },
+  "panel.moveDetail": {
+    "defaultMessage": "Простір «{space}» використовує інший профіль. Вкладка там перезавантажиться, а дані для входу й незбережені зміни залишаться в попередньому профілі."
+  },
+  "panel.move": {
+    "defaultMessage": "Перемістити вкладку"
+  },
+  "panel.restore": {
+    "defaultMessage": "Відновити «{title}»"
+  },
+  "panel.emptyArchive": {
+    "defaultMessage": "Тут з’являться закриті вкладки зі «Сьогодні»"
+  },
+  "linkPeek.label": {
+    "defaultMessage": "Попередній перегляд посилання"
+  },
+  "linkPeek.loading": {
+    "defaultMessage": "Відкриття сторінки…"
+  },
+  "linkPeek.actions": {
+    "defaultMessage": "Дії в попередньому перегляді"
+  },
+  "linkPeek.closeHint": {
+    "defaultMessage": "Закрити перегляд (Esc)"
+  },
+  "linkPeek.close": {
+    "defaultMessage": "Закрити попередній перегляд"
+  },
+  "linkPeek.keep": {
+    "defaultMessage": "Зберегти як вкладку"
+  },
+  "linkPeek.keepToday": {
+    "defaultMessage": "Зберегти перегляд як вкладку в «Сьогодні»"
+  },
+  "linkPeek.splitUnavailable": {
+    "defaultMessage": "Початкова вкладка вже в розділеному перегляді або недоступна"
+  },
+  "linkPeek.split": {
+    "defaultMessage": "Відкрити в розділеному перегляді"
+  },
+  "linkPeek.splitPreview": {
+    "defaultMessage": "Відкрити попередній перегляд у розділеному перегляді"
+  },
+  "little.open": {
+    "defaultMessage": "Відкрити в «{name}»"
+  },
+  "little.openGeneric": {
+    "defaultMessage": "Відкрити у просторі"
+  },
+  "little.group": {
+    "defaultMessage": "Перемістити сторінку у простір"
+  },
+  "little.other": {
+    "defaultMessage": "Відкрити в іншому просторі"
+  },
+  "site.thisPage": {
+    "defaultMessage": "Ця сторінка"
+  },
+  "site.browserPage": {
+    "defaultMessage": "Сторінка браузера"
+  },
+  "site.secureDetail": {
+    "defaultMessage": "З’єднання захищене"
+  },
+  "site.insecureDetail": {
+    "defaultMessage": "З’єднання не захищене"
+  },
+  "site.onlySites": {
+    "defaultMessage": "Налаштування доступні лише для сайтів"
+  },
+  "site.reset": {
+    "defaultMessage": "Скинути дозволи"
+  },
+  "site.reload": {
+    "defaultMessage": "Перезавантажити, щоб застосувати"
+  },
+  "site.controls": {
+    "defaultMessage": "Керування сайтом"
+  },
+  "site.share": {
+    "defaultMessage": "Поділитися адресою"
+  },
+  "site.capture": {
+    "defaultMessage": "Знімок області або елемента"
+  },
+  "site.addExtensions": {
+    "defaultMessage": "Додати розширення"
+  },
+  "site.autoPip": {
+    "defaultMessage": "Автоматичне «картинка в картинці»"
+  },
+  "site.boostEdit": {
+    "defaultMessage": "Редагувати Boost"
+  },
+  "site.boostCreate": {
+    "defaultMessage": "Оформити сайт через Boost"
+  },
+  "site.on": {
+    "defaultMessage": "Увімкнено"
+  },
+  "site.off": {
+    "defaultMessage": "Вимкнено"
+  },
+  "site.connection": {
+    "defaultMessage": "З’єднання й дозволи"
+  },
+  "site.secure": {
+    "defaultMessage": "Захищено"
+  },
+  "site.insecure": {
+    "defaultMessage": "Не захищено"
+  },
+  "site.more": {
+    "defaultMessage": "Інші дії для сайту"
+  },
+  "site.camera": {
+    "defaultMessage": "Використовується ваша камера"
+  },
+  "site.microphone": {
+    "defaultMessage": "Використовується ваш мікрофон"
+  },
+  "site.cameraMicrophone": {
+    "defaultMessage": "Використовуються ваші камера й мікрофон"
+  },
+  "site.permission.camera": {
+    "defaultMessage": "Камера"
+  },
+  "site.permission.microphone": {
+    "defaultMessage": "Мікрофон"
+  },
+  "site.permission.location": {
+    "defaultMessage": "Місцезнаходження"
+  },
+  "site.permission.notifications": {
+    "defaultMessage": "Сповіщення"
+  },
+  "site.permission.clipboard": {
+    "defaultMessage": "Буфер обміну"
+  },
+  "site.permission.popups": {
+    "defaultMessage": "Спливні вікна й переспрямування"
+  },
+  "site.value.ask": {
+    "defaultMessage": "Питати"
+  },
+  "site.value.allow": {
+    "defaultMessage": "Дозволити"
+  },
+  "site.value.block": {
+    "defaultMessage": "Блокувати"
+  },
+  "site.permissionAction": {
+    "defaultMessage": "{permission}: {action}"
+  },
+  "update.download": {
+    "defaultMessage": "Завантаження {name}"
+  },
+  "update.downloadProgress": {
+    "defaultMessage": "{name} · {percent}% · можна продовжувати перегляд"
+  },
+  "update.update": {
+    "defaultMessage": "оновлення"
+  },
+  "update.almost": {
+    "defaultMessage": "Майже готово…"
+  },
+  "update.ready": {
+    "defaultMessage": "{name} готово до встановлення"
+  },
+  "update.readyDetail": {
+    "defaultMessage": "Перезапустіть Sol, щоб завершити. Оновлення також установиться під час наступного запуску."
+  },
+  "update.latest": {
+    "defaultMessage": "Sol оновлено до останньої версії"
+  },
+  "update.latestDetail": {
+    "defaultMessage": "У вас остання версія — {version}."
+  },
+  "update.failed": {
+    "defaultMessage": "Не вдалося перевірити оновлення"
+  },
+  "update.failedDetail": {
+    "defaultMessage": "Перевірте з’єднання та спробуйте ще раз."
+  },
+  "update.notInstalled": {
+    "defaultMessage": "Ця копія не оновлюється автоматично"
+  },
+  "update.notInstalledDetail": {
+    "defaultMessage": "Установлений Sol завантажує оновлення у фоновому режимі."
+  },
+  "update.checking": {
+    "defaultMessage": "Перевірка оновлень"
+  },
+  "update.checkingDetail": {
+    "defaultMessage": "Шукаємо версію, новішу за {version}…"
+  },
+  "update.error": {
+    "defaultMessage": "Браузер не відповів. Закрийте це вікно й спробуйте ще раз."
+  },
+  "update.retry": {
+    "defaultMessage": "Спробувати ще раз"
+  },
+  "update.later": {
+    "defaultMessage": "Пізніше"
+  },
+  "native.menu.PrivateLink": {
+    "defaultMessage": "Відкрити посилання в приватному вікні"
+  },
+  "native.menu.LittleLink": {
+    "defaultMessage": "Відкрити посилання в Little Sol"
+  },
+  "native.menu.Original": {
+    "defaultMessage": "Показати оригінал"
+  },
+  "native.menu.Translate": {
+    "defaultMessage": "Перекласти сторінку мовою «{name}»"
+  },
+  "native.menu.Inspect": {
+    "defaultMessage": "Дослідити елемент"
+  },
+  "native.menu.NewLittle": {
+    "defaultMessage": "Нове вікно Little Sol"
+  },
+  "native.menu.OpenSol": {
+    "defaultMessage": "Відкрити Sol"
+  },
+  "native.menu.QuitSol": {
+    "defaultMessage": "Вийти із Sol"
+  },
+  "native.menu.ClearCache": {
+    "defaultMessage": "Очистити кеш"
+  },
+  "native.menu.ClearCookies": {
+    "defaultMessage": "Очистити файли cookie"
+  },
+  "native.menu.SiteSettings": {
+    "defaultMessage": "Усі налаштування сайту"
+  },
+  "native.menu.Open": {
+    "defaultMessage": "Відкрити"
+  },
+  "native.menu.Copy": {
+    "defaultMessage": "Копіювати"
+  },
+  "native.menu.Explorer": {
+    "defaultMessage": "Показати в Провіднику"
+  },
+  "native.menu.RemoveList": {
+    "defaultMessage": "Видалити зі списку"
+  },
+  "native.menu.Recycle": {
+    "defaultMessage": "Перемістити до кошика"
+  },
+  "native.menu.Hotkey": {
+    "defaultMessage": "Sol — Ctrl+Alt+N відкриває Little Sol"
+  },
+  "native.menu.NewLittleHotkey": {
+    "defaultMessage": "Нове вікно Little Sol\tCtrl+Alt+N"
+  },
+  "native.shortcut.Address": {
+    "defaultMessage": "Адресний рядок"
+  },
+  "native.shortcut.NewTab": {
+    "defaultMessage": "Нова вкладка"
+  },
+  "native.shortcut.NewWindow": {
+    "defaultMessage": "Нове вікно"
+  },
+  "native.shortcut.NewPrivateWindow": {
+    "defaultMessage": "Нове приватне вікно"
+  },
+  "native.shortcut.CloseTab": {
+    "defaultMessage": "Закрити вкладку"
+  },
+  "native.shortcut.NextTab": {
+    "defaultMessage": "Наступна вкладка"
+  },
+  "native.shortcut.PreviousTab": {
+    "defaultMessage": "Попередня вкладка"
+  },
+  "native.shortcut.Sidebar": {
+    "defaultMessage": "Перемкнути бічну панель"
+  },
+  "native.shortcut.Pin": {
+    "defaultMessage": "Закріпити вкладку"
+  },
+  "native.shortcut.Back": {
+    "defaultMessage": "Назад"
+  },
+  "native.shortcut.Forward": {
+    "defaultMessage": "Уперед"
+  },
+  "native.shortcut.Reload": {
+    "defaultMessage": "Перезавантажити"
+  },
+  "native.shortcut.ReloadBypass": {
+    "defaultMessage": "Перезавантажити без кешу"
+  },
+  "native.shortcut.Stop": {
+    "defaultMessage": "Зупинити / Escape"
+  },
+  "native.shortcut.CloseWindow": {
+    "defaultMessage": "Закрити вікно"
+  },
+  "native.shortcut.DevTools": {
+    "defaultMessage": "Інструменти розробника"
+  },
+  "native.shortcut.History": {
+    "defaultMessage": "Історія"
+  },
+  "native.shortcut.Downloads": {
+    "defaultMessage": "Завантаження"
+  },
+  "native.shortcut.HistoryPage": {
+    "defaultMessage": "Повна історія"
+  },
+  "native.shortcut.ReopenClosed": {
+    "defaultMessage": "Відкрити закриту вкладку"
+  },
+  "native.shortcut.Fullscreen": {
+    "defaultMessage": "Повноекранний режим"
+  },
+  "native.shortcut.Settings": {
+    "defaultMessage": "Налаштування"
+  },
+  "native.shortcut.PictureInPicture": {
+    "defaultMessage": "Картинка в картинці"
+  },
+  "native.shortcut.Print": {
+    "defaultMessage": "Друкувати"
+  },
+  "native.shortcut.CopyUrl": {
+    "defaultMessage": "Копіювати адресу без трекерів"
+  },
+  "native.shortcut.Capture": {
+    "defaultMessage": "Знімок області або елемента"
+  },
+  "native.shortcut.Screenshot": {
+    "defaultMessage": "Знімок екрана"
+  },
+  "native.shortcut.FullPageScreenshot": {
+    "defaultMessage": "Знімок усієї сторінки"
+  },
+  "native.shortcut.RecentTab": {
+    "defaultMessage": "Нещодавня вкладка"
+  },
+  "native.shortcut.RecentTabBack": {
+    "defaultMessage": "Попередня нещодавня вкладка"
+  },
+  "native.shortcut.SplitFocusLeft": {
+    "defaultMessage": "Розділений перегляд: панель ліворуч"
+  },
+  "native.shortcut.SplitFocusRight": {
+    "defaultMessage": "Розділений перегляд: панель праворуч"
+  },
+  "native.shortcut.SplitFocusUp": {
+    "defaultMessage": "Розділений перегляд: панель вище"
+  },
+  "native.shortcut.SplitFocusDown": {
+    "defaultMessage": "Розділений перегляд: панель нижче"
+  },
+  "native.shortcut.SplitExpand": {
+    "defaultMessage": "Розділений перегляд: розгорнути чи відновити панель"
+  },
+  "native.shortcut.FocusPage": {
+    "defaultMessage": "Передати фокус сторінці"
+  },
+  "native.shortcut.Space": {
+    "defaultMessage": "Простір {name}"
+  },
+  "welcome.title": {
+    "defaultMessage": "Ласкаво просимо до Sol"
+  },
+  "welcome.introWords": {
+    "defaultMessage": "знайомтеся з інтернетом, ще раз."
+  },
+  "welcome.close": {
+    "defaultMessage": "Закрити й відкрити Sol"
+  },
+  "welcome.continue": {
+    "defaultMessage": "Продовжити"
+  },
+  "welcome.step": {
+    "defaultMessage": "Крок {step, number} із {total, number}"
+  },
+  "welcome.importTitle": {
+    "defaultMessage": "Перенесіть дані з браузера"
+  },
+  "welcome.importDetail": {
+    "defaultMessage": "Виберіть попередній браузер. Sol перенесе ваші вкладки, закладки, історію та збережені паролі."
+  },
+  "welcome.setupTitle": {
+    "defaultMessage": "Налаштуйте Sol"
+  },
+  "welcome.defaultDetail": {
+    "defaultMessage": "Посилання з інших програм відкриваються в Sol."
+  },
+  "welcome.makeDefault": {
+    "defaultMessage": "Зробити Sol типовим браузером"
+  },
+  "welcome.searchDetail": {
+    "defaultMessage": "Пошукова система для адресного рядка. Її можна змінити в налаштуваннях."
+  },
+  "welcome.start": {
+    "defaultMessage": "Почати перегляд"
+  },
+  "welcome.unmute": {
+    "defaultMessage": "Увімкнути музику"
+  },
+  "welcome.mute": {
+    "defaultMessage": "Вимкнути музику"
+  },
+  "welcome.musicOn": {
+    "defaultMessage": "Музику ввімкнено"
+  },
+  "welcome.musicOff": {
+    "defaultMessage": "Музику вимкнено"
+  },
+  "import.source": {
+    "defaultMessage": "З ІНШОГО БРАУЗЕРА"
+  },
+  "import.choose": {
+    "defaultMessage": "Виберіть браузер"
+  },
+  "import.detail": {
+    "defaultMessage": "Перенесіть вкладки, закладки, історію та збережені паролі до Sol. Перед імпортом можна переглянути дані."
+  },
+  "import.browser": {
+    "defaultMessage": "Браузер"
+  },
+  "import.profile": {
+    "defaultMessage": "Профіль"
+  },
+  "import.missing": {
+    "defaultMessage": "Не знайдено"
+  },
+  "import.types": {
+    "defaultMessage": "Що імпортувати"
+  },
+  "import.primary": {
+    "defaultMessage": "Головний пароль"
+  },
+  "import.reading": {
+    "defaultMessage": "Читання…"
+  },
+  "import.preview": {
+    "defaultMessage": "ПОПЕРЕДНІЙ ПЕРЕГЛЯД"
+  },
+  "import.importing": {
+    "defaultMessage": "Імпорт…"
+  },
+  "import.commit": {
+    "defaultMessage": "Імпортувати до Sol"
+  },
+  "import.previewNote": {
+    "defaultMessage": "Імпортовані вкладки спочатку вивантажені. Наявні простори, паролі й файли cookie Sol зберігаються."
+  },
+  "import.done": {
+    "defaultMessage": "ГОТОВО"
+  },
+  "import.again": {
+    "defaultMessage": "Імпортувати інші дані"
+  },
+  "import.fileCategory": {
+    "defaultMessage": "ІЗ ФАЙЛУ"
+  },
+  "import.file": {
+    "defaultMessage": "Імпортувати файл"
+  },
+  "import.arcFileNote": {
+    "defaultMessage": "Виберіть StorableSidebar.json, щоб відновити простори та вкладки з резервної копії Arc."
+  },
+  "import.fileWarning": {
+    "defaultMessage": "Експорт паролів зберігається як звичайний текст. Видаліть файл після імпорту."
+  },
+  "import.folder": {
+    "defaultMessage": "Вибрати папку…"
+  },
+  "import.passwordImport": {
+    "defaultMessage": "Імпортувати файл паролів…"
+  },
+  "import.passwordFile": {
+    "defaultMessage": "Файл паролів (.csv)…"
+  },
+  "import.bookmarkFile": {
+    "defaultMessage": "Файл закладок (.html)…"
+  },
+  "import.arcFile": {
+    "defaultMessage": "Бічна панель Arc (.json)…"
+  },
+  "import.arcFolder": {
+    "defaultMessage": "Виберіть папку даних Arc або імпортуйте копію StorableSidebar.json нижче."
+  },
+  "import.incorrect": {
+    "defaultMessage": "Головний пароль не підійшов. Спробуйте ще раз."
+  },
+  "space.chooseIcon": {
+    "defaultMessage": "Вибрати значок простору"
+  },
+  "space.emoji": {
+    "defaultMessage": "Вибрати емодзі"
+  },
+  "space.loadingEmoji": {
+    "defaultMessage": "Завантаження емодзі…"
+  },
+  "space.nameHint": {
+    "defaultMessage": "Назва простору (необов’язково)"
+  },
+  "space.limit": {
+    "defaultMessage": "Sol підтримує до 24 просторів."
+  },
+  "space.named": {
+    "defaultMessage": "Простір «{name}»"
+  },
+  "media.playingTabs": {
+    "defaultMessage": "Вкладки з відтворенням"
+  },
+  "media.nowPlaying": {
+    "defaultMessage": "Зараз відтворюється: {title}"
+  },
+  "media.goto": {
+    "defaultMessage": "Перейти до вкладки"
+  },
+  "media.stopPlayer": {
+    "defaultMessage": "Зупинити й приховати програвач"
+  },
+  "media.stop": {
+    "defaultMessage": "Зупинити й приховати"
+  },
+  "media.seek": {
+    "defaultMessage": "Позиція відтворення"
+  },
+  "media.previous": {
+    "defaultMessage": "Попередня композиція"
+  },
+  "media.next": {
+    "defaultMessage": "Наступна композиція"
+  },
+  "media.pause": {
+    "defaultMessage": "Призупинити"
+  },
+  "media.play": {
+    "defaultMessage": "Відтворити"
+  },
+  "media.pip": {
+    "defaultMessage": "Картинка в картинці"
+  },
+  "theme.title": {
+    "defaultMessage": "Тема"
+  },
+  "theme.reset": {
+    "defaultMessage": "Скинути тему"
+  },
+  "theme.rotateDrag": {
+    "defaultMessage": "Перетягуйте порожню область, щоб обертати палітру"
+  },
+  "theme.rotate": {
+    "defaultMessage": "Обертати палітру"
+  },
+  "theme.rotateHint": {
+    "defaultMessage": "Обертання палітри · {degrees}°. Перетягніть навколо центра. Подвійне натискання скидає кут."
+  },
+  "theme.countLabel": {
+    "defaultMessage": "Кількість кольорів"
+  },
+  "theme.count": {
+    "defaultMessage": "{count, plural, one {# колір} few {# кольори} many {# кольорів} other {# кольору}}"
+  },
+  "theme.presets": {
+    "defaultMessage": "Колірні палітри"
+  },
+  "theme.brightness": {
+    "defaultMessage": "Яскравість"
+  },
+  "theme.grain": {
+    "defaultMessage": "Зернистість"
+  },
+  "theme.mode.light": {
+    "defaultMessage": "Світле"
+  },
+  "theme.mode.dark": {
+    "defaultMessage": "Темне"
+  },
+  "theme.mode.system": {
+    "defaultMessage": "Як у системі"
+  },
+  "theme.create": {
+    "defaultMessage": "Створити простір"
+  },
+  "theme.done": {
+    "defaultMessage": "Готово"
+  },
+  "theme.saved": {
+    "defaultMessage": "Тему збережено"
+  },
+  "theme.color": {
+    "defaultMessage": "{index, select, 0 {Основний колір} 1 {Другий колір} other {Третій колір}}. Перетягніть, щоб змінити відтінок. Потягніть за край, щоб змінити розмір."
+  },
+  "theme.saturation": {
+    "defaultMessage": "{index, select, 0 {Насиченість основного кольору} 1 {Насиченість другого кольору} other {Насиченість третього кольору}}"
+  },
+  "import.arcProfile": {
+    "defaultMessage": "Простори зберігають прив’язку до профілів Arc. Історія та паролі з вибраного профілю Arc потраплять до профілю «{profile}» у Sol."
+  },
+  "import.otherProfile": {
+    "defaultMessage": "Імпортовані дані додаються до профілю «{profile}»."
+  },
+  "import.found": {
+    "defaultMessage": "{count, plural, one {Знайдено # профіль} few {Знайдено # профілі} many {Знайдено # профілів} other {Знайдено # профілю}}"
+  },
+  "import.noProfile": {
+    "defaultMessage": "Профіль {name} не вибрано"
+  },
+  "import.otherFolder": {
+    "defaultMessage": "Якщо {name} зберігає дані в іншому місці, виберіть папку «User Data» або один із профілів."
+  },
+  "import.locked": {
+    "defaultMessage": "Цей профіль {name} захищено головним паролем."
+  },
+  "import.consent": {
+    "defaultMessage": "Sol прочитає профіль {name} на цьому комп’ютері. Спочатку закрийте {name}, щоб розблокувати файли."
+  },
+  "import.passwordConsent": {
+    "defaultMessage": "Паролі розблоковуються за допомогою вашого облікового запису Windows і зберігаються лише в менеджері паролів Sol."
+  },
+  "import.read": {
+    "defaultMessage": "Дозволити Sol прочитати дані {name}"
+  },
+  "import.previewReady": {
+    "defaultMessage": "Готово до імпорту з {name}"
+  },
+  "import.previewEmpty": {
+    "defaultMessage": "З {name} нічого імпортувати"
+  },
+  "import.skipped": {
+    "defaultMessage": "Пропущено записів: {count, number} (заборонені для збереження сайти або входи поза сайтами)."
+  },
+  "import.unreadable": {
+    "defaultMessage": "Не вдалося розблокувати паролів: {count, number}."
+  },
+  "import.doneTitle": {
+    "defaultMessage": "Імпортовано з {name}"
+  },
+  "import.donePartial": {
+    "defaultMessage": "Імпортовано з {name} із помилками"
+  },
+  "import.doneSpaces": {
+    "defaultMessage": "Імпортовані {count, plural, one {простір} few {простори} many {простори} other {простори}} з’являться на бічній панелі."
+  },
+  "welcome.import.browsers": {
+    "defaultMessage": "Браузери для імпорту"
+  },
+  "welcome.import.looking": {
+    "defaultMessage": "Пошук…"
+  },
+  "welcome.import.onPc": {
+    "defaultMessage": "Знайдено на цьому комп’ютері"
+  },
+  "welcome.import.notOnPc": {
+    "defaultMessage": "Не знайдено на цьому комп’ютері"
+  },
+  "welcome.import.profiles": {
+    "defaultMessage": "{count, plural, one {# профіль} few {# профілі} many {# профілів} other {# профілю}}"
+  },
+  "welcome.import.skip": {
+    "defaultMessage": "Пропустити"
+  },
+  "welcome.import.from": {
+    "defaultMessage": "З {name}"
+  },
+  "welcome.import.profile": {
+    "defaultMessage": "Профіль {name}"
+  },
+  "welcome.import.bring": {
+    "defaultMessage": "Що перенести"
+  },
+  "welcome.import.arc": {
+    "defaultMessage": "Простори зберігають прив’язку до профілів Arc. Історію й паролі з вибраного профілю Arc буде перенесено до типового профілю Sol."
+  },
+  "welcome.import.primary": {
+    "defaultMessage": "Паролі {name} захищено головним паролем. Введіть його для імпорту. Пароль буде використано один раз і не буде збережено."
+  },
+  "welcome.import.allBrowsers": {
+    "defaultMessage": "Браузери"
+  },
+  "welcome.import.import": {
+    "defaultMessage": "Імпортувати"
+  },
+  "welcome.import.working": {
+    "defaultMessage": "Перенесення до Sol: {items}…"
+  },
+  "welcome.import.reading": {
+    "defaultMessage": "Читання даних {name}…"
+  },
+  "welcome.import.completed": {
+    "defaultMessage": "Перенесено з {name}"
+  },
+  "welcome.import.another": {
+    "defaultMessage": "Інший браузер"
+  },
+  "import.data.tabs.zen": {
+    "defaultMessage": "Вкладки, простори й закладки"
+  },
+  "import.data.tabs.zenHint": {
+    "defaultMessage": "Відкриті й закріплені вкладки, папки, Essentials і закладки"
+  },
+  "import.data.tabs.arc": {
+    "defaultMessage": "Простори та вкладки бічної панелі"
+  },
+  "import.data.tabs.arcHint": {
+    "defaultMessage": "Усі простори, улюблені вкладки, папки, закріплені вкладки та вкладки «Сьогодні», розділений перегляд і архів"
+  },
+  "import.data.tabs.chromium": {
+    "defaultMessage": "Відкриті й закріплені вкладки"
+  },
+  "import.data.tabs.chromiumHint": {
+    "defaultMessage": "З останнього сеансу {name}"
+  },
+  "import.data.bookmarks": {
+    "defaultMessage": "Закладки"
+  },
+  "import.data.bookmarksHint": {
+    "defaultMessage": "Додаються як папка в новому просторі"
+  },
+  "import.data.historyHint": {
+    "defaultMessage": "За останні 90 днів"
+  },
+  "import.data.cookies": {
+    "defaultMessage": "Файли cookie й сеанси входу"
+  },
+  "import.data.cookiesHint": {
+    "defaultMessage": "Допомагає залишатися в облікових записах на багатьох сайтах"
+  },
+  "split.view": {
+    "defaultMessage": "Розділений перегляд, вкладок: {count, number}"
+  },
+  "split.navigation": {
+    "defaultMessage": "Навігація для «{title}»"
+  },
+  "split.back": {
+    "defaultMessage": "Назад у «{title}»"
+  },
+  "split.forward": {
+    "defaultMessage": "Уперед у «{title}»"
+  },
+  "split.reload": {
+    "defaultMessage": "Перезавантажити «{title}»"
+  },
+  "split.stop": {
+    "defaultMessage": "Зупинити завантаження «{title}»"
+  },
+  "split.copy": {
+    "defaultMessage": "Копіювати адресу сторінки"
+  },
+  "split.copyNamed": {
+    "defaultMessage": "Копіювати адресу «{title}»"
+  },
+  "split.edit": {
+    "defaultMessage": "Редагувати адресу «{title}»"
+  },
+  "split.site": {
+    "defaultMessage": "Налаштування сайту й розширення"
+  },
+  "split.siteNamed": {
+    "defaultMessage": "Налаштування сайту для «{title}»"
+  },
+  "split.layout": {
+    "defaultMessage": "Компонування"
+  },
+  "split.layoutNamed": {
+    "defaultMessage": "Параметри компонування для «{title}»"
+  },
+  "split.restore": {
+    "defaultMessage": "Відновити розділений перегляд"
+  },
+  "split.expand": {
+    "defaultMessage": "Розгорнути панель"
+  },
+  "split.expandNamed": {
+    "defaultMessage": "Розгорнути «{title}»"
+  },
+  "split.close": {
+    "defaultMessage": "Закрити цю сторінку"
+  },
+  "history.clearShort": {
+    "defaultMessage": "Очистити…"
+  },
+  "history.clearFrom": {
+    "defaultMessage": "Очистити історію за період"
+  },
+  "history.emptyShort": {
+    "defaultMessage": "Тут з’являться відвідані сторінки"
+  },
+  "history.all": {
+    "defaultMessage": "Показати всю історію"
+  },
+  "capture.hint": {
+    "defaultMessage": "Перетягніть вказівник або натисніть на сторінку, щоб вибрати область. Escape скасовує вибір."
+  },
+  "capture.saveFull": {
+    "defaultMessage": "Зберегти всю сторінку"
+  },
+  "capture.saveVisible": {
+    "defaultMessage": "Зберегти видиму область"
+  },
+  "capture.copy": {
+    "defaultMessage": "Копіювати"
+  },
+  "capture.download": {
+    "defaultMessage": "Завантажити"
+  },
+  "integrations.now": {
+    "defaultMessage": "Поточний місцевий час: {time}"
+  },
+  "integrations.otherEvents": {
+    "defaultMessage": "Інші події"
+  },
+  "integrations.join": {
+    "defaultMessage": "Приєднатися до зустрічі"
+  },
+  "integrations.agenda": {
+    "defaultMessage": "Розклад за годинами"
+  },
+  "integrations.compose": {
+    "defaultMessage": "Написати листа"
+  },
+  "integrations.preview": {
+    "defaultMessage": "Попередній перегляд {name}"
+  },
+  "integrations.recent": {
+    "defaultMessage": "Нещодавні сторінки"
+  },
+  "integrations.inboxLoading": {
+    "defaultMessage": "Підготовка перегляду пошти…"
+  },
+  "integrations.loading": {
+    "defaultMessage": "Завантаження попереднього перегляду…"
+  },
+  "integrations.outlook": {
+    "defaultMessage": "Увійдіть до Outlook."
+  },
+  "integrations.outlookSignIn": {
+    "defaultMessage": "Увійти до Outlook"
+  },
+  "integrations.openPinned": {
+    "defaultMessage": "Відкрийте закріплену вкладку, щоб завантажити попередній перегляд."
+  },
+  "integrations.inboxUnavailable": {
+    "defaultMessage": "Попередній перегляд пошти недоступний."
+  },
+  "integrations.calendarUnknown": {
+    "defaultMessage": "Цей вигляд календаря поки не підтримується."
+  },
+  "integrations.noMail": {
+    "defaultMessage": "За останній тиждень немає непрочитаних листів."
+  },
+  "integrations.noPages": {
+    "defaultMessage": "Тут з’являться сторінки, відвідані в цьому профілі."
+  },
+  "integrations.refresh": {
+    "defaultMessage": "Оновити попередній перегляд"
+  },
+  "integrations.openCalendar": {
+    "defaultMessage": "Відкрити календар"
+  },
+  "settings.integration.gmail": {
+    "defaultMessage": "Перегляд пошти й написання листів"
+  },
+  "settings.integration.outlookMail": {
+    "defaultMessage": "Перегляд пошти й написання листів"
+  },
+  "settings.integration.googleCalendar": {
+    "defaultMessage": "Розклад і посилання на зустрічі"
+  },
+  "settings.integration.figma": {
+    "defaultMessage": "Нещодавні сторінки й нові дизайни"
+  },
+  "settings.integration.whatsapp": {
+    "defaultMessage": "Позначка непрочитаних і перевірка під час запуску"
+  },
+  "settings.integration.twitter": {
+    "defaultMessage": "Позначка непрочитаних і перевірка під час запуску"
+  },
+  "settings.integration.spotify": {
+    "defaultMessage": "Мініпрогравач на бічній панелі"
+  },
+  "settings.integration.youtube": {
+    "defaultMessage": "Кнопка на відео та автоматичне «картинка в картинці»"
+  },
+  "settings.integration.googleMeet": {
+    "defaultMessage": "Кнопка на відео та автоматичне «картинка в картинці»"
+  },
+  "settings.integration.googleDocs": {
+    "defaultMessage": "Команди створення документів"
+  },
+  "settings.integration.word": {
+    "defaultMessage": "Команди створення документів"
+  },
+  "sidebar.width": {
+    "defaultMessage": "Ширина бічної панелі"
+  },
+  "emoji.search": {
+    "defaultMessage": "Пошук емодзі"
+  },
+  "emoji.groups": {
+    "defaultMessage": "Категорії емодзі"
+  },
+  "emoji.label": {
+    "defaultMessage": "Емодзі"
+  },
+  "emoji.named": {
+    "defaultMessage": "Емодзі {emoji}: {name}"
+  },
+  "emoji.empty": {
+    "defaultMessage": "Емодзі не знайдено"
+  },
+  "emoji.letter": {
+    "defaultMessage": "Використати першу літеру"
+  },
+  "devtools.placement": {
+    "defaultMessage": "Розташування інструментів розробника"
+  },
+  "devtools.title": {
+    "defaultMessage": "Інструменти розробника"
+  },
+  "devtools.toggle": {
+    "defaultMessage": "Перемкнути емуляцію пристрою"
+  },
+  "devtools.toggleHint": {
+    "defaultMessage": "Перемкнути емуляцію пристрою (Ctrl+Shift+M)"
+  },
+  "devtools.toggleUnavailable": {
+    "defaultMessage": "Емуляція пристрою працює у вкладці, показаній у браузері"
+  },
+  "devtools.left": {
+    "defaultMessage": "Закріпити ліворуч"
+  },
+  "devtools.bottom": {
+    "defaultMessage": "Закріпити внизу"
+  },
+  "devtools.right": {
+    "defaultMessage": "Закріпити праворуч"
+  },
+  "devtools.separate": {
+    "defaultMessage": "Окреме вікно"
+  },
+  "devtools.separateHint": {
+    "defaultMessage": "Окреме вікно (Ctrl+Shift+D, щоб закріпити)"
+  },
+  "devtools.close": {
+    "defaultMessage": "Закрити інструменти розробника"
+  },
+  "devtools.closeHint": {
+    "defaultMessage": "Закрити інструменти розробника (F12)"
+  },
+  "devtools.size": {
+    "defaultMessage": "Розмір інструментів розробника"
+  },
+  "devtools.attach": {
+    "defaultMessage": "Інструменти розробника — окреме вікно · Закріпити:"
+  },
+  "device.title": {
+    "defaultMessage": "Емуляція пристрою"
+  },
+  "device.preset": {
+    "defaultMessage": "Шаблон пристрою"
+  },
+  "device.responsive": {
+    "defaultMessage": "Адаптивний"
+  },
+  "device.applying": {
+    "defaultMessage": "Застосування…"
+  },
+  "device.actualScale": {
+    "defaultMessage": "Поточний масштаб перегляду"
+  },
+  "device.mobile": {
+    "defaultMessage": "Мобільний браузер"
+  },
+  "device.mobileHint": {
+    "defaultMessage": "Мобільний браузер (Chrome для Android). Перезавантажте сторінку, щоб сервер вибрав відповідний вміст."
+  },
+  "device.touch": {
+    "defaultMessage": "Сенсорне введення"
+  },
+  "device.touchHint": {
+    "defaultMessage": "Емулювати дотики"
+  },
+  "device.close": {
+    "defaultMessage": "Закрити емуляцію пристрою"
+  },
+  "device.closeHint": {
+    "defaultMessage": "Закрити емуляцію пристрою (Ctrl+Shift+M)"
+  },
+  "device.width": {
+    "defaultMessage": "Ширина області перегляду"
+  },
+  "device.height": {
+    "defaultMessage": "Висота області перегляду"
+  },
+  "device.rotate": {
+    "defaultMessage": "Повернути пристрій"
+  },
+  "device.scale": {
+    "defaultMessage": "Масштаб перегляду"
+  },
+  "device.fit": {
+    "defaultMessage": "За розміром вікна"
+  },
+  "device.dpr": {
+    "defaultMessage": "Коефіцієнт пікселів пристрою"
+  },
+  "boost.off": {
+    "defaultMessage": "Вимкнути цей Boost"
+  },
+  "boost.on": {
+    "defaultMessage": "Увімкнути цей Boost"
+  },
+  "boost.tint": {
+    "defaultMessage": "Колір тонування"
+  },
+  "boost.accentHint": {
+    "defaultMessage": "Акцентний колір посилань, виділення й елементів форм"
+  },
+  "boost.random": {
+    "defaultMessage": "Випадковий колір"
+  },
+  "boost.dark": {
+    "defaultMessage": "Темний режим"
+  },
+  "boost.adjustHint": {
+    "defaultMessage": "Яскравість, контраст і насиченість"
+  },
+  "boost.adjust": {
+    "defaultMessage": "Налаштувати кольори"
+  },
+  "boost.remove": {
+    "defaultMessage": "Скинути зміни кольорів"
+  },
+  "boost.contrast": {
+    "defaultMessage": "Контраст"
+  },
+  "boost.saturation": {
+    "defaultMessage": "Насиченість"
+  },
+  "boost.font": {
+    "defaultMessage": "Шрифт"
+  },
+  "boost.size": {
+    "defaultMessage": "Розмір"
+  },
+  "boost.case": {
+    "defaultMessage": "Регістр"
+  },
+  "boost.caseHint": {
+    "defaultMessage": "Регістр літер: {mode}"
+  },
+  "boost.stopZap": {
+    "defaultMessage": "Завершити приховування"
+  },
+  "boost.zap": {
+    "defaultMessage": "Приховати елементи"
+  },
+  "boost.zapHint": {
+    "defaultMessage": "Натискайте елементи сторінки, щоб приховати їх. Esc завершує вибір."
+  },
+  "boost.hidden": {
+    "defaultMessage": "Приховані елементи"
+  },
+  "boost.unhide": {
+    "defaultMessage": "Показати знову"
+  },
+  "boost.unhideNamed": {
+    "defaultMessage": "Показати знову «{name}»"
+  },
+  "boost.cancelFocus": {
+    "defaultMessage": "Скасувати фокусування"
+  },
+  "boost.unfocus": {
+    "defaultMessage": "Вийти з фокусування"
+  },
+  "boost.focus": {
+    "defaultMessage": "Зосередитися"
+  },
+  "boost.focusHint": {
+    "defaultMessage": "Натисніть частину сторінки, яку хочете залишити. Решту буде приховано."
+  },
+  "boost.code": {
+    "defaultMessage": "Код"
+  },
+  "boost.css": {
+    "defaultMessage": "CSS для {host}"
+  },
+  "boost.closed": {
+    "defaultMessage": "Початкову сторінку закрито. Щоб приховати елементи або зосередитися на частині сторінки, відкрийте її знову."
+  },
+  "boost.reset": {
+    "defaultMessage": "Скинути Boost"
+  },
+  "native.window.Copied": {
+    "defaultMessage": "Поточну адресу скопійовано"
+  },
+  "native.window.CopyClean": {
+    "defaultMessage": "Посилання без трекерів скопійовано"
+  },
+  "native.window.ClipboardBusy": {
+    "defaultMessage": "Буфер обміну зайнято. Спробуйте ще раз."
+  },
+  "native.window.CopyFailed": {
+    "defaultMessage": "Не вдалося скопіювати адресу сторінки"
+  },
+  "native.window.NoRecent": {
+    "defaultMessage": "Нещодавно закритих вкладок немає"
+  },
+  "native.window.CaptureError": {
+    "defaultMessage": "Не вдалося зробити знімок екрана."
+  },
+  "native.window.CaptureOpen": {
+    "defaultMessage": "Відкрийте сторінку, щоб зробити знімок."
+  },
+  "native.window.CaptureSavedCopied": {
+    "defaultMessage": "Знімок екрана збережено й скопійовано"
+  },
+  "native.window.CaptureCopied": {
+    "defaultMessage": "Знімок екрана скопійовано"
+  },
+  "native.window.CaptureSaved": {
+    "defaultMessage": "Знімок екрана збережено"
+  },
+  "native.window.UpdateTitle": {
+    "defaultMessage": "Перевірка оновлень — Sol"
+  },
+  "native.window.DownloadLocation": {
+    "defaultMessage": "Папка завантажень"
+  },
+  "split.unresponsive": {
+    "defaultMessage": "Ця сторінка не відповідає."
+  },
+  "native.menu.SplitColumns": {
+    "defaultMessage": "Поруч"
+  },
+  "native.menu.SplitRows": {
+    "defaultMessage": "Зверху й знизу"
+  },
+  "native.menu.SplitMainLeft": {
+    "defaultMessage": "Основна вкладка ліворуч"
+  },
+  "native.menu.SplitMainTop": {
+    "defaultMessage": "Основна вкладка зверху"
+  },
+  "native.menu.SplitGrid": {
+    "defaultMessage": "Сітка 2 × 2"
+  },
+  "native.menu.SplitColumnCount": {
+    "defaultMessage": "{name} стовпці",
+    "description": "Split view layout with three or four columns. The name argument is that number."
+  },
+  "native.menu.SplitEqual": {
+    "defaultMessage": "Однакові розміри"
+  },
+  "native.menu.SplitSwapWith": {
+    "defaultMessage": "Поміняти місцями з"
+  },
+  "native.menu.SplitRemove": {
+    "defaultMessage": "Вилучити з розділеного перегляду"
+  },
+  "native.window.CaptureDialog": {
+    "defaultMessage": "Зберегти знімок екрана"
+  },
+  "import.preview.spaces": {
+    "defaultMessage": "{count, plural, one {# простір} few {# простори} many {# просторів} other {# просторів}}"
+  },
+  "import.report.spaces": {
+    "defaultMessage": "Додано {count, plural, one {# простір} few {# простори} many {# просторів} other {# просторів}}"
+  },
+  "import.preview.tabs": {
+    "defaultMessage": "{count, plural, one {# вкладка} few {# вкладки} many {# вкладок} other {# вкладок}}"
+  },
+  "import.report.tabs": {
+    "defaultMessage": "Додано {count, plural, one {# вкладку} few {# вкладки} many {# вкладок} other {# вкладок}}"
+  },
+  "import.preview.folders": {
+    "defaultMessage": "{count, plural, one {# папка} few {# папки} many {# папок} other {# папок}}"
+  },
+  "import.report.folders": {
+    "defaultMessage": "Додано {count, plural, one {# папку} few {# папки} many {# папок} other {# папок}}"
+  },
+  "import.preview.favorites": {
+    "defaultMessage": "{count, plural, one {# обране} few {# обрані} many {# обраних елементів} other {# обраних елементів}}"
+  },
+  "import.report.favorites": {
+    "defaultMessage": "Додано {count, plural, one {# обране} few {# обрані} many {# обраних елементів} other {# обраних елементів}}"
+  },
+  "import.preview.splits": {
+    "defaultMessage": "{count, plural, one {# розділений перегляд} few {# розділені перегляди} many {# розділених переглядів} other {# розділених переглядів}}"
+  },
+  "import.report.splits": {
+    "defaultMessage": "Додано {count, plural, one {# розділений перегляд} few {# розділені перегляди} many {# розділених переглядів} other {# розділених переглядів}}"
+  },
+  "import.preview.archived": {
+    "defaultMessage": "{count, plural, one {# архівна вкладка} few {# архівні вкладки} many {# архівних вкладок} other {# архівних вкладок}}"
+  },
+  "import.report.archived": {
+    "defaultMessage": "Додано {count, plural, one {# архівну вкладку} few {# архівні вкладки} many {# архівних вкладок} other {# архівних вкладок}}"
+  },
+  "import.preview.bookmarks": {
+    "defaultMessage": "{count, plural, one {# закладка} few {# закладки} many {# закладок} other {# закладок}}"
+  },
+  "import.report.bookmarks": {
+    "defaultMessage": "Додано {count, plural, one {# закладку} few {# закладки} many {# закладок} other {# закладок}}"
+  },
+  "import.preview.favicons": {
+    "defaultMessage": "{count, plural, one {# значок сайту} few {# значки сайтів} many {# значків сайтів} other {# значків сайтів}}"
+  },
+  "import.report.favicons": {
+    "defaultMessage": "Додано {count, plural, one {# значок сайту} few {# значки сайтів} many {# значків сайтів} other {# значків сайтів}}"
+  },
+  "import.preview.history": {
+    "defaultMessage": "{count, plural, one {# запис історії} few {# записи історії} many {# записів історії} other {# записів історії}}"
+  },
+  "import.report.history": {
+    "defaultMessage": "Додано {count, plural, one {# запис історії} few {# записи історії} many {# записів історії} other {# записів історії}}"
+  },
+  "import.preview.cookies": {
+    "defaultMessage": "{count, plural, one {# файл cookie} few {# файли cookie} many {# файлів cookie} other {# файлів cookie}}"
+  },
+  "import.preview.passwords": {
+    "defaultMessage": "{count, plural, one {# збережений пароль} few {# збережені паролі} many {# збережених паролів} other {# збережених паролів}}"
+  },
+  "import.report.cookies": {
+    "defaultMessage": "Додано {count, plural, one {# файл cookie} few {# файли cookie} many {# файлів cookie} other {# файлів cookie}}, уже в Sol — {kept, number}"
+  },
+  "import.report.passwords": {
+    "defaultMessage": "Збережено {count, plural, one {# пароль} few {# паролі} many {# паролів} other {# паролів}}{existing, plural, =0 {} other {, уже збережено — #}}{failed, plural, =0 {} other {, не вдалося зберегти — #}}"
+  },
+  "welcome.import.wrongPassword": {
+    "defaultMessage": "Неправильний головний пароль."
+  },
+  "welcome.import.emptyProfile": {
+    "defaultMessage": "У цьому профілі {name} немає даних для імпорту."
+  },
+  "toolbar.extensionPage": {
+    "defaultMessage": "Сторінка розширення"
+  },
+  "native.window.ExitFullscreen": {
+    "defaultMessage": "Щоб вийти з повноекранного режиму, натисніть {name}",
+    "description": "Toast shown when entering fullscreen. Keep the {name} placeholder for the Esc key cap."
+  }
+}

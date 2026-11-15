@@ -70,6 +70,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'third_party/cef/LICENSE.txt') -Dest
 Copy-Item -LiteralPath (Join-Path $repoRoot 'third_party/cef/CREDITS.html') -Destination (Join-Path $notices 'Chromium-CREDITS.html')
 # Velopack (setup, Update.exe, velopack_libc.dll) is MIT: its notice goes with every copy.
 Copy-Item -LiteralPath (Join-Path $repoRoot 'licenses/Velopack-LICENSE.txt') -Destination (Join-Path $notices 'Velopack-LICENSE.txt')
+Copy-Item -LiteralPath (Join-Path $repoRoot 'licenses/translation') -Destination $notices -Recurse -Force
 python (Join-Path $repoRoot 'scripts/brand_exe.py') (Join-Path $stage 'sol.exe') `
     (Join-Path $repoRoot 'apps/desktop/resources/red.ico') $Version
 if ($LASTEXITCODE) { throw 'Stamping sol.exe failed' }

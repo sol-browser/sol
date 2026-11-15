@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSnapshot, parseSnapshotUpdate, parseArchive, parseSidebarMenuChoice, parseSettingsSnapshot, DEFAULT_THEME } from '../packages/browser-contracts/src/index.ts';
+import { parseSnapshot, parseSnapshotUpdate, parseArchive, parseSidebarMenuChoice, parseSettingsSnapshot, parseSelectionTranslation, DEFAULT_THEME } from '../packages/browser-contracts/src/index.ts';
 const folder = '11111111-1111-4111-8111-111111111111';
 const tab = '22222222-2222-4222-8222-222222222222';
 test('Space actions validate profile and export destinations',()=>{
@@ -14,6 +14,8 @@ test('profile settings accept only unique Spaces with known owners',()=>{
     defaultBrowser:{installed:false,registered:false,isDefault:null},preferencesError:'',keyboard:[],activeProfile:'default',
     profiles:[{id:'default',name:'Default'}],spaces:[{id:folder,name:'Work',icon:'',position:0,hue:10,intensity:40,profileId:'default'}]};
   assert.equal(parseSettingsSnapshot(JSON.stringify(settings)).spaces.length,1);
+  const unnamed = { ...settings, spaceName: '', spaces: [{ ...settings.spaces[0], name: '' }] };
+  assert.equal(parseSettingsSnapshot(JSON.stringify(unnamed)).spaces[0].name, '');
   for(const spaces of [[settings.spaces[0],settings.spaces[0]],[{...settings.spaces[0],profileId:tab}],[{...settings.spaces[0],id:'../escape'}]])
     assert.throws(()=>parseSettingsSnapshot(JSON.stringify({...settings,spaces})));
 });
@@ -227,11 +229,38 @@ test('accepts spaces and rejects invalid ones or an unknown active space', () =>
   const spaces = [{ id: work, name: 'Work', icon: '💼', position: 0, hue: 30, intensity: 110 }];
   const ok = parseSnapshot(JSON.stringify({ ...fixture(), spaces, activeSpace: work }));
   assert.equal(ok.activeSpace, work);
+  const unnamed = [{ ...spaces[0], name: '' }];
+  assert.equal(parseSnapshot(JSON.stringify({ ...fixture(), spaces: unnamed, activeSpace: work })).spaces[0].name, '');
   for (const bad of [[], [{ ...spaces[0], name: ' ' }], [{ ...spaces[0], hue: 400 }], [{ ...spaces[0], id: 'short' }], [spaces[0], spaces[0]]])
     assert.throws(() => parseSnapshot(JSON.stringify({ ...fixture(), spaces: bad, activeSpace: work })));
   assert.throws(() => parseSnapshot(JSON.stringify({ ...fixture(), spaces, activeSpace: tab })));
   const nodes = fixture().nodes.map(n => ({ ...n, space: 'not-a-space-id' }));
   assert.throws(() => parseSnapshot(JSON.stringify({ ...fixture(), nodes })));
+});
+
+test('translation offers carry a document token and a valid language pair', () => {
+  const offer = { id: 7, from: 'zh_hant', to: 'en', phase: 'offer', toolbar: true, automatic: true };
+  const withOffer = translationOffer => parseSnapshot(JSON.stringify({ ...fixture(), translationOffer }));
+  assert.deepEqual(withOffer(offer).translationOffer, offer);
+  const download = { id: 7, from: 'zh_hant', to: 'en', phase: 'working', toolbar: true, download: 34 };
+  assert.deepEqual(withOffer(download).translationOffer, download);
+  for (const invalid of [null, { ...offer, id: 0 }, { ...offer, id: '7' }, { ...offer, from: 'en' }, { ...offer, to: 'http' },
+    { ...download, download: 101 }, { ...download, download: 0.6 }, { ...offer, toolbar: 1 },
+    { ...offer, toolbar: false }, { ...download, automatic: true }])
+    assert.throws(() => withOffer(invalid), /Invalid page translation offer/);
+});
+test('a pending language check keeps the globe without a document offer', () => {
+  const snapshot = { ...fixture(), translationPending: true };
+  assert.equal(parseSnapshot(JSON.stringify(snapshot)).translationPending, true);
+  assert.throws(() => parseSnapshot(JSON.stringify({ ...snapshot, translationPending: 'de' })), /Invalid translation check/);
+});
+test('selection translation payloads carry bounded plain text and progress', () => {
+  const pending = { phase: 'working', from: '', to: 'en', text: '', download: 28 };
+  const done = { phase: 'translated', from: 'de', to: 'en', text: '<b>Snow</b>' };
+  assert.deepEqual(parseSelectionTranslation(pending), pending);
+  assert.deepEqual(parseSelectionTranslation(done), done);
+  for (const invalid of [{ ...pending, download: -1 }, { ...done, text: '' }, { ...done, text: 'a'.repeat(22001) }, { ...done, phase: 'offer' }])
+    assert.throws(() => parseSelectionTranslation(invalid), /Invalid selection translation/);
 });
 
 test('the shared archive accepts only archived tabs in the node format', () => {

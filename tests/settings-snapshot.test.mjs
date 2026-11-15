@@ -26,3 +26,35 @@ test('the Little Sol preferences are booleans', () => {
     assert.throws(() => parseSettingsSnapshot(JSON.stringify(value)), /Little Sol preference/);
   }
 });
+
+test('interface language is optional for old snapshots and only accepts supported settings', () => {
+  const value = settings(1);
+  assert.equal(parseSettingsSnapshot(JSON.stringify(value)).preferences.interfaceLanguage, undefined);
+  for (const language of ['system', 'en', 'uk']) {
+    value.preferences.interfaceLanguage = language;
+    assert.equal(parseSettingsSnapshot(JSON.stringify(value)).preferences.interfaceLanguage, language);
+  }
+  for (const invalid of ['uk-UA', 'de', {}, null, 1]) {
+    value.preferences.interfaceLanguage = invalid;
+    assert.throws(() => parseSettingsSnapshot(JSON.stringify(value)), /Invalid interface language/);
+  }
+});
+
+test('page translation settings validate the target, offer toggle and excluded sites', () => {
+  const value = settings(1);
+  value.translationLanguages = ['en', 'uk', 'zh_hant'];
+  value.translationSourceLanguages = ['en', 'de', 'fr', 'uk', 'zh_hant'];
+  Object.assign(value.preferences, { translationTarget: 'uk', translationOffers: false, translationExcludedSites: ['https://example.com/'],
+    translationKnownLanguages: ['de', 'fr', 'uk'] });
+  const parsed = parseSettingsSnapshot(JSON.stringify(value));
+  assert.deepEqual(parsed.translationLanguages, value.translationLanguages);
+  assert.equal(parsed.preferences.translationTarget, 'uk');
+  assert.equal(parsed.preferences.translationOffers, false);
+  assert.deepEqual(parsed.preferences.translationExcludedSites, ['https://example.com/']);
+  assert.deepEqual(parsed.translationSourceLanguages, value.translationSourceLanguages);
+  assert.deepEqual(parsed.preferences.translationKnownLanguages, ['de', 'fr', 'uk']);
+  for (const changed of [{ translationTarget: './uk' }, { translationOffers: 'yes' }, { translationExcludedSites: [17] },
+    { translationKnownLanguages: ['de', 'de'] }, { translationKnownLanguages: ['DE'] }, { translationKnownLanguages: 'de' }]) {
+    assert.throws(() => parseSettingsSnapshot(JSON.stringify({ ...value, preferences: { ...value.preferences, ...changed } })), /Invalid translation preferences/);
+  }
+});

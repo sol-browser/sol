@@ -1,6 +1,7 @@
 #include "windows/browser_dialogs.h"
 #include "workspace/controller.h"
 #include "app/session.h"
+#include "interface_strings.h"
 #include <deque>
 #include "include/base/cef_callback.h"
 #include "include/wrapper/cef_closure_task.h"
@@ -21,6 +22,7 @@ void WorkspaceController::ChangeProfile(TreeCommand command, Reply done) {
     const auto source=std::find_if(tree_.spaces.begin(),tree_.spaces.end(),[&](const auto& s){return s.id==command.id;});
     const auto target=std::find_if(tree_.spaces.begin(),tree_.spaces.end(),[&](const auto& s){return s.id==command.space;});
     if (source==tree_.spaces.end() || target==tree_.spaces.end() || source==target) { done(400,"Choose another Space",nullptr); return; }
+    if (source->name.empty()) command.title = InterfaceSpaceName(session_->interface_locale, source->name, source->position);
     if (source->profile!=target->profile) spaces.insert(source->id);
   }
   if (spaces.size()!=command.spaces.size() && command.action==TreeAction::CreateProfile) { done(400,"Duplicate Space",nullptr); return; }

@@ -1,5 +1,6 @@
 #include "navigation/shortcut_settings.h"
 #include "app/session.h"
+#include "interface_strings.h"
 #include <algorithm>
 #include <vector>
 namespace red {
@@ -38,26 +39,28 @@ bool Editable(Shortcut action) {
   return action != Shortcut::Stop && action != Shortcut::CloseWindow && action != Shortcut::FocusPage &&
       (action < Shortcut::Space1 || action > Shortcut::Space9);
 }
-std::string Title(Shortcut action) {
+std::string Title(Shortcut action, std::string_view locale = "en") {
   switch(action) {
-    case Shortcut::Address:return "Address bar"; case Shortcut::NewTab:return "New tab";
-    case Shortcut::NewWindow:return "New window"; case Shortcut::NewPrivateWindow:return "New private window"; case Shortcut::CloseTab:return "Close tab";
-    case Shortcut::NextTab:return "Next tab"; case Shortcut::PreviousTab:return "Previous tab";
-    case Shortcut::Sidebar:return "Toggle sidebar"; case Shortcut::Pin:return "Pin tab";
-    case Shortcut::Back:return "Back"; case Shortcut::Forward:return "Forward";
-    case Shortcut::Reload:return "Reload"; case Shortcut::ReloadBypass:return "Reload without cache";
-    case Shortcut::Stop:return "Stop / Escape"; case Shortcut::CloseWindow:return "Close window";
-    case Shortcut::DevTools:return "Developer tools"; case Shortcut::History:return "History";
-    case Shortcut::Downloads:return "Downloads"; case Shortcut::HistoryPage:return "Full history";
-    case Shortcut::ReopenClosed:return "Reopen closed tab"; case Shortcut::Fullscreen:return "Fullscreen";
-    case Shortcut::Settings:return "Settings"; case Shortcut::PictureInPicture:return "Picture-in-picture";
-    case Shortcut::Print:return "Print"; case Shortcut::CopyUrl:return "Copy address without trackers";
-    case Shortcut::Capture:return "Capture (area or element)"; case Shortcut::Screenshot:return "Screenshot"; case Shortcut::FullPageScreenshot:return "Full page screenshot";
-    case Shortcut::RecentTab:return "Recent tab"; case Shortcut::RecentTabBack:return "Recent tab (back)";
-    case Shortcut::SplitFocusLeft:return "Split View: pane to the left"; case Shortcut::SplitFocusRight:return "Split View: pane to the right";
-    case Shortcut::SplitFocusUp:return "Split View: pane above"; case Shortcut::SplitFocusDown:return "Split View: pane below";
-    case Shortcut::SplitExpand:return "Split View: expand or restore pane";
-    default:return "Space " + std::to_string(static_cast<int>(action)-static_cast<int>(Shortcut::Space1)+1);
+    case Shortcut::Address:return InterfaceText(locale, InterfaceMessage::ShortcutAddress); case Shortcut::NewTab:return InterfaceText(locale, InterfaceMessage::ShortcutNewTab);
+    case Shortcut::NewWindow:return InterfaceText(locale, InterfaceMessage::ShortcutNewWindow); case Shortcut::NewPrivateWindow:return InterfaceText(locale, InterfaceMessage::ShortcutNewPrivateWindow); case Shortcut::CloseTab:return InterfaceText(locale, InterfaceMessage::ShortcutCloseTab);
+    case Shortcut::NextTab:return InterfaceText(locale, InterfaceMessage::ShortcutNextTab); case Shortcut::PreviousTab:return InterfaceText(locale, InterfaceMessage::ShortcutPreviousTab);
+    case Shortcut::Sidebar:return InterfaceText(locale, InterfaceMessage::ShortcutSidebar); case Shortcut::Pin:return InterfaceText(locale, InterfaceMessage::ShortcutPin);
+    case Shortcut::Back:return InterfaceText(locale, InterfaceMessage::ShortcutBack); case Shortcut::Forward:return InterfaceText(locale, InterfaceMessage::ShortcutForward);
+    case Shortcut::Reload:return InterfaceText(locale, InterfaceMessage::ShortcutReload); case Shortcut::ReloadBypass:return InterfaceText(locale, InterfaceMessage::ShortcutReloadBypass);
+    case Shortcut::Stop:return InterfaceText(locale, InterfaceMessage::ShortcutStop); case Shortcut::CloseWindow:return InterfaceText(locale, InterfaceMessage::ShortcutCloseWindow);
+    case Shortcut::DevTools:return InterfaceText(locale, InterfaceMessage::ShortcutDevTools); case Shortcut::History:return InterfaceText(locale, InterfaceMessage::ShortcutHistory);
+    case Shortcut::Downloads:return InterfaceText(locale, InterfaceMessage::ShortcutDownloads); case Shortcut::HistoryPage:return InterfaceText(locale, InterfaceMessage::ShortcutHistoryPage);
+    case Shortcut::ReopenClosed:return InterfaceText(locale, InterfaceMessage::ShortcutReopenClosed); case Shortcut::Fullscreen:return InterfaceText(locale, InterfaceMessage::ShortcutFullscreen);
+    case Shortcut::Settings:return InterfaceText(locale, InterfaceMessage::ShortcutSettings); case Shortcut::PictureInPicture:return InterfaceText(locale, InterfaceMessage::ShortcutPictureInPicture);
+    case Shortcut::Print:return InterfaceText(locale, InterfaceMessage::ShortcutPrint); case Shortcut::CopyUrl:return InterfaceText(locale, InterfaceMessage::ShortcutCopyUrl);
+    case Shortcut::Capture:return InterfaceText(locale, InterfaceMessage::ShortcutCapture); case Shortcut::Screenshot:return InterfaceText(locale, InterfaceMessage::ShortcutScreenshot); case Shortcut::FullPageScreenshot:return InterfaceText(locale, InterfaceMessage::ShortcutFullPageScreenshot);
+    case Shortcut::RecentTab:return InterfaceText(locale, InterfaceMessage::ShortcutRecentTab); case Shortcut::RecentTabBack:return InterfaceText(locale, InterfaceMessage::ShortcutRecentTabBack);
+    case Shortcut::SplitFocusLeft:return InterfaceText(locale, InterfaceMessage::ShortcutSplitFocusLeft); case Shortcut::SplitFocusRight:return InterfaceText(locale, InterfaceMessage::ShortcutSplitFocusRight);
+    case Shortcut::SplitFocusUp:return InterfaceText(locale, InterfaceMessage::ShortcutSplitFocusUp); case Shortcut::SplitFocusDown:return InterfaceText(locale, InterfaceMessage::ShortcutSplitFocusDown);
+    case Shortcut::SplitExpand:return InterfaceText(locale, InterfaceMessage::ShortcutSplitExpand);
+    case Shortcut::FocusPage:return InterfaceText(locale, InterfaceMessage::ShortcutFocusPage);
+    default:return InterfaceTextWithName(locale, InterfaceMessage::ShortcutSpace,
+        std::to_string(static_cast<int>(action)-static_cast<int>(Shortcut::Space1)+1));
   }
 }
 std::string Label(const KeyBinding& key) {
@@ -104,13 +107,13 @@ bool ConfigureShortcut(Preferences& prefs, const std::string& name, const KeyBin
 // Settings rejects a longer list (MAX_SHORTCUTS in browser-contracts, the binding limit in preferences.cpp):
 // with 41 shortcuts its window never came up. Raise all three together.
 static_assert(std::size(kShortcutNames) <= 64, "more shortcuts than Settings accepts");
-CefRefPtr<CefListValue> DescribeShortcuts(const Preferences& prefs) {
+CefRefPtr<CefListValue> DescribeShortcuts(const Preferences& prefs, std::string_view locale) {
   auto rows = CefListValue::Create(); const auto effective = Effective(prefs);
   size_t index = 0;
   for (int i = 0; i < static_cast<int>(std::size(kShortcutNames)); ++i) {
     const auto action = static_cast<Shortcut>(i); const auto label = Labels(effective,action); if (label.empty()) continue;
     auto row = CefDictionaryValue::Create(); const auto name = std::string(kShortcutNames[i]);
-    row->SetString("action",name); row->SetString("title",Title(action)); row->SetString("label",label);
+    row->SetString("action",name); row->SetString("title",Title(action, locale)); row->SetString("label",label);
     row->SetString("defaultLabel",Labels(Defaults(),action)); row->SetBool("custom",prefs.shortcuts.contains(name));
     row->SetBool("editable",Editable(action)); rows->SetDictionary(index++,row);
   } return rows;

@@ -1,3 +1,4 @@
+import { useMessages } from './i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { Music2, Pause, PictureInPicture2, Play, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
 import type { Command, MediaInfo, TreeNode } from '../../../packages/browser-contracts/src';
@@ -19,11 +20,13 @@ const clock = (seconds: number) => {
 /** Several players stack (newest in front, the others peeking above it) and
  *  fan out into a column while the pointer or focus is on the stack. */
 export function MediaStack({ media, nodes, command }: { media: MediaInfo[]; nodes: TreeNode[]; command: (command: MediaCommand) => void }) {
-  return <div className="media-stack" data-count={media.length} role="group" aria-label="Playing tabs">
+  const t = useMessages();
+  return <div className="media-stack" data-count={media.length} role="group" aria-label={t('media.playingTabs')}>
     {media.map((item, index) => <MediaPlayer key={item.id} media={item} depth={index} node={nodes.find(n => n.id === item.id)} command={command} />)}
   </div>;
 }
 function MediaPlayer({ media, node, depth, command }: { media: MediaInfo; node?: TreeNode; depth: number; command: (command: MediaCommand) => void }) {
+  const t = useMessages();
   const received = useRef({ time: media.time, at: performance.now() });
   const [now, setNow] = useState(media.time);
   useEffect(() => { received.current = { time: media.time, at: performance.now() }; setNow(media.time); }, [media.time, media.playing, media.id]);
@@ -39,17 +42,17 @@ function MediaPlayer({ media, node, depth, command }: { media: MediaInfo; node?:
   const title = media.title || node?.pageTitle || node?.title || 'Playing';
   const subtitle = media.artist || (node && node.title !== title ? node.title : '');
   const progress = media.duration ? Math.min(1, now / media.duration) : 0;
-  return <section className="media-player" aria-label={`Now playing: ${title}`} data-playing={media.playing}
+  return <section className="media-player" aria-label={t('media.nowPlaying', { title })} data-playing={media.playing}
     data-depth={depth} style={{ '--depth': depth } as React.CSSProperties}>
     <div className="media-details"><div className="media-details-inner">
       <div className="media-heading">
-        <button type="button" className="media-title" title="Go to tab" onClick={() => control('open')}>
+        <button type="button" className="media-title" title={t('media.goto')} onClick={() => control('open')}>
           <strong>{title}</strong>{subtitle && <span>{subtitle}</span>}</button>
-        <button type="button" className="media-icon-button media-close" aria-label="Stop and hide player" title="Stop and hide" onClick={() => control('dismiss')}><X size={14} /></button>
+        <button type="button" className="media-icon-button media-close" aria-label={t('media.stopPlayer')} title={t('media.stop')} onClick={() => control('dismiss')}><X size={14} /></button>
       </div>
       {media.duration > 0 && <div className="media-progress">
         <span>{clock(now)}</span>
-        <button type="button" className="media-track" aria-label="Seek" role="slider" aria-valuemin={0} aria-valuemax={Math.round(media.duration)} aria-valuenow={Math.round(now)}
+        <button type="button" className="media-track" aria-label={t('media.seek')} role="slider" aria-valuemin={0} aria-valuemax={Math.round(media.duration)} aria-valuenow={Math.round(now)}
           onClick={event => {
             const box = event.currentTarget.getBoundingClientRect();
             const value = Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)) * media.duration;
@@ -60,22 +63,22 @@ function MediaPlayer({ media, node, depth, command }: { media: MediaInfo; node?:
       </div>}
     </div></div>
     <div className="media-bar">
-      <button type="button" className="media-site" aria-label="Go to tab" title="Go to tab" onClick={() => control('open')}>
+      <button type="button" className="media-site" aria-label={t('media.goto')} title={t('media.goto')} onClick={() => control('open')}>
         {media.artwork ? <img className="media-artwork" src={media.artwork} alt="" draggable={false} /> : node ? <SiteMark node={node} /> : <Music2 size={14} />}
         {media.playing && <Music2 className="media-note" size={8} aria-hidden="true" />}
       </button>
       <div className="media-transport">
-        {media.previous && <button type="button" className="media-icon-button" aria-label="Previous track" title="Previous track"
+        {media.previous && <button type="button" className="media-icon-button" aria-label={t('media.previous')} title={t('media.previous')}
           onClick={() => control('previous')}><SkipBack size={14} fill="currentColor" /></button>}
-        <button type="button" className="media-icon-button media-play" aria-label={media.playing ? 'Pause' : 'Play'} title={media.playing ? 'Pause' : 'Play'}
+        <button type="button" className="media-icon-button media-play" aria-label={media.playing ? t('media.pause') : t('media.play')} title={media.playing ? t('media.pause') : t('media.play')}
           onClick={() => control('toggle')}>{media.playing ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}</button>
-        {media.next && <button type="button" className="media-icon-button" aria-label="Next track" title="Next track"
+        {media.next && <button type="button" className="media-icon-button" aria-label={t('media.next')} title={t('media.next')}
           onClick={() => control('next')}><SkipForward size={14} fill="currentColor" /></button>}
       </div>
       <div className="media-side">
-        {media.video && media.pipAvailable !== false && <button type="button" className="media-icon-button" aria-label="Picture-in-picture" title="Picture-in-picture"
+        {media.video && media.pipAvailable !== false && <button type="button" className="media-icon-button" aria-label={t('media.pip')} title={t('media.pip')}
           onClick={() => control('pip')}><PictureInPicture2 size={14} /></button>}
-        <button type="button" className="media-icon-button" aria-label={media.muted ? 'Unmute tab' : 'Mute tab'} title={media.muted ? 'Unmute tab' : 'Mute tab'}
+        <button type="button" className="media-icon-button" aria-label={media.muted ? t('sidebar.tab.unmuteHint') : t('sidebar.tab.muteHint')} title={media.muted ? t('sidebar.tab.unmuteHint') : t('sidebar.tab.muteHint')}
           onClick={() => control('mute')}>{media.muted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>
       </div>
     </div>

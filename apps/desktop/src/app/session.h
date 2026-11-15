@@ -73,6 +73,7 @@ class AppSession {
   std::weak_ptr<State> active_window;
   std::shared_ptr<WorkspaceData> workspace = std::make_shared<WorkspaceData>();
   std::shared_ptr<BrowserPreferences> preferences;
+  std::string interface_locale = "en";  // Resolved once before the first Sol UI document.
   std::shared_ptr<BrowsingProfiles> profiles;
   std::shared_ptr<BoostStore> boosts;  // Per-site CSS (docs/boosts.md).
   std::filesystem::path boosts_path;

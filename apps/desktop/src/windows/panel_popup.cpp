@@ -1,8 +1,13 @@
 #include "app/browsing_profiles.h"
 #include "app/session.h"
+#include "interface_strings.h"
 #include "windows/pointer.h"
 #include "windows/panel_popup.h"
+#include "windows/settings_window.h"
+#include "translation/page_translator.h"
 #include "windows/command_actions.h"
+#include "windows/command_bar.h"
+#include "windows/menu_popup.h"
 #include <dwmapi.h>
 #include <algorithm>
 #include <cmath>
@@ -75,6 +80,11 @@ class PanelClient final : public CefClient, public CefLifeSpanHandler, public Ce
     if (auto s = state_.lock(); s && s->probe && text.starts_with("RED_PANEL_RENDERED:")) {
       auto v = CefParseJSON(text.substr(19), JSON_PARSER_RFC);
       if (v && v->GetType() == VTYPE_DICTIONARY) s->Record("panel_rendered", v->GetDictionary());
+    }
+    constexpr std::string_view selection_prefix = "RED_SELECTION_TRANSLATION:";
+    if (auto s = state_.lock(); s && s->probe && s->menu_translate_offer && text.starts_with(selection_prefix)) {
+      const auto value = CefParseJSON(text.substr(selection_prefix.size()), JSON_PARSER_RFC);
+      if (value && value->GetType() == VTYPE_DICTIONARY) s->Record("selection_translation_rendered", value->GetDictionary());
     }
     if(auto s=state_.lock();s&&s->palette_probe)for(const std::string prefix:{"RED_PALETTE_PROBE:","RED_PALETTE_REOPEN:"})if(text.starts_with(prefix)) {
       const auto value=CefParseJSON(text.substr(prefix.size()),JSON_PARSER_RFC);
@@ -219,12 +229,14 @@ void PanelPopup::SiteMenu(int x, int y, CefRefPtr<CefMessageRouterBrowserSide::C
   const auto bounds = window_->GetBounds();
   if (x < 0 || y < 0 || x > bounds.width || y > bounds.height) { callback->Failure(400, "Invalid site menu"); return; }
   const bool site = !SiteOrigin(s->content).empty();
+  const auto locale = s->session ? s->session->interface_locale : "en";
+  const auto label = [locale](InterfaceMessage entry) { return InterfaceText(locale, entry); };
   auto model = CefMenuModel::CreateMenuModel(new SiteMenuDelegate(s, weak_from_this()));
-  model->AddItem(kClearCache, "Clear Cache"); model->AddItem(kClearCookies, "Clear Cookies");
+  model->AddItem(kClearCache, label(InterfaceMessage::MenuClearCache)); model->AddItem(kClearCookies, label(InterfaceMessage::MenuClearCookies));
   model->AddSeparator();
-  model->AddItem(kManageExtensions, "Manage Extensions"); model->AddItem(kAddExtension, "Add Extension");
+  model->AddItem(kManageExtensions, label(InterfaceMessage::MenuManageExtensions)); model->AddItem(kAddExtension, label(InterfaceMessage::MenuAddExtension));
   model->AddSeparator();
-  model->AddItem(kAllSiteSettings, "All Site Settings");
+  model->AddItem(kAllSiteSettings, label(InterfaceMessage::MenuSiteSettings));
   for (const int command : {kClearCache, kClearCookies, kAllSiteSettings}) model->SetEnabled(command, site);
   callback->Success(Response());
   menu_open_ = true;
@@ -269,7 +281,7 @@ void PanelPopup::Reposition() {
   const bool compact_integration = hover_only_ && integration_ &&
       (integration_->HasKey("kind") || integration_->GetString("service") == "figma");
   const bool modal = this->modal();
-  const int desired=kind_=="moveToProfile" ? 360 : kind_=="history" || modal ? kHistoryWidth : compact_integration ? 248 : kPanelWidth;
+  const int desired=kind_=="translation" ? 292 : kind_=="selectionTranslation" || kind_=="moveToProfile" ? 360 : kind_=="history" || modal ? kHistoryWidth : compact_integration ? 248 : kPanelWidth;
   const bool editor=kind_=="space" || kind_=="newSpace" || kind_=="theme";
   const auto state=state_.lock();
   const auto page=WorkspaceContentArea(root.width,root.height,state && state->sidebar_visible,state?state->sidebar_width:kSidebarWidth);
@@ -320,11 +332,12 @@ bool PanelPopup::ConfirmProfileMove(const std::string& id, const std::string& sp
       !IsWindowEnabled(s->window->GetWindowHandle())) return false;
   const auto snapshot = s->workspace->Snapshot();
   const auto spaces = snapshot->GetList("spaces");
+  const auto locale = s->session ? s->session->interface_locale : "en";
   auto profile_of = [&](const std::string& wanted, std::string* name) -> std::optional<std::string> {
     for (size_t i = 0; spaces && i < spaces->GetSize(); ++i) {
       const auto row = spaces->GetDictionary(i);
       if (row->GetString("id") != wanted) continue;
-      if (name) *name = row->GetString("name").ToString();
+      if (name) *name = InterfaceSpaceName(locale, row->GetString("name").ToString(), row->GetInt("position"));
       const auto profile = row->GetString("profileId").ToString();
       return profile.empty() ? std::string("default") : profile;
     }
@@ -354,12 +367,29 @@ bool PanelPopup::ConfirmProfileMove(const std::string& id, const std::string& sp
   }
   return false;
 }
-void PanelPopup::Toggle(const std::string& kind, const CefRect& anchor) {
+void PanelPopup::Toggle(const std::string& kind, const CefRect& anchor, int automatic_offer) {
   auto s = state_.lock(); if (!s || !s->window || !s->workspace || s->workspace->WindowClosing() || shutdown_) return;
   if (hover_only_ != (kind == "integration") || modal()) return;
+  if (automatic_offer) {
+    const bool translation_probe = s->probe && s->menu_translate_offer;
+    const HWND foreground = GetAncestor(GetForegroundWindow(), GA_ROOT);
+    if (kind != "translation" || open_ || (hover_ && hover_->is_open()) || menu_open_ || s->ui_editing ||
+        (s->command_bar && s->command_bar->is_open()) || (s->menu_popup && s->menu_popup->is_open()) ||
+        (!translation_probe && foreground != s->window->GetWindowHandle())) return;
+  }
   if (hover_) hover_->DismissIntegration();
   if (open_ && kind == kind_) { Hide(true, true); return; }
+  if (kind == "translation") {
+    const auto offer = DescribePageTranslationOffer(s, s->content);
+    if (!offer) return;
+    if (automatic_offer) {
+      const bool marked = MarkAutomaticTranslationPopup(s->content, automatic_offer);
+      if (!marked) return;
+    }
+    translation_id_ = offer->GetInt("id");
+  }
   DropDraftTheme();
+  if (kind != "selectionTranslation") selection_ = {};
   kind_ = kind; anchor_ = anchor; ++request_; open_ = true;
   opened_ms_ = GetTickCount64();
   prepared_ = presented_ = false; presentation_.Conceal();
@@ -375,7 +405,42 @@ void PanelPopup::Toggle(const std::string& kind, const CefRect& anchor) {
     CefWindow::CreateTopLevelWindow(new PanelWindow(weak_from_this(), view, hover_only_));
   }
   Reposition(); Publish();
-  auto d = CefDictionaryValue::Create(); d->SetString("kind", kind); s->Record("panel_open", d);
+  auto d = CefDictionaryValue::Create(); d->SetString("kind", kind);
+  if (kind == "translation") d->SetBool("automatic", automatic_offer != 0);
+  s->Record("panel_open", d);
+}
+void PanelPopup::ShowPageTranslation() {
+  const auto s = state_.lock();
+  if (!s || !s->window || (open_ && kind_ == "translation")) return;
+  const auto root = s->window->GetClientAreaBoundsInScreen();
+  Toggle("translation", CefRect(std::max(0, root.width - 135), 0, 24, kToolbarHeight));
+}
+void PanelPopup::ShowSelectionTranslation(CefRefPtr<CefBrowser> page, const CefString& text) {
+  const auto s = state_.lock();
+  if (!s || !s->window || !s->content || s->content->GetIdentifier() != page->GetIdentifier()) return;
+  if (open_ && kind_ == "selectionTranslation") Hide(false);
+  const auto root = s->window->GetClientAreaBoundsInScreen();
+  POINT cursor{};
+  GetCursorPos(&cursor);
+  const auto point = CefDisplay::ConvertScreenPointFromPixels(CefPoint(cursor.x, cursor.y));
+  selection_ = SelectionTranslation{PageTranslationTarget(s)};
+  selection_browser_ = page->GetIdentifier();
+  selection_document_ = 0;
+  Toggle("selectionTranslation", CefRect(std::clamp(point.x - root.x, 0, root.width),
+                                         std::clamp(point.y - root.y, kToolbarHeight, std::max(kToolbarHeight, root.height)), 1, 1));
+  if (!open_ || kind_ != "selectionTranslation") return;
+  TranslateSelection(s, page, text, [weak = weak_from_this(), request = request_](const SelectionTranslation& next) {
+    const auto self = weak.lock();
+    if (!self || !self->open_ || self->kind_ != "selectionTranslation" || self->request_ != request) return false;
+    const auto state = self->state_.lock();
+    if (!state || !state->content || state->content->GetIdentifier() != self->selection_browser_) return false;
+    if (next.phase != self->selection_.phase || next.download != self->selection_.download) {
+      self->selection_ = next;
+      self->Publish();
+    }
+    return true;
+  });
+  selection_document_ = PageTranslationDocumentId(page);
 }
 void PanelPopup::Ready() { ready_ = true; Publish(); }
 bool PanelPopup::PreviewIntegration(const std::string& node, const CefRect& anchor, HWND surface) {
@@ -675,8 +740,9 @@ bool PanelPopup::PointerOverOpener() const {
 }
 void PanelPopup::Deactivated() {
   if (!open_ || menu_open_ || modal()) return;
-  // The spaces probe drives the editor while another app may hold the foreground.
-  if (const auto state = state_.lock(); state && state->spaces_probe) return;
+  // These probes can drive the trusted renderer while another app holds the foreground.
+  if (const auto state = state_.lock(); state && (state->spaces_probe ||
+      (state->probe && state->menu_translate_offer && (kind_ == "translation" || kind_ == "selectionTranslation")))) return;
   const bool over_opener = PointerOverOpener(), owner_foreground = PopupOwnerIsForeground(parent());
   if (const auto state = state_.lock()) {
     auto details = CefDictionaryValue::Create(); details->SetInt("request", request_);
@@ -723,6 +789,7 @@ void PanelPopup::Hide(bool restore_focus, bool animate) {
     integration_->SetList("items",CefListValue::Create()); integration_->SetBool("composeAvailable",false);
   }
   open_ = false;
+  selection_ = {};
   prepared_ = presented_ = false;
   pinned_page_ = nullptr; saving_pin_ = false;
   RestoreModalOwner();
@@ -752,6 +819,17 @@ std::string PanelPopup::Response(CefRefPtr<CefDictionaryValue> theme) const {
   d->SetDictionary("snapshot", theme ? theme->Copy(false) : s && s->workspace ? s->workspace->Snapshot() : CefDictionaryValue::Create());
   // One archive for every Space, sent only while its panel is open.
   if (open_ && kind_ == "archive" && s && s->workspace) d->SetList("archive", s->workspace->ArchiveSnapshot());
+  if (open_ && kind_ == "translation" && s) {
+    if (const auto offer = DescribePageTranslationOffer(s, s->content))
+      d->SetList("translationLanguages", PageTranslationLanguages(offer->GetString("from").ToString()));
+  }
+  if (open_ && kind_ == "selectionTranslation") {
+    auto selection = CefDictionaryValue::Create();
+    selection->SetString("phase", selection_.phase); selection->SetString("to", selection_.target);
+    selection->SetString("from", selection_.source); selection->SetString("text", selection_.text);
+    if (selection_.download >= 0) selection->SetInt("download", selection_.download);
+    d->SetDictionary("selectionTranslation", selection);
+  }
   if (kind_ == "integration" && integration_) d->SetDictionary("integration", integration_->Copy(false));
   if (editing_pin() && pinned_page_) d->SetDictionary("pinnedPage", pinned_page_->Copy(false));
   if (open_ && kind_ == "moveToProfile" && profile_move_) d->SetDictionary("profileMove", profile_move_->Copy(false));
@@ -778,6 +856,16 @@ void PanelPopup::Publish(CefRefPtr<CefDictionaryValue> theme) {
   if (open_ && kind_ == "integration" && integration_ &&
       !BrowserIntegrationEnabled(state_.lock(), integration_->GetString("service").ToString())) { Hide(false); return; }
   if (open_ && integration_cached_) SyncIntegrationPreview();
+  if (open_ && kind_ == "translation") {
+    const auto s = state_.lock();
+    const auto offer = s ? DescribePageTranslationOffer(s, s->content) : nullptr;
+    if (!offer || offer->GetInt("id") != translation_id_) { Hide(false); return; }
+  }
+  if (open_ && kind_ == "selectionTranslation") {
+    const auto s = state_.lock();
+    if (!s || !s->content || s->content->GetIdentifier() != selection_browser_ ||
+        (selection_document_ && PageTranslationDocumentId(s->content) != selection_document_)) { Hide(false); return; }
+  }
   if (observer_ && open_) observer_->Success(Response(theme));
 }
 void PanelPopup::Cancel(int64_t query) { if (query == observer_id_) { observer_ = nullptr; observer_id_ = -1; } }
@@ -791,10 +879,12 @@ void PanelPopup::DownloadMenu(int id, int x, int y, CefRefPtr<CefMessageRouterBr
   }
   const auto bounds = window_->GetBounds();
   if (!known || x < 0 || y < 0 || x > bounds.width || y > bounds.height) { callback->Failure(400, "Invalid download menu"); return; }
+  const auto locale = s->session ? s->session->interface_locale : "en";
+  const auto label = [locale](InterfaceMessage entry) { return InterfaceText(locale, entry); };
   auto model = CefMenuModel::CreateMenuModel(new DownloadMenuDelegate(s, weak_from_this(), id));
-  model->AddItem(28000, "Open"); model->AddItem(28001, "Copy"); model->AddItem(28002, "Show in File Explorer");
+  model->AddItem(28000, label(InterfaceMessage::MenuOpen)); model->AddItem(28001, label(InterfaceMessage::MenuCopy)); model->AddItem(28002, label(InterfaceMessage::MenuExplorer));
   model->AddSeparator();
-  model->AddItem(28003, "Remove from list"); model->AddItem(28004, "Move to Recycle Bin");
+  model->AddItem(28003, label(InterfaceMessage::MenuRemoveList)); model->AddItem(28004, label(InterfaceMessage::MenuRecycle));
   for (const int command : {28000, 28001, 28002, 28004}) model->SetEnabled(command, complete);
   callback->Success(Response());
   // The menu may take activation from the popover; keep it open meanwhile.
@@ -802,17 +892,24 @@ void PanelPopup::DownloadMenu(int id, int x, int y, CefRefPtr<CefMessageRouterBr
   window_->ShowMenu(model, CefPoint(bounds.x + x, bounds.y + y), CEF_MENU_ANCHOR_TOPLEFT);
 }
 void PanelPopup::ProbeClick(const std::string& text, int attempts) {
-  auto s = state_.lock(); if (!s || !s->probe || (!s->organization_probe && !s->downloads_probe && !s->site_probe && !s->extension_popup_probe && !s->capture_mute_probe && !s->spaces_probe && s->history_probe.empty())) return;
-  if (!open_ || !ready_ || !observer_ || !browser_) {
-    if (attempts > 0) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<PanelPopup> weak, std::string value, int tries) {
-      if (auto o = weak.lock()) o->ProbeClick(value, tries);
-    }, weak_from_this(), text, attempts - 1), 30);
+  ProbeClickButton(text, false, attempts);
+}
+void PanelPopup::ProbeClickSelector(const std::string& selector) {
+  ProbeClickButton(selector, true, 100);
+}
+void PanelPopup::ProbeClickButton(const std::string& target, bool selector, int attempts) {
+  auto s = state_.lock(); if (!s || !s->probe || (!s->organization_probe && !s->downloads_probe && !s->site_probe && !s->extension_popup_probe && !s->capture_mute_probe && !s->spaces_probe && !s->menu_translate_offer && s->history_probe.empty())) return;
+  if (!open_ || !ready_ || !observer_ || !browser_ || (selector && s->menu_translate_offer && !presented_)) {
+    if (attempts > 0) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<PanelPopup> weak, std::string value, bool css, int tries) {
+      if (auto o = weak.lock()) o->ProbeClickButton(value, css, tries);
+    }, weak_from_this(), target, selector, attempts - 1), 30);
     return;
   }
-  auto v = CefValue::Create(); v->SetString(text);
-  // Fixed script; only the JSON-encoded probe text varies.
+  auto v = CefValue::Create(); v->SetString(target);
+  const std::string find_button = selector ? "document.querySelector(t)" :
+      "[...document.querySelectorAll('button')].find(x=>(x.getAttribute('aria-label')||'').includes(t)||x.textContent.includes(t))";
   const std::string script = "(async()=>{const t=" + CefWriteJSON(v, JSON_WRITER_DEFAULT).ToString() + ";"
-      "for(let i=0;i<60;i++){const b=[...document.querySelectorAll('button')].find(x=>(x.getAttribute('aria-label')||'').includes(t)||x.textContent.includes(t));"
+      "for(let i=0;i<60;i++){const b=" + find_button + ";"
       "if(b){b.click();return;}await new Promise(r=>setTimeout(r,30));}console.error('RED_PANEL_CLICK_MISSING');})()";
   browser_->GetMainFrame()->ExecuteJavaScript(script, std::string(kPanelUrl), 0);
 }
@@ -844,9 +941,10 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
       (!open_ || !window_ || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_)) {
     cb->Failure(409, "Panel opening changed"); return true;
   }
+  const bool translation_probe = s->probe && s->menu_translate_offer && (kind_ == "translation" || kind_ == "selectionTranslation");
   if (method == "panel.resize" && d->GetSize() == 3 && d->GetType("height") == VTYPE_INT &&
       d->GetInt("height") >= 60 && d->GetInt("height") <= 640) {
-    if (!presented_ && !(hover_only_ ? PointerOverIntegration() : PopupOwnerIsForeground(s->window))) {
+    if (!presented_ && !translation_probe && !(hover_only_ ? PointerOverIntegration() : PopupOwnerIsForeground(s->window))) {
       Hide(false); cb->Failure(409, "Panel opener is unavailable"); return true;
     }
     height_ = d->GetInt("height"); Reposition(); window_->Layout();
@@ -856,7 +954,7 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     cb->Success(PopupViewport(window_, request_)); return true;
   }
   if (method == "panel.present" && d->GetSize() == 3 && d->GetType("reducedMotion") == VTYPE_BOOL && prepared_) {
-    if (!(hover_only_ ? PointerOverIntegration() : PopupOwnerIsForeground(s->window))) {
+    if (!translation_probe && !(hover_only_ ? PointerOverIntegration() : PopupOwnerIsForeground(s->window))) {
       Hide(false); cb->Failure(409, "Panel opener is unavailable"); return true;
     }
     if (!presented_) {
@@ -910,6 +1008,49 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
                              hover_only_ ? integration_origin_y_ : -1.f)); return true;
   }
   if (!open_ || !s->workspace || s->workspace->WindowClosing()) { cb->Failure(409, "Panel is not open"); return true; }
+  if (kind_ == "selectionTranslation" && method == "translation.copySelection" && d->GetSize() == 1) {
+    if (!s->content || s->content->GetIdentifier() != selection_browser_ ||
+        PageTranslationDocumentId(s->content) != selection_document_ || selection_.phase != "translated") {
+      cb->Failure(409, "No selection translation to copy"); return true;
+    }
+    const int failure = CopyPlainText(window_->GetWindowHandle(), selection_.text.ToWString(), kMaxTranslationSelection * 4 + 2000);
+    if (failure) cb->Failure(failure, "Could not copy the translation"); else cb->Success(Response());
+    return true;
+  }
+  if (kind_ == "translation" && method.starts_with("translation.")) {
+    const auto offer = DescribePageTranslationOffer(s, s->content);
+    if (!offer || d->GetType("id") != VTYPE_INT || d->GetInt("id") != translation_id_ || offer->GetInt("id") != translation_id_) {
+      cb->Failure(409, "The page changed"); return true;
+    }
+    if (method == "translation.accept" && (d->GetSize() == 2 || (d->GetSize() == 3 && d->GetType("target") == VTYPE_STRING && !d->GetString("target").empty()))) {
+      if (!AcceptPageTranslationOffer(s, translation_id_, d->GetString("target").ToString())) {
+        cb->Failure(409, "This translation is unavailable"); return true;
+      }
+    } else if (method == "translation.original" && d->GetSize() == 2) {
+      if (!RestorePageTranslation(s, translation_id_)) { cb->Failure(409, "The page is not translated"); return true; }
+      cb->Success(Response()); Hide(true, true); return true;
+    } else if (method == "translation.settings" && d->GetSize() == 2) {
+      cb->Success(Response()); Hide(false); ShowSettings(s); s->settings_window->ShowSection("languages"); return true;
+    } else if (method == "translation.never" && d->GetSize() == 2 && !s->private_window && s->session && s->session->preferences) {
+      const auto origin = SiteOrigin(s->content);
+      auto next = s->session->preferences->Get();
+      if (origin.empty() || origin.size() > 300 || (next.translation_excluded_sites.size() >= 500 && !next.translation_excluded_sites.contains(origin))) {
+        cb->Failure(400, "Cannot exclude this site"); return true;
+      }
+      next.translation_excluded_sites.insert(origin);
+      const int opening = request_;
+      s->session->preferences->Save(std::move(next), [weak = weak_from_this(), owner = std::weak_ptr<State>(s), cb, opening](const std::string& error) {
+        if (!error.empty()) { cb->Failure(409, error); return; }
+        auto state = owner.lock();
+        auto panel = weak.lock();
+        cb->Success(panel ? panel->Response() : "{}");
+        if (panel && panel->request_ == opening && panel->kind_ == "translation") panel->Hide(true, true);
+        if (state && state->session) for (const auto& window : state->session->Windows()) if (window->workspace) window->workspace->Refresh();
+      });
+      return true;
+    } else { cb->Failure(400, "Invalid translation command"); return true; }
+    cb->Success(Response()); return true;
+  }
   if (kind_ == "moveToProfile") {
     if (method != "move.confirm") { cb->Failure(404, "Unknown move confirmation command"); return true; }
     if (d->GetSize() != 2 || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_ ||
@@ -1130,7 +1271,10 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
       cb->Success(Response()); Hide(true);
       if (ShowShareSheet(owner, url, title)) { s->Record("page_share_opened"); return true; }
       const int failure = CopyLinkText(owner, url);
-      if (s->embedded) s->embedded->Notify("copy", failure ? (failure == 409 ? L"The clipboard is busy. Try again." : L"Could not copy the page address") : L"Copied current URL");
+      const std::string_view locale = s->session ? s->session->interface_locale : "en";
+      const auto message = failure == 409 ? InterfaceMessage::WindowClipboardBusy :
+          failure ? InterfaceMessage::WindowCopyFailed : InterfaceMessage::WindowCopied;
+      if (s->embedded) s->embedded->Notify("copy", CefString(InterfaceText(locale, message)).ToWString());
       if (!failure) s->Record("page_link_copied");
       return true;
     }

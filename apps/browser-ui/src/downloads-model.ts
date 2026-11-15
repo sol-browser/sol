@@ -1,5 +1,7 @@
 import type { DownloadItem } from '../../../packages/browser-contracts/src';
 
+import type { Translate } from './i18n.ts';
+
 const units = ['B', 'KB', 'MB', 'GB', 'TB'];
 export function formatBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes < 0) return '';
@@ -26,15 +28,18 @@ function remaining(d: DownloadItem) {
   return `${Math.floor(seconds / 3600)} h ${Math.ceil((seconds % 3600) / 60)} min`;
 }
 
-export function statusLine(d: DownloadItem) {
+export function statusLine(d: DownloadItem, t?: Translate) {
   const done = formatBytes(d.received), total = d.total > 0 ? formatBytes(d.total) : '';
   switch (d.state) {
     // Compact: the row also holds pause/cancel buttons.
     case 'in_progress': return [total ? `${done} / ${total}` : done, d.speed > 0 ? `${formatBytes(d.speed)}/s` : '', remaining(d)].filter(Boolean).join(' · ');
-    case 'paused': return `Paused · ${total ? `${done} / ${total}` : done}`;
+    case 'paused': {
+      const size = total ? `${done} / ${total}` : done;
+      return t?.('downloads.paused', { size }) ?? `Paused · ${size}`;
+    }
     case 'complete': return [formatBytes(d.total > 0 ? d.total : d.received), d.origin].filter(Boolean).join(' · ');
-    case 'canceled': return 'Canceled';
-    case 'interrupted': return 'Failed — the download was interrupted';
+    case 'canceled': return t?.('downloads.canceled') ?? 'Canceled';
+    case 'interrupted': return t?.('downloads.interrupted') ?? 'Failed — the download was interrupted';
   }
 }
 

@@ -26,5 +26,13 @@ int main() {
   check({L"de", L"de", L"en-US"}, L"de-DE_phoneb", "de", "de-DE,de,en-US");
   check({L"", L"invalid,tag"}, L"es-MX", "es-MX", "es-MX");
   check({}, L"", "en-US", "en-US");
+  if (red::ResolveInterfaceLanguage("system", "uk-UA") != "uk" ||
+      red::ResolveInterfaceLanguage("system", "UK") != "uk" ||
+      red::ResolveInterfaceLanguage("system", "de-DE") != "en" ||
+      red::ResolveInterfaceLanguage("en", "uk-UA") != "en" ||
+      red::ResolveInterfaceLanguage("uk", "en-US") != "uk" ||
+      red::ResolveInterfaceLanguage("invalid", "uk-UA") != "en" ||
+      !red::ValidInterfaceLanguage("system") || !red::ValidInterfaceLanguage("en") ||
+      !red::ValidInterfaceLanguage("uk") || red::ValidInterfaceLanguage("uk-UA")) ++failures;
   return failures ? 1 : 0;
 }

@@ -12,15 +12,16 @@ void Fail(const std::shared_ptr<State>& state, const char* step) {
   auto data = CefDictionaryValue::Create(); data->SetString("step", step);
   state->Record("site_probe_failed", data); state->exit_code = 2;
 }
-// Open (if needed) and click a popover control by accessible name.
-void Click(const std::shared_ptr<State>& state, const std::string& label) {
+// Open (if needed) and click a popover control by selector.
+void Click(const std::shared_ptr<State>& state, const std::string& selector) {
   if (!state->panel_popup) return;
   if (!state->panel_popup->is_open()) {
     // Permissions sit behind the popover's connection ("Secure") button.
+    state->window->Activate();
     state->panel_popup->Toggle("site", CefRect(500, 8, 28, 28));
-    state->panel_popup->ProbeClick("Connection and permissions");
+    state->panel_popup->ProbeClickSelector(".site-security");
   }
-  state->panel_popup->ProbeClick(label);
+  state->panel_popup->ProbeClickSelector(selector);
 }
 // Poll Chromium's stored value for the visible page until it matches.
 // After a reset Chromium may report ASK or DEFAULT; |also| accepts the second.
@@ -78,7 +79,7 @@ void StartSiteProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser>) 
   state->site_phase = 1;
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
     auto state = weak.lock(); if (!state) return;
-    Click(state, "Location: Block");
+    Click(state, R"CSS([data-permission="location"] [data-value="block"])CSS");
     WaitFor(weak, CEF_CONTENT_SETTING_TYPE_GEOLOCATION, CEF_CONTENT_SETTING_VALUE_BLOCK, "location_block",
             [](const std::shared_ptr<State>& s) { s->Record("site_location_blocked"); Page(s, kQueryLocation); });
   }, std::weak_ptr<State>(state)), 1500);
@@ -90,7 +91,7 @@ void ObserveSiteProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser>
   if (state->site_phase == 1) {
     if (message != "RED_SITE:location:denied") { Fail(state, "page_location_denied"); return; }
     state->site_phase = 2;
-    Click(state, "Camera: Allow");
+    Click(state, R"CSS([data-permission="camera"] [data-value="allow"])CSS");
     WaitFor(state, CEF_CONTENT_SETTING_TYPE_MEDIASTREAM_CAMERA, CEF_CONTENT_SETTING_VALUE_ALLOW, "camera_allow",
             [](const std::shared_ptr<State>& s) {
               // Allowed: no prompt. The device is Chromium's fake camera (probe switch).
@@ -101,8 +102,8 @@ void ObserveSiteProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser>
     if (message != "RED_SITE:location:prompt") { Fail(state, "page_location_reset"); return; }
     state->site_checks = true; state->Record("site_checks_pass");
     state->site_phase = 5;
-    state->panel_popup->ProbeClick("Back");
-    state->panel_popup->ProbeClick("Add extensions");
+    state->panel_popup->ProbeClickSelector(".site-back");
+    state->panel_popup->ProbeClickSelector(".site-extension-add");
     WaitForExtensionStore(state, 50);
   } else if (message == "RED_SITE:camera:on") {
     state->site_stream_ready = true; StopCameraWhenReady(state);
@@ -119,7 +120,7 @@ void OnSiteProbeMedia(const std::shared_ptr<State>& state, bool video, bool) {
   } else if (state->site_phase == 3 && !video) {
     if (ActiveNodeUsesCamera(state)) { Fail(state, "camera_indicator_cleared"); return; }
     state->site_phase = 4;
-    Click(state, "Reset permissions");
+    Click(state, R"CSS(.site-footer [data-action="reset"])CSS");
     WaitFor(state, CEF_CONTENT_SETTING_TYPE_GEOLOCATION, CEF_CONTENT_SETTING_VALUE_ASK, "reset", [](const std::shared_ptr<State>& s) {
       Page(s, kQueryLocation);
     }, 50, CEF_CONTENT_SETTING_VALUE_DEFAULT);

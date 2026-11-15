@@ -3,6 +3,7 @@
 #include "app/state.h"
 #include "include/views/cef_browser_view.h"
 #include "include/wrapper/cef_message_router.h"
+#include "translation/page_translator.h"
 #include "windows/popup_presentation.h"
 namespace red {
 // Arc-style popover for the Archive (opens up from the sidebar's bottom bar)
@@ -14,7 +15,9 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
  public:
   explicit PanelPopup(std::weak_ptr<State> state) : state_(std::move(state)) {}
   // |anchor| is the opening button in root client DIP coordinates.
-  void Toggle(const std::string& kind, const CefRect& anchor);
+  void Toggle(const std::string& kind, const CefRect& anchor, int automatic_offer = 0);
+  void ShowPageTranslation();
+  void ShowSelectionTranslation(CefRefPtr<CefBrowser> page, const CefString& text);
   bool EditPinnedPage(const std::string& id);
   bool editing_pin() const { return open_ && kind_ == "editPinned"; }
   // Centered over the window with the page shaded and the window disabled.
@@ -51,7 +54,9 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   CefRefPtr<CefWindow> window() const { return window_; }
   // Probe-only fixed DOM driver: click the popover row containing |text|.
   void ProbeClick(const std::string& text, int attempts = 100);
+  void ProbeClickSelector(const std::string& selector);
  private:
+  void ProbeClickButton(const std::string& target, bool selector, int attempts);
   void RestoreModalOwner();
   std::string Response(CefRefPtr<CefDictionaryValue> theme = nullptr) const;
   bool PointerOverOpener() const;
@@ -85,6 +90,9 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   float origin_x_ = .5f, integration_origin_y_ = 0.f;
   PopupPresentation presentation_;
   int height_ = 120, request_ = 0, site_details_ = 0;
+  int translation_id_ = 0;
+  int selection_document_ = 0, selection_browser_ = 0;
+  SelectionTranslation selection_;
   unsigned long long opened_ms_ = 0;
   bool open_ = false, ready_ = false, shutdown_ = false, menu_open_ = false;
   // The new-space editor previews its theme on the window without saving; it

@@ -1,6 +1,9 @@
 #include "windows/browser_dialogs.h"
 #include "web_url.h"
 #include "workspace/controller.h"
+#include "translation/page_translator.h"
+#include "app/windows_locale.h"
+#include "interface_strings.h"
 #include "app/updates.h"
 #include "windows/pointer.h"
 #include "app/session.h"
@@ -115,7 +118,11 @@ void WorkspaceController::PrepareSession() {
     session_ = state->session = std::make_shared<AppSession>();
     session_->Register(state);
   }
-  if (!session_->preferences) session_->preferences = std::make_shared<BrowserPreferences>(state->profile / "BrowserData" / "settings.sqlite3");
+  if (!session_->preferences) {
+    session_->preferences = std::make_shared<BrowserPreferences>(state->profile / "BrowserData" / "settings.sqlite3");
+    session_->interface_locale = ResolveInterfaceLanguage(session_->preferences->Get().interface_language,
+                                                          ReadWindowsBrowserLocale().chromium);
+  }
 }
 void WorkspaceController::Start() {
   const auto state = state_.lock();
@@ -380,6 +387,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   if (state && state->sidebar_perf_probe) result->SetDictionary("perfCounters", SnapshotCountersDictionary(*state));
   result->SetBool("browsingProbe", state && state->browsing_probe);
   result->SetBool("downloadsProbe", state && state->downloads_probe);
+  if (state && state->probe && state->menu_translate_offer) result->SetBool("translationOfferProbe", true);
   if (state && state->lifecycle_probe) {
     result->SetString("lifecycleMode", state->lifecycle_mode);
     result->SetInt("lifecycleArmedCount", static_cast<int>(state->lifecycle_armed.size()));
@@ -409,6 +417,8 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   result->SetString("url", crashed ? last_urls_.at(content->GetIdentifier()) : content ? content->GetMainFrame()->GetURL().ToString() : HasLinkPeek() ? link_peek_url_ : "");
   // The active page's zoom when it is not 100% (the address bar's badge).
   if (content && !crashed) {
+    if (auto offer = DescribePageTranslationOffer(state, content)) result->SetDictionary("translationOffer", offer);
+    else if (KeepTranslationGlobeWhileChecking(state, content)) result->SetBool("translationPending", true);
     const int zoom = static_cast<int>(std::lround(100 * std::pow(1.2, content->GetHost()->GetZoomLevel())));
     if (zoom != 100 && zoom > 0 && zoom <= 1000) result->SetInt("zoom", zoom);
   }
@@ -1719,7 +1729,7 @@ void WorkspaceController::ReopenClosed() {
   const TreeNode* latest = nullptr;
   for (const auto& node : tree_.nodes)
     if (!node.folder && node.archived && node.archived_at > 0 && (!latest || node.archived_at > latest->archived_at)) latest = &node;
-  if (!latest) { Notify("No recently closed tabs"); return; }
+  if (!latest) { Notify(InterfaceText(session_ ? session_->interface_locale : "en", InterfaceMessage::WindowNoRecent)); return; }
   auto command = CefDictionaryValue::Create(); command->SetString("method", "tree.restore");
   command->SetString("id", latest->id); command->SetDouble("expectedRevision", static_cast<double>(tree_.revision));
   Handle(command, [](int, const std::string&, CefRefPtr<CefDictionaryValue>) {});
