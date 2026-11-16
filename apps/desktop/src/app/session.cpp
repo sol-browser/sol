@@ -2,6 +2,7 @@
 #include "app/session.h"
 #include "app/auto_archive.h"
 #include "app/browsing_profiles.h"
+#include "app/sync_service.h"
 #include "workspace/controller.h"
 #include "windows/command_bar.h"
 #include "windows/auto_pip.h"
@@ -65,10 +66,12 @@ void AppSession::PublishTree(const std::shared_ptr<WorkspaceData>& data, const T
   for (const auto& state : Windows())
     if (state->workspace_data == data && state->workspace && state->workspace.get() != origin) state->workspace->ReceiveSharedTree(data->tree);
     else if (data == workspace && state->little_window && state->workspace) state->workspace->Refresh();
+  if (data == workspace && sync) sync->TreeChanged();
 }
 void AppSession::AddWorkspace(const std::shared_ptr<WorkspaceData>& data) { data_scopes_.push_back(data); }
 void AppSession::StopWorkspaces() {
   if (auto_archive) auto_archive->Stop();
+  if (sync) sync->Stop();
   if (preferences) preferences->Stop();
   if (profiles) profiles->Stop();
   for (const auto& data : data_scopes_) StopData(data);

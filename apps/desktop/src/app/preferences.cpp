@@ -148,12 +148,16 @@ bool Decode(const std::string& json, Preferences& value) {
   if (names.size() > 64) return false;  // MAX_SHORTCUTS in browser-contracts: every shortcut may be rebound.
   for (const auto& name : names) {
     if (keys->GetType(name) != VTYPE_DICTIONARY || name.length() > 32) return false;
-    const auto binding = keys->GetDictionary(name);
-    if (binding->GetSize() != 4 || binding->GetType("key") != VTYPE_INT || binding->GetInt("key") < 1 || binding->GetInt("key") > 255 ||
-        binding->GetType("ctrl") != VTYPE_BOOL || binding->GetType("shift") != VTYPE_BOOL || binding->GetType("alt") != VTYPE_BOOL) return false;
-    value.shortcuts[name] = {binding->GetInt("key"), binding->GetBool("ctrl"), binding->GetBool("shift"), binding->GetBool("alt")};
+    const auto binding = ReadKeyBinding(keys->GetDictionary(name));
+    if (!binding) return false;
+    value.shortcuts[name] = *binding;
   }
   for (const auto& [name,key] : value.shortcuts) { std::string error; if (!ConfigureShortcut(value,name,&key,error)) return false; }
+  if (data->HasKey("littleSolBinding")) {
+    const auto binding = ReadKeyBinding(data->GetDictionary("littleSolBinding"));
+    if (!binding || !ValidLittleSolHotkey(*binding)) return false;
+    value.little_sol_binding = *binding;
+  }
   return true;
 }
 std::string Write(const std::filesystem::path& path, const std::string& json) {
@@ -176,6 +180,14 @@ CefRefPtr<CefDictionaryValue> IntegrationSettingsDictionary(const IntegrationSet
   return result;
 }
 bool ValidSearchEngine(const std::string& engine) { return engine == "google" || engine == "duckduckgo" || engine == "bing" || engine == "brave"; }
+std::optional<KeyBinding> ReadKeyBinding(CefRefPtr<CefDictionaryValue> binding) {
+  if (!binding || binding->GetSize() != 4 || binding->GetType("key") != VTYPE_INT ||
+      binding->GetType("ctrl") != VTYPE_BOOL || binding->GetType("shift") != VTYPE_BOOL ||
+      binding->GetType("alt") != VTYPE_BOOL) return std::nullopt;
+  const int key = binding->GetInt("key");
+  if (key < 1 || key > 255) return std::nullopt;
+  return KeyBinding{key, binding->GetBool("ctrl"), binding->GetBool("shift"), binding->GetBool("alt")};
+}
 bool ReadTranslationKnownLanguages(CefRefPtr<CefListValue> list, std::set<std::string>& languages) {
   if (!list || list->GetSize() > 100) return false;
   std::set<std::string> parsed;
@@ -299,11 +311,15 @@ CefRefPtr<CefDictionaryValue> BrowserPreferences::ToDictionary(const Preferences
   data->SetString("backdrop", value.backdrop);
   data->SetString("clock", value.clock);
   data->SetString("startup", value.startup); data->SetString("homepage", value.homepage);
-  auto shortcuts = CefDictionaryValue::Create();
-  for (const auto& [name, key] : value.shortcuts) {
+  const auto encode_binding = [](const KeyBinding& key) {
     auto binding = CefDictionaryValue::Create(); binding->SetInt("key", key.key); binding->SetBool("ctrl", key.ctrl);
-    binding->SetBool("shift", key.shift); binding->SetBool("alt", key.alt); shortcuts->SetDictionary(name, binding);
-  }
+    binding->SetBool("shift", key.shift); binding->SetBool("alt", key.alt);
+    return binding;
+  };
+  auto shortcuts = CefDictionaryValue::Create();
+  for (const auto& [name, key] : value.shortcuts) shortcuts->SetDictionary(name, encode_binding(key));
+  if (value.little_sol_binding != kDefaultLittleSolHotkey)
+    data->SetDictionary("littleSolBinding", encode_binding(value.little_sol_binding));
   data->SetDictionary("shortcuts", shortcuts); return data;
 }
 void BrowserPreferences::Save(Preferences next, Reply done) {

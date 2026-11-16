@@ -255,6 +255,15 @@ std::vector<std::string> FolderNodeIds(const TreeSnapshot& tree, const std::stri
   return {seen.begin(),seen.end()};
 }
 
+bool ValidNodeFields(const TreeNode& n) {
+  return n.id.size() == 36 && SafeText(n.title, 240) && SafeText(n.page_title, 240, true) && n.position >= 0 &&
+         (n.folder ? n.url.empty() : SafeUrl(n.url)) && ValidBrowsingProfileId(n.profile);
+}
+bool ValidSpaceFields(const Space& s) {
+  return s.id.size() == 36 && ValidSpaceName(s.name) && ValidIcon(s.icon) && ValidSpaceTheme(s) && ValidBrowsingProfileId(s.profile);
+}
+bool ValidProfileName(const std::string& name) { return SafeText(name, 40); }
+
 const Space* TreeSnapshot::ActiveSpace() const {
   auto it = std::find_if(spaces.begin(), spaces.end(), [&](const auto& s) { return s.id == active_space; });
   return it == spaces.end() ? nullptr : &*it;
@@ -1061,6 +1070,18 @@ TreeResult TreeStore::Import(const TreeSnapshot& incoming, const std::filesystem
   tree.splits.insert(tree.splits.end(), incoming.splits.begin(), incoming.splits.end());
   tree.archived_splits.insert(tree.archived_splits.end(), incoming.archived_splits.begin(), incoming.archived_splits.end());
   if (!Valid(tree)) return rollback(400, "Imported hierarchy is invalid; nothing imported");
+  return Save(std::move(result), before);
+}
+TreeResult TreeStore::ApplySynced(const TreeSnapshot& next, std::int64_t expected_revision) {
+  if (!db_ || !Valid(next)) return Error(400, "Invalid synced workspace; nothing changed");
+  if (!Exec("BEGIN IMMEDIATE")) return Error(503, "Workspace database busy");
+  auto result = Load();
+  if (!result) { Exec("ROLLBACK"); return result; }
+  if (result.snapshot.revision != expected_revision) { Exec("ROLLBACK"); return Error(409, "Workspace changed; sync again"); }
+  const auto before = result.snapshot;
+  result.snapshot = next;
+  result.snapshot.revision = before.revision;
+  result.snapshot.sidebar_width = before.sidebar_width;
   return Save(std::move(result), before);
 }
 TreeResult TreeStore::TouchTabs(const std::map<std::string,int64_t>& activity) {

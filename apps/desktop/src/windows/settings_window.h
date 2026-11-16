@@ -24,6 +24,8 @@ class SettingsWindow : public std::enable_shared_from_this<SettingsWindow> {
              bool persistent, CefRefPtr<CefMessageRouterBrowserSide::Callback> callback);
  private:
   void SavePreferences(Preferences next, CefRefPtr<CefMessageRouterBrowserSide::Callback> callback);
+  void HandleSync(const std::shared_ptr<State>& state, const std::string& method, CefRefPtr<CefDictionaryValue> data,
+                  CefRefPtr<CefMessageRouterBrowserSide::Callback> callback);
   std::string Response(bool refresh_default = false) const;
   mutable CefRefPtr<CefDictionaryValue> default_status_;
   std::weak_ptr<State> state_;

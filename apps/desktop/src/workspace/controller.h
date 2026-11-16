@@ -203,6 +203,10 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   // Re-send the snapshot after browser-owned state outside the tree changed.
   void Refresh() { Publish(); }
   void ImportZen(const TreeSnapshot& incoming, Reply done);
+  // Cloud sync (app/sync_service.cpp): replaces the tree with |next| if the
+  // store is still at |revision|; pages of removed entries close as for a
+  // deleted space. |done(false)|: the tree changed meanwhile, or it failed.
+  void ApplySyncedTree(TreeSnapshot next, std::int64_t revision, std::function<void(bool)> done);
  private:
   void UpdateIntegrationPreviews();
   std::shared_ptr<IntegrationPreviews> integration_previews_;

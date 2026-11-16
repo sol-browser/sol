@@ -9,6 +9,7 @@
 #include "app/session.h"
 #include "app/browsing_profiles.h"
 #include "app/auto_archive.h"
+#include "app/sync_service.h"
 #include "windows/boosts.h"
 #include "navigation/shortcut_settings.h"
 #include "windows/tab_drag_preview.h"
@@ -130,6 +131,9 @@ void WorkspaceController::Start() {
   PrepareSession();
   data_ = state->workspace_data ? state->workspace_data : (state->workspace_data = session_->workspace);
   if (!session_->auto_archive) session_->auto_archive=AutoArchive::Start(session_);
+  // Cloud sync belongs to the shared workspace of a regular window (docs/sync.md).
+  if (!session_->sync && !state->probe && !state->private_window && !state->standalone_window && data_ == session_->workspace)
+    session_->sync = SyncService::Start(session_, state->profile);
   LoadBoosts(*session_, state->profile / "BrowserData" / "boosts.json");
   if (!session_->pinned_extensions) {
     session_->pinned_extensions = std::make_shared<PinnedExtensions>();
@@ -224,6 +228,11 @@ void WorkspaceController::FlushPublish() {
     auto data = CefDictionaryValue::Create(); data->SetBool("can_go_back", snapshot->GetBool("canGoBack"));
     state->Record("snapshot_published", data);
   }
+  // Unload probe: an idle unload must never send a Today row the sidebar hides.
+  if (auto state = state_.lock(); state && state->link_headers_unload) if (const auto nodes = snapshot->GetList("nodes"))
+    for (size_t i = 0; i < nodes->GetSize(); ++i) if (const auto node = nodes->GetDictionary(i);
+        node && node->GetBool("closing") && !node->GetBool("pinned") && !node->GetBool("favorite") && !node->GetBool("archived"))
+      state->Record("unload_probe_hidden_row");
   // The floating sidebar shows the same snapshot. Copy it before the observer
   // takes ownership (CefValue detaches it) instead of building it again.
   CefRefPtr<CefDictionaryValue> peek;
@@ -477,8 +486,11 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     }
     row->SetString("currentUrl", current);
     // Still "closing" while its archive is being saved, so the row never
-    // reappears between the page closing and the archived snapshot.
-    row->SetBool("closing", closing_.contains(node.id) || archiving_.contains(node.id) || auto_closing_.contains(node.id) ||
+    // reappears between the page closing and the archived snapshot. An idle
+    // unload (auto_closing_ alone) keeps its row, so it is not "closing":
+    // the sidebar would hide the Today row until the page is gone. Auto
+    // archive reserves its pages first, which covers that case.
+    row->SetBool("closing", closing_.contains(node.id) || archiving_.contains(node.id) ||
       (session_ && session_->auto_archive && session_->auto_archive->Reserved(node.id)));
     // Arc: a tab with a Link Peek (shown or parked) carries the preview's icon.
     const auto parked = parked_peeks_.find(node.id);
@@ -633,6 +645,20 @@ void WorkspaceController::ImportZen(const TreeSnapshot& incoming, Reply done) {
       --self->pending_commands_; self->Complete(std::move(result), std::move(done));
     }, self, std::move(result), std::move(done)));
   }, shared_from_this(), incoming, backup, std::move(done))));
+}
+void WorkspaceController::ApplySyncedTree(TreeSnapshot next, std::int64_t revision, std::function<void(bool)> done) {
+  auto state = state_.lock();
+  if (!ready_ || stopped_ || shutting_down_ || !state || !worker_ || state->standalone_window || state->private_window) { done(false); return; }
+  ++pending_commands_;
+  worker_->GetTaskRunner()->PostTask(CefCreateClosureTask(base::BindOnce([](std::shared_ptr<WorkspaceController> self, TreeSnapshot next,
+                                                                            std::int64_t revision, std::function<void(bool)> done) {
+    auto result = self->data_->store->ApplySynced(next, revision);
+    CefPostTask(TID_UI, base::BindOnce([](std::shared_ptr<WorkspaceController> self, TreeResult result, std::function<void(bool)> done) {
+      --self->pending_commands_;
+      const bool ok = static_cast<bool>(result);
+      self->Complete(std::move(result), [done, ok](int, const std::string&, CefRefPtr<CefDictionaryValue>) { done(ok); });
+    }, self, std::move(result), std::move(done)));
+  }, shared_from_this(), std::move(next), revision, std::move(done))));
 }
 void WorkspaceController::Dispatch(TreeCommand command, Reply done, bool internal, bool exact_activation) {
   if (LittleWindowRejects(command)) { if (done) done(409, "Little Sol holds one page", nullptr); return; }

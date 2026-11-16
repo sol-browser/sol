@@ -10,6 +10,7 @@
 #include <fstream>
 #include <dwmapi.h>
 #include "windows/default_browser.h"
+#include "windows/background_host.h"
 #include "windows/branding.h"
 #include "windows/window_close.h"
 #include "windows/window_corners.h"
@@ -19,6 +20,7 @@
 #include "downloads/download_manager.h"
 #include "navigation/shortcut_settings.h"
 #include "workspace/controller.h"
+#include "app/sync_service.h"
 #include "experiments/profile_settings_probe.h"
 #include "experiments/site_search_probe.h"
 #include "import/browser_import.h"
@@ -31,6 +33,9 @@
 #include "include/views/cef_fill_layout.h"
 namespace red {
 namespace {
+// The Settings document starts at the shared graphite surface before its stylesheet loads.
+constexpr auto kSettingsSurface = CefColorSetARGB(255, 36, 37, 43);
+constexpr auto kSettingsCaption = RGB(46, 48, 55);
 class FolderPicked final : public CefRunFileDialogCallback {
  public:
   explicit FolderPicked(std::function<void(const std::vector<CefString>&)> done) : done_(std::move(done)) {}
@@ -96,12 +101,11 @@ class SettingsDelegate final : public UtilityWindowDelegate {
   CefSize GetMinimumSize(CefRefPtr<CefView>) override { return CefSize(720, 520); }
   void OnWindowCreated(CefRefPtr<CefWindow> window) override {
     UtilityWindowDelegate::OnWindowCreated(window);
-    window->SetTitle(title_); window->SetBackgroundColor(CefColorSetARGB(255, 28, 26, 32));
+    window->SetTitle(title_); window->SetBackgroundColor(kSettingsSurface);
     const auto icon = RedWindowIcon(); window->SetWindowIcon(icon); window->SetWindowAppIcon(icon);
     const BOOL dark = TRUE;
     DwmSetWindowAttribute(window->GetWindowHandle(), DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
-    const COLORREF caption = RGB(28, 26, 32);
-    DwmSetWindowAttribute(window->GetWindowHandle(), DWMWA_CAPTION_COLOR, &caption, sizeof(caption));
+    DwmSetWindowAttribute(window->GetWindowHandle(), DWMWA_CAPTION_COLOR, &kSettingsCaption, sizeof(kSettingsCaption));
     window->SetToFillLayout(); window->AddChildView(view_);
     if (auto owner = owner_.lock()) owner->Created(window);
   }
@@ -139,7 +143,7 @@ void SettingsWindow::Show() {
   if (window_) { Present(); return; }
   if (creating_) return;
   creating_ = true;
-  CefBrowserSettings settings; settings.background_color = CefColorSetARGB(255, 28, 26, 32);
+  CefBrowserSettings settings; settings.background_color = kSettingsSurface;
   auto extra = CefDictionaryValue::Create(); extra->SetBool("trusted_ui", true);
   auto view = CefBrowserView::CreateBrowserView(new SettingsClient(weak_from_this()), std::string(kSettingsUrl),
       settings, extra, state->ui_context, new SettingsView());
@@ -219,9 +223,24 @@ void SettingsWindow::Close() { if (window_) window_->Close(); }
 void SettingsWindow::SavePreferences(Preferences next, CefRefPtr<CefMessageRouterBrowserSide::Callback> callback) {
   const auto state = state_.lock();
   if (!state || !state->session || !state->session->preferences) { callback->Failure(409,"Settings are not ready"); return; }
-  state->session->preferences->Save(std::move(next), [weak = weak_from_this(), callback](const std::string& error) {
-    const auto owner = weak.lock(); if (!owner) { callback->Failure(410,"Settings closed"); return; }
+  const auto& session = state->session;
+  const auto& current = session->preferences->Get();
+  const auto binding = next.little_sol_binding;
+  const bool enabled = next.little_sol_hotkey;
+  const bool changing_hotkey = current.little_sol_binding != binding || (enabled && !current.little_sol_hotkey);
+  const auto reservation = changing_hotkey ? session->background : nullptr;
+  if (reservation && session->preferences->busy()) { callback->Failure(409,"Another settings change is being saved. Please try again."); return; }
+  if (reservation && !reservation->ReserveHotkey(binding)) {
+    callback->Failure(409, InterfaceTextWithName(session->interface_locale, InterfaceMessage::ShortcutLittleSolUnavailable,
+                                                LittleSolHotkeyLabel(binding)));
+    return;
+  }
+  session->preferences->Save(std::move(next), [weak = weak_from_this(), weak_session = std::weak_ptr<AppSession>(session),
+                                               callback, reservation, binding, enabled](const std::string& error) {
+    if (reservation) reservation->FinishHotkeyChange(binding, enabled, error.empty());
     if (!error.empty()) { callback->Failure(409,error); return; }
+    if (const auto live_session = weak_session.lock(); live_session && live_session->apply_background) live_session->apply_background();
+    const auto owner = weak.lock(); if (!owner) { callback->Failure(410,"Settings closed"); return; }
     if (const auto state = owner->state_.lock(); state && state->session) {
       const auto backdrop = state->session->preferences->Get().backdrop;
       for (const auto& window : state->session->Windows()) {
@@ -236,7 +255,6 @@ void SettingsWindow::SavePreferences(Preferences next, CefRefPtr<CefMessageRoute
         }
         if (window->command_bar) window->command_bar->Refresh();
       }
-      if (state->session->apply_background) state->session->apply_background();
       state->Record("settings_preferences_saved");
     }
     callback->Success(owner->Response());
@@ -285,6 +303,70 @@ std::string SettingsWindow::Response(bool refresh_default) const {
   response->SetDictionary("backdrop", backdrop);
   auto value = CefValue::Create(); value->SetDictionary(response); return CefWriteJSON(value, JSON_WRITER_DEFAULT);
 }
+// Settings → Sync (docs/sync.md). The passphrase arrives once with
+// settings.sync.setup, goes to the sync worker and is never sent back.
+void SettingsWindow::HandleSync(const std::shared_ptr<State>& state, const std::string& method, CefRefPtr<CefDictionaryValue> data,
+                                CefRefPtr<CefMessageRouterBrowserSide::Callback> callback) {
+  const auto service = state->session ? state->session->sync : nullptr;
+  if (!service) { callback->Failure(409, "unavailable"); return; }
+  auto reply = [](const std::shared_ptr<SyncService>& service, CefRefPtr<CefMessageRouterBrowserSide::Callback> callback) {
+    auto value = CefValue::Create(); value->SetDictionary(service->Status()); callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT));
+  };
+  if (method == "settings.sync.status" && data->GetSize() == 1) { reply(service, callback); return; }
+  if (method == "settings.sync.now" && data->GetSize() == 1) { service->SyncNow(); reply(service, callback); return; }
+  if (method == "settings.sync.inspect" && data->GetSize() == 2 && data->GetType("folder") == VTYPE_STRING) {
+    const std::filesystem::path folder = data->GetString("folder").ToWString();
+    std::error_code error;
+    if (!folder.is_absolute() || !std::filesystem::is_directory(folder, error)) { callback->Failure(400, "folderMissing"); return; }
+    auto result = CefDictionaryValue::Create(); result->SetBool("hasVault", service->HasVault(folder));
+    auto value = CefValue::Create(); value->SetDictionary(result); callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT));
+    return;
+  }
+  if (method == "settings.sync.choose" && data->GetSize() == 1) {
+    if (!browser_) { callback->Failure(409, "Settings browser is not ready"); return; }
+    browser_->GetHost()->RunFileDialog(FILE_DIALOG_OPEN_FOLDER, InterfaceText(state->session->interface_locale, InterfaceMessage::WindowSyncFolder), {}, {},
+        new FolderPicked([weak = std::weak_ptr<SyncService>(service), callback](const std::vector<CefString>& paths) {
+          const auto service = weak.lock();
+          auto result = CefDictionaryValue::Create();
+          if (service && paths.size() == 1) {
+            const std::filesystem::path folder = paths.front().ToWString();
+            std::error_code error;
+            if (folder.is_absolute() && std::filesystem::is_directory(folder, error)) {
+              result->SetString("folder", folder.wstring()); result->SetBool("hasVault", service->HasVault(folder));
+            }
+          }
+          auto value = CefValue::Create(); value->SetDictionary(result); callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT));
+        }));
+    return;
+  }
+  if (method == "settings.sync.setup" && data->GetSize() == 4 && data->GetType("folder") == VTYPE_STRING && data->GetType("passphrase") == VTYPE_STRING &&
+      data->GetType("join") == VTYPE_STRING) {
+    const std::filesystem::path folder = data->GetString("folder").ToWString();
+    const auto join = data->GetString("join").ToString();
+    std::string passphrase = data->GetString("passphrase").ToString();
+    data->SetString("passphrase", "");
+    std::error_code error;
+    if (!folder.is_absolute() || !std::filesystem::is_directory(folder, error) || (join != "merge" && join != "synced") || passphrase.size() > 1024) {
+      sync::Wipe(passphrase); callback->Failure(400, "folderMissing"); return;
+    }
+    service->SetUp(folder, std::move(passphrase), join == "synced" ? sync::JoinMode::UseSynced : sync::JoinMode::Merge,
+        [weak = std::weak_ptr<SyncService>(service), callback, reply](const std::string& error) {
+          const auto service = weak.lock();
+          if (!error.empty() || !service) callback->Failure(409, error.empty() ? "io" : error);
+          else reply(service, callback);
+        });
+    return;
+  }
+  if (method == "settings.sync.off" && data->GetSize() == 1) {
+    service->TurnOff([weak = std::weak_ptr<SyncService>(service), callback, reply](const std::string& error) {
+      const auto service = weak.lock();
+      if (!error.empty() || !service) callback->Failure(409, error.empty() ? "io" : error);
+      else reply(service, callback);
+    });
+    return;
+  }
+  callback->Failure(400, "Invalid sync request");
+}
 bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, const CefString& raw,
     bool persistent, CefRefPtr<CefMessageRouterBrowserSide::Callback> callback) {
   const auto state = state_.lock();
@@ -307,6 +389,7 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
     else callback->Success(Response());
     return true;
   }
+  if (method.starts_with("settings.sync.")) { HandleSync(state, method, data, callback); return true; }
   if (method == "settings.get" && data->GetSize() == 1) { callback->Success(Response(true)); return true; }
   if (method == "settings.setIntegration") {
     const auto id = data->GetString("provider").ToString();
@@ -406,17 +489,19 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
   }
   if ((method == "settings.shortcut" || method == "settings.resetShortcuts") && state->session && state->session->preferences) {
     auto next = state->session->preferences->Get();
-    if (method == "settings.resetShortcuts" && data->GetSize() == 1) next.shortcuts.clear();
+    if (method == "settings.resetShortcuts" && data->GetSize() == 1) {
+      next.shortcuts.clear();
+      next.little_sol_binding = kDefaultLittleSolHotkey;
+    }
     else if (method == "settings.shortcut" && data->GetSize() == 3 && data->GetType("action") == VTYPE_STRING) {
-      KeyBinding key; const KeyBinding* binding = nullptr;
+      std::optional<KeyBinding> binding;
       if (data->GetType("binding") == VTYPE_DICTIONARY) {
-        const auto chord = data->GetDictionary("binding");
-        if (chord->GetSize() != 4 || chord->GetType("key") != VTYPE_INT || chord->GetType("ctrl") != VTYPE_BOOL ||
-            chord->GetType("shift") != VTYPE_BOOL || chord->GetType("alt") != VTYPE_BOOL) { callback->Failure(400,"Invalid shortcut"); return true; }
-        key = {chord->GetInt("key"),chord->GetBool("ctrl"),chord->GetBool("shift"),chord->GetBool("alt")}; binding = &key;
+        binding = ReadKeyBinding(data->GetDictionary("binding"));
+        if (!binding) { callback->Failure(400,"Invalid shortcut"); return true; }
       } else if (data->GetType("binding") != VTYPE_NULL) { callback->Failure(400,"Invalid shortcut"); return true; }
       std::string error;
-      if (!ConfigureShortcut(next,data->GetString("action"),binding,error)) { callback->Failure(409,error); return true; }
+      if (!ConfigureShortcut(next, data->GetString("action"), binding ? &*binding : nullptr, error,
+                             state->session->interface_locale)) { callback->Failure(409,error); return true; }
     } else { callback->Failure(400,"Invalid shortcut request"); return true; }
     SavePreferences(std::move(next),callback); return true;
   }

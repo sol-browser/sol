@@ -1,7 +1,7 @@
 // History popover model: validation of native replies, day groups, labels.
 import { isFaviconUrl } from '../../../packages/browser-contracts/src/index.ts';
 export type VisitRow = { id: number; url: string; title: string; visitedAt: number; favicon?: string };
-// hour12: native's clock choice (Settings > General, or the Windows format).
+// hour12: native's clock choice (Settings > Appearance, or the Windows format).
 export type HistoryPage = { visits: VisitRow[]; more: boolean; hour12?: boolean };
 // A local calendar day with history: date "YYYY-MM-DD", its visit count and
 // the newest visit's time (history.list before = latest + 1 starts there).

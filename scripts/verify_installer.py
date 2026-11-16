@@ -212,7 +212,9 @@ def source_map(root, build, sdk):
                'velopack_libc.dll': root / 'third_party/velopack/velopack_libc_win_x64_msvc.dll',
                'licenses/cef-license.txt': sdk / 'LICENSE.txt',
                'licenses/chromium-credits.html': sdk / 'CREDITS.html',
-               'licenses/velopack-license.txt': root / 'licenses/Velopack-LICENSE.txt'}
+               'licenses/velopack-license.txt': root / 'licenses/Velopack-LICENSE.txt',
+               # zstd (cloud sync) is BSD-3-Clause.
+               'licenses/zstd-license.txt': root / 'third_party/zstd/LICENSE'}
     lists = cef_lists(sdk)
     for group, directory in (('CEF_BINARY_FILES', sdk / 'Release'),
                              ('CEF_RESOURCE_FILES', sdk / 'Resources')):

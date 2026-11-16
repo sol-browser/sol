@@ -20,10 +20,23 @@ add_library(import_formats STATIC src/import/formats/json_lite.cpp src/import/fo
 target_link_libraries(import_formats PUBLIC workspace_store crypt32)
 target_compile_options(import_formats PRIVATE /W4 /WX /utf-8)
 set_property(TARGET import_formats PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# Cloud-folder sync core (docs/sync.md): portable crypto (Monocypher), zstd,
+# vault/device files, merging; OS code only in sync_platform_<os>.cpp and
+# sync_passwords_<os>.cpp (Chromium's password store encryption is per OS).
+add_library(sync_core STATIC src/sync/sync_crypto.cpp src/sync/sync_model.cpp src/sync/sync_folder.cpp src/sync/sync_tree.cpp src/sync/sync_pass.cpp
+  src/sync/sync_platform_win.cpp src/sync/sync_passwords_win.cpp)
+target_link_libraries(sync_core PUBLIC import_formats monocypher zstd PRIVATE bcrypt crypt32 advapi32)
+target_compile_options(sync_core PRIVATE /W4 /WX /utf-8)
+set_property(TARGET sync_core PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# Developer tool: sync passes on a closed Sol profile (docs/sync.md). Not shipped.
+add_executable(sol_sync src/sync/sol_sync_tool.cpp)
+target_link_libraries(sol_sync PRIVATE sync_core)
+target_compile_options(sol_sync PRIVATE /W4 /WX /utf-8)
+set_target_properties(sol_sync PROPERTIES OUTPUT_NAME "sol-sync" MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # Since CEF 151 the upstream Windows sandbox uses bootstrap.exe + a client DLL.
 # Keep the upstream executable byte-for-byte and export RunWinMain from our DLL.
-add_library(${CEF_TARGET} SHARED src/main_win.cpp src/app/state.cpp src/app/theme.cpp
+add_library(${CEF_TARGET} SHARED src/main_win.cpp src/app/state.cpp src/app/theme.cpp src/app/sync_service.cpp
   src/experiments/tab_probe.cpp src/windows/embedded_content.cpp src/windows/page_corners.cpp src/windows/page_notification.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/workspace/controller.cpp src/experiments/shell_capture.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/workspace/folder_removal.cpp)
@@ -180,7 +193,7 @@ target_sources(${CEF_TARGET} PRIVATE src/experiments/page_load_trace.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/platform_codecs_probe.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/devtools_probe.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/start_with_windows.cpp)
-target_link_libraries(${CEF_TARGET} PRIVATE workspace_store import_formats libcef_dll_wrapper libcef_lib ${CEF_STANDARD_LIBS} advapi32 dwmapi dcomp d3d11 d2d1 dwrite dxgi dxguid windowscodecs)
+target_link_libraries(${CEF_TARGET} PRIVATE workspace_store import_formats sync_core libcef_dll_wrapper libcef_lib ${CEF_STANDARD_LIBS} advapi32 dwmapi dcomp d3d11 d2d1 dwrite dxgi dxguid windowscodecs)
 COPY_SINGLE_FILE(${CEF_TARGET} "${CEF_BINARY_DIR}/bootstrap.exe" "${CEF_TARGET_OUT_DIR}/${CEF_TARGET}.exe")
 # Velopack (app/updates.cpp) runs only in the browser process: delay-load it so
 # sandboxed child processes, which load sol.dll too, never map it.
@@ -329,6 +342,12 @@ target_compile_options(browser_import_test PRIVATE /W4 /WX /utf-8)
 target_compile_definitions(browser_import_test PRIVATE "RED_IMPORT_FIXTURES=L\"${CMAKE_SOURCE_DIR}/tests/fixtures/import\"")
 set_property(TARGET browser_import_test PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 add_test(NAME browser_import COMMAND browser_import_test)
+add_executable(sync_test "${CMAKE_SOURCE_DIR}/tests/native/sync_test.cpp")
+target_link_libraries(sync_test PRIVATE sync_core crypt32)
+target_compile_options(sync_test PRIVATE /W4 /WX /utf-8)
+target_compile_definitions(sync_test PRIVATE "RED_SYNC_FIXTURES=L\"${CMAKE_SOURCE_DIR}/tests/fixtures/import\"")
+set_property(TARGET sync_test PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+add_test(NAME sync COMMAND sync_test)
 add_executable(navigation_test "${CMAKE_SOURCE_DIR}/tests/native/navigation_test.cpp" src/workspace/split_layout.cpp)
 target_include_directories(navigation_test PRIVATE src)
 target_compile_options(navigation_test PRIVATE /W4 /WX /utf-8)

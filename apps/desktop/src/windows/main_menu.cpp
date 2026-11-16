@@ -14,6 +14,7 @@
 #include "windows/panel_popup.h"
 #include "windows/settings_window.h"
 #include "windows/passwords_window.h"
+#include "trust_policy.h"
 #include "include/cef_id_mappers.h"
 #include "workspace/controller.h"
 #include "windows/update_window.h"
@@ -222,11 +223,19 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
 
   menu.Add(label(InterfaceMessage::MenuHistory), "history", shortcut(Shortcut::History), Chord(labels, "history"));
   menu.Add(label(InterfaceMessage::MenuDownloads), "download", shortcut(Shortcut::Downloads), Chord(labels, "downloads"));
-  auto& passwords = menu.Submenu(label(InterfaceMessage::MenuPasswords), "lock");
+  auto& passwords = menu.Submenu(label(InterfaceMessage::MenuPasswords), "lock", true, "passwords");
+  // Not Chrome's IDC_MANAGE_PASSWORDS_FOR_PAGE: its bubble hits NOTREACHED (a
+  // browser crash) when the page has no password state (Chromium 156
+  // PasswordBubbleViewBase::CreateBubble), and Chrome only offers it from the
+  // key icon Sol has no omnibox for. Sol's password manager, searched for the
+  // page's site, in the page's own browsing profile.
+  const auto page_search = state->content ? PasswordSearchForUrl(state->content->GetMainFrame()->GetURL().ToString()) : std::string();
   passwords.Add(label(InterfaceMessage::MenuPagePasswords), "lock", run([](const std::shared_ptr<State>& s) {
-    if (s->content && s->content->GetHost()->CanExecuteChromeCommand(cef_id_for_command_id_name("IDC_MANAGE_PASSWORDS_FOR_PAGE")))
-      s->content->GetHost()->ExecuteChromeCommand(cef_id_for_command_id_name("IDC_MANAGE_PASSWORDS_FOR_PAGE"), CEF_WOD_CURRENT_TAB);
-  }), "", state->content && state->content->GetHost()->CanExecuteChromeCommand(cef_id_for_command_id_name("IDC_MANAGE_PASSWORDS_FOR_PAGE")));
+    if (!s->content) return;
+    const auto search = PasswordSearchForUrl(s->content->GetMainFrame()->GetURL().ToString());
+    const auto profile = ProfileForBrowser(s, s->content);
+    if (!search.empty() && profile) ShowPasswords(s, profile->id, false, search);
+  }), "", !page_search.empty() && !state->private_window && !standalone, false, "", "pagePasswords");
   passwords.Add(label(InterfaceMessage::MenuManagePasswords), "settings", run([](const std::shared_ptr<State>& s) {
     ShowPasswords(s, s->active_profile);
   }), "", !state->private_window && !standalone);

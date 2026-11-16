@@ -3,7 +3,7 @@
    a neutral graphite surface whatever the space theme, recessed wells, hairline
    dividers, raised pressed states and a lavender accent. Loaded after
    style.css/menu.css; :where() keeps the Orbit editor's own rules on top. */
-:root:is([data-ui="panel"], [data-ui="menu"]) {
+:root:is([data-ui="panel"], [data-ui="menu"], [data-ui="settings"]) {
   --pop-top: #2e3037; --pop-surface: #24252b; --pop-well: #17191f; --pop-sticky: #27282e;
   --pop-ink: #eeedf2; --pop-muted: #a9a7b1; --pop-faint: #7f7d88; --pop-line: #ffffff0c;
   --pop-hover: #ffffff0b; --pop-hover-strong: #ffffff14;
@@ -13,7 +13,7 @@
   --pop-danger: #ff8fa3; --pop-danger-fill: #d9435f26;
 }
 body:has(.panel-root), :root[data-ui="menu"] body { background: linear-gradient(145deg, var(--pop-top), var(--pop-surface) 55%) fixed; color-scheme: dark; }
-:where(:root[data-ui="panel"], :root[data-ui="menu"]) :focus-visible { outline-color: var(--pop-accent); }
+:where(:root[data-ui="panel"], :root[data-ui="menu"], :root[data-ui="settings"]) :focus-visible { outline-color: var(--pop-accent); }
 
 /* Shared popover chrome. */
 .panel-root { padding: 8px; color: var(--pop-ink); }

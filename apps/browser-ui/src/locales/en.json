@@ -4,7 +4,28 @@
     "description": "Settings window, navigation and main menu."
   },
   "settings.section.general": {
-    "defaultMessage": "General"
+    "defaultMessage": "Default browser"
+  },
+  "settings.category.browser": {
+    "defaultMessage": "Browser"
+  },
+  "settings.category.languages": {
+    "defaultMessage": "Languages & translation"
+  },
+  "settings.category.data": {
+    "defaultMessage": "Profiles & data"
+  },
+  "settings.category.integrations": {
+    "defaultMessage": "Integrations & extensions"
+  },
+  "settings.category.about": {
+    "defaultMessage": "About Sol"
+  },
+  "settings.integration.services": {
+    "defaultMessage": "Connected services"
+  },
+  "settings.preference.pipHeading": {
+    "defaultMessage": "Picture-in-picture"
   },
   "settings.section.appearance": {
     "defaultMessage": "Appearance"
@@ -307,22 +328,40 @@
     "defaultMessage": "Keep a page with Open in Space, or close the window when you are done."
   },
   "settings.preference.littleHotkey": {
-    "defaultMessage": "Open Little Sol with Ctrl+Alt+N in any app"
+    "defaultMessage": "Global shortcut"
+  },
+  "settings.preference.littleChangeShortcut": {
+    "defaultMessage": "Change shortcut"
+  },
+  "settings.preference.keyboardLittleSol": {
+    "defaultMessage": "Open Little Sol from any app"
+  },
+  "settings.preference.keyboardGlobal": {
+    "defaultMessage": "Global"
+  },
+  "settings.preference.keyboardLittleSolDisabled": {
+    "defaultMessage": "The global shortcut is off. Enable it in Browser → Little Sol."
+  },
+  "settings.preference.keyboardModifiers": {
+    "defaultMessage": "Modifiers"
+  },
+  "settings.preference.keyboardKey": {
+    "defaultMessage": "Key"
   },
   "settings.preference.littleHotkeyDetail": {
-    "defaultMessage": "Type an address or a search and it opens in Little Sol. Sol stays in the notification area after you close its windows and starts there when you sign in to Windows, using little memory until you open it; quit it from there."
+    "defaultMessage": "Works from any app. Sol stays in the notification area and starts with Windows."
   },
   "settings.preference.littleClick": {
-    "defaultMessage": "Open links in Little Sol with Ctrl+Alt held"
+    "defaultMessage": "Open links with Ctrl+Alt+click"
   },
   "settings.preference.littleClickDetail": {
     "defaultMessage": "Hold Ctrl+Alt while you click a link on a page."
   },
   "settings.preference.littleLinks": {
-    "defaultMessage": "Links from other apps open in Little Sol"
+    "defaultMessage": "Links from other apps"
   },
   "settings.preference.littleLinksDetail": {
-    "defaultMessage": "A link from a chat or an email opens in a small window of its own. When this is off, it opens as a tab in your Sol window."
+    "defaultMessage": "Open links from chats, email, and other apps in Little Sol."
   },
   "settings.preference.startupCategory": {
     "defaultMessage": "WHEN SOL STARTS"
@@ -678,45 +717,123 @@
   "toolbar.dismiss": {
     "defaultMessage": "Dismiss"
   },
-  "toolbar.translateOffer": { "defaultMessage": "Translate?" },
-  "toolbar.translateTo": { "defaultMessage": "Translate page to {language}" },
-  "translation.title": { "defaultMessage": "Page translation" },
-  "translation.question": { "defaultMessage": "Translate this page to {language}?" },
-  "translation.translated": { "defaultMessage": "Translated from {language}" },
-  "translation.working": { "defaultMessage": "Translating to {language}…" },
-  "translation.error": { "defaultMessage": "The page could not be translated" },
-  "translation.start": { "defaultMessage": "Translate" },
-  "translation.original": { "defaultMessage": "Use Original" },
-  "translation.options": { "defaultMessage": "Options" },
-  "translation.choose": { "defaultMessage": "Choose Another Language" },
-  "translation.never": { "defaultMessage": "Never Translate This Site" },
-  "translation.settings": { "defaultMessage": "Language Settings" },
-  "translation.back": { "defaultMessage": "Back" },
-  "settings.section.languages": { "defaultMessage": "Languages" },
-  "settings.description.languages": { "defaultMessage": "Choose how Sol translates web pages." },
-  "settings.translation.target": { "defaultMessage": "Translate pages into" },
-  "settings.translation.offers": { "defaultMessage": "Offer to translate pages" },
-  "settings.translation.excluded": { "defaultMessage": "Excluded sites" },
-  "settings.translation.remove": { "defaultMessage": "Remove" },
-  "settings.translation.removeSite": { "defaultMessage": "Remove {site} from excluded sites" },
-  "translation.downloading": { "defaultMessage": "Translation model downloading" },
-  "translation.downloadProgress": { "defaultMessage": "Translation model download, {percent}%" },
-  "translation.selectionTitle": { "defaultMessage": "Translate selected text" },
-  "translation.selectionSame": { "defaultMessage": "This text is already in {language}." },
-  "translation.selectionUnavailable": { "defaultMessage": "Sol could not detect a supported language for this selection." },
-  "translation.selectionError": { "defaultMessage": "The selected text could not be translated." },
-  "translation.selectionCopy": { "defaultMessage": "Copy translation" },
-  "translation.selectionCopied": { "defaultMessage": "Copied" },
-  "translation.selectionCopyError": { "defaultMessage": "Could not copy the translation." },
-  "translation.close": { "defaultMessage": "Close" },
-  "settings.translation.known": { "defaultMessage": "Languages you know" },
-  "settings.translation.knownDetail": { "defaultMessage": "Sol skips automatic translation offers for pages in these languages." },
-  "settings.translation.addKnown": { "defaultMessage": "Add a language" },
-  "settings.translation.chooseKnown": { "defaultMessage": "Choose a language" },
-  "settings.translation.removeKnown": { "defaultMessage": "Remove {language} from languages you know" },
-  "native.menu.TranslateSelection": { "defaultMessage": "Translate selected text" },
-  "native.menu.TranslationRestored": { "defaultMessage": "Original restored. Press" },
-  "native.menu.TranslationUndo": { "defaultMessage": "to undo." },
+  "toolbar.translateOffer": {
+    "defaultMessage": "Translate?"
+  },
+  "toolbar.translateTo": {
+    "defaultMessage": "Translate page to {language}"
+  },
+  "translation.title": {
+    "defaultMessage": "Page translation"
+  },
+  "translation.question": {
+    "defaultMessage": "Translate this page to {language}?"
+  },
+  "translation.translated": {
+    "defaultMessage": "Translated from {language}"
+  },
+  "translation.working": {
+    "defaultMessage": "Translating to {language}…"
+  },
+  "translation.error": {
+    "defaultMessage": "The page could not be translated"
+  },
+  "translation.start": {
+    "defaultMessage": "Translate"
+  },
+  "translation.original": {
+    "defaultMessage": "Use Original"
+  },
+  "translation.options": {
+    "defaultMessage": "Options"
+  },
+  "translation.choose": {
+    "defaultMessage": "Choose Another Language"
+  },
+  "translation.never": {
+    "defaultMessage": "Never Translate This Site"
+  },
+  "translation.settings": {
+    "defaultMessage": "Language Settings"
+  },
+  "translation.back": {
+    "defaultMessage": "Back"
+  },
+  "settings.section.languages": {
+    "defaultMessage": "Languages"
+  },
+  "settings.description.languages": {
+    "defaultMessage": "Choose how Sol translates web pages."
+  },
+  "settings.translation.target": {
+    "defaultMessage": "Translate pages into"
+  },
+  "settings.translation.offers": {
+    "defaultMessage": "Offer to translate pages"
+  },
+  "settings.translation.excluded": {
+    "defaultMessage": "Excluded sites"
+  },
+  "settings.translation.remove": {
+    "defaultMessage": "Remove"
+  },
+  "settings.translation.removeSite": {
+    "defaultMessage": "Remove {site} from excluded sites"
+  },
+  "translation.downloading": {
+    "defaultMessage": "Translation model downloading"
+  },
+  "translation.downloadProgress": {
+    "defaultMessage": "Translation model download, {percent}%"
+  },
+  "translation.selectionTitle": {
+    "defaultMessage": "Translate selected text"
+  },
+  "translation.selectionSame": {
+    "defaultMessage": "This text is already in {language}."
+  },
+  "translation.selectionUnavailable": {
+    "defaultMessage": "Sol could not detect a supported language for this selection."
+  },
+  "translation.selectionError": {
+    "defaultMessage": "The selected text could not be translated."
+  },
+  "translation.selectionCopy": {
+    "defaultMessage": "Copy translation"
+  },
+  "translation.selectionCopied": {
+    "defaultMessage": "Copied"
+  },
+  "translation.selectionCopyError": {
+    "defaultMessage": "Could not copy the translation."
+  },
+  "translation.close": {
+    "defaultMessage": "Close"
+  },
+  "settings.translation.known": {
+    "defaultMessage": "Languages you know"
+  },
+  "settings.translation.knownDetail": {
+    "defaultMessage": "Sol skips automatic translation offers for pages in these languages."
+  },
+  "settings.translation.addKnown": {
+    "defaultMessage": "Add a language"
+  },
+  "settings.translation.chooseKnown": {
+    "defaultMessage": "Choose a language"
+  },
+  "settings.translation.removeKnown": {
+    "defaultMessage": "Remove {language} from languages you know"
+  },
+  "native.menu.TranslateSelection": {
+    "defaultMessage": "Translate selected text"
+  },
+  "native.menu.TranslationRestored": {
+    "defaultMessage": "Original restored. Press"
+  },
+  "native.menu.TranslationUndo": {
+    "defaultMessage": "to undo."
+  },
   "toolbar.copy": {
     "defaultMessage": "Copy link"
   },
@@ -952,7 +1069,207 @@
     "defaultMessage": "Passwords are stored locally in Chromium’s encrypted password store. Windows may ask you to verify your identity before showing or changing a password."
   },
   "settings.password.privacy": {
-    "defaultMessage": "Private browsing does not save new passwords. Password sync between devices is not available."
+    "defaultMessage": "Private browsing does not save new passwords. To use your passwords on your other PCs, turn on Sync."
+  },
+  "settings.section.sync": {
+    "defaultMessage": "Sync",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.category": {
+    "defaultMessage": "SYNC",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.beta": {
+    "defaultMessage": "Beta",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords. Tag beside the headings: the feature is in Beta."
+  },
+  "settings.sync.title": {
+    "defaultMessage": "Your Spaces and passwords on every PC",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.detail": {
+    "defaultMessage": "Sol keeps your Spaces, Pinned tabs, Favorites and saved passwords the same on your PCs through a folder that OneDrive, Dropbox or Google Drive already syncs. There is no Sol account.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.encrypted": {
+    "defaultMessage": "Everything is encrypted with your sync passphrase before it leaves this PC. Your cloud only stores files it cannot read.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.folder": {
+    "defaultMessage": "Cloud folder",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.noFolders": {
+    "defaultMessage": "No OneDrive, Dropbox or Google Drive folder was found on this PC. Choose any folder that your cloud app syncs.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.choose": {
+    "defaultMessage": "Choose another folder…",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.provider.onedrive": {
+    "defaultMessage": "OneDrive",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.provider.dropbox": {
+    "defaultMessage": "Dropbox",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.provider.googleDrive": {
+    "defaultMessage": "Google Drive",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.provider.other": {
+    "defaultMessage": "Folder",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.joinTitle": {
+    "defaultMessage": "This folder already syncs Sol",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.joinDetail": {
+    "defaultMessage": "Enter the sync passphrase you chose on your other PC.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.createTitle": {
+    "defaultMessage": "Create a sync passphrase",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.createDetail": {
+    "defaultMessage": "Use at least 10 characters. You enter it once on each PC.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.recovery": {
+    "defaultMessage": "Sol cannot recover a forgotten passphrase. Your data stays on each PC, but you would have to set up sync again.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.passphrase": {
+    "defaultMessage": "Sync passphrase",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.confirm": {
+    "defaultMessage": "Repeat the passphrase",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.mismatch": {
+    "defaultMessage": "The passphrases do not match.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.joinMerge": {
+    "defaultMessage": "Add this PC's Spaces to the synced ones",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.joinSynced": {
+    "defaultMessage": "Use the synced Spaces on this PC",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.joinSyncedDetail": {
+    "defaultMessage": "This PC's Spaces, Pinned tabs and Favorites are replaced. Passwords are always combined.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.turnOn": {
+    "defaultMessage": "Turn on sync",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.join": {
+    "defaultMessage": "Join",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.working": {
+    "defaultMessage": "Setting up…",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.status": {
+    "defaultMessage": "Syncing with {provider}",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.lastSync": {
+    "defaultMessage": "Last synced {time}",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.never": {
+    "defaultMessage": "Not synced yet",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.running": {
+    "defaultMessage": "Syncing…",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.devices": {
+    "defaultMessage": "{count, plural, =0 {No other PCs yet} one {# other PC} other {# other PCs}}",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.passwords": {
+    "defaultMessage": "{count, plural, one {# saved password} other {# saved passwords}}",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.unreadable": {
+    "defaultMessage": "Some PCs' files could not be read with this passphrase.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.clientStopped": {
+    "defaultMessage": "{provider} is not running on this PC. Sol keeps writing to the folder, but nothing reaches your other PCs until {provider} runs and syncs it.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.clientNotRunning": {
+    "defaultMessage": "{provider} is not running",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.now": {
+    "defaultMessage": "Sync now",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.off": {
+    "defaultMessage": "Turn off sync",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.offConfirm": {
+    "defaultMessage": "Turn off on this PC",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.offDetail": {
+    "defaultMessage": "This PC stops syncing and its file leaves the cloud folder. Your Spaces and passwords stay here and on your other PCs.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.cancel": {
+    "defaultMessage": "Cancel",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.wrongPassphrase": {
+    "defaultMessage": "That passphrase does not open the sync in this folder.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.weakPassphrase": {
+    "defaultMessage": "Use a passphrase of at least 10 characters.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.corrupt": {
+    "defaultMessage": "The sync files in this folder are damaged or come from a newer Sol.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.folderMissing": {
+    "defaultMessage": "The cloud folder is not available. Check that your cloud app is running.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.vaultChanged": {
+    "defaultMessage": "Sync was set up again in this folder from another PC. Turn sync off here and join again.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.keyUnavailable": {
+    "defaultMessage": "Windows could not unlock this PC's sync key. Turn sync off and set it up again.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.io": {
+    "defaultMessage": "Sol could not read or write the sync files. It will try again.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.busy": {
+    "defaultMessage": "Sync is busy. Try again in a moment.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.unavailable": {
+    "defaultMessage": "Sync is available in a regular window.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
   },
   "native.menu.SetDefault": {
     "defaultMessage": "Set Sol as Default Browser"
@@ -1945,10 +2262,19 @@
     "defaultMessage": "Move to Recycle Bin"
   },
   "native.menu.Hotkey": {
-    "defaultMessage": "Sol — Ctrl+Alt+N opens Little Sol"
+    "defaultMessage": "Sol — {name} opens Little Sol"
   },
-  "native.menu.NewLittleHotkey": {
-    "defaultMessage": "New Little Sol\tCtrl+Alt+N"
+  "native.shortcut.LittleSolInvalid": {
+    "defaultMessage": "Choose two or more modifiers and a letter, number, or available function key."
+  },
+  "native.shortcut.LittleSolConflict": {
+    "defaultMessage": "This shortcut is already used in Sol for {name}."
+  },
+  "native.shortcut.LittleSolUnavailable": {
+    "defaultMessage": "Windows could not register {name}. It may already be in use. Your shortcut was kept."
+  },
+  "native.shortcut.UsedByLittleSol": {
+    "defaultMessage": "This shortcut is already used to open Little Sol from any app."
   },
   "native.shortcut.Address": {
     "defaultMessage": "Address bar"
@@ -2825,6 +3151,10 @@
   },
   "native.window.DownloadLocation": {
     "defaultMessage": "Download location"
+  },
+  "native.window.SyncFolder": {
+    "defaultMessage": "Choose a folder for Sync",
+    "description": "Title of the folder chooser for cloud sync."
   },
   "split.unresponsive": {
     "defaultMessage": "This page stopped responding."

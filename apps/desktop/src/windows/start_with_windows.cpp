@@ -20,14 +20,16 @@ bool IsInstalledSol() {
 }
 }  // namespace
 
-bool ApplyStartWithWindows(bool enabled, const std::string& engine, bool suggestions, const std::wstring& profile_dir) {
+bool ApplyStartWithWindows(bool enabled, const std::string& engine, bool suggestions, const std::wstring& profile_dir,
+                           const KeyBinding& hotkey) {
   if (!IsInstalledSol()) return false;
   HKEY key = nullptr;
   if (RegCreateKeyExW(HKEY_CURRENT_USER, kRunKey, 0, nullptr, 0, KEY_QUERY_VALUE | KEY_SET_VALUE, nullptr, &key, nullptr) != ERROR_SUCCESS)
     return false;
   bool ok = false;
   if (enabled) {
-    const auto command = StartWithWindowsCommand(InstalledBrowserPath().parent_path() / L"sol-tray.exe", engine, suggestions, profile_dir);
+    const auto command = StartWithWindowsCommand(InstalledBrowserPath().parent_path() / L"sol-tray.exe", engine,
+                                                 suggestions, profile_dir, hotkey);
     // Rewritten only when it changed (settings saves are frequent).
     wchar_t current[2048]{};
     DWORD bytes = sizeof(current) - sizeof(wchar_t);

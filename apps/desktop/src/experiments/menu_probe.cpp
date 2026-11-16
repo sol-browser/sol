@@ -8,6 +8,8 @@
 #include "windows/page_menu.h"
 #include "include/cef_id_mappers.h"
 #include "windows/settings_window.h"
+#include "windows/passwords_window.h"
+#include "windows/background_host.h"
 #include "windows/menu_popup.h"
 #include "app/updates.h"
 #include "downloads/download_manager.h"
@@ -74,8 +76,7 @@ void Wheel(const std::shared_ptr<State>& s, double x, double y, double delta_y) 
   input->SetDouble("deltaX", 0); input->SetDouble("deltaY", delta_y);
   target->GetHost()->ExecuteDevToolsMethod(0, "Input.dispatchMouseEvent", input);
 }
-void Key(const std::shared_ptr<State>& s, const char* key, const char* code, int vk, int modifiers) {
-  const auto target = InputTarget(s);
+void KeyTo(CefRefPtr<CefBrowser> target, const char* key, const char* code, int vk, int modifiers = 0) {
   if (!target) return;
   for (const char* type : {"rawKeyDown", "keyUp"}) {
     auto input = CefDictionaryValue::Create();
@@ -83,6 +84,9 @@ void Key(const std::shared_ptr<State>& s, const char* key, const char* code, int
     input->SetInt("windowsVirtualKeyCode", vk); input->SetInt("modifiers", modifiers);
     target->GetHost()->ExecuteDevToolsMethod(0, "Input.dispatchKeyEvent", input);
   }
+}
+void Key(const std::shared_ptr<State>& s, const char* key, const char* code, int vk, int modifiers) {
+  KeyTo(InputTarget(s), key, code, vk, modifiers);
 }
 // A picture of the capture window as it is now (its own document, not the page under it).
 void OverlayPicture(const std::shared_ptr<State>& s, const std::string& name) {
@@ -172,6 +176,151 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
   state->menu_probe_started = true;
   const auto mode = CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-menu").ToString();
   if (mode == "translate-offer") return;  // The trusted shell drives the offer scenario.
+  if (mode == "page-passwords") {
+    // Menu > Passwords > Passwords for This Page on a page with no saved
+    // passwords (scripts/page_passwords_smoke.py): Sol's password manager
+    // opens searched for the page's host, and the browser keeps running.
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+      if (const auto owner = weak.lock()) ShowMainMenu(owner, kMainMenuAnchor);
+    }, std::weak_ptr<State>(state)), 1200);
+    Later(state, 2200, [](const std::shared_ptr<State>& s) { s->menu_popup->ProbeRun(0, ActivateKey("passwords")); });
+    Later(state, 3200, [](const std::shared_ptr<State>& s) { s->menu_popup->ProbeRun(1, ActivateKey("pagePasswords")); });
+    Later(state, 8000, [](const std::shared_ptr<State>& s) {
+      auto data = CefDictionaryValue::Create(); std::string url;
+      for (const auto& [profile, window] : s->password_windows)
+        if (window && window->browser()) url = window->browser()->GetMainFrame()->GetURL().ToString();
+      data->SetString("url", url);
+      s->Record("page_passwords_result", data);
+      for (const auto& [profile, window] : s->password_windows) if (window) window->Close();
+      s->menu_done = true;
+    });
+    return;
+  }
+  if (mode == "settings-picker") {
+    state->menu_popup = std::make_shared<MenuPopup>(state);
+    Later(state, 700, [](const std::shared_ptr<State>& s) { ShowSettings(s); });
+    Later(state, 2200, [](const std::shared_ptr<State>& s) {
+      const auto window = s->settings_window ? s->settings_window->window() : nullptr;
+      if (!window) return;
+      const auto bounds = window->GetBounds();
+      window->SetBounds(CefRect(bounds.x, bounds.y, 720, 520));
+      s->settings_window->ShowSection("languages");
+    });
+    Later(state, 2550, [](const std::shared_ptr<State>& s) {
+      const auto browser = s->settings_window ? s->settings_window->browser() : nullptr;
+      if (!browser) return;
+      const auto frame = browser->GetMainFrame();
+      frame->ExecuteJavaScript("document.querySelector('#translation-target')?.focus()", frame->GetURL(), 0);
+    });
+    Later(state, 2800, [](const std::shared_ptr<State>& s) {
+      if (s->settings_window) KeyTo(s->settings_window->browser(), "ArrowDown", "ArrowDown", VK_DOWN, 1);
+    });
+    Later(state, 3100, [](const std::shared_ptr<State>& s) {
+      const auto browser = s->settings_window ? s->settings_window->browser() : nullptr;
+      if (!browser) return;
+      static CefRefPtr<CefRegistration> capture;
+      capture = CaptureShell(browser, s->evidence_directory / "settings-picker.png");
+      const auto frame = browser->GetMainFrame();
+      frame->ExecuteJavaScript(R"JS((() => {
+        const select = document.querySelector('#translation-target');
+        const picker = getComputedStyle(select, '::picker(select)');
+        const first = select.options[0].getBoundingClientRect();
+        console.info('RED_SETTINGS_PICKER:' + JSON.stringify({
+          open: select.matches(':open'), custom: getComputedStyle(select).appearance === 'base-select',
+          graphite: picker.backgroundImage.includes('rgb(46, 48, 55)'),
+          visible: first.top >= 0 && first.bottom <= innerHeight && first.height > 0,
+          width: innerWidth, options: select.options.length, value: select.value
+        }));
+      })())JS", frame->GetURL(), 0);
+    });
+    Later(state, 3500, [](const std::shared_ptr<State>& s) {
+      if (s->settings_window) KeyTo(s->settings_window->browser(), "Escape", "Escape", VK_ESCAPE);
+    });
+    Later(state, 3700, [](const std::shared_ptr<State>& s) {
+      const auto browser = s->settings_window ? s->settings_window->browser() : nullptr;
+      if (!browser) return;
+      const auto frame = browser->GetMainFrame();
+      frame->ExecuteJavaScript(R"JS((() => {
+        const select = document.querySelector('#translation-target');
+        console.info('RED_PICKER_ESCAPE:' + JSON.stringify({ closed: !select.matches(':open'),
+          focus: document.activeElement === select, value: select.value }));
+      })())JS", frame->GetURL(), 0);
+    });
+    Later(state, 3900, [](const std::shared_ptr<State>& s) {
+      if (s->settings_window) KeyTo(s->settings_window->browser(), "ArrowDown", "ArrowDown", VK_DOWN, 1);
+    });
+    Later(state, 4200, [](const std::shared_ptr<State>& s) {
+      const auto browser = s->settings_window ? s->settings_window->browser() : nullptr;
+      KeyTo(browser, "ArrowDown", "ArrowDown", VK_DOWN);
+      KeyTo(browser, "Enter", "Enter", VK_RETURN);
+    });
+    Later(state, 4800, [](const std::shared_ptr<State>& s) {
+      auto data = CefDictionaryValue::Create();
+      data->SetString("target", s->session->preferences->Get().translation_target);
+      s->Record("settings_picker_saved", data);
+      if (s->settings_window) s->settings_window->Close();
+      s->menu_done = true;
+    });
+    return;
+  }
+  if (mode == "little-sol-hotkey" && state->session && state->session->preferences) {
+    state->menu_popup = std::make_shared<MenuPopup>(state);
+    auto& session = *state->session;
+    session.background = std::make_shared<BackgroundHost>(BackgroundHost::Actions{}, session.interface_locale,
+                                                         session.preferences->Get().little_sol_binding);
+    session.background->SetEnabled(true);
+    auto data = CefDictionaryValue::Create();
+    data->SetBool("registered", session.background->hotkey_registered());
+    state->Record("little_sol_hotkey_before", data);
+    Later(state, 800, [](const std::shared_ptr<State>& s) { ShowSettings(s); });
+    Later(state, 2800, [](const std::shared_ptr<State>& s) {
+      const auto browser = s->settings_window ? s->settings_window->browser() : nullptr;
+      if (!browser) return;
+      const auto frame = browser->GetMainFrame();
+      frame->ExecuteJavaScript(R"JS((async () => {
+        const query = request => new Promise((resolve, reject) => cefQuery({
+          request: JSON.stringify(request), persistent: false,
+          onSuccess: raw => resolve(JSON.parse(raw)), onFailure: reject
+        }));
+        const save = key => query({ method: 'settings.shortcut', action: 'littleSolGlobal',
+          binding: { key, ctrl: true, alt: true, shift: false } });
+        let conflict = 0;
+        try { await save(131); } catch (code) { conflict = code; }
+        const afterConflict = (await query({ method: 'settings.get' })).preferences.littleSolBinding?.key;
+        document.querySelector('[data-section="keyboard"]').click();
+        const pause = () => new Promise(resolve => setTimeout(resolve, 30));
+        await pause();
+        const row = document.querySelector('.settings-shortcut-row');
+        row.querySelector('.settings-shortcut-key').click();
+        await pause();
+        const editor = document.querySelector('.settings-shortcut-editor');
+        const key = editor.querySelectorAll('select')[1];
+        key.value = '132';
+        key.dispatchEvent(new Event('change', { bubbles: true }));
+        await pause();
+        editor.requestSubmit();
+        for (let i = 0; i < 45 && !document.querySelector('.settings-shortcut-key')?.textContent.includes('F21'); i++) await pause();
+        const configured = (await query({ method: 'settings.get' })).preferences.littleSolBinding?.key;
+        const label = document.querySelector('.settings-shortcut-key')?.textContent;
+        console.info('RED_LITTLE_SOL_HOTKEY:' + JSON.stringify({ conflict, afterConflict, configured, label }));
+      })())JS", frame->GetURL(), 0);
+    });
+    Later(state, 6500, [](const std::shared_ptr<State>& s) {
+      constexpr int check_id = 0x534F;
+      const bool old_free = RegisterLittleSolHotkey(nullptr, check_id, {VK_F22, true, false, true});
+      if (old_free) UnregisterHotKey(nullptr, check_id);
+      const bool new_free = RegisterLittleSolHotkey(nullptr, check_id, {VK_F21, true, false, true});
+      if (new_free) UnregisterHotKey(nullptr, check_id);
+      auto result = CefDictionaryValue::Create();
+      result->SetBool("old_free", old_free);
+      result->SetBool("new_registered", !new_free && s->session->background->hotkey_registered());
+      s->Record("little_sol_hotkey_after", result);
+      s->session->background.reset();
+      if (s->settings_window) s->settings_window->Close();
+      s->menu_done = true;
+    });
+    return;
+  }
   if (mode == "language-save" || mode == "language-read") {
     CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
       if (const auto owner = weak.lock()) ShowMainMenu(owner, kMainMenuAnchor);
@@ -192,10 +341,16 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
       data->SetString("title", window->GetTitle());
       s->Record("language_window", data);
     });
-    Later(state, 5800, [](const std::shared_ptr<State>& s) {
+    Later(state, 5550, [](const std::shared_ptr<State>& s) {
+      const auto browser = s->settings_window ? s->settings_window->browser() : nullptr;
+      if (!browser) return;
+      const auto frame = browser->GetMainFrame();
+      frame->ExecuteJavaScript("document.querySelector('[data-subsection=links]')?.click()", frame->GetURL(), 0);
+    });
+    Later(state, 5900, [](const std::shared_ptr<State>& s) {
       static CefRefPtr<CefRegistration> capture;
       if (const auto browser = s->settings_window ? s->settings_window->browser() : nullptr)
-        capture = CaptureShell(browser, s->evidence_directory / "settings-language.png");
+        capture = CaptureShell(browser, s->evidence_directory / "settings-little-sol.png");
     });
     Later(state, 6300, [](const std::shared_ptr<State>& s) {
       if (!s->settings_window) return;
@@ -203,11 +358,42 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
       if (!browser) return;
       const bool save = CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-menu") == "language-save";
       const auto script = std::string("(async(save)=>{") + R"JS(
-        const select = document.querySelector('#interface-language');
+        const go = async selector => {
+          document.querySelector(selector).click();
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        };
         const query = request => new Promise((resolve, reject) => cefQuery({
           request: JSON.stringify(request), persistent: false,
           onSuccess: raw => resolve(JSON.parse(raw)), onFailure: reject
         }));
+        const hasOverflow = () => [...document.querySelectorAll('.settings-nav, .settings-content, .settings-card, .settings-nav button, .settings-subnav, .settings-subnav button, .settings-card-actions button, .settings-inline-card button')]
+          .some(element => element.scrollWidth > element.clientWidth + 1);
+        const sidebar = [...document.querySelectorAll('.settings-nav [data-section]')].map(row => row.dataset.section);
+        const browserGroup = document.querySelector('.settings-nav [aria-current="page"]')?.dataset.section === 'general' &&
+          [...document.querySelectorAll('[data-subsection]')].map(row => row.dataset.subsection).join(',') === 'general,startup,downloads,links';
+        const little = document.querySelector('#little-sol-heading')?.closest('section');
+        const rows = [...little.querySelectorAll('.settings-option-row')];
+        const littleRows = rows.length === 3 && rows.every((row, i) => !!row.querySelector('[role="switch"]') &&
+          (i === 1 ? !row.querySelector('p') : !!row.querySelector('p'))) && !hasOverflow();
+        await go('#little-sol-heading + button');
+        const shortcutLink = !!document.querySelector('.settings-shortcut-row');
+        await go('.settings-nav [data-section=profiles]');
+        await go('[data-subsection=passwords]');
+        const passwords = !!document.querySelector('#password-profile') &&
+          document.querySelector('.settings-nav [aria-current="page"]')?.dataset.section === 'profiles';
+        await go('[data-subsection=import]');
+        const imports = !!document.querySelector('#import-profile');
+        await go('.settings-nav [data-section=integrations]');
+        const integrations = !!document.querySelector('#notes-provider') && !!document.querySelector('#integration-services');
+        await go('.settings-nav [data-section=appearance]');
+        const appearance = !!document.querySelector('#clock-format') && !!document.querySelector('#window-backdrop');
+        await go('.settings-nav [data-section=releases]');
+        const about = !!document.querySelector('[data-action=release-notes]');
+        await go('.settings-nav [data-section=languages]');
+        const select = document.querySelector('#interface-language');
+        const languages = !!select && !!document.querySelector('#translation-target');
+        console.info('RED_SETTINGS_GROUPS:' + JSON.stringify({ sidebar, browserGroup, littleRows, shortcutLink,
+          passwords, imports, integrations, appearance, about, languages }));
         let invalid = 0;
         const before = select?.value;
         if (save && select && !select.disabled) {
@@ -219,8 +405,6 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
             await new Promise(resolve => setTimeout(resolve, 20));
         }
         const data = await query({ method: 'settings.get' });
-        const hasOverflow = () => [...document.querySelectorAll('.settings-nav, .settings-content, .settings-card, .settings-nav button, .settings-card-actions button, .settings-inline-card button')]
-          .some(element => element.scrollWidth > element.clientWidth + 1);
         const overflow = hasOverflow();
         const heading = document.querySelector('#interface-language-heading')?.textContent;
         for (const element of document.querySelectorAll('.settings-nav button span, .settings-card h2, .settings-card p, .settings-card-actions button, .settings-inline-card button'))
@@ -241,7 +425,7 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
       })()JS" + (save ? "true)" : "false)");
       browser->GetMainFrame()->ExecuteJavaScript(script, browser->GetMainFrame()->GetURL(), 0);
     });
-    Later(state, 7800, [](const std::shared_ptr<State>& s) {
+    Later(state, 10300, [](const std::shared_ptr<State>& s) {
       if (s->settings_window) s->settings_window->Close();
       s->menu_done = true;
     });

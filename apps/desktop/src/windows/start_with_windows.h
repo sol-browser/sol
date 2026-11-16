@@ -5,24 +5,28 @@
 #include <algorithm>
 #include <filesystem>
 #include <string>
+#include "windows/little_sol_hotkey.h"
 
 namespace red {
 // The Run value's command: sol-tray.exe with the settings it needs before Sol has run (search
 // engine, completions) and a non-default profile. Empty when |engine| is not a plain id or the
 // profile path cannot be quoted.
 inline std::wstring StartWithWindowsCommand(const std::filesystem::path& tray, const std::string& engine, bool suggestions,
-                                            const std::wstring& profile_dir) {
+                                            const std::wstring& profile_dir,
+                                            const KeyBinding& hotkey = kDefaultLittleSolHotkey) {
   if (engine.empty() || engine.size() > 32 || !std::all_of(engine.begin(), engine.end(), [](char c) { return c >= 'a' && c <= 'z'; }))
     return {};
   if (tray.native().find(L'"') != std::wstring::npos || profile_dir.find(L'"') != std::wstring::npos) return {};
   std::wstring command = L"\"" + tray.native() + L"\" --search-engine=" + std::wstring(engine.begin(), engine.end());
   if (suggestions) command += L" --search-suggestions=1";
+  command += LittleSolHotkeyArgument(hotkey);
   if (!profile_dir.empty()) command += L" \"--profile-dir=" + profile_dir + L"\"";
   return command;
 }
 // Writes or removes the entry. Only the installed Sol (%LOCALAPPDATA%\SolBrowser\current) does
 // this; development builds and probes never touch it. Returns false when nothing could be done.
-bool ApplyStartWithWindows(bool enabled, const std::string& engine, bool suggestions, const std::wstring& profile_dir);
+bool ApplyStartWithWindows(bool enabled, const std::string& engine, bool suggestions, const std::wstring& profile_dir,
+                           const KeyBinding& hotkey);
 // Velopack uninstall.
 void RemoveStartWithWindows();
 }  // namespace red

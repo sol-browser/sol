@@ -3,10 +3,13 @@ import { useMessages } from './i18n';
 import { FolderOpen, RotateCcw } from 'lucide-react';
 import type { BrowserPreferences, KeyboardSetting, SettingsCommand } from '../../../packages/browser-contracts/src';
 import { resolveNavigationInput, searchEngines } from './navigation-input';
+import { LittleSolShortcut, littleSolBindingId } from './LittleSolShortcut';
+import { SettingsToggle } from './SettingsToggle';
 
 type Props = { section: 'search' | 'downloads' | 'startup' | 'links' | 'keyboard' | 'tabs'; preferences?: BrowserPreferences;
-  keyboard: KeyboardSetting[]; disabled: boolean; save: (command: SettingsCommand) => Promise<void>; onError: (error: string) => void; manageSiteSearch: () => void };
-export function PreferencesSettings({ section, preferences: prefs, keyboard, disabled, save, onError, manageSiteSearch }: Props) {
+  keyboard: KeyboardSetting[]; disabled: boolean; save: (command: SettingsCommand) => Promise<void>;
+  onError: (error: string) => void; navigate: (section: 'siteSearch' | 'keyboard') => void };
+export function PreferencesSettings({ section, preferences: prefs, keyboard, disabled, save, onError, navigate }: Props) {
   const t = useMessages();
   const [homepage, setHomepage] = useState(prefs?.homepage ?? '');
   const [recording, setRecording] = useState<string>();
@@ -24,7 +27,7 @@ export function PreferencesSettings({ section, preferences: prefs, keyboard, dis
     setRecording(undefined);
     void save({ method: 'settings.shortcut', action, binding: { key, ctrl: event.ctrlKey, shift: event.shiftKey, alt: event.altKey } });
   }
-  if (section === 'tabs') return <section className="settings-card">
+  if (section === 'tabs') return <><section className="settings-card">
     <span className="settings-category">{t('settings.preference.today')}</span><h2>{t('settings.preference.autoArchive')}</h2>
     <p>{t('settings.preference.autoArchiveDetail')}</p>
     <label className="settings-field" htmlFor="auto-archive"><span>{t('settings.preference.archiveAfter')}</span>
@@ -41,19 +44,17 @@ export function PreferencesSettings({ section, preferences: prefs, keyboard, dis
         <option value={120}>{t('settings.preference.hours', { count: 2 })}</option><option value={360}>{t('settings.preference.hours', { count: 6 })}</option><option value={0}>{t('settings.preference.never')}</option>
       </select></label>
     <p className="settings-note">{t('settings.preference.unloadDetail')}</p>
-    <div className="settings-option-row"><div><h2>{t('settings.preference.autoPip')}</h2>
-      <p>{t('settings.preference.autoPipDetail')}</p></div>
-      <button type="button" className="settings-switch" role="switch" aria-label={t('settings.preference.autoPip')}
-        aria-checked={prefs?.autoPictureInPicture ?? false} disabled={disabled}
-        onClick={() => void save({ method: 'settings.set', key: 'autoPictureInPicture', value: !(prefs?.autoPictureInPicture ?? false) })}><span /></button>
+  </section><section className="settings-card">
+    <h2>{t('settings.preference.pipHeading')}</h2>
+    <div className="settings-option-list">
+      <SettingsToggle title={t('settings.preference.autoPip')} description={t('settings.preference.autoPipDetail')}
+        checked={prefs?.autoPictureInPicture ?? false} disabled={disabled}
+        onChange={() => void save({ method: 'settings.set', key: 'autoPictureInPicture', value: !(prefs?.autoPictureInPicture ?? false) })} />
+      <SettingsToggle title={t('settings.preference.pip')} description={t('settings.preference.pipDetail')}
+        checked={prefs?.pipButton ?? true} disabled={disabled}
+        onChange={() => void save({ method: 'settings.set', key: 'pipButton', value: !(prefs?.pipButton ?? true) })} />
     </div>
-    <div className="settings-option-row"><div><h2>{t('settings.preference.pip')}</h2>
-      <p>{t('settings.preference.pipDetail')}</p></div>
-      <button type="button" className="settings-switch" role="switch" aria-label={t('settings.preference.pip')}
-        aria-checked={prefs?.pipButton ?? true} disabled={disabled}
-        onClick={() => void save({ method: 'settings.set', key: 'pipButton', value: !(prefs?.pipButton ?? true) })}><span /></button>
-    </div>
-  </section>;
+  </section></>;
   if (section === 'search') return <><section className="settings-card">
     <span className="settings-category">{t('settings.preference.searchCategory')}</span><h2>{t('settings.preference.searchTitle')}</h2>
     <p>{t('settings.preference.searchDetail')}</p>
@@ -70,7 +71,7 @@ export function PreferencesSettings({ section, preferences: prefs, keyboard, dis
         onClick={() => void save({ method: 'settings.set', key: 'searchSuggestions', value: !(prefs?.searchSuggestions ?? true) })}><span /></button>
     </div>
   </section><section className="settings-card settings-option-row"><div><h2>{t('settings.section.siteSearch')}</h2>
-    <p>{t('settings.preference.siteSearchDetail')}</p></div><button type="button" className="settings-secondary" disabled={disabled} onClick={manageSiteSearch}>{t('settings.preference.manage')}</button></section></>;
+    <p>{t('settings.preference.siteSearchDetail')}</p></div><button type="button" className="settings-secondary" disabled={disabled} onClick={() => navigate('siteSearch')}>{t('settings.preference.manage')}</button></section></>;
   if (section === 'downloads') return <>
     <section className="settings-card"><span className="settings-category">{t('settings.preference.location')}</span><h2>{t('settings.preference.saveTo')}</h2>
       <p>{t('settings.preference.folderDetail')}</p>
@@ -94,18 +95,20 @@ export function PreferencesSettings({ section, preferences: prefs, keyboard, dis
     const options = [
       ['littleSolHotkey', t('settings.preference.littleHotkey'),
         t('settings.preference.littleHotkeyDetail')],
-      ['littleSolClick', t('settings.preference.littleClick'), t('settings.preference.littleClickDetail')],
+      ['littleSolClick', t('settings.preference.littleClick'), undefined],
       ['littleSolLinks', t('settings.preference.littleLinks'),
         t('settings.preference.littleLinksDetail')],
     ] as const;
-    return <section className="settings-card">
-      <span className="settings-category">{t('settings.preference.littleCategory')}</span><h2>{t('settings.preference.littleTitle')}</h2>
-      <p>{t('settings.preference.littleDetail')}</p>
-      {options.map(([key, title, description]) => <div key={key} className="settings-option-row"><div><h2>{title}</h2><p>{description}</p></div>
-        <button type="button" className="settings-switch" role="switch" aria-label={title}
-          aria-checked={prefs?.[key] ?? true} disabled={disabled}
-          onClick={() => void save({ method: 'settings.set', key, value: !(prefs?.[key] ?? true) })}><span /></button>
-      </div>)}
+    return <section className="settings-card" aria-labelledby="little-sol-heading">
+      <div className="settings-group-heading">
+        <h2 id="little-sol-heading">Little Sol</h2>
+        <button type="button" className="settings-text" onClick={() => navigate('keyboard')}>{t('settings.preference.littleChangeShortcut')}</button>
+      </div>
+      <div className="settings-option-list">
+        {options.map(([key, title, description]) => <SettingsToggle key={key} title={title} description={description}
+          checked={prefs?.[key] ?? true} disabled={disabled}
+          onChange={() => void save({ method: 'settings.set', key, value: !(prefs?.[key] ?? true) })} />)}
+      </div>
     </section>;
   }
   if (section === 'startup') return <section className="settings-card">
@@ -137,10 +140,13 @@ export function PreferencesSettings({ section, preferences: prefs, keyboard, dis
   </section>;
   return <section className="settings-card settings-keyboard">
     <span className="settings-category">{t('settings.preference.keyboardCategory')}</span><div className="settings-keyboard-heading"><h2>{t('settings.preference.keyboardTitle')}</h2>
-      <button className="settings-text" type="button" disabled={disabled || !keyboard.some(row => row.custom)}
+      <button className="settings-text" type="button" disabled={disabled || (!prefs?.littleSolBinding && !keyboard.some(row => row.custom))}
         onClick={() => { setRecording(undefined); void save({ method: 'settings.resetShortcuts' }); }}>{t('settings.preference.keyboardReset')}</button></div>
     <p>{t('settings.preference.keyboardDetail')}</p>
-    <div className="settings-shortcuts">{keyboard.map(row => <div className="settings-shortcut-row" key={row.action}>
+    <div className="settings-shortcuts">
+      <LittleSolShortcut key={littleSolBindingId(prefs?.littleSolBinding)} binding={prefs?.littleSolBinding}
+        enabled={prefs?.littleSolHotkey ?? true} disabled={disabled} save={save} />
+      {keyboard.map(row => <div className="settings-shortcut-row" key={row.action}>
       <span>{row.title}</span><button type="button" className="settings-shortcut-key" data-recording={recording === row.action}
         disabled={disabled || !row.editable} aria-label={t('settings.preference.keyboardChange', { action: row.title })}
         title={row.editable ? t('settings.preference.keyboardDefault', { keys: row.defaultLabel }) : t('settings.preference.keyboardFixed')}

@@ -48,8 +48,7 @@ def main():
     def details(rows, event):
         return next((row["details"] for row in rows if row["event"] == event), {})
 
-    def document(rows):
-        prefix = "RED_LANGUAGE:"
+    def document(rows, prefix="RED_LANGUAGE:"):
         for row in rows:
             value = row.get("details", {}).get("message", "")
             if row["event"] == "settings_console" and value.startswith(prefix):
@@ -57,6 +56,7 @@ def main():
         return {}
 
     before, after = document(first), document(second)
+    groups = [document(rows, "RED_SETTINGS_GROUPS:") for rows in (first, second)]
     language = before.get("lang")
     checks = {
         "saved_from_settings": before.get("before") == "en" and before.get("value") == "uk",
@@ -65,6 +65,10 @@ def main():
         and after.get("before") == after.get("value") == "uk" and after.get("heading") == "Мова інтерфейсу",
         "native_settings_title": details(second, "language_window").get("title") == "Налаштування — Sol",
         "localized_menu_action": all(any(row["event"] == "menu_action_ran" for row in rows) for rows in (first, second)),
+        "settings_groups_and_links": all(group.get("sidebar") == [
+            "general", "tabs", "appearance", "search", "languages", "profiles", "integrations", "keyboard", "releases"]
+            and all(group.get(key) for key in ("browserGroup", "littleRows", "shortcutLink", "passwords", "imports",
+                                                "integrations", "appearance", "about", "languages")) for group in groups),
         "minimum_width": all(0 < doc.get("width", 0) <= 720 for doc in (before, after)),
         "translated_search_and_shortcuts": after.get("search") == "Пошук з адресного рядка"
         and after.get("searchOverflow") is False and after.get("shortcuts") is True,
@@ -75,7 +79,7 @@ def main():
                                            and any(row["event"] == "shutdown" for row in rows)
                                            for rows in (first, second)),
     }
-    result = {"checks": checks, "before": before, "after": after}
+    result = {"checks": checks, "before": before, "after": after, "groups": groups}
     (directory / "interface_language.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
     if not all(checks.values()):

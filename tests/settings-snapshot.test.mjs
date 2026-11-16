@@ -27,6 +27,18 @@ test('the Little Sol preferences are booleans', () => {
   }
 });
 
+test('the Little Sol global shortcut round-trips and validates its keys', () => {
+  const value = settings(0);
+  assert.equal(parseSettingsSnapshot(JSON.stringify(value)).preferences.littleSolBinding, undefined);
+  const binding = { key: 132, ctrl: true, alt: true, shift: false };
+  value.preferences.littleSolBinding = binding;
+  assert.deepEqual(parseSettingsSnapshot(JSON.stringify(value)).preferences.littleSolBinding, binding);
+  for (const invalid of [{ key: 123 }, { key: 256 }, { alt: false }, { ctrl: 'true' }]) {
+    value.preferences.littleSolBinding = { ...binding, ...invalid };
+    assert.throws(() => parseSettingsSnapshot(JSON.stringify(value)), /Invalid Little Sol shortcut/);
+  }
+});
+
 test('interface language is optional for old snapshots and only accepts supported settings', () => {
   const value = settings(1);
   assert.equal(parseSettingsSnapshot(JSON.stringify(value)).preferences.interfaceLanguage, undefined);

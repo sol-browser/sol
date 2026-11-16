@@ -14,6 +14,7 @@
 #include "extensions/pinned_extensions.h"
 namespace red {
 class AutoArchive;
+class SyncService;
 // One application/profile lifetime; shared workspace data plus isolated tab
 // data for standalone windows. Website contexts are shared within each profile.
 // Runtime methods run on TID_UI. Window enumeration also serves UI resources
@@ -80,6 +81,7 @@ class AppSession {
   std::map<int, std::shared_ptr<BoostSlot>> boost_slots;
   std::shared_ptr<PinnedExtensions> pinned_extensions;  // Top-bar extension pins (all windows).  // By page browser ID.
   std::shared_ptr<AutoArchive> auto_archive;
+  std::shared_ptr<SyncService> sync;  // Cloud-folder sync (docs/sync.md); null in probe-only sessions.
  private:
   mutable std::mutex mutex_;
   std::vector<std::weak_ptr<State>> windows_;

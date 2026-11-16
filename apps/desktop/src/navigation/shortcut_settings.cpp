@@ -81,15 +81,34 @@ std::string Labels(const std::vector<Entry>& entries, Shortcut action) {
   return result;
 }
 }
-bool ConfigureShortcut(Preferences& prefs, const std::string& name, const KeyBinding* binding, std::string& error) {
+bool ConfigureShortcut(Preferences& prefs, const std::string& name, const KeyBinding* binding, std::string& error,
+                       std::string_view locale) {
+  if (name == kLittleSolHotkeyAction) {
+    const auto key = binding ? *binding : kDefaultLittleSolHotkey;
+    if (!ValidLittleSolHotkey(key)) {
+      error = InterfaceText(locale, InterfaceMessage::ShortcutLittleSolInvalid);
+      return false;
+    }
+    for (const auto& entry : Effective(prefs)) if (entry.key == key) {
+      error = InterfaceTextWithName(locale, InterfaceMessage::ShortcutLittleSolConflict, Title(entry.action, locale));
+      return false;
+    }
+    prefs.little_sol_binding = key;
+    return true;
+  }
   const auto action = ShortcutNamed(name);
   if (!action || !Editable(*action)) { error = "This shortcut is fixed."; return false; }
   if (!binding) {
     auto candidate = prefs; candidate.shortcuts.erase(name); const auto effective = Effective(candidate);
-    for (const auto& restored : effective) if (restored.action == *action)
+    for (const auto& restored : effective) if (restored.action == *action) {
+      if (restored.key == prefs.little_sol_binding) {
+        error = InterfaceText(locale, InterfaceMessage::ShortcutUsedByLittleSol);
+        return false;
+      }
       for (const auto& other : effective) if (other.action != *action && other.key == restored.key) {
         error = "Default is already used for " + Title(other.action) + ". Reset all shortcuts or change it first."; return false;
       }
+    }
     prefs = std::move(candidate); return true;
   }
   const auto& key = *binding;
@@ -99,6 +118,10 @@ bool ConfigureShortcut(Preferences& prefs, const std::string& name, const KeyBin
       key.key == 'Y' || key.key == 'Z' || key.key == 'F' || key.key == 'P' || key.key == 'O' || key.key == '0');
   if (!supported || editing || (key.ctrl && key.alt) || (!key.ctrl && !key.alt && (key.key < 112 || key.key > 123)) ||
       (key.alt && (key.key == 9 || key.key == 115))) { error = "Use Ctrl/Alt with a key, or an F-key. Windows shortcuts are reserved."; return false; }
+  if (key == prefs.little_sol_binding) {
+    error = InterfaceText(locale, InterfaceMessage::ShortcutUsedByLittleSol);
+    return false;
+  }
   for (const auto& entry : Effective(prefs)) if (entry.action != *action && entry.key == key) {
     error = "Already used for " + Title(entry.action) + ". Change that shortcut first."; return false;
   }

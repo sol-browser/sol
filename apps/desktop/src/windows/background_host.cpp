@@ -28,8 +28,8 @@ void CloseTrayHelper() {
   if (const HWND tray = FindWindowW(L"SolTrayHelper", nullptr)) PostMessageW(tray, WM_CLOSE, 0, 0);
 }
 
-BackgroundHost::BackgroundHost(Actions actions, std::string locale)
-    : actions_(std::move(actions)), locale_(std::move(locale)) {
+BackgroundHost::BackgroundHost(Actions actions, std::string locale, KeyBinding binding)
+    : actions_(std::move(actions)), locale_(std::move(locale)), binding_(binding) {
   const HINSTANCE instance = GetModuleHandleW(nullptr);
   WNDCLASSEXW type{sizeof(type)};
   type.lpfnWndProc = Proc; type.hInstance = instance; type.lpszClassName = kClass;
@@ -41,6 +41,7 @@ BackgroundHost::BackgroundHost(Actions actions, std::string locale)
 
 BackgroundHost::~BackgroundHost() {
   SetEnabled(false);
+  if (reserved_hotkey_) UnregisterHotKey(window_, reserved_hotkey_);
   if (window_) DestroyWindow(window_);
   if (icon_handle_) DestroyIcon(icon_handle_);
 }
@@ -54,16 +55,39 @@ void BackgroundHost::SetEnabled(bool enabled) {
     AddIcon();
   } else {
     KillTimer(window_, kHotkeyTimer);
-    if (hotkey_) UnregisterHotKey(window_, kHotkeyId);
-    hotkey_ = false;
+    if (registered_hotkey_) UnregisterHotKey(window_, registered_hotkey_);
+    registered_hotkey_ = 0;
     RemoveIcon();
   }
 }
 
+bool BackgroundHost::ReserveHotkey(const KeyBinding& binding) {
+  if (!window_ || reserved_hotkey_) return false;
+  if (registered_hotkey_ && binding_ == binding) return true;
+  const int id = registered_hotkey_ == kHotkeyId ? kHotkeyId + 1 : kHotkeyId;
+  if (!RegisterLittleSolHotkey(window_, id, binding)) return false;
+  reserved_hotkey_ = id;
+  return true;
+}
+
+void BackgroundHost::FinishHotkeyChange(const KeyBinding& binding, bool enabled, bool saved) {
+  if (!saved || !enabled) {
+    if (reserved_hotkey_) UnregisterHotKey(window_, reserved_hotkey_);
+  } else if (reserved_hotkey_) {
+    if (registered_hotkey_) UnregisterHotKey(window_, registered_hotkey_);
+    registered_hotkey_ = reserved_hotkey_;
+    KillTimer(window_, kHotkeyTimer);
+  }
+  reserved_hotkey_ = 0;
+  if (!saved) return;
+  binding_ = binding;
+  if (icon_) AddIcon();
+}
+
 void BackgroundHost::TakeHotkey() {
-  if (hotkey_ || !enabled_) return;
-  hotkey_ = RegisterHotKey(window_, kHotkeyId, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'N') != FALSE;
-  if (hotkey_) {
+  if (registered_hotkey_ || reserved_hotkey_ || !enabled_) return;
+  if (RegisterLittleSolHotkey(window_, kHotkeyId, binding_)) {
+    registered_hotkey_ = kHotkeyId;
     KillTimer(window_, kHotkeyTimer);
     if (icon_) AddIcon();  // The tooltip names the shortcut now.
     return;
@@ -78,7 +102,8 @@ void BackgroundHost::AddIcon() {
   NOTIFYICONDATAW data{sizeof(data)};
   data.hWnd = window_; data.uID = kTrayId; data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
   data.uCallbackMessage = kTrayMessage; data.hIcon = icon_handle_;
-  const auto tooltip = hotkey_ ? CefString(InterfaceText(locale_, InterfaceMessage::MenuHotkey)).ToWString() : L"Sol";
+  const auto tooltip = registered_hotkey_ ? CefString(InterfaceTextWithName(locale_, InterfaceMessage::MenuHotkey,
+      LittleSolHotkeyLabel(binding_))).ToWString() : L"Sol";
   wcscpy_s(data.szTip, tooltip.c_str());
   if (icon_) { Shell_NotifyIconW(NIM_MODIFY, &data); return; }
   icon_ = Shell_NotifyIconW(NIM_ADD, &data) != FALSE;
@@ -97,7 +122,9 @@ void BackgroundHost::ShowMenu() {
   HMENU menu = CreatePopupMenu();
   if (!menu) return;
   const auto label = [&](InterfaceMessage id) { return CefString(InterfaceText(locale_, id)).ToWString(); };
-  AppendMenuW(menu, MF_STRING, kMenuLittleSol, label(hotkey_ ? InterfaceMessage::MenuNewLittleHotkey : InterfaceMessage::MenuNewLittle).c_str());
+  auto little = label(InterfaceMessage::MenuNewLittle);
+  if (registered_hotkey_) little += L"\t" + CefString(LittleSolHotkeyLabel(binding_)).ToWString();
+  AppendMenuW(menu, MF_STRING, kMenuLittleSol, little.c_str());
   AppendMenuW(menu, MF_STRING, kMenuOpen, label(InterfaceMessage::MenuOpenSol).c_str());
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kMenuQuit, label(InterfaceMessage::MenuQuitSol).c_str());
@@ -125,8 +152,9 @@ LRESULT CALLBACK BackgroundHost::Proc(HWND window, UINT message, WPARAM wparam, 
     self->TakeHotkey();
     return 0;
   }
-  if (message == WM_HOTKEY && wparam == kHotkeyId) {
-    if (self->actions_.little_sol) self->actions_.little_sol();
+  if (message == WM_HOTKEY) {
+    if (self->enabled_ && self->registered_hotkey_ && wparam == static_cast<WPARAM>(self->registered_hotkey_) &&
+        self->actions_.little_sol) self->actions_.little_sol();
     return 0;
   }
   if (message == kTrayMessage) {

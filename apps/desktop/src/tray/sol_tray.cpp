@@ -25,6 +25,7 @@
 using std::min; using std::max;
 #include <gdiplus.h>
 #include "tray/tray_input.h"
+#include "windows/little_sol_hotkey.h"
 #pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 namespace {
@@ -68,6 +69,7 @@ struct Tray {
   unsigned generation = 0; // Of the latest completion request; older replies are dropped.
   bool previewing = false; // The field shows a completion picked with the arrow keys.
   bool hotkey = false, icon_shown = false, opening = false;
+  red::KeyBinding binding = red::kDefaultLittleSolHotkey;
   int hotkey_attempts = 0;
 } tray;
 
@@ -84,7 +86,9 @@ void ShowIcon() {
   NOTIFYICONDATAW data{sizeof(data)};
   data.hWnd = tray.window; data.uID = kTrayId; data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
   data.uCallbackMessage = kTrayMessage; data.hIcon = tray.icon;
-  wcscpy_s(data.szTip, tray.hotkey ? L"Sol — Ctrl+Alt+N opens Little Sol" : L"Sol");
+  const auto label = red::LittleSolHotkeyLabel(tray.binding);
+  const auto tip = tray.hotkey ? L"Sol — " + std::wstring(label.begin(), label.end()) + L" opens Little Sol" : L"Sol";
+  wcscpy_s(data.szTip, tip.c_str());
   const DWORD action = tray.icon_shown ? NIM_MODIFY : NIM_ADD;
   if (!Shell_NotifyIconW(action, &data)) return;
   if (!tray.icon_shown) { data.uVersion = NOTIFYICON_VERSION_4; Shell_NotifyIconW(NIM_SETVERSION, &data); }
@@ -102,7 +106,7 @@ void HideIcon() {
 // The Sol that just exited may still hold Ctrl+Alt+N for a moment: try again for a few seconds.
 void TakeHotkey() {
   if (tray.hotkey) return;
-  tray.hotkey = RegisterHotKey(tray.window, kHotkeyId, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'N') != FALSE;
+  tray.hotkey = red::RegisterLittleSolHotkey(tray.window, kHotkeyId, tray.binding);
   if (tray.hotkey) { KillTimer(tray.window, kHotkeyTimer); ShowIcon(); return; }
   if (++tray.hotkey_attempts < 40) SetTimer(tray.window, kHotkeyTimer, 250, nullptr);
   else KillTimer(tray.window, kHotkeyTimer);
@@ -500,7 +504,9 @@ void CreateBar(HINSTANCE instance) {
 void ShowMenu() {
   HMENU menu = CreatePopupMenu();
   if (!menu) return;
-  AppendMenuW(menu, MF_STRING, kMenuLittleSol, tray.hotkey ? L"New Little Sol\tCtrl+Alt+N" : L"New Little Sol");
+  const auto label = red::LittleSolHotkeyLabel(tray.binding);
+  const auto little = tray.hotkey ? L"New Little Sol\t" + std::wstring(label.begin(), label.end()) : L"New Little Sol";
+  AppendMenuW(menu, MF_STRING, kMenuLittleSol, little.c_str());
   AppendMenuW(menu, MF_STRING, kMenuOpen, L"Open Sol");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kMenuQuit, L"Quit Sol");
@@ -555,6 +561,10 @@ void ReadSwitches() {
     if (arg.starts_with(L"--profile-dir=") && arg.find(L'"') == std::wstring::npos) tray.profile = L"\"" + arg + L"\"";
     if (arg.starts_with(L"--search-engine=")) tray.engine = arg.substr(16);
     if (arg == L"--search-suggestions=1") tray.suggest = true;
+    if (arg.starts_with(red::kLittleSolHotkeySwitch)) {
+      const auto binding = red::ParseLittleSolHotkey(std::wstring_view(arg).substr(red::kLittleSolHotkeySwitch.size()));
+      if (binding) tray.binding = *binding;
+    }
   }
   LocalFree(argv);
 }

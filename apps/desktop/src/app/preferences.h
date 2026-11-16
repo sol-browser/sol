@@ -9,13 +9,9 @@
 #include "include/cef_values.h"
 #include "navigation/site_search.h"
 #include "integrations/providers.h"
+#include "windows/little_sol_hotkey.h"
 
 namespace red {
-struct KeyBinding {
-  int key = 0;
-  bool ctrl = false, shift = false, alt = false;
-  bool operator==(const KeyBinding&) const = default;
-};
 struct Preferences {
   Preferences() = default;
   Preferences(const Preferences&) = default;
@@ -42,7 +38,8 @@ struct Preferences {
   bool pip_button = true;  // Picture-in-picture button over website videos.
   bool little_sol_links = true;  // Website links from other apps open in Little Sol (Arc default).
   bool little_sol_click = true;  // Ctrl+Alt+click on a link opens it in Little Sol.
-  bool little_sol_hotkey = true;  // Ctrl+Alt+N from any app; Sol stays in the notification area.
+  bool little_sol_hotkey = true;  // Global opening shortcut and notification-area mode.
+  KeyBinding little_sol_binding = kDefaultLittleSolHotkey;
   int unload_minutes = 60;  // Idle tabs leave memory (0: never).
   // Times on History and Downloads: "system" (the Windows short time format), "12" or "24".
   std::string clock = "system";
@@ -70,6 +67,7 @@ class BrowserPreferences : public std::enable_shared_from_this<BrowserPreference
   bool busy_ = false;
 };
 bool ValidSearchEngine(const std::string& engine);
+std::optional<KeyBinding> ReadKeyBinding(CefRefPtr<CefDictionaryValue> binding);
 CefRefPtr<CefDictionaryValue> IntegrationSettingsDictionary(const IntegrationSettings& settings);
 bool ReadSiteSearches(CefRefPtr<CefListValue> list, std::vector<SiteSearch>& sites);
 bool ReadTranslationKnownLanguages(CefRefPtr<CefListValue> list, std::set<std::string>& languages);

@@ -87,6 +87,11 @@ struct TreeSnapshot {
   const Space* ActiveSpace() const;
 };
 std::string BrowsingProfileId(const TreeSnapshot& tree, const std::string& node = "");
+// Per-entry field checks of ValidateSnapshot, for entries built outside the
+// store (cloud sync). Structure (parents, positions, limits) is not checked.
+bool ValidNodeFields(const TreeNode& node);
+bool ValidSpaceFields(const Space& space);
+bool ValidProfileName(const std::string& name);
 // Sorted root + descendant IDs; empty for an unknown/non-folder root.
 std::vector<std::string> FolderNodeIds(const TreeSnapshot& tree, const std::string& id);
 
@@ -133,6 +138,10 @@ class TreeStore {
   TreeResult Read();
   TreeResult Apply(const TreeCommand& command, const TreeSnapshot* window = nullptr);
   TreeResult Import(const TreeSnapshot& incoming, const std::filesystem::path& backup);
+  // Replaces the tree with |next| (built by cloud sync from a snapshot at
+  // |expected_revision|) in one transaction; 409 if the tree changed meanwhile.
+  // Sidebar width is kept.
+  TreeResult ApplySynced(const TreeSnapshot& next, std::int64_t expected_revision);
   static bool ValidateSnapshot(const TreeSnapshot& snapshot);
   // Metadata/preferences do not invalidate unrelated optimistic tree mutations.
   TreeResult SetPageTitle(const std::string& id, const std::string& url, const std::string& title);

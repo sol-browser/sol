@@ -11,8 +11,8 @@ namespace red {
 namespace {
 constexpr char kPasswordManager[] = "chrome://password-manager/passwords";
 constexpr int64_t kTimeoutMs = 120000;
-// Loads the existing (origin, username) pairs so present sign-ins are kept.
-// Only realms and usernames are read; Chromium never hands passwords to this list.
+// Loads the existing entries by (signon realm, username) so present sign-ins
+// are kept or changed in place. Chromium never hands passwords to this list.
 constexpr char kSetup[] = R"JS((async () => {
   const p = globalThis.chrome && chrome.passwordsPrivate;
   if (!p || typeof p.addPassword !== 'function' || typeof p.getSavedPasswordList !== 'function') return 'unavailable';
@@ -20,15 +20,34 @@ constexpr char kSetup[] = R"JS((async () => {
     try { const r = p.getSavedPasswordList(resolve); if (r && r.then) r.then(resolve, () => resolve([])); }
     catch (e) { try { p.getSavedPasswordList().then(resolve, () => resolve([])); } catch (e2) { resolve([]); } }
   });
-  const seen = new Set();
+  const entries = new Map();
   // Chromium 156 lists realms in affiliatedDomains[]; older builds used urls.signonRealm.
   for (const e of list || []) {
+    if (e.isPasskey) continue;
     const realms = (e.affiliatedDomains || []).map(d => d.signonRealm);
     if (e.urls && e.urls.signonRealm) realms.push(e.urls.signonRealm);
-    for (const realm of realms) if (realm) seen.add(realm + '\n' + (e.username || ''));
+    for (const realm of realms) if (realm) entries.set(realm + '\n' + (e.username || ''), e);
   }
-  globalThis.__redImportSeen = seen;
+  globalThis.__redImportSeen = entries;
   return 'ready';
+})())JS";
+// Cloud sync: %KIND% is "upsert" or "remove"; %REALM% the record's signon realm.
+constexpr char kSync[] = R"JS((async () => {
+  const p = chrome.passwordsPrivate, kind = %KIND%, url = %URL%, username = %USER%, realm = %REALM%;
+  const key = realm + '\n' + username, entry = globalThis.__redImportSeen.get(key);
+  try {
+    if (kind === 'remove') {
+      if (!entry) return 'absent';
+      await p.removeCredential(entry.id, 'DEVICE');
+      globalThis.__redImportSeen.delete(key);
+      return 'removed';
+    }
+    const password = %PASSWORD%;
+    if (entry && entry.id >= 0) { await p.changeCredential(Object.assign({}, entry, { password })); return 'changed'; }
+    await p.addPassword({ url, username, password, note: '', useAccountStore: false });
+    globalThis.__redImportSeen.set(key, { id: -1 });
+    return 'added';
+  } catch (e) { return 'error:' + String((e && e.message) || e).slice(0, 160); }
 })())JS";
 // %URL%, %USER%, %PASSWORD% are replaced with JSON string literals.
 constexpr char kAdd[] = R"JS((async () => {
@@ -44,7 +63,7 @@ constexpr char kAdd[] = R"JS((async () => {
       if (r && r.then) r.then(resolve, reject);
     });
   } catch (e) { return 'error:' + String((e && e.message) || e).slice(0, 160); }
-  globalThis.__redImportSeen.add(key);
+  globalThis.__redImportSeen.set(key, { id: -1 });
   return 'added';
 })())JS";
 
@@ -80,14 +99,17 @@ HWND CreateHost() {
 class Sink final : public CefClient, public CefLifeSpanHandler, public CefLoadHandler, public CefRequestHandler, public CefDevToolsMessageObserver {
  public:
   Sink(std::vector<importer::Login> logins, std::function<void(PasswordSinkResult)> done) : logins_(std::move(logins)), done_(std::move(done)) {}
-  ~Sink() override { importer::WipeAll(logins_); }
+  Sink(CefRefPtr<CefRequestContext> context, std::vector<PasswordOp> ops, std::function<void(PasswordOpsResult)> done)
+      : context_(context), ops_(std::move(ops)), ops_done_(std::move(done)) { applied_.assign(ops_.size(), false); }
+  ~Sink() override { importer::WipeAll(logins_); ops_.clear(); }
   void Start() {
     host_ = CreateHost();
     if (!host_) { Finish("Could not prepare the password store"); return; }
     CefWindowInfo info; info.SetAsChild(host_, CefRect(0, 0, 800, 600)); info.runtime_style = CEF_RUNTIME_STYLE_CHROME;  // Alloy style blocks chrome://password-manager.
     CefBrowserSettings settings;
-    // The global context is the profile whose password store websites use.
-    if (!CefBrowserHost::CreateBrowser(info, this, kPasswordManager, settings, nullptr, CefRequestContext::GetGlobalContext())) {
+    // Import: the global context is the profile whose password store websites use.
+    // Sync: the browsing profile the records belong to.
+    if (!CefBrowserHost::CreateBrowser(info, this, kPasswordManager, settings, nullptr, context_ ? context_ : CefRequestContext::GetGlobalContext())) {
       Finish("Could not open Sol's password manager"); return;
     }
     CefPostDelayedTask(TID_UI, base::BindOnce([](CefRefPtr<Sink> self) { self->Finish("Saving passwords timed out"); }, CefRefPtr<Sink>(this)), kTimeoutMs);
@@ -134,7 +156,9 @@ class Sink final : public CefClient, public CefLifeSpanHandler, public CefLoadHa
     }
     if (value == "added") ++result_.added;
     else if (value == "exists") ++result_.existing;
+    else if (ops_done_ && (value == "changed" || value == "removed" || value == "absent")) {}
     else { ++result_.failed; if (first_error_.empty()) first_error_ = value.empty() ? "no result" : value; }
+    if (ops_done_ && next_ > 0) applied_[next_ - 1] = value == "added" || value == "changed" || value == "removed" || value == "absent";
     Next(browser);
   }
 
@@ -148,6 +172,17 @@ class Sink final : public CefClient, public CefLifeSpanHandler, public CefLoadHa
     if (!pending_) Finish("Could not reach Sol's password manager");
   }
   void Next(CefRefPtr<CefBrowser> browser) {
+    if (ops_done_) {
+      if (next_ >= ops_.size()) { Finish(""); return; }
+      auto& op = ops_[next_++];
+      std::string script = kSync, password = Quote(op.password);
+      Replace(script, "%KIND%", op.kind == PasswordOp::Kind::Remove ? "\"remove\"" : "\"upsert\"");
+      Replace(script, "%URL%", Quote(op.url)); Replace(script, "%USER%", Quote(op.username)); Replace(script, "%REALM%", Quote(op.realm));
+      Replace(script, "%PASSWORD%", password);
+      importer::Wipe(password); importer::Wipe(op.password);
+      Evaluate(browser, script); importer::Wipe(script);
+      return;
+    }
     if (next_ >= logins_.size()) { Finish(""); return; }
     auto& login = logins_[next_++];
     std::string script = kAdd, password = Quote(login.password);
@@ -164,6 +199,11 @@ class Sink final : public CefClient, public CefLifeSpanHandler, public CefLoadHa
     // never while CEF is still dispatching to this observer.
     CefPostTask(TID_UI, base::BindOnce([](CefRefPtr<Sink> self) { self->Teardown(); }, CefRefPtr<Sink>(this)));
     if (auto done = std::move(done_)) done(result_);
+    if (auto done = std::move(ops_done_)) {
+      for (auto& op : ops_) importer::Wipe(op.password);
+      PasswordOpsResult result; result.applied = applied_; result.error = result_.error;
+      done(std::move(result));
+    }
   }
   void Teardown() {
     registration_ = nullptr;
@@ -173,6 +213,10 @@ class Sink final : public CefClient, public CefLifeSpanHandler, public CefLoadHa
   void DestroyHost() { if (host_) { DestroyWindow(host_); host_ = nullptr; } }
   std::vector<importer::Login> logins_;
   std::function<void(PasswordSinkResult)> done_;
+  CefRefPtr<CefRequestContext> context_;
+  std::vector<PasswordOp> ops_;
+  std::vector<bool> applied_;
+  std::function<void(PasswordOpsResult)> ops_done_;
   PasswordSinkResult result_;
   std::string first_error_;
   CefRefPtr<CefBrowser> browser_;
@@ -189,6 +233,12 @@ class Sink final : public CefClient, public CefLifeSpanHandler, public CefLoadHa
 void SavePasswords(std::vector<importer::Login> logins, std::function<void(PasswordSinkResult)> done) {
   if (logins.empty()) { done({}); return; }
   CefRefPtr<Sink> sink = new Sink(std::move(logins), std::move(done));
+  sink->Start();
+}
+void ApplyPasswordOps(CefRefPtr<CefRequestContext> context, std::vector<PasswordOp> ops, std::function<void(PasswordOpsResult)> done) {
+  if (ops.empty()) { done({}); return; }
+  if (!context) { PasswordOpsResult result; result.applied.assign(ops.size(), false); result.error = "Profile not ready"; done(std::move(result)); return; }
+  CefRefPtr<Sink> sink = new Sink(context, std::move(ops), std::move(done));
   sink->Start();
 }
 }  // namespace red

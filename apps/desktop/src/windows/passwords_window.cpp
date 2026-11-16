@@ -69,7 +69,7 @@ class Window final : public UtilityWindowDelegate {
   IMPLEMENT_REFCOUNTING(Window);
 };
 }
-bool ShowPasswords(const std::shared_ptr<State>& state, const std::string& profile, bool settings) {
+bool ShowPasswords(const std::shared_ptr<State>& state, const std::string& profile, bool settings, const std::string& search) {
   if (!state || state->private_window || state->standalone_window || !state->session || !state->session->profiles ||
       !state->workspace || state->workspace->WindowClosing()) return false;
   const auto snapshot = state->workspace->Snapshot();
@@ -87,13 +87,14 @@ bool ShowPasswords(const std::shared_ptr<State>& state, const std::string& profi
   auto& manager = state->password_windows[profile];
   if (!manager) manager = std::make_shared<PasswordsWindow>(state, identity->context, "Passwords — " + name + " — Sol");
   manager->UpdateTitle("Passwords — " + name + " — Sol");
-  identity->WhenReady([weak=std::weak_ptr<PasswordsWindow>(manager), settings] { if(auto owner=weak.lock())owner->Show(settings); });
+  identity->WhenReady([weak=std::weak_ptr<PasswordsWindow>(manager), settings, search] { if(auto owner=weak.lock())owner->Show(settings, search); });
   return true;
 }
-void PasswordsWindow::Show(bool settings) {
+void PasswordsWindow::Show(bool settings, const std::string& search) {
   const auto state = state_.lock();
   if (closing_ || !state || !state->window || !state->workspace || state->workspace->WindowClosing()) return;
-  const auto url = settings ? kSettings : kPasswords;
+  // Chromium 156 password_manager router: UrlParam.SEARCH_TERM is "q".
+  const std::string url = settings ? kSettings : search.empty() ? kPasswords : std::string(kPasswords) + "?q=" + search;
   if (window_) {
     if (browser_) browser_->GetMainFrame()->LoadURL(url);
     PresentUtilityWindow(window_, state->window); return;

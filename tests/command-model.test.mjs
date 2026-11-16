@@ -116,6 +116,23 @@ test('a trailing space explicitly searches instead of promoting catalog, tab or 
   assert.ok(commandRows(s,'chrome ','new','').some(row => row.action.id==='store'));
 });
 
+test('a typed domain offers search one arrow away, and a trailing space searches it', () => {
+  const visit = commandRows({}, 'sol-browser.app', 'new', '');
+  assert.equal(visit[0].kind, 'visit'); assert.equal(visit[0].action.url, 'https://sol-browser.app/');
+  assert.equal(visit[1].kind, 'search'); assert.equal(visit[1].action.url, 'https://www.google.com/search?q=sol-browser.app');
+  for (const query of ['sol-browser.app ', 'no-such-domain.example ', 'https://sol-browser.app/download ']) {
+    const rows = commandRows({}, query, 'new', '');
+    assert.equal(rows[0].kind, 'search', query); assert.equal(rows[0].action.url, 'https://www.google.com/search?q=' + encodeURIComponent(query.trim()));
+    assert.equal(rows[1].kind, 'visit', query);
+    assert.equal(new Set(rows.map(row => row.key)).size, rows.length, 'row keys stay unique');
+  }
+  // Editing the current address: a trailing space searches instead of keeping the page.
+  assert.equal(commandRows(snapshot, 'https://current.example/ ', 'navigate', 'https://current.example/')[0].kind, 'search');
+  assert.equal(commandRows(snapshot, 'https://current.example/', 'navigate', 'https://current.example/')[0].kind, 'current');
+  assert.ok(!commandRows({}, 'C:\docs\a.pdf ', 'new', '').some(row => row.kind === 'search'), 'a file path is not searched');
+  assert.ok(commandRows({ searchEngine: 'duckduckgo' }, 'sol-browser.app ', 'new', '')[0].action.url.startsWith('https://duckduckgo.com/'));
+});
+
 test('inline completion preserves the literal prefix and safely resolves saved-tab addresses', () => {
   const s={ nodes:[tab('store',{ currentUrl:'https://chromewebstore.google.com/' })] };
   const rows=commandRows(s,'Chro','new','');

@@ -104,5 +104,11 @@ int main() {
     check(red::IsTreeMethod(method), "Split View commands reach the trusted sidebar/shell route");
   check(!red::IsTreeMethod("split.layout") && !red::IsTreeMethod("split.preview") && !red::IsTreeMethod("split.anything"),
         "retired or unknown Split View methods are refused");
+  check(red::PasswordSearchForUrl("https://sol-browser.app/download?x=1#y") == "sol-browser.app", "page passwords search the site's host");
+  check(red::PasswordSearchForUrl("https://www.example.com:8443/") == "example.com" && red::PasswordSearchForUrl("http://xn--e1afmkfd.xn--p1ai") == "xn--e1afmkfd.xn--p1ai",
+        "www and port are dropped; punycode hosts stay");
+  for (const char* url : {"chrome://settings", "file:///C:/x", "https://user@example.com/", "https://exa mple.com/", "https://example.com&q=x/",
+                          "https:///path", "about:blank", "https://.example.com/", "https://[::1]/"})
+    check(red::PasswordSearchForUrl(url).empty(), "only plain web hosts become a password search");
   return failures ? 1 : 0;
 }

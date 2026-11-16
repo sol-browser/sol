@@ -42,9 +42,9 @@ New-Item -ItemType Directory -Force -Path $work | Out-Null
 $compiler = python (Join-Path $repoRoot 'scripts/fetch_innosetup.py') | Select-Object -Last 1
 if ($LASTEXITCODE -or !(Test-Path -LiteralPath $compiler)) { throw 'Inno Setup setup failed' }
 
-# Mirror the build output, skipping native tests, debug/link files and saved
-# manual-probe/previous app DLLs (sol.dll itself is included).
-& robocopy $source $stage /MIR /XF *.pdb *.ilk *.lib *.exp *.log *_test.exe sol.*.dll /NFL /NDL /NJH /NJS /NP | Out-Null
+# Mirror the build output, skipping native tests, the sol-sync developer tool,
+# debug/link files and saved manual-probe/previous app DLLs (sol.dll itself is included).
+& robocopy $source $stage /MIR /XF *.pdb *.ilk *.lib *.exp *.log *_test.exe sol-sync.exe sol.*.dll /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "Staging failed (robocopy $LASTEXITCODE)" }
 # Build folders retain old hashed UI assets for already-running development
 # renderers. Ship only the current dist, whose entry must match this build.
@@ -71,6 +71,8 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'third_party/cef/CREDITS.html') -Des
 # Velopack (setup, Update.exe, velopack_libc.dll) is MIT: its notice goes with every copy.
 Copy-Item -LiteralPath (Join-Path $repoRoot 'licenses/Velopack-LICENSE.txt') -Destination (Join-Path $notices 'Velopack-LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'licenses/translation') -Destination $notices -Recurse -Force
+# zstd (cloud sync) is BSD-3-Clause: its notice goes with every binary copy.
+Copy-Item -LiteralPath (Join-Path $repoRoot 'third_party/zstd/LICENSE') -Destination (Join-Path $notices 'zstd-LICENSE.txt')
 python (Join-Path $repoRoot 'scripts/brand_exe.py') (Join-Path $stage 'sol.exe') `
     (Join-Path $repoRoot 'apps/desktop/resources/red.ico') $Version
 if ($LASTEXITCODE) { throw 'Stamping sol.exe failed' }

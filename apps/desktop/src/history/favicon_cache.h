@@ -58,6 +58,12 @@ class FaviconCache {
     const auto site = sites_.find(host);
     return site == sites_.end() ? std::nullopt : IconUrl(site->second.fallback);
   }
+  // The site icon saved entries show for |host| (cloud sync sends it along).
+  std::optional<std::string> FallbackPng(const std::string& host) const {
+    std::lock_guard lock(mutex_);
+    const auto site = sites_.find(host);
+    return site == sites_.end() || !site->second.fallback ? std::nullopt : std::optional(site->second.fallback->png);
+  }
   std::optional<std::string> PngForPath(std::string_view path) const {
     constexpr std::string_view prefix = "/favicon/";
     if (!path.starts_with(prefix)) return std::nullopt;

@@ -9,7 +9,7 @@ class PasswordsWindow : public std::enable_shared_from_this<PasswordsWindow> {
  public:
   PasswordsWindow(std::weak_ptr<State> state, CefRefPtr<CefRequestContext> context, std::string title)
       : state_(std::move(state)), context_(context), title_(std::move(title)) {}
-  void Show(bool settings);
+  void Show(bool settings, const std::string& search = {});
   void Close();
   CefRefPtr<CefWindow> window() const { return window_; }  // Native window probes only.
   void Created(CefRefPtr<CefWindow> window);
@@ -28,5 +28,7 @@ class PasswordsWindow : public std::enable_shared_from_this<PasswordsWindow> {
   bool creating_ = false, closing_ = false;
 };
 // Only registered persistent profiles may be opened. Private windows refuse.
-bool ShowPasswords(const std::shared_ptr<State>& state, const std::string& profile, bool settings = false);
+// |search| (from PasswordSearchForUrl) opens the list filtered to that site.
+bool ShowPasswords(const std::shared_ptr<State>& state, const std::string& profile, bool settings = false,
+                   const std::string& search = {});
 }  // namespace red

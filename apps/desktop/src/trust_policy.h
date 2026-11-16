@@ -2,6 +2,7 @@
 #include "web_url.h"
 #include <algorithm>
 #include <cctype>
+#include <string>
 #include <string_view>
 
 namespace red {
@@ -101,6 +102,23 @@ inline bool IsExternalProtocolScheme(std::string_view scheme) {
 // a workspace page or rejects it visibly.
 inline bool IsPasswordManagerUrl(std::string_view url) {
   return url == "chrome://password-manager" || url.starts_with("chrome://password-manager/");
+}
+// "Passwords for This Page" searches the password manager for the page's site:
+// the host of an http(s) address without a leading "www.", only when it is a
+// plain lowercase DNS name (Chromium's GURL lowercases it; IDN is punycode).
+// The term goes into chrome://password-manager/passwords?q= as is.
+inline std::string PasswordSearchForUrl(std::string_view url) {
+  const auto scheme = WebSchemeLength(url);
+  if (!scheme) return {};
+  auto host = url.substr(scheme);
+  host = host.substr(0, host.find_first_of("/?#"));
+  if (host.find('@') != std::string_view::npos) return {};
+  if (const auto port = host.rfind(':'); port != std::string_view::npos) host = host.substr(0, port);
+  if (host.starts_with("www.")) host.remove_prefix(4);
+  if (host.empty() || host.size() > 253 || host.front() == '.' || host.back() == '.') return {};
+  for (const char c : host)
+    if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '.')) return {};
+  return std::string(host);
 }
 enum class ForeignPage { Wait, Adopt, NewTab, Passwords, Reject };
 inline ForeignPage ClassifyForeignPage(std::string_view url) {

@@ -126,6 +126,7 @@ export type Backdrop = 'none' | 'mica' | 'acrylic';
 export type Clock = 'system' | '12' | '24';
 export type KeyBinding = { key: number; ctrl: boolean; shift: boolean; alt: boolean };
 export type BrowserPreferences = { schema: 1; searchEngine: SearchEngine; searchSuggestions?: boolean; siteSearches?: SiteSearch[]; siteSearchActivation?: SiteSearchActivation; autoArchiveHours?: number; autoPictureInPicture?: boolean; autoPipSites?: Record<string, boolean>; pipButton?: boolean; littleSolLinks?: boolean; littleSolClick?: boolean; littleSolHotkey?: boolean; unloadMinutes?: number; clock?: Clock; backdrop?: Backdrop; downloadDirectory: string; askDownload: boolean;
+  littleSolBinding?: KeyBinding;
   notesProvider?: 'googleDocs' | 'word'; integrations?: IntegrationSettings; interfaceLanguage?: InterfaceLanguage;
   translationTarget?: string; translationOffers?: boolean; translationExcludedSites?: string[]; translationKnownLanguages?: string[];
   startup: 'restore' | 'newTab' | 'homepage'; homepage: string; shortcuts: Record<string, KeyBinding> };
@@ -226,6 +227,7 @@ export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
       !object(prefs.shortcuts) || Object.keys(prefs.shortcuts).length > MAX_SHORTCUTS || typeof value.preferencesError !== 'string' ||
       !Array.isArray(value.keyboard) || value.keyboard.length > MAX_SHORTCUTS) throw new Error('Invalid browser preferences');
   for (const binding of Object.values(prefs.shortcuts)) if (!validKeyBinding(binding)) throw new Error('Invalid saved shortcut');
+  if (prefs.littleSolBinding !== undefined && !validLittleSolBinding(prefs.littleSolBinding)) throw new Error('Invalid Little Sol shortcut');
   for (const row of value.keyboard) if (!object(row) || typeof row.action !== 'string' || row.action.length > 32 ||
       typeof row.title !== 'string' || row.title.length > 80 || typeof row.label !== 'string' || row.label.length > 80 ||
       typeof row.defaultLabel !== 'string' || row.defaultLabel.length > 80 || typeof row.custom !== 'boolean' || typeof row.editable !== 'boolean')
@@ -235,6 +237,11 @@ export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
 function validKeyBinding(value: unknown): value is KeyBinding {
   return object(value) && Number.isSafeInteger(value.key) && (value.key as number) > 0 && (value.key as number) <= 255 &&
     typeof value.ctrl === 'boolean' && typeof value.shift === 'boolean' && typeof value.alt === 'boolean';
+}
+function validLittleSolBinding(value: unknown): value is KeyBinding {
+  if (!validKeyBinding(value) || Number(value.ctrl) + Number(value.alt) + Number(value.shift) < 2) return false;
+  const { key } = value;
+  return (key >= 48 && key <= 57) || (key >= 65 && key <= 90) || (key >= 112 && key <= 135 && key !== 123);
 }
 export const DEFAULT_THEME: Theme = { hue: 307, intensity: 100, mode: 'light', noise: 0, dark: false };
 export type ThemeCommand = { method: 'workspace.setTheme'; hue: number; intensity: number; mode: ThemeMode;

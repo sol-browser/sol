@@ -89,7 +89,7 @@ Arc for macOS, including its signature features.
 | Air Traffic Control | No | ✓ |
 | AI tools / Arc Max | No | ✓ |
 | Browser account required | No | Yes |
-| Tab sync across devices | No | Arc Sync |
+| Sync across devices | Beta³ | Arc Sync |
 | Protected streaming (Spotify, Netflix)² | No | ✓ |
 
 **Not polished**: available, with rough edges.
@@ -99,6 +99,10 @@ compatibility gaps.
 
 ² Sol includes Google's Widevine module, but these services also require the browser itself
 to be certified by Google (VMP signing), which Sol does not have yet.
+
+³ Spaces, Pinned tabs, Favorites and saved passwords sync between your PCs through your own
+OneDrive, Dropbox or Google Drive folder, encrypted with your passphrase; no account. Today tabs
+stay on each PC.
 
 <details>
 <summary>Comparison scope and Arc sources</summary>

@@ -2620,27 +2620,25 @@ bool OpenLittleSolLauncher(const std::shared_ptr<State>& root) {
 }
 // sol-tray.exe holds the tray icon and Ctrl+Alt+N while Sol is not running (src/tray/sol_tray.cpp).
 bool StartTrayHelper(const std::shared_ptr<State>& root) {
+  if (root->session && root->session->preferences && root->session->preferences->busy()) {
+    // The helper must inherit the committed binding even if Settings closes during the save.
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+      if (const auto owner = weak.lock()) red::QuitIfLastWindow(owner);
+    }, std::weak_ptr<State>(root)), 50);
+    return false;
+  }
   wchar_t path[MAX_PATH]{};
   const DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
   if (!length || length >= MAX_PATH) return false;
   const fs::path helper = fs::path(path).parent_path() / L"sol-tray.exe";
   std::error_code error;
   if (!fs::is_regular_file(helper, error)) return false;
-  std::wstring line = L"\"" + helper.wstring() + L"\"";
-  // Its command bar searches with Sol's engine (one of a fixed set, preferences.cpp).
-  if (root->session && root->session->preferences) {
-    const auto engine = root->session->preferences->Get().search_engine;
-    if (!engine.empty() && std::all_of(engine.begin(), engine.end(), [](char c) { return c >= 'a' && c <= 'z'; }))
-      line += L" --search-engine=" + std::wstring(engine.begin(), engine.end());
-    // Google completions in its bar only when Sol's own bar would ask for them (Settings).
-    if (root->session->preferences->Get().search_suggestions) line += L" --search-suggestions=1";
-  }
+  const auto prefs = root->session && root->session->preferences ? &root->session->preferences->Get() : nullptr;
   const auto command = CefCommandLine::GetGlobalCommandLine();
-  if (command->HasSwitch("profile-dir")) {
-    const std::wstring profile = command->GetSwitchValue("profile-dir").ToWString();
-    if (profile.find(L'"') != std::wstring::npos) return false;
-    line += L" \"--profile-dir=" + profile + L"\"";
-  }
+  auto line = red::StartWithWindowsCommand(helper, prefs ? prefs->search_engine : "google",
+      prefs && prefs->search_suggestions, command->GetSwitchValue("profile-dir").ToWString(),
+      prefs ? prefs->little_sol_binding : red::kDefaultLittleSolHotkey);
+  if (line.empty()) return false;
   // Ctrl+Alt+N goes to the helper now; Sol's own icon leaves with this process.
   if (root->session && root->session->background) root->session->background->SetEnabled(false);
   STARTUPINFOW startup{sizeof(startup)};
@@ -2693,7 +2691,8 @@ void StartBackground(const std::shared_ptr<State>& root) {
       bool open = false;
       for (const auto& window : root->session->Windows()) if (window->window) { open = true; window->window->Close(); }
       if (!open) { red::CloseTranslator(); CefQuitMessageLoop(); }
-    }}, session->interface_locale);
+    }}, session->interface_locale,
+    session->preferences ? session->preferences->Get().little_sol_binding : red::kDefaultLittleSolHotkey);
   session->apply_background = [weak] {
     const auto root = weak.lock(); if (!root || !root->session || !root->session->background) return;
     const auto& session = root->session;
@@ -2703,7 +2702,8 @@ void StartBackground(const std::shared_ptr<State>& root) {
       const auto& prefs = session->preferences->Get();
       const auto command = CefCommandLine::GetGlobalCommandLine();
       const std::wstring profile = command->HasSwitch("profile-dir") ? command->GetSwitchValue("profile-dir").ToWString() : std::wstring();
-      red::ApplyStartWithWindows(prefs.little_sol_hotkey, prefs.search_engine, prefs.search_suggestions, profile);
+      red::ApplyStartWithWindows(prefs.little_sol_hotkey, prefs.search_engine, prefs.search_suggestions, profile,
+                                prefs.little_sol_binding);
     }
     // Only while the icon is there: without it, nothing could quit Sol.
     session->keep_running = session->background->enabled() && session->background->icon_visible();

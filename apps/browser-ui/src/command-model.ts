@@ -49,10 +49,13 @@ export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'na
   const tabs = (snapshot.nodes ?? []).filter(n => n.kind === 'tab' && !n.archived && !n.closing);
   const current = tabs.find(n => n.id === snapshot.activeId);
   let primary: CommandRow | undefined;
+  // A typed web address also offers searching for it, one arrow away; a
+  // trailing space puts that search first ("sol-browser.app " searches).
+  let alternate: CommandRow | undefined;
   const tabRow = (n: TreeNode): CommandRow => ({ key: n.id, title: displayTitle(n) || siteLabel(n.currentUrl || n.url, translate),
     detail: siteLabel(n.currentUrl || n.url, translate), icon: n.favicon, kind: 'tab', live: n.live, editText: shownAddress(n.currentUrl || n.url),
     action: { method: 'command.activate', id: n.id } });
-  const unchanged = mode === 'navigate' && text === sourceUrl && !!current;
+  const unchanged = mode === 'navigate' && text === sourceUrl && !!current && !searchRequested;
   if (unchanged) primary = { ...tabRow(current), key: 'current', kind: 'current', editText: undefined,
     action: { method: 'command.submit', url: sourceUrl }, detail: siteLabel(sourceUrl, translate) };
   else if (internalPage(text)) {
@@ -62,9 +65,16 @@ export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'na
     try {
       const engine = snapshot.searchEngine ?? 'google';
       const destination = resolveNavigationInput(text, engine);
-      primary = { key: 'destination', title: destination.search ? (translate?.('command.webQuery', { query: text, engine: searchEngines[engine].title }) ?? `${text} — Search ${searchEngines[engine].title}`) : text,
-        detail: destination.search ? '' : destination.url.startsWith('file:') ? (translate?.('command.file') ?? 'Open file') : (translate?.('command.website') ?? 'Go to website'), kind: destination.search ? 'search' : 'visit',
+      const provider = searchEngines[engine] ?? searchEngines.google;
+      const searchRow = (key: string): CommandRow => ({ key, title: translate?.('command.webQuery', { query: text, engine: provider.title }) ?? `${text} — Search ${provider.title}`,
+        detail: '', kind: 'search', action: { method: 'command.submit', url: provider.url + encodeURIComponent(text) } });
+      primary = destination.search ? searchRow('destination') : { key: 'destination', title: text,
+        detail: destination.url.startsWith('file:') ? (translate?.('command.file') ?? 'Open file') : (translate?.('command.website') ?? 'Go to website'), kind: 'visit',
         action: { method: 'command.submit', url: destination.url } };
+      if (!destination.search && !destination.url.startsWith('file:')) {
+        alternate = searchRow('web-search');
+        if (searchRequested) [primary, alternate] = [{ ...alternate, key: 'destination' }, { ...primary, key: 'website' }];
+      }
     } catch { /* Invalid input still permits switching to a matching saved tab. */ }
   }
   const words = normalizeInput(unchanged ? '' : text).split(/\s+/u).filter(Boolean);
@@ -90,7 +100,7 @@ export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'na
       action: { method: 'command.submit', url: site.url } } as CommandRow, origin: websiteAddress(site.url)!.origin, score: site.score, position: 0 }));
   // Visited pages: below open tabs, never duplicating a tab, prediction or the typed address.
   const known = new Set([...tabs.map(n => n.currentUrl || n.url), ...sites.map(site => site.url),
-    ...(primary?.action.method === 'command.submit' ? [primary.action.url] : [])]);
+    ...[primary, alternate].flatMap(row => row?.action.method === 'command.submit' ? [row.action.url] : [])]);
   const visited = (unchanged || !words.length ? [] : history).filter(entry => !known.has(entry.url)).map((entry, index) => {
     const address = websiteAddress(entry.url);
     const haystack = `${normalizeInput(entry.title)} ${normalizeInput(entry.url)}`;
@@ -107,12 +117,12 @@ export function commandRows(snapshot: Snapshot, input: string, mode: 'new' | 'na
   // and the current-address row are never changed by prediction.
   const local = primary?.kind === 'search' && confident
     ? [first.row, primary, ...ranked.slice(1).map(m => m.row)]
-    : [...(primary ? [primary] : []), ...ranked.map(m => m.row)];
+    : [...(primary ? [primary] : []), ...(alternate ? [alternate] : []), ...ranked.map(m => m.row)];
   // Complete command names execute directly; partial names retain web search.
   // A trailing space continues to explicitly request a search.
   const actionRows = primary?.kind === 'search' ? actions.map(action => action.row) : [];
   const exactAction = !searchRequested && actions[0]?.exact && primary?.kind === 'search';
-  const lead = primary?.kind === 'search' && confident ? 2 : 1;
+  const lead = (primary?.kind === 'search' && confident) || alternate ? 2 : 1;
   const withActions = exactAction ? [actionRows[0], ...local.slice(0,lead), ...actionRows.slice(1), ...local.slice(lead)]
     : [...local.slice(0,lead), ...actionRows.slice(0,2), ...local.slice(lead)];
   if (primary?.kind !== 'search' || snapshot.searchEngine && snapshot.searchEngine !== 'google' || snapshot.searchSuggestions === false)

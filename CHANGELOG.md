@@ -17,7 +17,30 @@ One short line that sums up the release. Optional; the website shows it as the h
 New things first, smaller fixes under "### Fixes". Describe the result for the user, not the code.
 -->
 
-## 0.7.1 — 2026-11-15
+## 0.8.0 — 2026-11-16
+
+Sync your Spaces and passwords between your PCs, through your own cloud folder.
+
+- **Sync (Beta):** Sol keeps your Spaces, Pinned tabs, folders, Favorites,
+  pinned splits and saved passwords the same on your PCs, through a folder
+  that OneDrive, Dropbox or Google Drive already syncs. There is no Sol
+  account: everything is encrypted with your sync passphrase before it leaves
+  your PC, so your cloud only stores files it cannot read. Today tabs stay on
+  each PC. Turn it on in Settings > Profiles & data > Sync, and Sol tells you
+  when your cloud app is not running.
+- **Little Sol:** you can change the global shortcut that opens Little Sol
+  from any app in Settings.
+
+### Fixes
+
+- **Passwords:** "Passwords for This Page" in the main menu no longer closes
+  Sol. It opens your saved passwords for that site.
+- **Sidebar:** a tab no longer disappears from the sidebar for a moment when
+  Sol frees its memory.
+- **Command bar:** typing an address followed by a space now searches for it
+  instead of opening the site, and a typed address also offers a search.
+
+## 0.7.1 — 2026-11-16
 
 A small update for extension popups and localized browser controls.
 

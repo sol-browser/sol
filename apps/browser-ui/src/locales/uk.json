@@ -3,7 +3,28 @@
     "defaultMessage": "Налаштування"
   },
   "settings.section.general": {
-    "defaultMessage": "Загальні"
+    "defaultMessage": "За замовчуванням"
+  },
+  "settings.category.browser": {
+    "defaultMessage": "Браузер"
+  },
+  "settings.category.languages": {
+    "defaultMessage": "Мови й переклад"
+  },
+  "settings.category.data": {
+    "defaultMessage": "Профілі й дані"
+  },
+  "settings.category.integrations": {
+    "defaultMessage": "Інтеграції й розширення"
+  },
+  "settings.category.about": {
+    "defaultMessage": "Про Sol"
+  },
+  "settings.integration.services": {
+    "defaultMessage": "Підключені сервіси"
+  },
+  "settings.preference.pipHeading": {
+    "defaultMessage": "Картинка в картинці"
   },
   "settings.section.appearance": {
     "defaultMessage": "Оформлення"
@@ -303,22 +324,40 @@
     "defaultMessage": "Збережіть сторінку через «Відкрити у просторі» або закрийте вікно після перегляду."
   },
   "settings.preference.littleHotkey": {
-    "defaultMessage": "Відкривати Little Sol через Ctrl+Alt+N у будь-якій програмі"
+    "defaultMessage": "Глобальне скорочення"
+  },
+  "settings.preference.littleChangeShortcut": {
+    "defaultMessage": "Змінити скорочення"
+  },
+  "settings.preference.keyboardLittleSol": {
+    "defaultMessage": "Відкрити Little Sol із будь-якої програми"
+  },
+  "settings.preference.keyboardGlobal": {
+    "defaultMessage": "Глобальне"
+  },
+  "settings.preference.keyboardLittleSolDisabled": {
+    "defaultMessage": "Глобальне скорочення вимкнено. Увімкніть його в розділі «Браузер → Little Sol»."
+  },
+  "settings.preference.keyboardModifiers": {
+    "defaultMessage": "Модифікатори"
+  },
+  "settings.preference.keyboardKey": {
+    "defaultMessage": "Клавіша"
   },
   "settings.preference.littleHotkeyDetail": {
-    "defaultMessage": "Введіть адресу чи запит, щоб відкрити їх у Little Sol. Sol залишається в області сповіщень після закриття вікон і запускається там при вході у Windows. Звідти можна повністю вийти з Sol."
+    "defaultMessage": "Працює в будь-якій програмі. Sol залишається в області сповіщень і запускається разом із Windows."
   },
   "settings.preference.littleClick": {
-    "defaultMessage": "Відкривати посилання в Little Sol із затиснутими Ctrl+Alt"
+    "defaultMessage": "Відкривати посилання через Ctrl+Alt+клік"
   },
   "settings.preference.littleClickDetail": {
     "defaultMessage": "Утримуйте Ctrl+Alt, коли натискаєте посилання на сторінці."
   },
   "settings.preference.littleLinks": {
-    "defaultMessage": "Відкривати посилання з інших програм у Little Sol"
+    "defaultMessage": "Посилання з інших програм"
   },
   "settings.preference.littleLinksDetail": {
-    "defaultMessage": "Посилання з чату або листа відкривається в окремому малому вікні. Якщо вимкнути цей параметр, воно відкриватиметься у вкладці Sol."
+    "defaultMessage": "Відкривати посилання з чатів, пошти й інших програм у Little Sol."
   },
   "settings.preference.startupCategory": {
     "defaultMessage": "ПІД ЧАС ЗАПУСКУ SOL"
@@ -674,45 +713,123 @@
   "toolbar.dismiss": {
     "defaultMessage": "Закрити повідомлення"
   },
-  "toolbar.translateOffer": { "defaultMessage": "Перекласти?" },
-  "toolbar.translateTo": { "defaultMessage": "Мова перекладу сторінки — {language}" },
-  "translation.title": { "defaultMessage": "Переклад сторінки" },
-  "translation.question": { "defaultMessage": "Перекласти цю сторінку? Мова перекладу: {language}" },
-  "translation.translated": { "defaultMessage": "Перекладено з мови: {language}" },
-  "translation.working": { "defaultMessage": "Триває переклад. Мова перекладу: {language}" },
-  "translation.error": { "defaultMessage": "Не вдалося перекласти сторінку" },
-  "translation.start": { "defaultMessage": "Перекласти" },
-  "translation.original": { "defaultMessage": "Показати оригінал" },
-  "translation.options": { "defaultMessage": "Параметри" },
-  "translation.choose": { "defaultMessage": "Вибрати іншу мову" },
-  "translation.never": { "defaultMessage": "Ніколи не перекладати цей сайт" },
-  "translation.settings": { "defaultMessage": "Налаштування мов" },
-  "translation.back": { "defaultMessage": "Назад" },
-  "settings.section.languages": { "defaultMessage": "Мови" },
-  "settings.description.languages": { "defaultMessage": "Налаштуйте переклад вебсторінок у Sol." },
-  "settings.translation.target": { "defaultMessage": "Мова перекладу сторінок" },
-  "settings.translation.offers": { "defaultMessage": "Пропонувати переклад сторінок" },
-  "settings.translation.excluded": { "defaultMessage": "Винятки для сайтів" },
-  "settings.translation.remove": { "defaultMessage": "Вилучити" },
-  "settings.translation.removeSite": { "defaultMessage": "Вилучити {site} зі списку винятків" },
-  "translation.downloading": { "defaultMessage": "Завантаження моделі перекладу" },
-  "translation.downloadProgress": { "defaultMessage": "Завантаження моделі перекладу, {percent}%" },
-  "translation.selectionTitle": { "defaultMessage": "Переклад виділеного тексту" },
-  "translation.selectionSame": { "defaultMessage": "Мова цього тексту вже відповідає вибраній ({language})." },
-  "translation.selectionUnavailable": { "defaultMessage": "Sol не вдалося визначити підтримувану мову виділеного тексту." },
-  "translation.selectionError": { "defaultMessage": "Не вдалося перекласти виділений текст." },
-  "translation.selectionCopy": { "defaultMessage": "Копіювати переклад" },
-  "translation.selectionCopied": { "defaultMessage": "Скопійовано" },
-  "translation.selectionCopyError": { "defaultMessage": "Не вдалося скопіювати переклад." },
-  "translation.close": { "defaultMessage": "Закрити" },
-  "settings.translation.known": { "defaultMessage": "Мови, які ви знаєте" },
-  "settings.translation.knownDetail": { "defaultMessage": "Sol не пропонуватиме автоматичний переклад сторінок цими мовами." },
-  "settings.translation.addKnown": { "defaultMessage": "Додати мову" },
-  "settings.translation.chooseKnown": { "defaultMessage": "Виберіть мову" },
-  "settings.translation.removeKnown": { "defaultMessage": "Вилучити мову «{language}» зі списку" },
-  "native.menu.TranslateSelection": { "defaultMessage": "Перекласти виділений текст" },
-  "native.menu.TranslationRestored": { "defaultMessage": "Показано оригінал. Натисніть" },
-  "native.menu.TranslationUndo": { "defaultMessage": "щоб скасувати." },
+  "toolbar.translateOffer": {
+    "defaultMessage": "Перекласти?"
+  },
+  "toolbar.translateTo": {
+    "defaultMessage": "Мова перекладу сторінки — {language}"
+  },
+  "translation.title": {
+    "defaultMessage": "Переклад сторінки"
+  },
+  "translation.question": {
+    "defaultMessage": "Перекласти цю сторінку? Мова перекладу: {language}"
+  },
+  "translation.translated": {
+    "defaultMessage": "Перекладено з мови: {language}"
+  },
+  "translation.working": {
+    "defaultMessage": "Триває переклад. Мова перекладу: {language}"
+  },
+  "translation.error": {
+    "defaultMessage": "Не вдалося перекласти сторінку"
+  },
+  "translation.start": {
+    "defaultMessage": "Перекласти"
+  },
+  "translation.original": {
+    "defaultMessage": "Показати оригінал"
+  },
+  "translation.options": {
+    "defaultMessage": "Параметри"
+  },
+  "translation.choose": {
+    "defaultMessage": "Вибрати іншу мову"
+  },
+  "translation.never": {
+    "defaultMessage": "Ніколи не перекладати цей сайт"
+  },
+  "translation.settings": {
+    "defaultMessage": "Налаштування мов"
+  },
+  "translation.back": {
+    "defaultMessage": "Назад"
+  },
+  "settings.section.languages": {
+    "defaultMessage": "Мови"
+  },
+  "settings.description.languages": {
+    "defaultMessage": "Налаштуйте переклад вебсторінок у Sol."
+  },
+  "settings.translation.target": {
+    "defaultMessage": "Мова перекладу сторінок"
+  },
+  "settings.translation.offers": {
+    "defaultMessage": "Пропонувати переклад сторінок"
+  },
+  "settings.translation.excluded": {
+    "defaultMessage": "Винятки для сайтів"
+  },
+  "settings.translation.remove": {
+    "defaultMessage": "Вилучити"
+  },
+  "settings.translation.removeSite": {
+    "defaultMessage": "Вилучити {site} зі списку винятків"
+  },
+  "translation.downloading": {
+    "defaultMessage": "Завантаження моделі перекладу"
+  },
+  "translation.downloadProgress": {
+    "defaultMessage": "Завантаження моделі перекладу, {percent}%"
+  },
+  "translation.selectionTitle": {
+    "defaultMessage": "Переклад виділеного тексту"
+  },
+  "translation.selectionSame": {
+    "defaultMessage": "Мова цього тексту вже відповідає вибраній ({language})."
+  },
+  "translation.selectionUnavailable": {
+    "defaultMessage": "Sol не вдалося визначити підтримувану мову виділеного тексту."
+  },
+  "translation.selectionError": {
+    "defaultMessage": "Не вдалося перекласти виділений текст."
+  },
+  "translation.selectionCopy": {
+    "defaultMessage": "Копіювати переклад"
+  },
+  "translation.selectionCopied": {
+    "defaultMessage": "Скопійовано"
+  },
+  "translation.selectionCopyError": {
+    "defaultMessage": "Не вдалося скопіювати переклад."
+  },
+  "translation.close": {
+    "defaultMessage": "Закрити"
+  },
+  "settings.translation.known": {
+    "defaultMessage": "Мови, які ви знаєте"
+  },
+  "settings.translation.knownDetail": {
+    "defaultMessage": "Sol не пропонуватиме автоматичний переклад сторінок цими мовами."
+  },
+  "settings.translation.addKnown": {
+    "defaultMessage": "Додати мову"
+  },
+  "settings.translation.chooseKnown": {
+    "defaultMessage": "Виберіть мову"
+  },
+  "settings.translation.removeKnown": {
+    "defaultMessage": "Вилучити мову «{language}» зі списку"
+  },
+  "native.menu.TranslateSelection": {
+    "defaultMessage": "Перекласти виділений текст"
+  },
+  "native.menu.TranslationRestored": {
+    "defaultMessage": "Показано оригінал. Натисніть"
+  },
+  "native.menu.TranslationUndo": {
+    "defaultMessage": "щоб скасувати."
+  },
   "toolbar.copy": {
     "defaultMessage": "Копіювати посилання"
   },
@@ -948,7 +1065,207 @@
     "defaultMessage": "Паролі зберігаються локально в зашифрованому сховищі Chromium. Перед показом або зміною пароля Windows може попросити підтвердити вашу особу."
   },
   "settings.password.privacy": {
-    "defaultMessage": "У приватному режимі нові паролі не зберігаються. Синхронізація паролів між пристроями недоступна."
+    "defaultMessage": "У приватному режимі нові паролі не зберігаються. Щоб користуватися паролями на інших ПК, увімкніть синхронізацію."
+  },
+  "settings.section.sync": {
+    "defaultMessage": "Синхронізація",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.category": {
+    "defaultMessage": "СИНХРОНІЗАЦІЯ",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.beta": {
+    "defaultMessage": "Бета",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords. Tag beside the headings: the feature is in Beta."
+  },
+  "settings.sync.title": {
+    "defaultMessage": "Ваші простори й паролі на кожному ПК",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.detail": {
+    "defaultMessage": "Sol тримає ваші простори, закріплені вкладки, улюблене й збережені паролі однаковими на ваших ПК через папку, яку вже синхронізує OneDrive, Dropbox або Google Drive. Облікового запису Sol немає.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.encrypted": {
+    "defaultMessage": "Усе шифрується вашою фразою синхронізації ще до того, як залишить цей ПК. Хмара зберігає лише файли, які не може прочитати.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.folder": {
+    "defaultMessage": "Хмарна папка",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.noFolders": {
+    "defaultMessage": "На цьому ПК не знайдено папок OneDrive, Dropbox чи Google Drive. Виберіть будь-яку папку, яку синхронізує ваша хмарна програма.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.choose": {
+    "defaultMessage": "Вибрати іншу папку…",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.provider.onedrive": {
+    "defaultMessage": "OneDrive",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.provider.dropbox": {
+    "defaultMessage": "Dropbox",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.provider.googleDrive": {
+    "defaultMessage": "Google Drive",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.provider.other": {
+    "defaultMessage": "Папка",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.joinTitle": {
+    "defaultMessage": "Ця папка вже синхронізує Sol",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.joinDetail": {
+    "defaultMessage": "Введіть фразу синхронізації, яку ви вибрали на іншому ПК.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.createTitle": {
+    "defaultMessage": "Створіть фразу синхронізації",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.createDetail": {
+    "defaultMessage": "Щонайменше 10 символів. Її потрібно ввести один раз на кожному ПК.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.recovery": {
+    "defaultMessage": "Sol не може відновити забуту фразу. Дані залишаться на кожному ПК, але синхронізацію доведеться налаштувати знову.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.passphrase": {
+    "defaultMessage": "Фраза синхронізації",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.confirm": {
+    "defaultMessage": "Повторіть фразу",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.mismatch": {
+    "defaultMessage": "Фрази не збігаються.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.joinMerge": {
+    "defaultMessage": "Додати простори цього ПК до синхронізованих",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.joinSynced": {
+    "defaultMessage": "Використовувати на цьому ПК синхронізовані простори",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.joinSyncedDetail": {
+    "defaultMessage": "Простори, закріплені вкладки й улюблене цього ПК буде замінено. Паролі завжди об'єднуються.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.turnOn": {
+    "defaultMessage": "Увімкнути синхронізацію",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.join": {
+    "defaultMessage": "Приєднатися",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.working": {
+    "defaultMessage": "Налаштування…",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.status": {
+    "defaultMessage": "Синхронізація через {provider}",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.lastSync": {
+    "defaultMessage": "Остання синхронізація: {time}",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.never": {
+    "defaultMessage": "Ще не синхронізовано",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.running": {
+    "defaultMessage": "Синхронізація…",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.devices": {
+    "defaultMessage": "{count, plural, =0 {Інших ПК ще немає} one {# інший ПК} few {# інші ПК} many {# інших ПК} other {# іншого ПК}}",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.passwords": {
+    "defaultMessage": "{count, plural, one {# збережений пароль} few {# збережені паролі} many {# збережених паролів} other {# збереженого пароля}}",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.unreadable": {
+    "defaultMessage": "Файли деяких ПК не вдалося прочитати з цією фразою.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.clientStopped": {
+    "defaultMessage": "{provider} не запущено на цьому ПК. Sol і далі записує в папку, але до інших ПК нічого не дійде, доки {provider} не запуститься й не синхронізує її.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.clientNotRunning": {
+    "defaultMessage": "{provider} не запущено",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.now": {
+    "defaultMessage": "Синхронізувати зараз",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.off": {
+    "defaultMessage": "Вимкнути синхронізацію",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.offConfirm": {
+    "defaultMessage": "Вимкнути на цьому ПК",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.offDetail": {
+    "defaultMessage": "Цей ПК перестане синхронізуватися, а його файл зникне з хмарної папки. Простори й паролі залишаться тут і на інших ПК.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.cancel": {
+    "defaultMessage": "Скасувати",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.wrongPassphrase": {
+    "defaultMessage": "Ця фраза не відкриває синхронізацію в цій папці.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.weakPassphrase": {
+    "defaultMessage": "Використайте фразу щонайменше з 10 символів.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.corrupt": {
+    "defaultMessage": "Файли синхронізації в цій папці пошкоджені або створені новішою версією Sol.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.folderMissing": {
+    "defaultMessage": "Хмарна папка недоступна. Перевірте, чи працює ваша хмарна програма.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.vaultChanged": {
+    "defaultMessage": "Синхронізацію в цій папці налаштовано заново з іншого ПК. Вимкніть її тут і приєднайтеся знову.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.keyUnavailable": {
+    "defaultMessage": "Windows не вдалося розблокувати ключ синхронізації цього ПК. Вимкніть синхронізацію й налаштуйте її знову.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.io": {
+    "defaultMessage": "Sol не вдалося прочитати або записати файли синхронізації. Він спробує знову.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.busy": {
+    "defaultMessage": "Синхронізація зайнята. Спробуйте за мить.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
+  },
+  "settings.sync.error.unavailable": {
+    "defaultMessage": "Синхронізація доступна у звичайному вікні.",
+    "description": "Settings → Profiles & data → Sync: cloud-folder sync of Spaces and passwords."
   },
   "native.menu.SetDefault": {
     "defaultMessage": "Зробити Sol типовим браузером"
@@ -1941,10 +2258,19 @@
     "defaultMessage": "Перемістити до кошика"
   },
   "native.menu.Hotkey": {
-    "defaultMessage": "Sol — Ctrl+Alt+N відкриває Little Sol"
+    "defaultMessage": "Sol — {name} відкриває Little Sol"
   },
-  "native.menu.NewLittleHotkey": {
-    "defaultMessage": "Нове вікно Little Sol\tCtrl+Alt+N"
+  "native.shortcut.LittleSolInvalid": {
+    "defaultMessage": "Виберіть щонайменше два модифікатори й літеру, цифру або доступну функціональну клавішу."
+  },
+  "native.shortcut.LittleSolConflict": {
+    "defaultMessage": "У Sol це скорочення вже призначене для дії «{name}»."
+  },
+  "native.shortcut.LittleSolUnavailable": {
+    "defaultMessage": "Windows не вдалося зареєструвати {name}. Можливо, це скорочення вже зайняте. Попереднє скорочення збережено."
+  },
+  "native.shortcut.UsedByLittleSol": {
+    "defaultMessage": "Це скорочення вже відкриває Little Sol із будь-якої програми."
   },
   "native.shortcut.Address": {
     "defaultMessage": "Адресний рядок"
@@ -2821,6 +3147,10 @@
   },
   "native.window.DownloadLocation": {
     "defaultMessage": "Папка завантажень"
+  },
+  "native.window.SyncFolder": {
+    "defaultMessage": "Виберіть папку для синхронізації",
+    "description": "Title of the folder chooser for cloud sync."
   },
   "split.unresponsive": {
     "defaultMessage": "Ця сторінка не відповідає."
