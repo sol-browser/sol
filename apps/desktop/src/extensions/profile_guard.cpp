@@ -37,7 +37,7 @@ int Check(const std::shared_ptr<State>& state, CefRefPtr<CefRequestContext> shel
     const auto reasons = entry->GetType("disable_reasons") == VTYPE_LIST ? entry->GetList("disable_reasons") : nullptr;
     const bool enabled = !(reasons && reasons->GetSize()) && !(entry->GetType("state") == VTYPE_INT && entry->GetInt("state") == 0);
     if (location != 5 && location != 10) summary += " " + key.ToString().substr(0, 6) + ":" + std::to_string(location) + ":" + (enabled ? "on" : "off");
-    if (!AllowedInTrustedProfile(location, enabled)) { denied->SetString(denied->GetSize(), key); signature += key.ToString() + ","; }
+    if (!AllowedInTrustedProfile(key.ToString(), location, enabled)) { denied->SetString(denied->GetSize(), key); signature += key.ToString() + ","; }
   }
   // SetList transfers ownership and invalidates |denied|: count first.
   const int count = static_cast<int>(denied->GetSize());

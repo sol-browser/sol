@@ -90,6 +90,7 @@ Arc for macOS, including its signature features.
 | AI tools / Arc Max | No | ✓ |
 | Browser account required | No | Yes |
 | Sync across devices | Beta³ | Arc Sync |
+| Built-in ad blocker | Beta⁴ | Via extensions |
 | Protected streaming (Spotify, Netflix)² | No | ✓ |
 
 **Not polished**: available, with rough edges.
@@ -103,6 +104,9 @@ to be certified by Google (VMP signing), which Sol does not have yet.
 ³ Spaces, Pinned tabs, Favorites and saved passwords sync between your PCs through your own
 OneDrive, Dropbox or Google Drive folder, encrypted with your passphrase; no account. Today tabs
 stay on each PC.
+
+⁴ uBlock Origin is built in and managed in Settings > Ad blocker, with per-site control in the
+site panel.
 
 <details>
 <summary>Comparison scope and Arc sources</summary>
@@ -208,9 +212,9 @@ the CTest, Node and Python unit checks. Allow several GB of disk space.
 ./build/Release/apps/desktop/Release/sol.exe --workspace
 ```
 
-Sol uses a [maintained CEF fork](https://github.com/sol-browser/cef/tree/sol-156).
+Sol uses a [maintained CEF fork](https://github.com/sol-browser/cef/tree/sol-158).
 The exact binary is pinned in [cmake/cef.lock.json](cmake/cef.lock.json);
-the [prebuilt engine release](https://github.com/sol-browser/cef/releases/tag/engine-156.0.31)
+the [prebuilt engine release](https://github.com/sol-browser/cef/releases/tag/engine-158.1.39)
 is available separately. Building the app does not require a Chromium checkout.
 Engine development uses `scripts/build_cef.ps1` and a full checkout.
 

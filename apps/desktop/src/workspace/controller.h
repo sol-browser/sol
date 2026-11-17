@@ -195,6 +195,11 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   // keeps its current address; Pinned/Favorites only at their saved one).
   bool UnloadKeepsPlace(const std::string& id) const;
   void AutoArchiveUnload(const std::string& id, std::function<void(bool)> done);
+  // Sidebar hover: starts loading an unloaded Pinned or Favorite page in the
+  // background (preference preload_on_hover). Not opened within
+  // kPreloadLifetimeMs, it leaves memory again.
+  void PreloadSaved(const std::string& id);
+  static constexpr int kPreloadLifetimeMs = 10 * 60 * 1000;
   bool AutoArchiveClosing(int browser) const;
   void ProtectMediaRequest(int browser) { auto_archive_media_.insert(browser); }
   void TouchAudibleActivity(int browser);
@@ -294,6 +299,21 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   std::string link_opener_, link_last_;
   std::map<int, std::string> browser_nodes_;
   std::set<std::string> creating_;
+  std::set<std::string> preloading_;  // Loaded by hover and not opened yet (PreloadSaved).
+  std::map<std::string, unsigned long long> closed_at_;  // When each node's page last closed (GetTickCount64).
+#if RED_CEF_NAVIGATION_STATE
+  // Session history of pages unloaded to free memory, by node: the node's URL
+  // when it unloaded and the engine's saved state (back/forward, scroll, forms).
+  // Reopening the node with the same URL restores it (EnsurePage, OnCreated).
+  std::map<std::string, std::pair<std::string, CefRefPtr<CefBinaryValue>>> discarded_;
+  std::map<std::string, CefRefPtr<CefBinaryValue>> restoring_;
+#endif
+  void ExpirePreload(const std::string& id);
+  void KeepPreloadHidden(const std::string& id, int checks);
+  // Closes a page loaded only by a hover. Unlike AutoArchiveUnload it does not
+  // wait for UI editing or media: nobody has seen the page. Refuses (false)
+  // only while another close or a tree change is in flight.
+  void UnloadPreload(const std::string& id, std::function<void(bool)> done);
   std::set<std::string> moving_unloads_;
   std::set<std::string> detached_removals_;
   std::map<std::string, std::function<void()>> tab_ready_;

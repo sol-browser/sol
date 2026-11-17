@@ -1,0 +1,15 @@
+{
+  "version": "1.75.4",
+  "url": "https://github.com/gorhill/uBlock/releases/download/1.75.4/uBlock0_1.75.4.chromium.zip",
+  "archive": "uBlock0_1.75.4.chromium.zip",
+  "prefix": "uBlock0.chromium",
+  "size": 6162168,
+  "sha256": "26ad8697a7b19e1ef5f4c0750165dd585cbc7707c72dbc3f3a0bdbcd712f3576",
+  "extension_id": "fkgkibajhfbepljeaefdnfnegdcjomkh",
+  "manifest_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsgdkJHEX8xHAytYy3Rihqn5FoU/cbPKhoorkCCsgF8HR2y2OSWGM1Ojrmnr0ebgM9WA1pl1hr1CmOH7DjgQVKRhzBjK7/Zb6RVJNPVGEQvV9CdCUwOTKsu1qQGRbjm9Z/DkYxgu6B2sLo0ZpQ/IBsmBvs+FGR4CqrWra8GZPwn7n3FibeoxcArWiAx85N2Oyiaef2Geytoog4hS+I5Fs3ymKkEeTYM3tzeC0U5nZ010LCnlQe0cQ3UDOro8VzLosuhaxAsrPFErIOfIUfvV3sNhQJrySqgii9Xv6RWT8TI3pHL1yjevKKTxNb2VbPlTOi5MyzPowWV8hHJEOkwq2dQIDAQAB",
+  "manifest_key_note": "Public key of the official Chrome Web Store CRX; gives the official extension ID. Added to manifest.json by scripts/fetch_ublock.py.",
+  "license": "GPL-3.0-or-later",
+  "source": "https://github.com/gorhill/uBlock/tree/1.75.4",
+  "metadata_source": "https://github.com/gorhill/uBlock/releases/tag/1.75.4 (hash checked 2026-11-17 against the archive used by the 2026-11-17 Dev probe)",
+  "locked_on": "2026-11-17"
+}

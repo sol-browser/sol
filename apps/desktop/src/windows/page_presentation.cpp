@@ -256,6 +256,7 @@ void EmbeddedContent::FinishPresentation(unsigned long long generation, bool foc
         (parked ? 0 : SWP_NOMOVE | SWP_NOSIZE) | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     for (const auto& [id, page] : browsers_)
       if (id != s->content->GetIdentifier()) ShowWindow(page->GetHost()->GetWindowHandle(), SW_HIDE);
+    ReleaseShownAnimations(s->content->GetIdentifier());
   }
   for (const HWND handle : presentation_disabled_) if (IsWindow(handle)) EnableWindow(handle, TRUE);
   presentation_disabled_.clear();

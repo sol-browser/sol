@@ -60,7 +60,22 @@ void ShowExtensionMenu(const std::shared_ptr<State>& state, const std::string& i
     RunExtension(s, id, popup);
   }, "", true, false, item->icon, "", MenuPopup::Selection::OpenPopup);
   menu.Add(pinned ? label(InterfaceMessage::MenuUnpinTopBar) : label(InterfaceMessage::MenuPinTopBar), pinned ? "pinOff" : "pin",
-           [weak, id, pinned, first] { first(); if (const auto s = weak.lock()) PinExtension(s, id, !pinned); }, "", pins != nullptr);
+           [weak, id, pinned, first] { first(); if (const auto s = weak.lock()) PinExtension(s, id, !pinned); }, "", pins != nullptr && !state->private_window);
+#if RED_CEF_EXTENSION_INCOGNITO
+  // Chrome's "Allow in Incognito" (engine API; the extension reloads). Set on the
+  // profile the extension is installed in: the default one for a private window.
+  if (const auto context = state->WebContext(); context) {
+    const bool allowed = context->IsExtensionAllowedInIncognito(id);
+    menu.Add(label(InterfaceMessage::MenuAllowPrivate), "private", [weak, id, allowed, first] {
+      first(); const auto s = weak.lock(); if (!s) return;
+      const auto target = s->WebContext();
+      const bool done = target && target->SetExtensionAllowedInIncognito(id, !allowed);
+      auto data = CefDictionaryValue::Create(); data->SetBool("allowed", !allowed); data->SetBool("done", done);
+      s->Record("extension_private_changed", data);
+      if (s->panel_popup && s->panel_popup->is_open()) s->panel_popup->Publish();
+    }, "", true, allowed);
+  }
+#endif
   menu.Separator();
   menu.Add(label(InterfaceMessage::MenuManageExtensions), "settings", [weak, first] {
     first(); const auto s = weak.lock(); if (!s) return;

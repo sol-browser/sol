@@ -26,7 +26,8 @@ bool HandleSidebarAction(const std::shared_ptr<State>& s,CefRefPtr<CefBrowser> s
   const bool integration=method=="integration.preview";
   const bool x_badge=method=="tab.setXBadgeHidden";
   const bool toggle_integration=method=="tab.setIntegration";
-  if(!new_tab && !drag && !batch && !edit_pinned && !confirm_move && !mute && !duplicate && !integration && !x_badge && !toggle_integration && method!="browser.restartToUpdate" && method!="settings.openProfiles")return false;
+  const bool preload=method=="tab.preload";
+  if(!new_tab && !drag && !batch && !edit_pinned && !confirm_move && !mute && !duplicate && !integration && !x_badge && !toggle_integration && !preload && method!="browser.restartToUpdate" && method!="settings.openProfiles")return false;
   if(!s || !s->workspace || persistent){cb->Failure(400,"Invalid sidebar action");return true;}
   if(s->workspace->WindowClosing()){cb->Failure(409,"Window is closing");return true;}
   if(s->probe) {
@@ -35,6 +36,12 @@ bool HandleSidebarAction(const std::shared_ptr<State>& s,CefRefPtr<CefBrowser> s
     s->Record("shared_sidebar_action",event);
   }
   const auto respond=[s,cb]{Reply(cb,s->workspace->Snapshot());};
+  if (preload) {
+    // A hint, not a command: no snapshot in reply, and anything not eligible is ignored.
+    if (d->GetSize()!=2 || d->GetType("id")!=VTYPE_STRING || d->GetString("id").length()!=36) { cb->Failure(400,"Invalid preload"); return true; }
+    s->workspace->PreloadSaved(d->GetString("id").ToString());
+    cb->Success("{}"); return true;
+  }
   if (toggle_integration) {
     if (s->private_window || s->standalone_window || d->GetSize()!=4 || d->GetType("id")!=VTYPE_STRING ||
         d->GetString("id").length()!=36 || d->GetType("enabled")!=VTYPE_BOOL || d->GetType("provider")!=VTYPE_STRING ||

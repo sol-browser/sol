@@ -1,8 +1,10 @@
 #pragma once
 #include "app/state.h"
+#include "app/content_blocker_bridge.h"
 #include "extensions/pinned_extensions.h"
 #include <map>
 #include <mutex>
+#include <vector>
 
 namespace red {
 struct BrowsingProfile {
@@ -20,6 +22,7 @@ struct BrowsingProfile {
   std::shared_ptr<ExtensionCatalog> extensions;
   std::shared_ptr<DownloadManager> downloads;
   std::shared_ptr<PinnedExtensions> pins;
+  std::shared_ptr<ContentBlockerBridge> blocker;  // On demand (app/content_blocker_settings.h).
   CefRefPtr<CefRegistration> install_watch;
 };
 // Owned by AppSession. All selection and lifetime operations run on TID_UI.
@@ -28,6 +31,7 @@ class BrowsingProfiles {
   void AdoptDefault(const std::shared_ptr<State>& state);
   std::shared_ptr<BrowsingProfile> Get(const std::shared_ptr<State>& state, const std::string& id);
   std::shared_ptr<BrowsingProfile> ForContext(CefRefPtr<CefRequestContext> context) const;
+  std::vector<std::shared_ptr<BrowsingProfile>> All() const;
   void Stop();
   std::optional<std::string> FaviconPng(std::string_view path) const;
  private:

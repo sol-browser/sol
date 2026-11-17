@@ -18,6 +18,9 @@ class EmbeddedContent {
   void ConfigureNewTabWindow(CefWindowInfo& info) const;
   void OnCreated(CefRefPtr<CefBrowser> browser);
   void OnClosed(int id);
+  // A hover-loaded page (animation clock held, page_animations.h) was opened:
+  // release its clock once it is on screen, not while it paints off screen.
+  void ReleaseAnimationsWhenShown(int id);
   void Resize(const CefRect& bounds);
   // Child HWNDs move with the root without changing their local bounds. Tell
   // Chrome so its screen-space anchors (e.g. Save password) follow that move.
@@ -241,6 +244,8 @@ class EmbeddedContent {
   int notification_page_ = -1;
   // Panes of a split being left: kept in place until the next page has painted.
   std::set<int> split_leaving_;
+  std::set<int> held_animations_;  // ReleaseAnimationsWhenShown: released when the page is placed.
+  void ReleaseShownAnimations(int id);
   bool parked_ = false;  // The page being shown paints outside the window first.
   // Where the toast sits: the whole window in full screen, else its page.
   CefRect NotificationArea() const;

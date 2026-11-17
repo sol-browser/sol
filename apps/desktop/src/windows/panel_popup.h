@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include "app/state.h"
+#include "include/cef_callback.h"
 #include "include/views/cef_browser_view.h"
 #include "include/wrapper/cef_message_router.h"
 #include "translation/page_translator.h"
@@ -21,7 +22,13 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   bool EditPinnedPage(const std::string& id);
   bool editing_pin() const { return open_ && kind_ == "editPinned"; }
   // Centered over the window with the page shaded and the window disabled.
-  bool modal() const { return open_ && (kind_ == "editPinned" || kind_ == "moveToProfile"); }
+  bool modal() const { return open_ && (kind_ == "editPinned" || kind_ == "moveToProfile" || kind_ == "installExtension"); }
+  // Chrome's "Add extension?" prompt for a page of this window (engine patch
+  // red_16, CefDialogHandler::OnExtensionInstallPrompt). Returns false when it
+  // cannot be shown here, so Chrome shows its own dialog. Closing the modal, the
+  // window or the page cancels; only the Add button continues.
+  bool ConfirmExtensionInstall(int page, CefRefPtr<CefDictionaryValue> prompt, CefRefPtr<CefCallback> callback);
+  void PageClosed(int page);
   // Confirms moving a loaded tab to a Space that uses another browsing profile.
   bool ConfirmProfileMove(const std::string& id, const std::string& space);
   bool PreviewIntegration(const std::string& node, const CefRect& anchor, HWND surface);
@@ -85,6 +92,16 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   HWND modal_owner_ = nullptr;
   bool saving_pin_ = false;
   CefRefPtr<CefDictionaryValue> profile_move_;
+  // Site popover: the built-in ad blocker on this page ({available, enabled, blocked}),
+  // read from uBlock Origin after the popover opens (app/content_blocker_settings.h).
+  void ReadSiteBlocker();
+  CefRefPtr<CefDictionaryValue> site_blocker_;
+  void CancelExtensionInstall();
+  CefRefPtr<CefDictionaryValue> install_prompt_;  // Sanitized for the document.
+  CefRefPtr<CefCallback> install_callback_;
+  int install_page_ = 0;
+  int install_delay_ms_ = 0;
+  unsigned long long install_shown_at_ = 0;  // GetTickCount64 when presented.
   bool moving_tab_ = false;
   CefRect anchor_;
   float origin_x_ = .5f, integration_origin_y_ = 0.f;

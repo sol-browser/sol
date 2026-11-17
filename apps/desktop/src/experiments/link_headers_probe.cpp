@@ -6,6 +6,8 @@
 #include "experiments/passwords_probe.h"
 #include "experiments/page_background_probe.h"
 #include "include/base/cef_callback.h"
+#include "include/cef_devtools_message_observer.h"
+#include "include/cef_parser.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "workspace/controller.h"
 #include "windows/devtools.h"
@@ -153,6 +155,201 @@ void Unload(std::weak_ptr<State> weak, std::string other) {
   at(10000, [](std::weak_ptr<State> weak, std::string) { SourceLive(weak, "idle"); if (auto s = weak.lock(); s && s->workspace) s->workspace->CycleTab(true); });
   at(12500, [](std::weak_ptr<State> weak, std::string) { SourceLive(weak, "back"); });
   at(13000, [](std::weak_ptr<State> weak, std::string) { if (auto s = weak.lock()) s->link_headers_done = true; });
+}
+// Discard mode (scripts/discard_history_experiment.py, --probe-unload): the
+// source tab follows a link to /source2, scrolls and fills a field, goes to the
+// background, is unloaded for memory and, selected again, must come back with
+// its back entry, scroll position and field value (engine navigation state).
+class DiscardReport final : public CefDevToolsMessageObserver {
+ public:
+  explicit DiscardReport(std::weak_ptr<State> state) : state_(std::move(state)) {}
+  void OnDevToolsMethodResult(CefRefPtr<CefBrowser>, int, bool ok, const void* data, size_t size) override {
+    if (!ok || size > 8192) return;
+    const auto json = CefParseJSON(data, size, JSON_PARSER_RFC);
+    const auto outer = json && json->GetType() == VTYPE_DICTIONARY ? json->GetDictionary() : nullptr;
+    const auto result = outer ? outer->GetDictionary("result") : nullptr;
+    const auto value = result ? result->GetDictionary("value") : nullptr;
+    if (!value || !value->GetBool("sol_discard_probe")) return;
+    if (auto state = state_.lock()) state->Record("discard_probe_page", value->Copy(false));
+  }
+ private:
+  std::weak_ptr<State> state_;
+  IMPLEMENT_REFCOUNTING(DiscardReport);
+};
+std::string g_discard_source_id;
+void AskDiscardPage(std::weak_ptr<State> weak, const char* when) {
+  auto state = weak.lock(); if (!state || !state->workspace) return;
+  const auto browser = state->workspace->LiveBrowser(g_discard_source_id);
+  auto data = CefDictionaryValue::Create(); data->SetString("step", when); data->SetBool("live", browser != nullptr);
+  if (browser) {
+    data->SetString("url", browser->GetMainFrame()->GetURL()); data->SetBool("loading", browser->IsLoading());
+    data->SetBool("can_go_back", browser->CanGoBack());
+  }
+  state->Record("discard_probe_step", data);
+  if (!browser) return;
+  // One registration per page (the restored page is a new browser).
+  static std::map<int, CefRefPtr<CefRegistration>> observers;
+  if (!observers.contains(browser->GetIdentifier()))
+    observers[browser->GetIdentifier()] = browser->GetHost()->AddDevToolsMessageObserver(new DiscardReport(weak));
+  auto args = CefDictionaryValue::Create(); args->SetBool("returnByValue", true);
+  args->SetString("expression", std::string("({ sol_discard_probe: true, when: '") + when + "', path: location.pathname, "
+      "history: history.length, y: Math.round(scrollY), field: document.querySelector('input')?.value ?? null, "
+      "nav: performance.getEntriesByType('navigation')[0]?.type ?? '' })");
+  browser->GetHost()->ExecuteDevToolsMethod(0, "Runtime.evaluate", args);
+}
+void WaitDiscardLoaded(std::weak_ptr<State> weak, int tries) {
+  auto s = weak.lock(); if (!s || !s->workspace) return;
+  const auto browser = s->workspace->LiveBrowser(g_discard_source_id);
+  if ((!browser || browser->IsLoading()) && tries > 0) {
+    CefPostDelayedTask(TID_UI, base::BindOnce(&WaitDiscardLoaded, weak, tries - 1), 250); return;
+  }
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) { AskDiscardPage(weak, "back"); }, weak), 500);
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) { if (auto s = weak.lock()) s->link_headers_done = true; }, weak), 1500);
+}
+void Discard(std::weak_ptr<State> weak, std::string other) {
+  if (auto s = weak.lock(); s && s->workspace) if (const auto snapshot = s->workspace->Snapshot()) if (const auto nodes = snapshot->GetList("nodes"))
+    for (size_t i = 0; i < nodes->GetSize(); ++i) if (const auto node = nodes->GetDictionary(i);
+        node && node->GetString("currentUrl").ToString().find("/source") != std::string::npos) g_discard_source_id = node->GetString("id");
+  const auto at = [&](int ms, auto task) { CefPostDelayedTask(TID_UI, base::BindOnce(task, weak, other), ms); };
+  at(800, [](std::weak_ptr<State> weak, std::string) {
+    auto s = weak.lock(); if (!s || !s->workspace) return;
+    if (const auto b = s->workspace->LiveBrowser(g_discard_source_id)) b->GetMainFrame()->ExecuteJavaScript("location.href = '/source2'", "", 0);
+  });
+  at(2500, [](std::weak_ptr<State> weak, std::string) {
+    auto s = weak.lock(); if (!s || !s->workspace) return;
+    if (const auto b = s->workspace->LiveBrowser(g_discard_source_id))
+      b->GetMainFrame()->ExecuteJavaScript("const f = document.querySelector('input'); f.focus(); f.value = 'kept by discard';"
+          " f.dispatchEvent(new Event('input', { bubbles: true })); f.blur(); scrollTo(0, 1500);", "", 0);
+  });
+  at(3200, [](std::weak_ptr<State> weak, std::string) { AskDiscardPage(weak, "before"); });
+  at(3600, [](std::weak_ptr<State> weak, std::string other) { if (auto s = weak.lock(); s && s->workspace) s->workspace->OpenLink(other, true); });
+  at(9500, [](std::weak_ptr<State> weak, std::string) {
+    AskDiscardPage(weak, "idle");
+    if (auto s = weak.lock(); s && s->workspace) s->workspace->CycleTab(true);
+  });
+  // The restored page is created and loaded on selection; a Dev engine can take
+  // seconds. Ask once it has finished loading (form state is applied on load).
+  at(11000, [](std::weak_ptr<State> weak, std::string) { WaitDiscardLoaded(weak, 36); });
+}
+// Asks a page where its animations are (Runtime.evaluate) and records the answer
+// as preload_probe_animations: works on any site, e.g. the live sol-browser.app.
+class AnimationReport final : public CefDevToolsMessageObserver {
+ public:
+  explicit AnimationReport(std::weak_ptr<State> state) : state_(std::move(state)) {}
+  void OnDevToolsMethodResult(CefRefPtr<CefBrowser>, int, bool ok, const void* data, size_t size) override {
+    if (!ok || size > 8192) return;
+    const auto json = CefParseJSON(data, size, JSON_PARSER_RFC);
+    const auto outer = json && json->GetType() == VTYPE_DICTIONARY ? json->GetDictionary() : nullptr;
+    const auto result = outer ? outer->GetDictionary("result") : nullptr;
+    const auto value = result ? result->GetDictionary("value") : nullptr;
+    if (!value || !value->GetBool("sol_animation_probe")) return;
+    if (auto state = state_.lock()) state->Record("preload_probe_animations", value->Copy(false));
+  }
+ private:
+  std::weak_ptr<State> state_;
+  IMPLEMENT_REFCOUNTING(AnimationReport);
+};
+std::string g_preload_source_id;  // The source node, remembered before it leaves /source.
+void AskAnimations(const std::shared_ptr<State>& state, const char* when) {
+  const auto browser = state->workspace ? state->workspace->LiveBrowser(g_preload_source_id) : nullptr;
+  if (!browser) return;
+  static CefRefPtr<CefRegistration> observer;
+  if (!observer) observer = browser->GetHost()->AddDevToolsMessageObserver(new AnimationReport(state));
+  auto args = CefDictionaryValue::Create(); args->SetBool("returnByValue", true); args->SetBool("awaitPromise", true);
+  args->SetString("expression", std::string("(async () => { const all = document.getAnimations(); let frames = 0; const t0 = performance.now();"
+      " await new Promise(done => { const f = () => { frames++; if (performance.now() - t0 < 200) requestAnimationFrame(f); else done(); };"
+      " requestAnimationFrame(f); setTimeout(done, 400); });"
+      " return { sol_animation_probe: true, when: '") + when +
+      "', url: location.host, vis: document.visibilityState, frames_200ms: frames, count: all.length, finished: all.filter(a => a.playState === 'finished').length, "
+      "times: all.slice(0, 10).map(a => Math.round(a.currentTime ?? -1)).join('_'), age_ms: Math.round(performance.now()) }; })()");
+  browser->GetHost()->ExecuteDevToolsMethod(0, "Runtime.evaluate", args);
+}
+// Preload mode (scripts/preload_hover_experiment.py, --probe-preload-ms): the
+// source tab is pinned and unloaded in the background; a sidebar hover preload
+// must load it without selecting it, and it must leave memory when the
+// shortened preload lifetime ends unopened.
+std::string SourceId(const std::shared_ptr<State>& state) {
+  if (const auto snapshot = state->workspace->Snapshot()) if (const auto nodes = snapshot->GetList("nodes"))
+    for (size_t i = 0; i < nodes->GetSize(); ++i) if (const auto node = nodes->GetDictionary(i);
+        node && node->GetString("currentUrl").ToString().find("/source") != std::string::npos) return node->GetString("id");
+  return {};
+}
+void PreloadStep(std::weak_ptr<State> weak, const char* name) {
+  auto state = weak.lock(); if (!state || !state->workspace) return;
+  const auto id = SourceId(state);
+  const auto snapshot = state->workspace->Snapshot();
+  bool pinned = false, listed_live = false;
+  if (const auto nodes = snapshot->GetList("nodes"))
+    for (size_t i = 0; i < nodes->GetSize(); ++i) if (const auto node = nodes->GetDictionary(i); node && node->GetString("id") == id) {
+      pinned = node->GetBool("pinned"); listed_live = node->GetBool("live");
+    }
+  // live: a page exists; listed_live: what the sidebar shows (a preloaded page looks unloaded).
+  auto data = CefDictionaryValue::Create(); data->SetString("step", name); data->SetBool("pinned", pinned);
+  data->SetBool("live", !id.empty() && state->workspace->LiveBrowser(id) != nullptr); data->SetBool("listed_live", listed_live);
+  data->SetBool("active", !id.empty() && snapshot->GetString("activeId") == id);
+  state->Record("preload_probe_step", data);
+}
+void Preload(std::weak_ptr<State> weak, std::string other) {
+  const auto at = [&](int ms, auto task) { CefPostDelayedTask(TID_UI, base::BindOnce(task, weak, other), ms); };
+  at(1100, [](std::weak_ptr<State> weak, std::string other) { if (auto s = weak.lock(); s && s->workspace) s->workspace->OpenLink(other, true); });
+  at(2500, [](std::weak_ptr<State> weak, std::string) {
+    auto s = weak.lock(); if (!s || !s->workspace) return;
+    auto request = CefDictionaryValue::Create(); request->SetString("method", "tree.pin"); request->SetString("id", SourceId(s));
+    request->SetBool("value", true); request->SetDouble("expectedRevision", s->workspace->Snapshot()->GetDouble("treeRevision"));
+    s->workspace->Handle(request, [](int, const std::string&, CefRefPtr<CefDictionaryValue>) {});
+  });
+  at(4000, [](std::weak_ptr<State> weak, std::string) {
+    auto s = weak.lock(); if (!s || !s->workspace) return;
+    s->workspace->AutoArchiveUnload(SourceId(s), [](bool) {});
+  });
+  at(6000, [](std::weak_ptr<State> weak, std::string) {
+    if (auto s = weak.lock(); s && s->workspace) g_preload_source_id = SourceId(s);
+    PreloadStep(weak, "unloaded");
+    if (auto s = weak.lock(); s && s->workspace) s->workspace->PreloadSaved(SourceId(s));
+  });
+  at(7000, [](std::weak_ptr<State> weak, std::string) {
+    // Plain preload mode: close the page on screen; the preloaded tab must not be shown instead.
+    auto s = weak.lock(); if (!s || !s->workspace || s->link_headers_preload_open) return;
+    const auto active = s->workspace->Snapshot()->GetString("activeId").ToString();
+    if (active.empty() || active == SourceId(s)) return;
+    auto request = CefDictionaryValue::Create(); request->SetString("method", "tree.close"); request->SetString("id", active);
+    request->SetDouble("expectedRevision", s->workspace->Snapshot()->GetDouble("treeRevision"));
+    s->workspace->Handle(request, [](int, const std::string&, CefRefPtr<CefDictionaryValue>) {});
+  });
+  at(7500, [](std::weak_ptr<State> weak, std::string) {
+    // Plain preload mode: Chrome's Activate() on the preloading window (raise to the top).
+    auto s = weak.lock(); if (!s || !s->workspace || s->link_headers_preload_open) return;
+    if (const auto browser = s->workspace->LiveBrowser(SourceId(s)))
+      SetWindowPos(browser->GetHost()->GetWindowHandle(), HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+  });
+  at(8000, [](std::weak_ptr<State> weak, std::string) { PreloadStep(weak, "preloaded"); });
+  // preload-open-fast: opened 300 ms after the preload, while the page still loads.
+  const auto open = [](std::weak_ptr<State> weak, std::string) {
+    auto s = weak.lock(); if (!s || !s->workspace) return;
+    auto request = CefDictionaryValue::Create(); request->SetString("method", "tree.activate"); request->SetString("id", SourceId(s));
+    request->SetDouble("expectedRevision", s->workspace->Snapshot()->GetDouble("treeRevision"));
+    s->workspace->Handle(request, [](int, const std::string&, CefRefPtr<CefDictionaryValue>) {});
+  };
+  if (const auto s = weak.lock(); s && s->link_headers_preload_fast) at(6300, open);
+  // preload-open-shown: keep the preloading window shown off screen (it renders) until opened.
+  for (int ms = 6400; ms < 9900; ms += 400)
+    at(ms, [](std::weak_ptr<State> weak, std::string) {
+      auto s = weak.lock(); if (!s || !s->workspace || !s->link_headers_preload_shown) return;
+      if (const auto browser = s->workspace->LiveBrowser(SourceId(s)); browser && !IsWindowVisible(browser->GetHost()->GetWindowHandle()))
+        SetWindowPos(browser->GetHost()->GetWindowHandle(), nullptr, -4000, -4000, 800, 600, SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
+    });
+  at(10000, [](std::weak_ptr<State> weak, std::string) {
+    auto s = weak.lock(); if (!s || !s->workspace || !s->link_headers_preload_open || s->link_headers_preload_fast) return;
+    auto request = CefDictionaryValue::Create(); request->SetString("method", "tree.activate"); request->SetString("id", SourceId(s));
+    request->SetDouble("expectedRevision", s->workspace->Snapshot()->GetDouble("treeRevision"));
+    s->workspace->Handle(request, [](int, const std::string&, CefRefPtr<CefDictionaryValue>) {});
+  });
+  for (const auto& [ms, when] : {std::pair{10300, "open+300"}, std::pair{10600, "open+600"}, std::pair{11000, "open+1000"}})
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, const char* when) {
+      if (auto s = weak.lock(); s && s->link_headers_preload_open) AskAnimations(s, when);
+    }, weak, when), ms);
+  at(11500, [](std::weak_ptr<State> weak, std::string) { PreloadStep(weak, "expired"); });
+  at(12500, [](std::weak_ptr<State> weak, std::string) { if (auto s = weak.lock()) s->link_headers_done = true; });
 }
 // Print mode: window.print() with a user gesture, then the native windows
 // under the root (class, size) to see what print preview shows.
@@ -456,7 +653,9 @@ void OnLinkHeadersProbeLoad(const std::shared_ptr<State>& state, CefRefPtr<CefBr
   if (state->link_headers_zoom) { Zoom(std::weak_ptr<State>(state), page); return; }
   if (state->link_headers_transfer) { Transfer(std::weak_ptr<State>(state), page); return; }
   if (state->link_headers_tabmenu) { TabMenu(std::weak_ptr<State>(state), url.substr(0, url.find("/source"))); return; }
+  if (state->link_headers_discard) { Discard(std::weak_ptr<State>(state), url.substr(0, url.find("/source")) + "/other"); return; }
   if (state->link_headers_unload) { Unload(std::weak_ptr<State>(state), url.substr(0, url.find("/source")) + "/other"); return; }
+  if (state->link_headers_preload) { Preload(std::weak_ptr<State>(state), url.substr(0, url.find("/source")) + "/other"); return; }
   // Link Peek mode: links from a pinned tab to another site open the preview.
   if (url.ends_with("/source?peek") && state->workspace) state->workspace->TogglePin();
   if (state->link_headers_menu) { CefPostDelayedTask(TID_UI, base::BindOnce(&Click, page), 1200); PeekMenu(std::weak_ptr<State>(state), page); return; }

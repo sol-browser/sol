@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { placement, descendant, ordered, displayTitle, sidebarWidth, favoriteColumns, favoriteColumnLimit, archiveOrder, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, sidebarLayoutKey, sameRowNode } from '../apps/browser-ui/src/sidebar-model.ts';
+import { placement, descendant, ordered, displayTitle, sidebarWidth, favoriteColumns, favoriteColumnLimit, archiveOrder, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, sidebarLayoutKey, sameRowNode, preloadable, preloadHoverMs } from '../apps/browser-ui/src/sidebar-model.ts';
 import { sidebarPresentation } from '../apps/browser-ui/src/sidebar-presentation.ts';
 
 const n = (id, parentId, position, kind = 'tab', pinned = false) => ({ id, parentId, position, kind, pinned, archived: false, favorite: false });
@@ -225,4 +225,13 @@ test('a row is the same when only fields it does not show changed', () => {
   assert.equal(sameRowNode(node, without), false);
   assert.equal(sameRowNode(node, { ...without, peekTitle: 'x' }), false);
   assert.equal(sameRowNode(node, undefined), false); assert.equal(sameRowNode(undefined, undefined), true);
+});
+
+test('hover preload is offered only for unloaded Pinned tabs and Favorites', () => {
+  const tab = (extra = {}) => ({ id: 'a', kind: 'tab', title: 'A', url: 'https://a.test/', position: 0, ...extra });
+  assert.ok(preloadable(tab({ pinned: true })) && preloadable(tab({ favorite: true })));
+  for (const node of [tab(), tab({ pinned: true, live: true }), tab({ pinned: true, closing: true }), tab({ pinned: true, archived: true }),
+    tab({ pinned: true, splitAnchor: 'a' }), { ...tab({ pinned: true }), kind: 'folder' }])
+    assert.equal(preloadable(node), false);
+  assert.ok(preloadHoverMs >= 100 && preloadHoverMs <= 400, 'a short rest, not a pass-over');
 });

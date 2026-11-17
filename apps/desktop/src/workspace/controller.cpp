@@ -1,5 +1,7 @@
 #include "windows/browser_dialogs.h"
 #include "web_url.h"
+#include "windows/page_animations.h"
+#include "include/cef_command_line.h"
 #include "workspace/controller.h"
 #include "translation/page_translator.h"
 #include "app/windows_locale.h"
@@ -18,6 +20,7 @@
 #include <windows.h>
 #include <dwmapi.h>
 #include <algorithm>
+#include <cstdlib>
 #include <cmath>
 #include <chrono>
 #include <tuple>
@@ -452,7 +455,8 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     row->SetBool("pinned", node.pinned); row->SetBool("expanded", node.expanded);
     row->SetBool("favorite", node.favorite); row->SetBool("archived", node.archived); row->SetDouble("archivedAt", static_cast<double>(node.archived_at));
     if (node.x_badge_hidden) row->SetBool("xBadgeHidden", true);
-    const auto live = sessions_.find(node.id);
+    // A page loaded by a sidebar hover looks unloaded until it is opened (PreloadSaved).
+    const auto live = preloading_.contains(node.id) ? sessions_.end() : sessions_.find(node.id);
     const bool failed = live != sessions_.end() && crashed_.contains(live->second->GetIdentifier());
     const auto current = failed ? last_urls_.at(live->second->GetIdentifier()) :
         live != sessions_.end() ? live->second->GetMainFrame()->GetURL().ToString() : node.url;
@@ -502,7 +506,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
       if (peek_icons) if (const auto url = peek_icons->PageUrl(preview->GetIdentifier())) row->SetString("peekFavicon", *url);
       row->SetBool("peek", true);
     }
-    row->SetBool("live", sessions_.contains(node.id)); nodes->SetDictionary(nodes->GetSize(), row);
+    row->SetBool("live", live != sessions_.end()); nodes->SetDictionary(nodes->GetSize(), row);
   }
   result->SetList("nodes", nodes);
   return result;
@@ -722,6 +726,13 @@ void WorkspaceController::OnPageActivationRequested(int browser_id) {
   const auto id = binding->second;
   if (closing_.contains(id) || moving_unloads_.contains(id) || archiving_.contains(id) ||
       auto_closing_.contains(id) || crashed_.contains(browser_id) || IsPeekPage(id)) return;
+  // A page loaded only by a sidebar hover cannot select itself: Chrome raises a
+  // new child window after creating it, which reads as Activate() (user report
+  // 2026-11-16: "pointed at it, it opened, the sidebar selection moved").
+  if (preloading_.contains(id)) {
+    if (state->probe) { auto data = CefDictionaryValue::Create(); data->SetString("id", id); state->Record("preload_activation_ignored", data); }
+    return;
+  }
 
   if (state->window->IsMinimized()) state->window->Restore();
   if (GetForegroundWindow() != state->window->GetWindowHandle()) state->window->Activate();
@@ -878,7 +889,7 @@ void WorkspaceController::UnloadForMove(const std::string& id) {
   if (tree_.active_id == id) {
     tree_.active_id.clear();
     for (const auto& candidate : OrderedTabsForSpace(tree_, tree_.active_space))
-      if (candidate != id && sessions_.contains(candidate) && !moving_unloads_.contains(candidate)) { tree_.active_id = candidate; break; }
+      if (candidate != id && sessions_.contains(candidate) && !preloading_.contains(candidate) && !moving_unloads_.contains(candidate)) { tree_.active_id = candidate; break; }
     for (auto& space : tree_.spaces) if (space.id == tree_.active_space) space.active_id = tree_.active_id;
   }
   EnsureActive(); Publish();
@@ -913,7 +924,7 @@ CefRefPtr<CefBrowser> WorkspaceController::ReleaseForTransfer(const std::string&
   if (tree_.active_id == id) {
     tree_.active_id.clear();
     for (const auto& candidate : OrderedTabsForSpace(tree_, tree_.active_space))
-      if (candidate != id && sessions_.contains(candidate) && !moving_unloads_.contains(candidate)) { tree_.active_id = candidate; break; }
+      if (candidate != id && sessions_.contains(candidate) && !preloading_.contains(candidate) && !moving_unloads_.contains(candidate)) { tree_.active_id = candidate; break; }
     for (auto& space : tree_.spaces) if (space.id == tree_.active_space) space.active_id = tree_.active_id;
   }
   if (remove_entry) RemoveDetachedToday(id);
@@ -1020,6 +1031,16 @@ void WorkspaceController::FinishTabDrag(const std::string& id, bool dropped) {
   MoveToNewWindow(id);
 }
 void WorkspaceController::EnsureActive() {
+  // A hover-loaded page that is opened stays. Its animations start when it is
+  // on screen: a page still loading waits off screen until it has painted.
+  const auto opened = [this](const std::string& id) {
+    if (!preloading_.erase(id)) return;
+    const auto state = state_.lock(); const auto browser = LiveBrowser(id);
+    if (state && state->embedded && browser) state->embedded->ReleaseAnimationsWhenShown(browser->GetIdentifier());
+    else PausePageAnimations(browser, false);
+  };
+  opened(tree_.active_id);
+  if (const auto* split = SelectedSplit()) for (const auto& page : split->pages) opened(page);
   if (profile_changing_) return;
   auto state = state_.lock();
   if (!state || !state->embedded || shutting_down_) return;
@@ -1070,6 +1091,68 @@ void WorkspaceController::EnsureActive() {
   if (creating_.contains(tree_.active_id)) state->embedded->ShowPendingColdTab();
   else state->embedded->CancelPendingColdTab();
 }
+void WorkspaceController::PreloadSaved(const std::string& id) {
+  const auto state = state_.lock();
+  if (!state || !state->embedded || !ready_ || shutting_down_ || stopped_ || profile_changing_ || HasLinkPeek()) return;
+  if (!session_ || !session_->preferences || !session_->preferences->Get().preload_on_hover) return;
+  // At most three at once: a pointer sweeping down the sidebar loads nothing more.
+  if (id == tree_.active_id || sessions_.contains(id) || creating_.contains(id) || preloading_.size() >= 3) return;
+  // Just unloaded (e.g. from its row's menu, the pointer is still on the row): not again at once.
+  const unsigned long long cooldown = state->probe && CefCommandLine::GetGlobalCommandLine()->HasSwitch("probe-preload-ms") ? 500 : 10000;
+  if (const auto closed = closed_at_.find(id); closed != closed_at_.end() && GetTickCount64() - closed->second < cooldown) return;
+  const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
+  if (node == tree_.nodes.end() || node->folder || node->archived || !(node->pinned || node->favorite) || !HasWebScheme(node->url)) return;
+  preloading_.insert(id);
+  EnsurePage(id);
+  if (!creating_.contains(id) && !sessions_.contains(id)) { preloading_.erase(id); return; }
+  if (state->probe) { auto data = CefDictionaryValue::Create(); data->SetString("id", id); state->Record("tab_preload_started", data); }
+  // Probes shorten the lifetime (--probe-preload-ms=<ms>, scripts/preload_hover_experiment.py).
+  int lifetime = kPreloadLifetimeMs;
+  if (state->probe) if (const auto value = CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-preload-ms").ToString(); !value.empty())
+    lifetime = std::clamp(std::atoi(value.c_str()), 100, kPreloadLifetimeMs);
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, std::string id) {
+    if (const auto self = weak.lock()) self->ExpirePreload(id);
+  }, weak_from_this(), id), lifetime);
+}
+// Chrome shows a new child window after creation, sometimes at its real place
+// over the page on screen ("the tab opened when I only pointed at it", user
+// report 2026-11-16). While it is a preload, hide it again: checked every
+// 100 ms for the first |checks| times.
+void WorkspaceController::KeepPreloadHidden(const std::string& id, int checks) {
+  if (!preloading_.contains(id) || shutting_down_ || stopped_ || checks <= 0) return;
+  if (const auto browser = LiveBrowser(id); browser && IsWindowVisible(browser->GetHost()->GetWindowHandle())) {
+    ShowWindow(browser->GetHost()->GetWindowHandle(), SW_HIDE);
+    if (const auto state = state_.lock(); state && state->probe) {
+      auto data = CefDictionaryValue::Create(); data->SetString("id", id); state->Record("preload_window_rehidden", data);
+    }
+  }
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, std::string id, int left) {
+    if (const auto self = weak.lock()) self->KeepPreloadHidden(id, left);
+  }, weak_from_this(), id, checks - 1), 100);
+}
+void WorkspaceController::ExpirePreload(const std::string& id) {
+  if (!preloading_.erase(id) || shutting_down_ || stopped_) return;  // Opened meanwhile.
+  if (id == tree_.active_id) return;
+  if (const auto* split = SelectedSplit(); split && split->Contains(id)) return;
+  if (!LiveBrowser(id)) return;
+  const auto state = state_.lock();
+  UnloadPreload(id, [weak = std::weak_ptr<State>(state), self_weak = weak_from_this(), id](bool closed) {
+    if (const auto s = weak.lock(); s && s->probe) {
+      auto data = CefDictionaryValue::Create(); data->SetString("id", id); data->SetBool("closed", closed); s->Record("tab_preload_expired", data);
+    }
+    // Refused for now (another page is closing or the tree is changing): it
+    // stays a preload and tries again, instead of staying loaded.
+    const auto self = self_weak.lock();
+    if (closed || !self || self->shutting_down_ || self->stopped_ || !self->LiveBrowser(id) || id == self->tree_.active_id) return;
+    if (const auto* split = self->SelectedSplit(); split && split->Contains(id)) return;
+    self->preloading_.insert(id);
+    const auto s = weak.lock();
+    const int retry = s && s->probe && CefCommandLine::GetGlobalCommandLine()->HasSwitch("probe-preload-ms") ? 1000 : 30000;
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> weak, std::string id) {
+      if (const auto again = weak.lock()) again->ExpirePreload(id);
+    }, self_weak, id), retry);
+  });
+}
 void WorkspaceController::EnsurePage(const std::string& id) {
   if (profile_changing_) return;
   if (removing_folder_nodes_.contains(id)) return;
@@ -1084,6 +1167,14 @@ void WorkspaceController::EnsurePage(const std::string& id) {
     std::string url = node.url;
     if (auto pending = next_urls_.find(node.id); pending != next_urls_.end()) { url = std::move(pending->second); next_urls_.erase(pending); }
     if (state->initial_tab == node.id && !state->initial_page_url.empty()) { url = std::move(state->initial_page_url); state->initial_page_url.clear(); }
+#if RED_CEF_NAVIGATION_STATE
+    // A page unloaded for memory comes back with its history, unless something
+    // else asked for another address or its saved address changed since.
+    if (auto saved = discarded_.extract(node.id); saved && saved.mapped().first == url && url == node.url && !state->adopt_page) {
+      if (state->embedded->Create("", node.id)) { restoring_[node.id] = saved.mapped().second; return; }
+      creating_.erase(node.id); error_ = "Cannot create page"; return;
+    }
+#endif
     // A window opened for a tab moved live takes that page instead of loading.
     if (state->adopt_page) {
       auto adopt = std::move(state->adopt_page); state->adopt_page = {};
@@ -1112,6 +1203,23 @@ bool WorkspaceController::CreateLive(const std::string& url, const std::string& 
 void WorkspaceController::OnCreated(CefRefPtr<CefBrowser> browser, const std::string& node_id) {
   if (!creating_.erase(node_id)) { link_initiators_.erase(node_id); browser->GetHost()->CloseBrowser(false); return; }
   sessions_[node_id] = browser; browser_nodes_[browser->GetIdentifier()] = node_id;
+  if (preloading_.contains(node_id)) {
+    PausePageAnimations(browser, true);
+    KeepPreloadHidden(node_id, 30);
+  }
+#if RED_CEF_NAVIGATION_STATE
+  if (auto saved = restoring_.extract(node_id)) {
+    const bool restored = browser->GetHost()->RestoreNavigationState(saved.mapped());
+    if (const auto state = state_.lock(); state && state->probe) {
+      auto data = CefDictionaryValue::Create(); data->SetString("id", node_id); data->SetBool("restored", restored);
+      state->Record("tab_history_restored", data);
+    }
+    if (!restored) {
+      const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == node_id; });
+      if (node != tree_.nodes.end()) browser->GetMainFrame()->LoadURL(node->url);
+    }
+  }
+#endif
 #if CEF_API_ADDED(CEF_EXPERIMENTAL)
   if (auto link = link_initiators_.find(node_id); link != link_initiators_.end()) {
     const auto [url, initiator] = link->second; link_initiators_.erase(link);
@@ -1166,6 +1274,7 @@ void WorkspaceController::OnClosed(int browser_id, const std::string& last_url) 
   crashed_.erase(browser_id);
   sessions_.erase(id); browser_nodes_.erase(binding); std::erase(recent_, id); thumbnails_.Forget(id);
   auto_archive_media_.erase(browser_id);
+  closed_at_[id] = GetTickCount64();  // PreloadSaved leaves a page just unloaded alone.
   if (closing_peeks_.erase(id) || std::erase_if(parked_peeks_, [&](const auto& entry) { return entry.second.id == id; })) {
     page_titles_.erase(id); Publish(); return;
   }
@@ -1255,12 +1364,13 @@ void WorkspaceController::FinishClose(const std::string& id, bool archive, Reply
   // other page does not pull a page out of a collapsed folder either.
   const auto ordered = OrderedTabsForSpace(tree_, tree_.active_space, {}, /*skip_collapsed=*/true);
   for (auto i = recent_.rbegin(); i != recent_.rend(); ++i)
-    if (*i != id && !removing_folder_nodes_.contains(*i) && sessions_.contains(*i) && std::find(ordered.begin(), ordered.end(), *i) != ordered.end()) { command.next_active = *i; break; }
+    if (*i != id && !removing_folder_nodes_.contains(*i) && sessions_.contains(*i) && !preloading_.contains(*i) && std::find(ordered.begin(), ordered.end(), *i) != ordered.end()) { command.next_active = *i; break; }
   // A live page that was never shown (opened in the background) still beats the empty page,
   // but an unloaded entry is never reloaded just to fill the view: with no live page left the
-  // window shows its empty new-tab state (active_id empty) instead.
+  // window shows its empty new-tab state (active_id empty) instead. A page loaded only by a
+  // sidebar hover (preloading_) counts as unloaded: the user has not opened it.
   if (command.next_active.empty()) for (const auto& candidate : ordered)
-    if (candidate != id && !removing_folder_nodes_.contains(candidate) && sessions_.contains(candidate)) { command.next_active = candidate; break; }
+    if (candidate != id && !removing_folder_nodes_.contains(candidate) && sessions_.contains(candidate) && !preloading_.contains(candidate)) { command.next_active = candidate; break; }
   ++closing_commits_;
   if (archive) archiving_.insert(id);
   Dispatch(command, [weak = weak_from_this(), id, done = std::move(done)](int code, const std::string& error, CefRefPtr<CefDictionaryValue> snapshot) {
@@ -1370,6 +1480,11 @@ void WorkspaceController::FlushPageTitle(const std::string& id) {
   }, weak_from_this(), id), 200);
 }
 void WorkspaceController::OnDocumentStarted(int browser, const CefString& url) {
+  // A hover-loaded page's new document gets the paused animation clock again:
+  // a navigation to another process starts with fresh DevTools state, so the
+  // pause sent when the browser was created no longer applies there.
+  if (const auto node = browser_nodes_.find(browser); node != browser_nodes_.end() && preloading_.contains(node->second))
+    PausePageAnimations(LiveBrowser(node->second), true);
   if (const auto state = state_.lock()) {
     const auto profile = state->browser_profiles.find(browser);
     const auto icons = profile == state->browser_profiles.end() ? state->favicons : profile->second->favicons;

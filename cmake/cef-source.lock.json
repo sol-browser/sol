@@ -1,10 +1,10 @@
 {
   "repository": "https://github.com/sol-browser/cef.git",
-  "revision": "8bcf270ea58998150bc6a0dbeba311ccbead7fad",
-  "branch": "sol-156",
+  "revision": "5ffcbd3730777cce29ef01dd6b0f7bbeb006f8da",
+  "branch": "sol-158",
   "upstream_repository": "https://github.com/chromiumembedded/cef.git",
-  "upstream_revision": "a10dae3408911466b2d90409cc3355cbf6043ffb",
-  "cef_branch": "8078",
-  "chromium_tag": "refs/tags/156.0.8078.88",
-  "chromium_revision": "8954d18543712dc11b97c3aca0a6e714aa2d7dcd"
+  "upstream_revision": "8c29be240971eebee960ac92114d3efccb5780ff",
+  "cef_branch": "8127",
+  "chromium_tag": "refs/tags/158.0.8127.18",
+  "chromium_revision": "6449d9f9a6a906edff724b7b220199b3fde4615c"
 }

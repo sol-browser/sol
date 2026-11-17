@@ -1,4 +1,5 @@
 #include "app/browsing_profiles.h"
+#include "app/content_blocker_settings.h"
 #include "app/session.h"
 #include "interface_strings.h"
 #include "windows/pointer.h"
@@ -267,6 +268,7 @@ void PanelPopup::RestoreModalOwner() {
   if (IsWindow(owner)) EnableWindow(owner, TRUE);
 }
 void PanelPopup::Destroyed() {
+  CancelExtensionInstall();
   RestoreModalOwner(); presentation_.Reset(); window_ = nullptr; ready_ = prepared_ = presented_ = false;
 }
 void PanelPopup::Reposition() {
@@ -281,7 +283,7 @@ void PanelPopup::Reposition() {
   const bool compact_integration = hover_only_ && integration_ &&
       (integration_->HasKey("kind") || integration_->GetString("service") == "figma");
   const bool modal = this->modal();
-  const int desired=kind_=="translation" ? 292 : kind_=="selectionTranslation" || kind_=="moveToProfile" ? 360 : kind_=="history" || modal ? kHistoryWidth : compact_integration ? 248 : kPanelWidth;
+  const int desired=kind_=="translation" ? 292 : kind_=="selectionTranslation" || kind_=="moveToProfile" ? 360 : kind_=="installExtension" ? 400 : kind_=="history" || modal ? kHistoryWidth : compact_integration ? 248 : kPanelWidth;
   const bool editor=kind_=="space" || kind_=="newSpace" || kind_=="theme";
   const auto state=state_.lock();
   const auto page=WorkspaceContentArea(root.width,root.height,state && state->sidebar_visible,state?state->sidebar_width:kSidebarWidth);
@@ -367,6 +369,88 @@ bool PanelPopup::ConfirmProfileMove(const std::string& id, const std::string& sp
   }
   return false;
 }
+namespace {
+// Chrome's prompt text, bounded for the panel document (UTF-16 units).
+CefString Bounded(const CefString& text, size_t limit) {
+  auto value = text.ToString16();
+  if (value.size() > limit) {
+    value.resize(limit);
+    if (!value.empty() && value.back() >= 0xD800 && value.back() <= 0xDBFF) value.pop_back();
+  }
+  return CefString(value);
+}
+}  // namespace
+bool PanelPopup::ConfirmExtensionInstall(int page, CefRefPtr<CefDictionaryValue> prompt, CefRefPtr<CefCallback> callback) {
+  const auto s = state_.lock();
+  if (!prompt || !callback) return false;
+  // One prompt at a time: a second one is refused rather than stacked.
+  if (install_callback_) { callback->Cancel(); return true; }
+  if (!s || !s->workspace || shutdown_ || modal() || menu_open_ || !PopupOwnerIsForeground(s->window) ||
+      !IsWindowEnabled(s->window->GetWindowHandle())) return false;
+  auto info = CefDictionaryValue::Create();
+  for (const auto& [key, limit] : {std::pair<const char*, size_t>{"name", 120}, {"title", 200}, {"heading", 300}, {"accept", 60}, {"cancel", 60}})
+    info->SetString(key, prompt->GetType(key) == VTYPE_STRING ? Bounded(prompt->GetString(key), limit) : CefString());
+  if (info->GetString("name").empty() || info->GetString("accept").empty() || info->GetString("cancel").empty()) return false;
+  auto permissions = CefListValue::Create();
+  if (const auto list = prompt->GetType("permissions") == VTYPE_LIST ? prompt->GetList("permissions") : nullptr)
+    for (size_t i = 0; i < list->GetSize() && permissions->GetSize() < 40; ++i) {
+      const auto row = list->GetType(i) == VTYPE_DICTIONARY ? list->GetDictionary(i) : nullptr;
+      if (!row || row->GetType("text") != VTYPE_STRING) continue;
+      auto item = CefDictionaryValue::Create();
+      item->SetString("text", Bounded(row->GetString("text"), 400));
+      item->SetString("details", row->GetType("details") == VTYPE_STRING ? Bounded(row->GetString("details"), 2000) : CefString());
+      permissions->SetDictionary(permissions->GetSize(), item);
+    }
+  const int permission_count = static_cast<int>(permissions->GetSize());
+  info->SetList("permissions", permissions);  // Detaches |permissions|.
+  // Only a PNG, shown as an image: never markup.
+  if (const auto icon = prompt->GetType("icon") == VTYPE_BINARY ? prompt->GetBinary("icon") : nullptr;
+      icon && icon->GetSize() > 8 && icon->GetSize() <= 512 * 1024) {
+    std::string bytes(icon->GetSize(), '\0'); icon->GetData(bytes.data(), bytes.size(), 0);
+    if (bytes.starts_with("\x89PNG\r\n\x1A\n")) info->SetString("icon", "data:image/png;base64," + CefBase64Encode(bytes.data(), bytes.size()).ToString());
+  }
+  install_delay_ms_ = std::clamp(prompt->GetType("delay") == VTYPE_INT ? prompt->GetInt("delay") : 500, 0, 5000);
+  info->SetInt("delay", install_delay_ms_);
+  install_prompt_ = info; install_callback_ = callback; install_page_ = page; install_shown_at_ = 0;
+  Toggle("installExtension", {});
+  if (open_ && kind_ == "installExtension") {
+    if (s->probe) {
+      auto d = CefDictionaryValue::Create(); d->SetString("name", info->GetString("name"));
+      d->SetInt("permissions", permission_count); d->SetBool("icon", info->HasKey("icon"));
+      s->Record("extension_install_prompt", d);
+    }
+    return true;
+  }
+  install_prompt_ = nullptr; install_callback_ = nullptr; install_page_ = 0;
+  return false;
+}
+void PanelPopup::CancelExtensionInstall() {
+  if (!install_callback_) return;
+  auto callback = std::move(install_callback_); install_callback_ = nullptr; install_prompt_ = nullptr; install_page_ = 0;
+  callback->Cancel();
+  if (auto s = state_.lock(); s && s->probe) s->Record("extension_install_canceled");
+}
+void PanelPopup::PageClosed(int page) {
+  if (!install_callback_ || page != install_page_) return;
+  CancelExtensionInstall();
+  if (open_ && kind_ == "installExtension") Hide(true);
+}
+void PanelPopup::ReadSiteBlocker() {
+  const auto s = state_.lock(); if (!s || !s->content) return;
+  ReadSiteBlocking(s, s->content->GetMainFrame()->GetURL().ToString(),
+      [weak = weak_from_this(), opening = request_](CefRefPtr<CefDictionaryValue> result, const std::string&) {
+        const auto self = weak.lock();
+        if (!self || !result || self->request_ != opening || !self->open_ || self->kind_ != "site") return;
+        const bool changed = !self->site_blocker_ || !self->site_blocker_->IsEqual(result);
+        self->site_blocker_ = result;
+        if (changed) self->Publish();
+        // The count grows while the page loads: follow it while the popover is open.
+        if (result->GetBool("available"))
+          CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<PanelPopup> weak, int opening) {
+            if (const auto self = weak.lock(); self && self->request_ == opening && self->open_ && self->kind_ == "site") self->ReadSiteBlocker();
+          }, weak, opening), 1500);
+      });
+}
 void PanelPopup::Toggle(const std::string& kind, const CefRect& anchor, int automatic_offer) {
   auto s = state_.lock(); if (!s || !s->window || !s->workspace || s->workspace->WindowClosing() || shutdown_) return;
   if (hover_only_ != (kind == "integration") || modal()) return;
@@ -391,6 +475,8 @@ void PanelPopup::Toggle(const std::string& kind, const CefRect& anchor, int auto
   DropDraftTheme();
   if (kind != "selectionTranslation") selection_ = {};
   kind_ = kind; anchor_ = anchor; ++request_; open_ = true;
+  site_blocker_ = nullptr;
+  if (kind == "site") ReadSiteBlocker();
   opened_ms_ = GetTickCount64();
   prepared_ = presented_ = false; presentation_.Conceal();
   if (!window_) {
@@ -792,6 +878,7 @@ void PanelPopup::Hide(bool restore_focus, bool animate) {
   selection_ = {};
   prepared_ = presented_ = false;
   pinned_page_ = nullptr; saving_pin_ = false;
+  CancelExtensionInstall();  // Only the Add button continues.
   RestoreModalOwner();
   const bool closing = animated && presentation_.Dismiss(kind_ == "archive", origin_x_);
   if (!closing) presentation_.Conceal();
@@ -833,13 +920,20 @@ std::string PanelPopup::Response(CefRefPtr<CefDictionaryValue> theme) const {
   if (kind_ == "integration" && integration_) d->SetDictionary("integration", integration_->Copy(false));
   if (editing_pin() && pinned_page_) d->SetDictionary("pinnedPage", pinned_page_->Copy(false));
   if (open_ && kind_ == "moveToProfile" && profile_move_) d->SetDictionary("profileMove", profile_move_->Copy(false));
+  if (open_ && kind_ == "installExtension" && install_prompt_) d->SetDictionary("extensionInstall", install_prompt_->Copy(false));
   if (s && kind_ == "site") {
     d->SetDictionary("site", SiteInfo(s));
+    if (site_blocker_) d->SetDictionary("blocker", site_blocker_->Copy(false));
     // Installed extensions for the popover's Extensions row (names and PNG
     // icons from the packages; no paths).
     auto list = CefListValue::Create();
-    if (s->extensions)
-      for (const auto& item : s->extensions->List(s->WebContext())) {
+    // A private window's pages are off the record: its catalog is the default profile's,
+    // read there, and only extensions allowed in private windows run in it.
+    const auto main = s->private_window && s->session && s->session->profiles ? s->session->profiles->Get(s, "default") : nullptr;
+    const auto catalog_context = s->private_window ? (main ? main->context : nullptr) : s->WebContext();
+    if (s->extensions && catalog_context)
+      for (const auto& item : s->extensions->List(catalog_context)) {
+        if (s->private_window && !item.incognito) continue;
         auto row = CefDictionaryValue::Create();
         row->SetString("id", item.id); row->SetString("name", item.name); row->SetString("icon", item.icon);
         row->SetBool("popup", !item.popup.empty()); row->SetBool("options", !item.options.empty());
@@ -847,6 +941,7 @@ std::string PanelPopup::Response(CefRefPtr<CefDictionaryValue> theme) const {
         list->SetDictionary(list->GetSize(), row);
       }
     d->SetList("extensions", list);
+    d->SetBool("extensionsAvailable", true);
     d->SetInt("siteDetails", site_details_);
   }
   auto value = CefValue::Create(); value->SetDictionary(d); return CefWriteJSON(value, JSON_WRITER_DEFAULT);
@@ -959,6 +1054,7 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     }
     if (!presented_) {
       presented_ = true;
+      if (kind_ == "installExtension") install_shown_at_ = GetTickCount64();
       const bool reduced_motion = d->GetBool("reducedMotion");
       const bool modal = this->modal();
       if (!hover_only_ && !modal) { window_->Show(); window_->Activate(); FocusBrowser(browser_); }
@@ -1050,6 +1146,19 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
       return true;
     } else { cb->Failure(400, "Invalid translation command"); return true; }
     cb->Success(Response()); return true;
+  }
+  if (kind_ == "installExtension") {
+    if (method != "install.confirm") { cb->Failure(404, "Unknown install confirmation command"); return true; }
+    if (d->GetSize() != 2 || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_ ||
+        !presented_ || !install_callback_ || !install_shown_at_) { cb->Failure(409, "Install confirmation changed"); return true; }
+    // Chrome's anti-misclick delay, enforced here too, not only by the disabled button.
+    if (GetTickCount64() - install_shown_at_ < static_cast<unsigned long long>(install_delay_ms_)) { cb->Failure(409, "Too early"); return true; }
+    auto callback = std::move(install_callback_); install_callback_ = nullptr; install_prompt_ = nullptr; install_page_ = 0;
+    callback->Continue();
+    s->Record("extension_install_accepted");
+    cb->Success("{}");
+    Hide(true);
+    return true;
   }
   if (kind_ == "moveToProfile") {
     if (method != "move.confirm") { cb->Failure(404, "Unknown move confirmation command"); return true; }
@@ -1216,6 +1325,25 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
       if (code) { cb->Failure(code, error); return; }
       cb->Success(self->Response()); self->Hide(true);
     });
+    return true;
+  }
+  if (kind_ == "site" && method == "site.blocker") {
+    // The built-in ad blocker on or off for the visible page's site, then a reload, as uBO's own popup does.
+    if (d->GetSize() != 2 || d->GetType("enabled") != VTYPE_BOOL || !s->content || !site_blocker_ || !site_blocker_->GetBool("available")) {
+      cb->Failure(409, "The ad blocker is not available for this page"); return true;
+    }
+    const bool enabled = d->GetBool("enabled");
+    SetSiteBlocking(s, s->content->GetMainFrame()->GetURL().ToString(), enabled,
+        [weak = weak_from_this(), owner = std::weak_ptr<State>(s), cb, enabled, opening = request_](CefRefPtr<CefDictionaryValue>, const std::string& error) {
+          if (!error.empty()) { cb->Failure(409, error); return; }
+          const auto self = weak.lock(); const auto state = owner.lock();
+          if (self && self->request_ == opening && self->site_blocker_) {
+            self->site_blocker_->SetBool("enabled", enabled); self->site_blocker_->SetDouble("blocked", 0);
+          }
+          cb->Success(self ? self->Response() : "{}");
+          if (state && state->content) state->content->Reload();
+          if (state) { auto data = CefDictionaryValue::Create(); data->SetBool("enabled", enabled); state->Record("site_blocker_changed", data); }
+        });
     return true;
   }
   if (kind_ == "site") {

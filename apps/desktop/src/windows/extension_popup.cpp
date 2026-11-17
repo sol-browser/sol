@@ -1,4 +1,6 @@
 #include "windows/extension_popup.h"
+#include "app/browsing_profiles.h"
+#include "app/session.h"
 #include "web_url.h"
 #include <dwmapi.h>
 #include <algorithm>
@@ -105,7 +107,14 @@ class PopupClient final : public CefClient, public CefLifeSpanHandler, public Ce
     if (!state || !state->workspace || !(IsWebLink(url) || url.starts_with(Origin(id_)))) return;
     // Same-extension pages are the extension's own request, like tabs.create.
     if (IsWebLink(url)) state->workspace->OpenLink(url, true); else state->workspace->AdoptExtensionPage(url);
+    // The new tab is in this popup's window: give that window activation before the popup
+    // goes, or Windows can hand it to another Sol window (a popup of a private window
+    // runs in the main profile, user report 2026-11-17), and once more after.
+    if (state->window) state->window->Activate();
     if (auto owner = owner_.lock()) owner->Close();
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+      if (const auto state = weak.lock(); state && state->window && !state->window->IsMinimized()) state->window->Activate();
+    }, state_), 150);
   }
   std::weak_ptr<ExtensionPopup> owner_;
   std::weak_ptr<State> state_;
@@ -193,8 +202,17 @@ void ExtensionPopup::Open(const std::string& id, const std::string& path, const 
   }
   id_ = id; anchor_ = anchor; side_ = side;
   size_ = kInitialSize;
+  // In a private window, as in Chrome's incognito: a spanning extension's pages
+  // live in its installed profile (Chromium blocks them off the record); only a
+  // split one has an off-the-record instance of its own.
+  auto context = state->WebContext();
+  if (state->private_window) {
+    const auto* item = state->extensions ? state->extensions->Find(id) : nullptr;
+    const auto main = state->session && state->session->profiles ? state->session->profiles->Get(state, "default") : nullptr;
+    if (item && !item->split && main && main->context) context = main->context;
+  }
   auto view = CefBrowserView::CreateBrowserView(new PopupClient(weak_from_this(), state_, id), Origin(id) + path,
-      CefBrowserSettings(), nullptr, state->WebContext(), new PopupView());
+      CefBrowserSettings(), nullptr, context, new PopupView());
   CefWindow::CreateTopLevelWindow(new PopupWindow(weak_from_this(), state_, view));
   auto data = CefDictionaryValue::Create(); data->SetString("id", id.substr(0, 8));
   if (state->probe && window_) {
@@ -207,9 +225,10 @@ void ExtensionPopup::Created(CefRefPtr<CefWindow> window) { window_ = window; Pl
 void ExtensionPopup::Close(CefRefPtr<CefWindow> which) {
   if (!window_ || (which && !which->IsSame(window_))) return;
   auto window = window_; window_ = nullptr;
-  browser_id_ = -1;
+  browser_id_ = -1; closed_at_ = GetTickCount64();
   window->Close();
 }
+bool ExtensionPopup::recently_open() const { return window_ || (closed_at_ && GetTickCount64() - closed_at_ < 3000); }
 void ExtensionPopup::Resize(const CefSize& size) {
   size_ = CefSize(std::clamp(size.width, kMinimum.width, kMaximum.width), std::clamp(size.height, kMinimum.height, kMaximum.height));
   Place();

@@ -249,7 +249,23 @@
     "defaultMessage": "Вивантажувати неактивні вкладки через"
   },
   "settings.preference.unloadDetail": {
-    "defaultMessage": "Вивантажені вкладки залишаються на бічній панелі й завантажуються при відкритті. Позиція прокручування та історія переходів губляться. Вкладки, що відтворюють медіа, видимі й захищені вкладки залишаються завантаженими. Закріплені й улюблені вкладки вивантажуються лише на збереженій сторінці."
+    "defaultMessage": "Вивантажені вкладки залишаються на бічній панелі й завантажуються при відкритті разом з історією переходів, позицією прокручування та вмістом форм. Вкладки, що відтворюють медіа, видимі й захищені вкладки залишаються завантаженими. Закріплені й улюблені вкладки вивантажуються лише на збереженій сторінці."
+  },
+  "settings.blocker.title": {
+    "defaultMessage": "Блокувати рекламу й трекери",
+    "description": "Settings > Browser: built-in uBlock Origin (engine component)."
+  },
+  "settings.blocker.detail": {
+    "defaultMessage": "Використовує вбудований у Sol uBlock Origin. Діє після перезапуску Sol.",
+    "description": "Settings > Browser: built-in uBlock Origin (engine component)."
+  },
+  "settings.preference.preloadHover": {
+    "defaultMessage": "Завантажувати збережені вкладки, коли наводите на них",
+    "description": "Settings > Tabs: hover preload of unloaded Pinned tabs and Favorites."
+  },
+  "settings.preference.preloadHoverDetail": {
+    "defaultMessage": "Вивантажена закріплена вкладка або вкладка з Улюбленого починає завантажуватися, коли ви затримуєте на ній вказівник, тож відкривається швидше. Сайт бачить відвідування ще до кліку. Якщо її не відкрити протягом 10 хвилин, вона знову звільняє пам'ять.",
+    "description": "Settings > Tabs: hover preload of unloaded Pinned tabs and Favorites."
   },
   "settings.preference.autoPip": {
     "defaultMessage": "Автоматичне «картинка в картинці»"
@@ -2005,6 +2021,10 @@
   "panel.moveQuestion": {
     "defaultMessage": "Перемістити «{title}» у простір «{space}»?"
   },
+  "panel.installTitle": {
+    "defaultMessage": "Додати «{name}»?",
+    "description": "Extension install modal: heading when Chrome sent no title."
+  },
   "panel.moveDetail": {
     "defaultMessage": "Простір «{space}» використовує інший профіль. Вкладка там перезавантажиться, а дані для входу й незбережені зміни залишаться в попередньому профілі."
   },
@@ -3264,5 +3284,137 @@
   "native.window.ExitFullscreen": {
     "defaultMessage": "Щоб вийти з повноекранного режиму, натисніть {name}",
     "description": "Toast shown when entering fullscreen. Keep the {name} placeholder for the Esc key cap."
+  },
+  "settings.section.blocker": {
+    "defaultMessage": "Блокувальник реклами",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.wait": {
+    "defaultMessage": "Блокувати з першої сторінки",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.waitDetail": {
+    "defaultMessage": "Одразу після запуску Sol запити сторінок чекають, доки фільтри будуть готові, і ці сторінки один раз перезавантажуються. Без цього реклама може проскочити кілька секунд після запуску.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.lists": {
+    "defaultMessage": "Списки фільтрів",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.listsDetail": {
+    "defaultMessage": "{count, plural, one {# правило} few {# правила} many {# правил} other {# правила}} в дії. Списки оновлюються самі раз на кілька днів.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.update": {
+    "defaultMessage": "Оновити зараз",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.updating": {
+    "defaultMessage": "Оновлення…",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.rules": {
+    "defaultMessage": "{count, plural, one {# правило} few {# правила} many {# правил} other {# правила}}",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.updated": {
+    "defaultMessage": "оновлено {date}",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.trusted": {
+    "defaultMessage": "Сайти без блокування",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.trustedDetail": {
+    "defaultMessage": "На цих сайтах і їхніх піддоменах реклама й трекери дозволені. Це також вмикається й вимикається на панелі сайту.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.trustedAdd": {
+    "defaultMessage": "Додати сайт",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.trustedRemove": {
+    "defaultMessage": "Прибрати {site}",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.trustedEmpty": {
+    "defaultMessage": "Блокування працює всюди.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.badSite": {
+    "defaultMessage": "Введіть сайт, наприклад example.com.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.own": {
+    "defaultMessage": "Ваші правила",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.ownDetail": {
+    "defaultMessage": "Власні фільтри в синтаксисі uBlock Origin, по одному в рядку, наприклад ||ads.example.com^ або example.com##.banner.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.loading": {
+    "defaultMessage": "Завантаження блокувальника…",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.unreachable": {
+    "defaultMessage": "Блокувальник не відповів. Можливо, він ще запускається; спробуйте за мить.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.default": {
+    "defaultMessage": "Вбудовані",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.ads": {
+    "defaultMessage": "Реклама",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.privacy": {
+    "defaultMessage": "Приватність",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.malware": {
+    "defaultMessage": "Захист від шкідливих сайтів",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.multipurpose": {
+    "defaultMessage": "Універсальні",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.cookies": {
+    "defaultMessage": "Повідомлення про cookie",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.social": {
+    "defaultMessage": "Соціальні віджети",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.annoyances": {
+    "defaultMessage": "Подразники",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.regions": {
+    "defaultMessage": "Регіони й мови",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.custom": {
+    "defaultMessage": "Власні",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "site.blocker": {
+    "defaultMessage": "Блокувати рекламу й трекери",
+    "description": "Site panel: the built-in ad blocker (uBlock Origin) for this site."
+  },
+  "site.blockerCount": {
+    "defaultMessage": "{count, plural, =0 {На цій сторінці ще нічого не заблоковано} one {# запит заблоковано на цій сторінці} few {# запити заблоковано на цій сторінці} many {# запитів заблоковано на цій сторінці} other {# запиту заблоковано на цій сторінці}}",
+    "description": "Site panel: the built-in ad blocker (uBlock Origin) for this site."
+  },
+  "site.blockerOff": {
+    "defaultMessage": "Вимкнено для цього сайту. Увімкнення перезавантажить сторінку.",
+    "description": "Site panel: the built-in ad blocker (uBlock Origin) for this site."
+  },
+  "native.menu.AllowPrivate": {
+    "defaultMessage": "Дозволити в приватних вікнах",
+    "description": "Extension right-click menu: Chrome's Allow in Incognito for this extension."
   }
 }

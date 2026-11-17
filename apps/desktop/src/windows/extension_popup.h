@@ -28,6 +28,9 @@ class ExtensionPopup : public std::enable_shared_from_this<ExtensionPopup> {
   void Close(CefRefPtr<CefWindow> which = nullptr);
   bool is_open() const { return window_ != nullptr; }
   const std::string& id() const { return id_; }
+  // Open now or closed within the last few seconds: a tab an extension creates
+  // from its popup (tabs.create) belongs to this popup's window.
+  bool recently_open() const;
   // Callbacks from the popup's browser and window.
   void Created(CefRefPtr<CefWindow> window);
   void Resize(const CefSize& size);
@@ -39,6 +42,7 @@ class ExtensionPopup : public std::enable_shared_from_this<ExtensionPopup> {
   std::weak_ptr<State> state_;
   CefRefPtr<CefWindow> window_;
   std::string id_;
+  unsigned long long closed_at_ = 0;  // GetTickCount64.
   CefPoint anchor_;
   ExtensionPopupSide side_ = ExtensionPopupSide::Right;
   CefSize size_{320, 120};

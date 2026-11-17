@@ -125,7 +125,7 @@ export type Backdrop = 'none' | 'mica' | 'acrylic';
 /** Times on History and Downloads: the Windows short time format, or a fixed clock. */
 export type Clock = 'system' | '12' | '24';
 export type KeyBinding = { key: number; ctrl: boolean; shift: boolean; alt: boolean };
-export type BrowserPreferences = { schema: 1; searchEngine: SearchEngine; searchSuggestions?: boolean; siteSearches?: SiteSearch[]; siteSearchActivation?: SiteSearchActivation; autoArchiveHours?: number; autoPictureInPicture?: boolean; autoPipSites?: Record<string, boolean>; pipButton?: boolean; littleSolLinks?: boolean; littleSolClick?: boolean; littleSolHotkey?: boolean; unloadMinutes?: number; clock?: Clock; backdrop?: Backdrop; downloadDirectory: string; askDownload: boolean;
+export type BrowserPreferences = { schema: 1; searchEngine: SearchEngine; searchSuggestions?: boolean; siteSearches?: SiteSearch[]; siteSearchActivation?: SiteSearchActivation; autoArchiveHours?: number; autoPictureInPicture?: boolean; autoPipSites?: Record<string, boolean>; pipButton?: boolean; preloadOnHover?: boolean; contentBlocker?: boolean; littleSolLinks?: boolean; littleSolClick?: boolean; littleSolHotkey?: boolean; unloadMinutes?: number; clock?: Clock; backdrop?: Backdrop; downloadDirectory: string; askDownload: boolean;
   littleSolBinding?: KeyBinding;
   notesProvider?: 'googleDocs' | 'word'; integrations?: IntegrationSettings; interfaceLanguage?: InterfaceLanguage;
   translationTarget?: string; translationOffers?: boolean; translationExcludedSites?: string[]; translationKnownLanguages?: string[];
@@ -142,7 +142,7 @@ export type SettingsCommand = { method: 'settings.get' | 'settings.ready' | 'set
   | { method: 'settings.set'; key: 'backdrop'; value: Backdrop }
   | { method: 'settings.set'; key: 'clock'; value: Clock }
   | { method: 'settings.set'; key: 'interfaceLanguage'; value: InterfaceLanguage }
-  | { method: 'settings.set'; key: 'askDownload' | 'searchSuggestions' | 'autoPictureInPicture' | 'pipButton' | 'littleSolLinks' | 'littleSolClick' | 'littleSolHotkey'; value: boolean }
+  | { method: 'settings.set'; key: 'askDownload' | 'searchSuggestions' | 'autoPictureInPicture' | 'pipButton' | 'preloadOnHover' | 'contentBlocker' | 'littleSolLinks' | 'littleSolClick' | 'littleSolHotkey'; value: boolean }
   | { method: 'settings.set'; key: 'autoArchiveHours' | 'unloadMinutes'; value: number }
   | { method: 'settings.shortcut'; action: string; binding: KeyBinding | null }
   | { method: 'settings.set'; key: 'translationTarget'; value: string }
@@ -215,6 +215,8 @@ export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
   if (value.backdrop !== undefined && (!object(value.backdrop) || typeof value.backdrop.available !== 'boolean' ||
       typeof value.backdrop.active !== 'boolean')) throw new Error('Invalid backdrop status');
   if (object(prefs) && prefs.pipButton !== undefined && typeof prefs.pipButton !== 'boolean') throw new Error('Invalid picture-in-picture button preference');
+  if (object(prefs) && prefs.preloadOnHover !== undefined && typeof prefs.preloadOnHover !== 'boolean') throw new Error('Invalid hover preload preference');
+  if (object(prefs) && prefs.contentBlocker !== undefined && typeof prefs.contentBlocker !== 'boolean') throw new Error('Invalid content blocker preference');
   for (const key of ['littleSolLinks', 'littleSolClick', 'littleSolHotkey'] as const)
     if (object(prefs) && prefs[key] !== undefined && typeof prefs[key] !== 'boolean') throw new Error('Invalid Little Sol preference');
   if (object(prefs) && prefs.interfaceLanguage !== undefined && prefs.interfaceLanguage !== 'system' &&
@@ -327,6 +329,7 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
   | { method: 'tab.dragStarted'; id: string; previousId: string | null }
   | { method: 'tab.dragCancel'; id: string }
+  | { method: 'tab.preload'; id: string }
   | { method: 'tab.editPinned'; id: string }
   | { method: 'tab.confirmMoveToSpace'; id: string; space: string }
   | { method: 'tab.mute'; id: string; muted: boolean }

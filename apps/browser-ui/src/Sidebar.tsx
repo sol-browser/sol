@@ -5,7 +5,7 @@ import { openSidebarMenu, type TreeNode, type TreeMutation } from './bridge';
 import type { Command, MediaInfo, SpaceInfo } from '../../../packages/browser-contracts/src';
 import { MediaStack } from './MediaPlayer';
 import { faviconColor } from './favicon-color';
-import { crossProfileLiveMove, descendant, inSpace, neighborSpace, ordered, placement, sectionOf, favoriteColumnLimit, favoriteColumns, displayTitle, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, withoutClosingTabs, sameRowNode, spaceDisplayName, type Section } from './sidebar-model';
+import { crossProfileLiveMove, descendant, inSpace, neighborSpace, ordered, placement, sectionOf, favoriteColumnLimit, favoriteColumns, displayTitle, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, withoutClosingTabs, sameRowNode, spaceDisplayName, preloadable, preloadHoverMs, type Section } from './sidebar-model';
 import { swatchColor } from './theme-model';
 import { splitLanding, splitMembers, splitNamedMember } from './split-model';
 import { Icon } from './Icon';
@@ -75,6 +75,7 @@ type RowApi = {
   pointerDown: (event: React.PointerEvent<HTMLDivElement>, node: TreeNode) => void;
   drag: (event: DragEvent, id: string) => void; finishDrag: () => void;
   hoverIntegration: (id: string, element: HTMLElement) => void; cancelIntegration: () => void;
+  hoverPreload: (id: string) => void; cancelPreload: () => void;
   cancelRemoval: () => void; confirmFolderRemoval: () => Promise<void>;
   pressActivated: React.RefObject<string | null>; dragRef: React.RefObject<string | undefined>;
   renameInput: React.RefObject<HTMLInputElement | null>; cancelRemovalButton: React.RefObject<HTMLButtonElement | null> };
@@ -150,10 +151,11 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
   return <li className={`tree-node ${peek ? 'active-peek' : ''}`} data-node-id={node.id} data-drag-source={dragSource}>
     <div className="tree-row" role="presentation" data-tinted={tint !== undefined} style={tint ? { '--favorite-tint': tint } as CSSProperties : undefined} data-kind={node.kind} data-split={group} data-drop-inside={dropInside} data-motion-key={peek ? `peek-${node.id}` : node.id} data-favorite={node.favorite === true} data-live={node.live === true} data-peek={node.peek === true}
       onPointerEnter={event => {
-        api.current.cancelIntegration();
-        if (event.pointerType === 'touch' || !preview || busy || hidden || !activeSurface || dragging || anyRenaming) return;
-        api.current.hoverIntegration(node.id, event.currentTarget);
-      }} onPointerLeave={() => api.current.cancelIntegration()}
+        api.current.cancelIntegration(); api.current.cancelPreload();
+        if (event.pointerType === 'touch' || busy || hidden || !activeSurface || dragging || anyRenaming) return;
+        if (preloadable(node)) api.current.hoverPreload(node.id);
+        if (preview) api.current.hoverIntegration(node.id, event.currentTarget);
+      }} onPointerLeave={() => { api.current.cancelIntegration(); api.current.cancelPreload(); }}
       title={preview ? undefined : away ? `${node.title}\n${node.currentUrl}` : node.favorite ? displayTitle(node) : node.pageTitle && node.pageTitle !== node.title ? node.pageTitle : undefined} data-active={selected} data-pinned-away={away} data-expanded={folder ? node.expanded : undefined}
       draggable={folder && !busy && !anyRenaming && !node.closing} onDragStart={e => { if (folder) api.current.drag(e, node.id); else e.preventDefault(); }} onDragEnd={event => {
         // Handle the drop before clearing the source: the window's bubbling
@@ -164,7 +166,7 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
       }}
       // The whole highlighted row is the tab: its padding and edges (outside the
       // name and icon buttons) press and click like the name.
-      onPointerDownCapture={event => { api.current.cancelIntegration(); api.current.pointerDown(event, node); }}
+      onPointerDownCapture={event => { api.current.cancelIntegration(); api.current.cancelPreload(); api.current.pointerDown(event, node); }}
       onPointerDown={event => {
         const member = memberAt(event);
         if (member) {
@@ -320,6 +322,11 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   const integrationTimer = useRef<number | undefined>(undefined);
   const cancelIntegration = () => { clearTimeout(integrationTimer.current); integrationTimer.current = undefined; };
   useEffect(() => { cancelIntegration(); return cancelIntegration; }, [hidden, activeSurface, activeSpace, busy, dragId, renaming]);
+  // Hovering an unloaded Pinned tab or Favorite briefly starts loading it in the
+  // background (native PreloadSaved; off in Settings > Tabs). A hint: no busy state, no reply.
+  const preloadTimer = useRef<number | undefined>(undefined);
+  const cancelPreload = () => { clearTimeout(preloadTimer.current); preloadTimer.current = undefined; };
+  useEffect(() => { cancelPreload(); return cancelPreload; }, [hidden, activeSurface, activeSpace, busy, dragId, renaming]);
   const visible = useMemo(() => nodes.filter(n => inSpace(n, activeSpace)), [nodes, activeSpace]);
   const favorites = useMemo(() => visible.filter(n => n.favorite), [visible]);
   const spaceNodes = useMemo(() => visible.filter(n => !n.favorite), [visible]);
@@ -638,7 +645,11 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   const api = useRef(null as unknown as RowApi);
   api.current = { perform, tabCommand, context, startRename, saveRename, cancelRename, setDraft, pointerDown, drag, finishDrag,
     hoverIntegration: (id, element) => { integrationTimer.current = window.setTimeout(() => { if (element.isConnected) previewIntegration(id, element); }, 400); },
-    cancelIntegration, cancelRemoval, confirmFolderRemoval, pressActivated, dragRef, renameInput, cancelRemovalButton };
+    hoverPreload: id => { cancelPreload(); preloadTimer.current = window.setTimeout(() => {
+      preloadTimer.current = undefined;
+      window.cefQuery?.({ request: JSON.stringify({ method: 'tab.preload', id } satisfies Command), persistent: false, onSuccess: () => {}, onFailure: () => {} });
+    }, preloadHoverMs); },
+    cancelIntegration, cancelPreload, cancelRemoval, confirmFolderRemoval, pressActivated, dragRef, renameInput, cancelRemovalButton };
   // A split row's member list keeps its identity while its members do, so the memoized row skips renders.
   const memberCache = useRef(new Map<string, TreeNode[]>());
   function stableMembers(anchor: string, members: TreeNode[]) {

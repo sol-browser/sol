@@ -6,6 +6,7 @@
 #include <sqlite3.h>
 #include <windows.h>
 #include <algorithm>
+#include <fstream>
 #include <set>
 #include "include/cef_app.h"
 #include "include/cef_parser.h"
@@ -107,6 +108,14 @@ bool Decode(const std::string& json, Preferences& value) {
   if (data->HasKey("unloadMinutes")) {
     if (data->GetType("unloadMinutes") != VTYPE_INT || !ValidUnloadMinutes(data->GetInt("unloadMinutes"))) return false;
     value.unload_minutes = data->GetInt("unloadMinutes");
+  }
+  if (data->HasKey("preloadOnHover")) {
+    if (data->GetType("preloadOnHover") != VTYPE_BOOL) return false;
+    value.preload_on_hover = data->GetBool("preloadOnHover");
+  }
+  if (data->HasKey("contentBlocker")) {
+    if (data->GetType("contentBlocker") != VTYPE_BOOL) return false;
+    value.content_blocker = data->GetBool("contentBlocker");
   }
   if (data->HasKey("pipButton")) {
     if (data->GetType("pipButton") != VTYPE_BOOL) return false;
@@ -278,6 +287,7 @@ BrowserPreferences::BrowserPreferences(std::filesystem::path path) : path_(std::
     }
     if (statement) sqlite3_finalize(statement);
   } else if (error) error_ = "Settings location is unavailable.";
+  if (error_.empty()) WriteContentBlockerMarker(path_, value_.content_blocker);
   worker_ = CefThread::CreateThread("Browser preferences");
   if (!worker_) error_ = "Could not start the settings worker.";
 }
@@ -304,6 +314,8 @@ CefRefPtr<CefDictionaryValue> BrowserPreferences::ToDictionary(const Preferences
   for (const auto& [origin, on] : value.auto_pip_sites) sites->SetBool(origin, on);
   data->SetDictionary("autoPipSites", sites);
   data->SetBool("pipButton", value.pip_button);
+  data->SetBool("preloadOnHover", value.preload_on_hover);
+  data->SetBool("contentBlocker", value.content_blocker);
   data->SetBool("littleSolLinks", value.little_sol_links);
   data->SetBool("littleSolClick", value.little_sol_click);
   data->SetBool("littleSolHotkey", value.little_sol_hotkey);
@@ -332,9 +344,20 @@ void BrowserPreferences::Save(Preferences next, Reply done) {
   worker_->GetTaskRunner()->PostTask(CefCreateClosureTask(base::BindOnce([](std::shared_ptr<BrowserPreferences> self, Preferences next, std::string json, Reply done) {
     auto error = Write(self->path_, json);
     CefPostTask(TID_UI, base::BindOnce([](std::shared_ptr<BrowserPreferences> self, Preferences next, std::string error, Reply done) {
-      self->busy_ = false; if (error.empty()) self->value_ = std::move(next); done(error);
+      self->busy_ = false;
+      if (error.empty()) { self->value_ = std::move(next); WriteContentBlockerMarker(self->path_, self->value_.content_blocker); }
+      done(error);
     }, self, std::move(next), std::move(error), std::move(done)));
   }, shared_from_this(), std::move(next), json, std::move(done))));
+}
+std::filesystem::path ContentBlockerOffMarker(const std::filesystem::path& profile) {
+  return profile / "BrowserData" / "content-blocker-off";
+}
+void WriteContentBlockerMarker(const std::filesystem::path& settings_database, bool enabled) {
+  const auto marker = settings_database.parent_path() / "content-blocker-off";
+  std::error_code error;
+  if (enabled) std::filesystem::remove(marker, error);
+  else if (!std::filesystem::exists(marker, error)) std::ofstream(marker, std::ios::trunc) << "off\n";
 }
 void BrowserPreferences::Stop() { if (worker_) { worker_->Stop(); worker_ = nullptr; } }
 }  // namespace red

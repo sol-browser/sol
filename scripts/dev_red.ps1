@@ -30,13 +30,17 @@ if (!$ClientOnly) {
   if ([IO.Path]::GetFullPath($dist) -ne [IO.Path]::GetFullPath((Join-Path $WorkDirectory 'devdist'))) { throw 'Unexpected dev SDK directory' }
   if (Test-Path $dist) { Remove-Item -Recurse -Force -LiteralPath $dist }
   robocopy "$repo\third_party\cef" $dist /E /NFL /NDL /NJH /NJS | Out-Null
-  # Only what API patches change (include/base is transformed when CEF packs a distribution).
-  robocopy "$src\cef\include" "$dist\include" *.h /NFL /NDL /NJH /NJS | Out-Null
-  robocopy "$src\cef\include\capi" "$dist\include\capi" /E /NFL /NDL /NJH /NJS | Out-Null
-  robocopy "$src\cef\include\views" "$dist\include\views" /E /NFL /NDL /NJH /NJS | Out-Null
+  # The checkout's whole include tree: a new engine branch changes more than the API
+  # headers (Chromium 158: internal/cef_types_input.h, base/internal/cef_dom_*_data.inc,
+  # test/). Forwarding stubs are replaced with Chromium's files by dev_sdk_cmake.py
+  # (tools/distrib/transfer.cfg), as make_distrib.py does.
+  robocopy "$src\cef\include" "$dist\include" /E /XF CHROMIUM_SYNC.md /NFL /NDL /NJH /NJS | Out-Null
   robocopy "$out\gen\cef\include" "$dist\include" /E /NFL /NDL /NJH /NJS | Out-Null
   robocopy "$src\cef\libcef_dll" "$dist\libcef_dll" /E /XF CMakeLists.txt BUILD.gn /NFL /NDL /NJH /NJS | Out-Null
   Copy-Item "$out\libcef.dll.lib" "$dist\Release\libcef.lib" -Force
+  # Wrapper source list and CMake helpers from the checkout's own templates, as make_distrib.py builds them.
+  python "$repo\scripts\dev_sdk_cmake.py" "$src\cef" $dist
+  if ($LASTEXITCODE) { throw 'Dev SDK CMake generation failed' }
 } elseif (!(Test-Path -LiteralPath "$dist\include\cef_browser.h")) {
   throw 'Existing dev SDK required for -ClientOnly; run the full dev_red.ps1 setup first'
 }

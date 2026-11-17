@@ -3,6 +3,7 @@
 #include "windows/ui_context_menu.h"
 #include "app/session.h"
 #include "windows/settings_window.h"
+#include "app/content_blocker_settings.h"
 #include "translation/page_translator.h"
 #include "translation/model_catalog.h"
 #include "app/windows_locale.h"
@@ -440,6 +441,10 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
       next.unload_minutes = data->GetInt("value"); valid = true;
     } else if (key == "pipButton" && data->GetType("value") == VTYPE_BOOL) {
       next.pip_button = data->GetBool("value"); valid = true;
+    } else if (key == "preloadOnHover" && data->GetType("value") == VTYPE_BOOL) {
+      next.preload_on_hover = data->GetBool("value"); valid = true;
+    } else if (key == "contentBlocker" && data->GetType("value") == VTYPE_BOOL) {
+      next.content_blocker = data->GetBool("value"); valid = true;
     } else if (key == "littleSolLinks" && data->GetType("value") == VTYPE_BOOL) {
       next.little_sol_links = data->GetBool("value"); valid = true;
     } else if (key == "littleSolClick" && data->GetType("value") == VTYPE_BOOL) {
@@ -545,6 +550,18 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
   if (method == "settings.extensions" && data->GetSize() == 1) {
     if (!state->extensions_window) state->extensions_window = std::make_shared<ExtensionsWindow>(state);
     state->extensions_window->Show(); callback->Success(Response()); return true;
+  }
+  // Settings > Ad blocker, carried out by the built-in uBlock Origin (app/content_blocker_settings.h).
+  if (method.starts_with("blocker.")) {
+    auto reply = [weak = weak_from_this(), callback](CefRefPtr<CefDictionaryValue> result, const std::string& error) {
+      if (!weak.lock()) { callback->Failure(410, "Settings closed"); return; }
+      if (!error.empty() || !result) { callback->Failure(409, error.empty() ? "The ad blocker did not answer" : error); return; }
+      auto value = CefValue::Create(); value->SetDictionary(result);
+      callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT));
+    };
+    if (method == "blocker.get" && data->GetSize() == 1) ReadContentBlocker(state, reply);
+    else ChangeContentBlocker(state, data->Copy(false), reply);
+    return true;
   }
   callback->Failure(400, "Unsupported settings command"); return true;
 }

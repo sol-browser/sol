@@ -120,10 +120,12 @@ std::vector<InstalledExtension> ExtensionCatalog::List(CefRefPtr<CefRequestConte
       if (options.empty()) options = String(manifest, "options_page");
       if (const auto page = ExtensionRelativePath(options, true)) item.options = *page;
       item.icon = Icon(root, manifest, action);
+      item.split = String(manifest, "incognito") == "split";
       cached = packages_.emplace(root, std::move(item)).first;
     }
     latest_.push_back(cached->second);
     latest_.back().id = id;
+    latest_.back().incognito = entry->GetType("incognito") == VTYPE_BOOL && entry->GetBool("incognito");
   }
   std::sort(latest_.begin(), latest_.end(), [](const auto& a, const auto& b) { return a.name < b.name; });
   return latest_;

@@ -134,8 +134,15 @@ inline ForeignPage ClassifyForeignPage(std::string_view url) {
 inline bool IsTrackedExtensionInstallLocation(int location) { return location == 1 || location == 4; }
 // Chromium ManifestLocation values: kComponent = 5, kExternalComponent = 10.
 // The trusted UI profile may hold only built-in or disabled extensions.
+// Sol's built-in content blocker, uBlock Origin: a component that engine patch
+// red_17 registers in web profiles only (docs/ublock-origin.md).
+inline constexpr char kContentBlockerExtensionId[] = "fkgkibajhfbepljeaefdnfnegdcjomkh";
 inline bool AllowedInTrustedProfile(int location, bool enabled) {
   return location == 5 || location == 10 || !enabled;
+}
+// The content blocker is a component but runs website-facing code: never in Shell.
+inline bool AllowedInTrustedProfile(std::string_view id, int location, bool enabled) {
+  return (id != kContentBlockerExtensionId || !enabled) && AllowedInTrustedProfile(location, enabled);
 }
 inline bool IsTrustedUi(int browser, int trusted_browser, bool main_frame,
                         std::string_view url) {
@@ -178,6 +185,6 @@ inline bool IsAllowedBrowserSwitch(std::string_view name, bool probe) {
   if(name=="little-sol-url")return !probe;
   return name == "profile-dir" || name == "workspace" || name == "trace-tab-switches" || name == "make-default-browser" || name == "auto-archive-test-clock" || (probe && (name == "probe-report" ||
       name == "probe-url" || name == "probe-navigation" || name == "probe-browsing" || name == "probe-lifecycle" || name == "probe-tabs" || name == "probe-window-transfer" ||
-      name == "probe-native-tabs" || name == "probe-embedded-tabs" || name == "probe-workspace" || name == "probe-organization" || name == "probe-input" || name == "probe-chrome-toolbar" || name == "probe-downloads-dir" || name == "probe-downloads" || name == "probe-fullscreen" || name == "probe-permissions" || name == "probe-site-settings" || name == "probe-history" || name == "probe-tab-actions" || name == "probe-audible" || name == "probe-downloads-page" || name == "probe-extension-popup" || name == "probe-protocols" || name == "probe-close-motion" || name == "probe-sidebar-peek" || name == "probe-sidebar-perf" || name == "probe-pip" || name == "probe-split" || name == "probe-capture-mute" || name == "probe-theme" || name == "probe-spaces" || name == "probe-ua-brand" || name == "probe-boost" || name == "probe-menu" || name == "probe-screenshot-ask" || name == "probe-private" || name == "probe-little-window" || name == "probe-pin" || name == "probe-backdrop" || name == "probe-link-headers" || name == "probe-unload" || name == "probe-import" || name == "load-extension"));
+      name == "probe-native-tabs" || name == "probe-embedded-tabs" || name == "probe-workspace" || name == "probe-organization" || name == "probe-input" || name == "probe-chrome-toolbar" || name == "probe-downloads-dir" || name == "probe-downloads" || name == "probe-fullscreen" || name == "probe-permissions" || name == "probe-site-settings" || name == "probe-history" || name == "probe-tab-actions" || name == "probe-audible" || name == "probe-downloads-page" || name == "probe-extension-popup" || name == "probe-protocols" || name == "probe-close-motion" || name == "probe-sidebar-peek" || name == "probe-sidebar-perf" || name == "probe-pip" || name == "probe-split" || name == "probe-capture-mute" || name == "probe-theme" || name == "probe-spaces" || name == "probe-ua-brand" || name == "probe-boost" || name == "probe-menu" || name == "probe-screenshot-ask" || name == "probe-private" || name == "probe-little-window" || name == "probe-pin" || name == "probe-backdrop" || name == "probe-link-headers" || name == "probe-unload" || name == "probe-preload-ms" || name == "probe-import" || name == "load-extension"));
 }
 }  // namespace red

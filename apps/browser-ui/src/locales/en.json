@@ -253,7 +253,23 @@
     "defaultMessage": "Free memory of tabs idle for"
   },
   "settings.preference.unloadDetail": {
-    "defaultMessage": "Unloaded tabs stay in the sidebar and load again when you open them; scroll position and back history are not kept. Playing, visible and protected tabs stay loaded; Pinned and Favorites only unload while on their saved page."
+    "defaultMessage": "Unloaded tabs stay in the sidebar and load again when you open them, with their back history, scroll position and form contents. Playing, visible and protected tabs stay loaded; Pinned and Favorites only unload while on their saved page."
+  },
+  "settings.blocker.title": {
+    "defaultMessage": "Block ads and trackers",
+    "description": "Settings > Browser: built-in uBlock Origin (engine component)."
+  },
+  "settings.blocker.detail": {
+    "defaultMessage": "Uses uBlock Origin, built into Sol. Takes effect after Sol restarts.",
+    "description": "Settings > Browser: built-in uBlock Origin (engine component)."
+  },
+  "settings.preference.preloadHover": {
+    "defaultMessage": "Load saved tabs when you point at them",
+    "description": "Settings > Tabs: hover preload of unloaded Pinned tabs and Favorites."
+  },
+  "settings.preference.preloadHoverDetail": {
+    "defaultMessage": "An unloaded Pinned tab or Favorite starts loading when you rest the pointer on it, so it opens faster. The site sees the visit before you click. Not opened within 10 minutes, it leaves memory again.",
+    "description": "Settings > Tabs: hover preload of unloaded Pinned tabs and Favorites."
   },
   "settings.preference.autoPip": {
     "defaultMessage": "Automatic picture-in-picture"
@@ -2009,6 +2025,10 @@
   "panel.moveQuestion": {
     "defaultMessage": "Move “{title}” to {space}?"
   },
+  "panel.installTitle": {
+    "defaultMessage": "Add “{name}”?",
+    "description": "Extension install modal: heading when Chrome sent no title."
+  },
   "panel.moveDetail": {
     "defaultMessage": "{space} uses another profile. The tab reloads there, so sign-ins and anything unsaved on the page stay behind."
   },
@@ -3268,5 +3288,137 @@
   "native.window.ExitFullscreen": {
     "defaultMessage": "Press {name} to exit full screen",
     "description": "Toast shown when entering fullscreen. Keep the {name} placeholder for the Esc key cap."
+  },
+  "settings.section.blocker": {
+    "defaultMessage": "Ad blocker",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.wait": {
+    "defaultMessage": "Block from the first page",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.waitDetail": {
+    "defaultMessage": "Right after Sol starts, page requests wait until the filters are ready, and those pages reload once. Without it, ads can get through for a few seconds after a start.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.lists": {
+    "defaultMessage": "Filter lists",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.listsDetail": {
+    "defaultMessage": "{count, plural, one {# rule} other {# rules}} in use. Lists update on their own every few days.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.update": {
+    "defaultMessage": "Update now",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.updating": {
+    "defaultMessage": "Updating…",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.rules": {
+    "defaultMessage": "{count, plural, one {# rule} other {# rules}}",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.updated": {
+    "defaultMessage": "updated {date}",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.trusted": {
+    "defaultMessage": "Sites without blocking",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.trustedDetail": {
+    "defaultMessage": "Ads and trackers are allowed on these sites and their subdomains. A site's panel turns this on and off too.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.trustedAdd": {
+    "defaultMessage": "Add site",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.trustedRemove": {
+    "defaultMessage": "Remove {site}",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.trustedEmpty": {
+    "defaultMessage": "Blocking is on everywhere.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.badSite": {
+    "defaultMessage": "Enter a site such as example.com.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.own": {
+    "defaultMessage": "Your rules",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.ownDetail": {
+    "defaultMessage": "Your own filters in uBlock Origin's syntax, one per line, for example ||ads.example.com^ or example.com##.banner.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.loading": {
+    "defaultMessage": "Loading the ad blocker…",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.unreachable": {
+    "defaultMessage": "The ad blocker did not answer. It may still be starting; try again in a moment.",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.default": {
+    "defaultMessage": "Built-in",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.ads": {
+    "defaultMessage": "Ads",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.privacy": {
+    "defaultMessage": "Privacy",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.malware": {
+    "defaultMessage": "Malware protection",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.multipurpose": {
+    "defaultMessage": "Multipurpose",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.cookies": {
+    "defaultMessage": "Cookie notices",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.social": {
+    "defaultMessage": "Social widgets",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.annoyances": {
+    "defaultMessage": "Annoyances",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.regions": {
+    "defaultMessage": "Regions and languages",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "settings.blocker.group.custom": {
+    "defaultMessage": "Custom",
+    "description": "Settings > Ad blocker (built-in uBlock Origin)."
+  },
+  "site.blocker": {
+    "defaultMessage": "Block ads and trackers",
+    "description": "Site panel: the built-in ad blocker (uBlock Origin) for this site."
+  },
+  "site.blockerCount": {
+    "defaultMessage": "{count, plural, =0 {Nothing blocked on this page yet} one {# request blocked on this page} other {# requests blocked on this page}}",
+    "description": "Site panel: the built-in ad blocker (uBlock Origin) for this site."
+  },
+  "site.blockerOff": {
+    "defaultMessage": "Off for this site. Turning it on reloads the page.",
+    "description": "Site panel: the built-in ad blocker (uBlock Origin) for this site."
+  },
+  "native.menu.AllowPrivate": {
+    "defaultMessage": "Allow in private windows",
+    "description": "Extension right-click menu: Chrome's Allow in Incognito for this extension."
   }
 }

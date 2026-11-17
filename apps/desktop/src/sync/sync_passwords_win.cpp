@@ -115,10 +115,14 @@ PasswordRead ReadPasswords(const fs::path& root, std::string_view profile) {
                                 static_cast<sqlite3_int64>(bytes.size()), SQLITE_DESERIALIZE_READONLY) == SQLITE_OK;
   sqlite3_stmt* query = nullptr;
   // scheme 0 = HTML form sign-in; newest first so a duplicate realm + username keeps the latest.
-  ok = ok && sqlite3_prepare_v2(db, "SELECT origin_url,signon_realm,username_value,password_value,blacklisted_by_user,scheme FROM logins "
-                                    "ORDER BY date_created DESC LIMIT 50001", -1, &query, nullptr) == SQLITE_OK;
+  if (ok)
+    ok = sqlite3_prepare_v2(db, "SELECT origin_url,signon_realm,username_value,password_value,blacklisted_by_user,scheme FROM logins "
+                                "ORDER BY date_created DESC LIMIT 50001", -1, &query, nullptr) == SQLITE_OK;
   int step = SQLITE_DONE;
-  while (ok && (step = sqlite3_step(query)) == SQLITE_ROW) {
+  // No side effects inside the loop condition (SonarCloud S912).
+  while (ok) {
+    step = sqlite3_step(query);
+    if (step != SQLITE_ROW) break;
     auto url = Column(query, 0), realm = Column(query, 1), username = Column(query, 2);
     const auto blob = Column(query, 3);
     if (sqlite3_column_int64(query, 4) || sqlite3_column_int64(query, 5) != 0 || blob.empty() || !importer::IsWebUrl(url) ||

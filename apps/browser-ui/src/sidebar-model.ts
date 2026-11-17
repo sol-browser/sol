@@ -126,6 +126,13 @@ export const retryable = (command: TreeMutation) => retryableMethods.has(command
   !(command.method === 'tree.removeFolder' && command.confirmation);
 export const isStaleRevision = (error: unknown) => error instanceof Error && /^409: Workspace changed/u.test(error.message);
 
+/** Hover time before an unloaded saved tab starts loading in the background. */
+export const preloadHoverMs = 150;
+/** Rows whose page hovering may load in the background: unloaded Pinned tabs and
+ *  Favorites (not folders, split rows, closing or archived entries). Native checks again. */
+export const preloadable = (n: TreeNode) =>
+  n.kind === 'tab' && !!(n.pinned || n.favorite) && !n.live && !n.closing && !n.archived && n.splitAnchor !== n.id;
+
 /** Rows the sidebar shows: a Today tab that is closing is already gone. */
 export const withoutClosingTabs = (nodes: TreeNode[]) =>
   nodes.some(n => n.closing && !n.pinned && !n.favorite) ? nodes.filter(n => !(n.closing && !n.pinned && !n.favorite)) : nodes;

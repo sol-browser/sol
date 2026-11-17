@@ -38,6 +38,8 @@
 #include "app/state.h"
 #include "app/session.h"
 #include "app/browsing_profiles.h"
+#include "app/content_blocker_bridge.h"
+#include "app/content_blocker_settings.h"
 #include "app/profile_location.h"
 #include "app/updates.h"
 #include "red_version.h"
@@ -440,7 +442,22 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   // Only for the capture experiment: Windows' file dialogs stay as they are for websites and for Sol.
-  CefRefPtr<CefDialogHandler> GetDialogHandler() override { return state_->screenshot_ask_probe ? this : nullptr; }
+  CefRefPtr<CefDialogHandler> GetDialogHandler() override {
+#if RED_CEF_INSTALL_PROMPT
+    // Website tabs: "Add extension?" from the Web Store opens Sol's own modal.
+    if (!shell_ && !internal_page_) return this;
+#endif
+    return state_->screenshot_ask_probe ? this : nullptr;
+  }
+#if RED_CEF_INSTALL_PROMPT
+  bool OnExtensionInstallPrompt(CefRefPtr<CefBrowser> browser, CefRefPtr<CefDictionaryValue> prompt,
+                                CefRefPtr<CefCallback> callback) override {
+    CEF_REQUIRE_UI_THREAD();
+    // Chrome's own dialog where Sol has no window modal (Little Sol, popups).
+    if (shell_ || internal_page_ || !state_->panel_popup || state_->little_window) return false;
+    return state_->panel_popup->ConfirmExtensionInstall(browser->GetIdentifier(), prompt, callback);
+  }
+#endif
   bool OnFileDialog(CefRefPtr<CefBrowser>, FileDialogMode mode, const CefString& title, const CefString& default_file_path,
                     const std::vector<CefString>&, const std::vector<CefString>&, const std::vector<CefString>&,
                     CefRefPtr<CefFileDialogCallback> callback) override {
@@ -786,6 +803,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   }
   void OnBeforeClose(CefRefPtr<CefBrowser> browser) override {
     if (!shell_) red::ForgetPageTranslation(browser->GetIdentifier());
+    if (!shell_ && state_->panel_popup) state_->panel_popup->PageClosed(browser->GetIdentifier());
     if (MovablePage()) RemoveWindowSubclass(browser->GetHost()->GetWindowHandle(), PageWindowMessage, browser->GetIdentifier());
     PageClients().erase(browser->GetIdentifier());
     red::UnregisterSessionUi(state_, browser->GetIdentifier());
@@ -1901,6 +1919,20 @@ class Client final : public CefClient, public CefLifeSpanHandler,
             if(red::ShowPasswords(state,profile->id,url.starts_with("chrome://password-manager/settings")))outcome="password_manager";
         }
         else if (kind == red::ForeignPage::Adopt) {
+          // A spanning extension runs in the main profile even for a private window, so
+          // Chrome puts the tabs its popup opens there. Open a website in the private
+          // window whose popup asked for it (nothing loaded yet; see OnBeforeBrowse).
+          if (red::HasWebScheme(url) && state->session)
+            for (const auto& window : state->session->Windows())
+              if (window->private_window && window->workspace && window->window && window->extension_popup &&
+                  window->extension_popup->recently_open()) {
+                window->workspace->OpenLink(url, true);
+                window->window->Activate();
+                state->Record("foreign_private_link");
+                outcome = "private_window";
+                break;
+              }
+          if (outcome == "private_window") { browser->GetHost()->CloseBrowser(true); return; }
           const auto profile = red::ProfileForBrowser(state,browser);
           if (state->workspace->AdoptExtensionPage(url,profile ? profile->id : state->active_profile)) outcome = "adopted";
         }
@@ -2062,12 +2094,17 @@ class WindowDelegate final : public CefWindowDelegate {
       // A launcher shows once its command bar opens a page; a start from the notification area
       // shows only its Little Sol (FinishBackgroundStart).
       else if (state_->background_start != State::BackgroundStart::None) FinishBackgroundStart(state_, 200);
-      else if (!state_->little_launcher) window->Show();
+      else if (!state_->little_launcher) {
+        window->Show();
+        // A private window opens over the window it was asked from (it starts its own
+        // background work, e.g. the ad blocker, which must not leave it behind).
+        if (state_->private_window) window->Activate();
+      }
       red::RefreshShortcuts(state_);
       ResizeWorkspace(window);
       state_->workspace->AttachContent();
       state_->Record("window_shown");
-      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->sidebar_perf_probe ? 150000 : state_->split_probe ? 105000 : state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_peek_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->split_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->little_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe ? 30000 : 15000);
+      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->sidebar_perf_probe ? 150000 : state_->split_probe ? 105000 : state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_peek_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->split_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->little_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe || state_->link_headers_discard ? 30000 : 15000);
       if (state_->input_probe) red::ObserveNativeInput(state_);
       if (!state_->import_probe.empty()) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
         if (auto s = weak.lock()) red::RunImportProbe(s);
@@ -2252,6 +2289,10 @@ class WindowDelegate final : public CefWindowDelegate {
     TraceGeometry(started, changed, layouts);
   }
   void OnWindowActivationChanged(CefRefPtr<CefWindow>, bool active) override {
+    if (state_->probe) {
+      auto details = CefDictionaryValue::Create(); details->SetBool("active", active);
+      details->SetBool("private", state_->private_window); state_->Record("window_activation", details);
+    }
     if (active && state_->session) state_->session->active_window = state_;
     if (active && state_->workspace) CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
       const auto state = weak.lock();
@@ -2290,6 +2331,8 @@ class WindowDelegate final : public CefWindowDelegate {
     content_panel_ = nullptr;
     state_->embedded = nullptr;
     capture_ = nullptr;
+    // A private window's own ad blocker page goes with it (its off-the-record context ends).
+    if (state_->private_blocker) { state_->private_blocker->Stop(); state_->private_blocker = nullptr; }
     state_->Record("window_destroyed");
     red::ForgetWorkspaceBackgroundTheme(background_root_);
     if (state_->browsers.empty()) red::QuitIfLastWindow(state_);
@@ -2460,6 +2503,13 @@ bool CreateWorkspaceWindow(const std::shared_ptr<State>& source, const fs::path&
   if (!tab.empty() && !seed) return false;
   auto state = std::make_shared<State>();
   state->session = source->session; state->secondary_window = true;
+  // Probe evidence: each further window writes its own report next to the first one's
+  // (window-<n>.jsonl), so its own events are visible too. Behavior stays non-probe.
+  if (source->evidence.is_open() && !source->evidence_directory.empty()) {
+    static int windows = 0;
+    state->evidence_directory = source->evidence_directory;
+    state->evidence.open(source->evidence_directory / ("window-" + std::to_string(++windows) + ".jsonl"), std::ios::trunc);
+  }
   state->standalone_window = seed.has_value() || little_window;
   state->little_window = little_window;
   state->little_launcher = little_window && launcher && link.empty();
@@ -2510,6 +2560,8 @@ bool CreateWorkspaceWindow(const std::shared_ptr<State>& source, const fs::path&
     state->session->AddWorkspace(state->workspace_data);
     state->web_context = CefRequestContext::CreateContext(CefRequestContextSettings(), nullptr);
     if (!state->web_context) return false;
+    // Its own uBlock Origin starts with defaults: give it the person's ad blocker settings.
+    red::PreparePrivateBlocker(state);
   } else if (source->workspace) state->initial_space = source->workspace->Snapshot()->GetString("activeSpace").ToString();
   if (!tab.empty()) {
     POINT cursor{};
@@ -2541,10 +2593,13 @@ bool CreateWorkspaceWindow(const std::shared_ptr<State>& source, const fs::path&
   if (state->private_window) {
     // Dark violet so a private window is never mistaken for a normal one.
     state->theme = red::Theme{278, 100, red::ThemeMode::Dark, 0};
-    // Its own downloads list (not recorded), favicons kept in memory only; no extensions run in
-    // an off-the-record profile. History is only read (address suggestions), never written.
+    // Its own downloads list (not recorded), favicons kept in memory only. Extensions run here
+    // only when allowed in private windows (Chrome's "Allow in Incognito"): the site popover
+    // lists those from the default profile's catalog. History is only read, never written.
     state->downloads = std::make_shared<red::DownloadManager>(state, red::DownloadManager::DefaultDirectory());
-    state->favicons = std::make_shared<red::FaviconCache>(); state->extensions = nullptr;
+    state->favicons = std::make_shared<red::FaviconCache>();
+    if (const auto main = state->session->profiles ? state->session->profiles->Get(state, "default") : nullptr) state->extensions = main->extensions;
+    else state->extensions = nullptr;
   }
   // With no window keeping the saved size and position (the first one closed, Sol stayed in the
   // notification area), an ordinary window takes them over.
@@ -2815,6 +2870,8 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
     // UI profile), and CEF's global context follows it: web tabs, Web Store
     // installs and extensions then landed in Shell (user report 2026-11-06).
     if (type.empty()) command->AppendSwitchWithValue("profile-directory", "Default");
+    // Engine patch red_17 registers uBlock Origin in web profiles unless this is set.
+    if (type.empty() && !state_->content_blocker) command->AppendSwitch("sol-disable-content-blocker");
     if (type.empty()) {
       // Pinned Chromium 154 uses OverlayScrollbar's mode parameter; Fluent is
       // already the Windows theme. Keep other caller-supplied feature overrides.
@@ -3184,6 +3241,16 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->link_headers_park = command->GetSwitchValue("probe-link-headers") == "park";
   state->link_headers_minimize = command->GetSwitchValue("probe-link-headers") == "minimize";
   state->link_headers_unload = command->GetSwitchValue("probe-link-headers") == "unload";
+  state->link_headers_discard = command->GetSwitchValue("probe-link-headers") == "discard";
+  state->link_headers_preload = command->GetSwitchValue("probe-link-headers") == "preload" ||
+      command->GetSwitchValue("probe-link-headers") == "preload-open" || command->GetSwitchValue("probe-link-headers") == "preload-open-fast";
+  state->link_headers_preload_open = command->GetSwitchValue("probe-link-headers") == "preload-open" ||
+      command->GetSwitchValue("probe-link-headers") == "preload-open-fast";
+  state->link_headers_preload_fast = command->GetSwitchValue("probe-link-headers") == "preload-open-fast";
+  // preload-open-shown: the preloading page's window is shown off screen, as a
+  // page that renders while preloaded (user report 2026-11-16).
+  state->link_headers_preload_shown = command->GetSwitchValue("probe-link-headers") == "preload-open-shown";
+  if (state->link_headers_preload_shown) state->link_headers_preload = state->link_headers_preload_open = true;
   state->link_headers_print = command->GetSwitchValue("probe-link-headers") == "print";
   state->link_headers_menu = command->GetSwitchValue("probe-link-headers") == "peekmenu";
   state->link_headers_tabmenu = command->GetSwitchValue("probe-link-headers") == "tabmenu";
@@ -3284,6 +3351,8 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
     state->theme = *cached;
     red::WorkspaceController::ApplyTheme(state);
   }
+  state->content_blocker = !fs::exists(red::ContentBlockerOffMarker(profile), profile_error);
+  profile_error.clear();
   CefString(&settings.root_cache_path) = profile.wstring();
   CefString(&settings.cache_path) = (profile / "Default").wstring();
   // Match the other persistent browsing profiles. Private windows use an

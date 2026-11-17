@@ -44,6 +44,11 @@ export function PreferencesSettings({ section, preferences: prefs, keyboard, dis
         <option value={120}>{t('settings.preference.hours', { count: 2 })}</option><option value={360}>{t('settings.preference.hours', { count: 6 })}</option><option value={0}>{t('settings.preference.never')}</option>
       </select></label>
     <p className="settings-note">{t('settings.preference.unloadDetail')}</p>
+    <div className="settings-option-list">
+      <SettingsToggle title={t('settings.preference.preloadHover')} description={t('settings.preference.preloadHoverDetail')}
+        checked={prefs?.preloadOnHover ?? true} disabled={disabled}
+        onChange={() => void save({ method: 'settings.set', key: 'preloadOnHover', value: !(prefs?.preloadOnHover ?? true) })} />
+    </div>
   </section><section className="settings-card">
     <h2>{t('settings.preference.pipHeading')}</h2>
     <div className="settings-option-list">

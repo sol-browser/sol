@@ -73,6 +73,9 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'licenses/Velopack-LICENSE.txt') -De
 Copy-Item -LiteralPath (Join-Path $repoRoot 'licenses/translation') -Destination $notices -Recurse -Force
 # zstd (cloud sync) is BSD-3-Clause: its notice goes with every binary copy.
 Copy-Item -LiteralPath (Join-Path $repoRoot 'third_party/zstd/LICENSE') -Destination (Join-Path $notices 'zstd-LICENSE.txt')
+# uBlock Origin (extensions/ublock, the built-in content blocker) is GPL-3.0-or-later;
+# its license also stays inside the extension folder.
+Copy-Item -LiteralPath (Join-Path $repoRoot 'third_party/ublock/LICENSE.txt') -Destination (Join-Path $notices 'uBlock-Origin-LICENSE.txt')
 python (Join-Path $repoRoot 'scripts/brand_exe.py') (Join-Path $stage 'sol.exe') `
     (Join-Path $repoRoot 'apps/desktop/resources/red.ico') $Version
 if ($LASTEXITCODE) { throw 'Stamping sol.exe failed' }

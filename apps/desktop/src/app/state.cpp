@@ -11,7 +11,9 @@ void State::Record(const std::string& event, CefRefPtr<CefDictionaryValue> detai
   auto row = CefDictionaryValue::Create();
   row->SetString("event", event);
   row->SetDouble("tick_ms", static_cast<double>(GetTickCount64()));
-  if (details) row->SetDictionary("details", details);
+  // A copy: SetDictionary detaches what it is given, and callers record the same
+  // details to more than one window's report (TransferPage) or keep using them.
+  if (details) row->SetDictionary("details", details->Copy(false));
   value->SetDictionary(row);
   if (evidence.is_open()) {
     evidence << CefWriteJSON(value, JSON_WRITER_DEFAULT).ToString() << '\n';

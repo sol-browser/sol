@@ -55,9 +55,16 @@ struct Run {
       const auto view=window->GetChildViewCount()?window->GetChildViewAt(0)->AsBrowserView():nullptr;
       const auto browser=view?view->GetBrowser():nullptr;
       if(browser) {
-        CefKeyEvent key;key.type=KEYEVENT_RAWKEYDOWN;key.windows_key_code=VK_F11;browser->GetHost()->SendKeyEvent(key);
-        key.type=KEYEVENT_KEYUP;browser->GetHost()->SendKeyEvent(key);
-        browser->GetHost()->ExecuteChromeCommand(cef_id_for_command_id_name("IDC_FULLSCREEN"),CEF_WOD_CURRENT_TAB);
+        // What a person can do: F11 (blocked by UtilityWindowClient::OnPreKeyEvent).
+        // Chromium 158 runs a host's ExecuteChromeCommand(IDC_FULLSCREEN) without
+        // OnChromeCommand for Chrome-style windows; Sol never sends it, so it is
+        // tried only with RED_UTILITY_FULLSCREEN=command (2026-11-18).
+        wchar_t only[16]{};GetEnvironmentVariableW(L"RED_UTILITY_FULLSCREEN",only,16);
+        if(std::wstring(only)!=L"command"){
+          CefKeyEvent key;key.type=KEYEVENT_RAWKEYDOWN;key.windows_key_code=VK_F11;browser->GetHost()->SendKeyEvent(key);
+          key.type=KEYEVENT_KEYUP;browser->GetHost()->SendKeyEvent(key);
+        }
+        if(std::wstring(only)==L"command")browser->GetHost()->ExecuteChromeCommand(cef_id_for_command_id_name("IDC_FULLSCREEN"),CEF_WOD_CURRENT_TAB);
       }
     }
     s->Record("utility_probe_window",d);
@@ -71,7 +78,25 @@ struct Run {
   void Normal(const std::string& name,CefRefPtr<CefWindow> window) {
     const auto s=state.lock();if(!s)return;
     auto d=CefDictionaryValue::Create();d->SetString("name",name);
-    d->SetBool("normal",window&&!window->IsFullscreen()&&!window->IsMaximized()&&!window->IsMinimized());
+    // Normal as Windows shows it: not maximized, minimized or covering its monitor.
+    // Chrome 158 reports its own Chrome-style windows (passwords, extensions) as
+    // fullscreen while Windows shows a normal window (user check 2026-11-18), so
+    // CEF's flag is recorded but not trusted for those.
+    bool normal=false;
+    if(window){
+      const HWND hwnd=window->GetWindowHandle();RECT rect{};GetWindowRect(hwnd,&rect);
+      MONITORINFO monitor{sizeof(monitor)};GetMonitorInfoW(MonitorFromWindow(hwnd,MONITOR_DEFAULTTONEAREST),&monitor);
+      const bool covers=EqualRect(&rect,&monitor.rcMonitor)!=FALSE;
+      normal=!IsZoomed(hwnd)&&!IsIconic(hwnd)&&!covers&&!window->IsMaximized()&&!window->IsMinimized();
+      d->SetBool("covers_monitor",covers);
+    }
+    d->SetBool("normal",normal);
+    d->SetBool("found",window!=nullptr);
+    if(window){
+      d->SetBool("cef_fullscreen",window->IsFullscreen());d->SetBool("cef_maximized",window->IsMaximized());
+      d->SetBool("cef_minimized",window->IsMinimized());
+      const HWND hwnd=window->GetWindowHandle();d->SetBool("win_zoomed",IsZoomed(hwnd)!=FALSE);d->SetBool("win_iconic",IsIconic(hwnd)!=FALSE);
+    }
     s->Record("utility_probe_fullscreen",d);
   }
 };

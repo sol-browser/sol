@@ -14,6 +14,8 @@ struct InstalledExtension {
   std::string options;  // Package path of the options page; empty when none.
   std::string icon;     // data:image/png;base64,… or empty.
   bool action = false;  // Declares a toolbar action (with or without a popup).
+  bool incognito = false;  // Allowed in private windows (Chrome's "Allow in Incognito").
+  bool split = false;  // Manifest "incognito": "split" (own off-the-record instance; else spanning).
 };
 // Lists the extensions of the web profile from Chrome's own record of them
 // (the "extensions.settings" preference) and each package's manifest. Chrome

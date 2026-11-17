@@ -72,3 +72,13 @@ export function parseExtensions(value: unknown): SiteExtension[] {
     return { id: item.id, name: item.name, icon: item.icon, popup: item.popup, options: item.options, action: item.action === true };
   });
 }
+
+// The built-in ad blocker on the visible page (apps/desktop/src/app/content_blocker_settings.h).
+export type SiteBlocker = { available: boolean; enabled: boolean; blocked: number };
+export function parseSiteBlocker(value: unknown): SiteBlocker | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const v = value as Record<string, unknown>;
+  if (v.available !== true) return undefined;
+  const blocked = typeof v.blocked === 'number' && Number.isFinite(v.blocked) && v.blocked >= 0 ? Math.floor(v.blocked) : 0;
+  return { available: true, enabled: v.enabled === true, blocked };
+}

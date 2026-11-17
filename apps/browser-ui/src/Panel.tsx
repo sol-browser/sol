@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { parseExtensionInstall, type ExtensionInstall } from './extension-install';
 import { parseArchive, parseSelectionTranslation, parseSnapshotUpdate, validTranslationLanguage, type DownloadAction, type SelectionTranslation, type Snapshot, type TreeNode } from '../../../packages/browser-contracts/src';
 import { DownloadsList } from './Downloads';
 import { useMessages } from './i18n';
@@ -9,7 +10,7 @@ import { HistoryPanel } from './History';
 import { ThemePanel } from './Theme';
 import { NewSpacePanel, SpacePanel } from './Space';
 import { applyTheme } from './theme-apply';
-import { parseExtensions, parseSiteInfo, type SiteExtension, type SiteInfo } from './site-model';
+import { parseExtensions, parseSiteBlocker, parseSiteInfo, type SiteBlocker, type SiteExtension, type SiteInfo } from './site-model';
 import { archiveOrder, displayTitle } from './sidebar-model';
 import { usePopupPresentation } from './usePopupPresentation';
 import { parseIntegrationCard, type IntegrationCard as Card } from './integrations';
@@ -20,12 +21,12 @@ import { SelectionTranslationPanel, TranslationPanel } from './TranslationPanel'
 // own owned window. It only speaks the panel IPC; native code validates all.
 type PinnedPage = { title: string; url: string };
 type ProfileMove = { title: string; spaceName: string };
-type Payload = { request: number; kind: 'archive' | 'downloads' | 'site' | 'history' | 'theme' | 'space' | 'newSpace' | 'integration' | 'editPinned' | 'moveToProfile' | 'translation' | 'selectionTranslation'; open: boolean; snapshot: Snapshot; archive?: TreeNode[]; site?: SiteInfo; extensions?: SiteExtension[]; siteDetails?: number; integration?: Card; pinnedPage?: PinnedPage; profileMove?: ProfileMove; translationLanguages?: string[]; selectionTranslation?: SelectionTranslation };
+type Payload = { request: number; kind: 'archive' | 'downloads' | 'site' | 'history' | 'theme' | 'space' | 'newSpace' | 'integration' | 'editPinned' | 'moveToProfile' | 'installExtension' | 'translation' | 'selectionTranslation'; open: boolean; extensionInstall?: ExtensionInstall; blocker?: SiteBlocker; extensionsAvailable?: boolean; snapshot: Snapshot; archive?: TreeNode[]; site?: SiteInfo; extensions?: SiteExtension[]; siteDetails?: number; integration?: Card; pinnedPage?: PinnedPage; profileMove?: ProfileMove; translationLanguages?: string[]; selectionTranslation?: SelectionTranslation };
 function parsePayload(raw: string, previous?:Payload): Payload {
   const value: unknown = JSON.parse(raw);
   if (typeof value !== 'object' || value === null) throw new Error('Invalid panel payload');
   const v = value as Record<string, unknown>;
-  if (!Number.isSafeInteger(v.request) || (v.kind !== 'archive' && v.kind !== 'downloads' && v.kind !== 'site' && v.kind !== 'history' && v.kind !== 'theme' && v.kind !== 'space' && v.kind !== 'newSpace' && v.kind !== 'integration' && v.kind !== 'editPinned' && v.kind !== 'moveToProfile' && v.kind !== 'translation' && v.kind !== 'selectionTranslation') || typeof v.open !== 'boolean')
+  if (!Number.isSafeInteger(v.request) || (v.kind !== 'archive' && v.kind !== 'downloads' && v.kind !== 'site' && v.kind !== 'history' && v.kind !== 'theme' && v.kind !== 'space' && v.kind !== 'newSpace' && v.kind !== 'integration' && v.kind !== 'editPinned' && v.kind !== 'moveToProfile' && v.kind !== 'installExtension' && v.kind !== 'translation' && v.kind !== 'selectionTranslation') || typeof v.open !== 'boolean')
     throw new Error('Invalid panel payload');
   const snapshot = parseSnapshotUpdate(JSON.stringify(v.snapshot),previous?.snapshot);
   const pinned = v.pinnedPage as Partial<PinnedPage> | null | undefined;
@@ -34,7 +35,8 @@ function parsePayload(raw: string, previous?:Payload): Payload {
   const move = v.profileMove as Partial<ProfileMove> | null | undefined;
   if (v.kind === 'moveToProfile' && v.open && (typeof move?.title !== 'string' || typeof move?.spaceName !== 'string'))
     throw new Error('Invalid move confirmation');
-  return { request: v.request as number, kind: v.kind, open: v.open, snapshot,
+  const install = v.kind === 'installExtension' && v.open ? parseExtensionInstall(v.extensionInstall) : undefined;
+  return { request: v.request as number, kind: v.kind, open: v.open, snapshot, extensionInstall: install,
     // Sent while the Archive panel is open; kept while it closes.
     archive: v.kind === 'archive' ? v.archive !== undefined ? parseArchive(v.archive) : previous?.archive : undefined,
     translationLanguages: Array.isArray(v.translationLanguages) ? v.translationLanguages.filter(validTranslationLanguage) : undefined,
@@ -44,6 +46,8 @@ function parsePayload(raw: string, previous?:Payload): Payload {
     integration: v.kind === 'integration' ? v.open ? parseIntegrationCard(v.integration, snapshot.integrations) : previous?.integration : undefined,
     site: v.kind === 'site' ? parseSiteInfo(v.site) : undefined,
     extensions: v.kind === 'site' ? parseExtensions(v.extensions) : undefined,
+    blocker: v.kind === 'site' ? parseSiteBlocker(v.blocker) : undefined,
+    extensionsAvailable: v.kind === 'site' ? v.extensionsAvailable !== false : undefined,
     siteDetails: v.kind === 'site' && Number.isSafeInteger(v.siteDetails) ? v.siteDetails as number : 0 };
 }
 // Raw reply for queries whose answer is not the snapshot (history pages).
@@ -138,6 +142,55 @@ function ProfileMoveConfirm({ move, opening }: { move: ProfileMove; opening: num
   </section>;
 }
 
+// Chrome's "Add extension?" prompt (engine patch red_16), in Sol's modal style.
+// Texts come localized from Chrome; Add waits Chrome's anti-misclick delay.
+function ExtensionInstallConfirm({ prompt, opening }: { prompt: ExtensionInstall; opening: number }) {
+  const t = useMessages();
+  const [ready, setReady] = useState(prompt.delay === 0);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (prompt.delay === 0) return;
+    const timer = window.setTimeout(() => setReady(true), prompt.delay + 50);
+    return () => window.clearTimeout(timer);
+  }, [prompt.delay]);
+  const report = (error: unknown) => setError(error instanceof Error ? error.message.replace(/^\d+: /, '') : String(error));
+  return <section className="pin-editor move-confirm install-confirm" role="alertdialog" aria-modal="true" aria-labelledby="install-confirm-heading"
+    onKeyDown={event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (!adding) void call({ method: 'panel.close' }).catch(report);
+      } else if (event.key === 'Tab') {
+        const controls = event.currentTarget.querySelectorAll<HTMLElement>('button:enabled, summary');
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey ? event.target === first : event.target === last) {
+          event.preventDefault();
+          (event.shiftKey ? last : first)?.focus();
+        }
+      }
+    }}>
+    <header className="install-confirm-title">
+      {prompt.icon ? <img src={prompt.icon} alt="" width={32} height={32} /> : <span className="install-confirm-icon"><Icon name="popup" /></span>}
+      <h2 id="install-confirm-heading">{prompt.title || t('panel.installTitle', { name: prompt.name })}</h2>
+    </header>
+    {prompt.permissions.length > 0 && <>
+      {prompt.heading && <p>{prompt.heading}</p>}
+      <ul className="install-confirm-permissions">
+        {prompt.permissions.map((permission, index) => <li key={index}>{permission.details ?
+          <details><summary>{permission.text}</summary><p>{permission.details}</p></details> : permission.text}</li>)}
+      </ul>
+    </>}
+    {error && <p className="popover-error" role="alert">{error}</p>}
+    <footer>
+      <button type="button" autoFocus disabled={adding} onClick={() => void call({ method: 'panel.close' }).catch(report)}>{prompt.cancel}</button>
+      <button type="submit" data-action="confirm-extension-install" disabled={adding || !ready} onClick={() => {
+        setAdding(true); setError('');
+        void call({ method: 'install.confirm', request: opening }).catch(error => { report(error); setAdding(false); });
+      }}>{prompt.accept}</button>
+    </footer>
+  </section>;
+}
+
 export function Panel() {
   const t = useMessages();
   const [payload, setPayload] = useState<Payload>();
@@ -202,6 +255,8 @@ export function Panel() {
       <PinnedPageEditor key={payload.request} page={payload.pinnedPage} opening={payload.request} /> :
     payload?.kind === 'moveToProfile' ? payload.open && payload.profileMove &&
       <ProfileMoveConfirm key={payload.request} move={payload.profileMove} opening={payload.request} /> :
+    payload?.kind === 'installExtension' ? payload.open && payload.extensionInstall &&
+      <ExtensionInstallConfirm key={payload.request} prompt={payload.extensionInstall} opening={payload.request} /> :
     payload?.kind === 'integration' && payload.integration ? <IntegrationCard key={payload.request} card={payload.integration} active={payload.open}
       open={index => run({ method: 'integration.open', request: payload.request, revision: payload.integration?.revision??0, index })}
       join={index => run({ method: 'integration.join', request: payload.request, revision: payload.integration?.revision??0, index })}
@@ -216,6 +271,8 @@ export function Panel() {
     payload?.kind === 'history' ? <HistoryPanel key={payload.request} query={query} onReady={() => setHistoryReady(payload.request)} /> :
     payload?.kind === 'site' && payload.site ? <SitePanel key={payload.request} site={payload.site} changed={changed}
       extensions={payload.extensions ?? []} details={payload.siteDetails ?? 0} command={run}
+      blocker={payload.blocker} setBlocker={enabled => run({ method: 'site.blocker', enabled })}
+      extensionsAvailable={payload.extensionsAvailable !== false}
       set={(key, value) => { setChanged(true); run({ method: 'site.set', origin: payload.site!.origin, key, value }); }}
       reset={() => { setChanged(true); run({ method: 'site.reset', origin: payload.site!.origin }); }}
       autoPip={value => {

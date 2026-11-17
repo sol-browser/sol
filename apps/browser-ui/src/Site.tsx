@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMessages } from './i18n';
 import { Icon, type IconName } from './Icon';
-import { PERMISSIONS, defaultValue, isCustomized, isSecure, siteHost, type PermissionKey, type SiteExtension, type SiteInfo, type SiteValue } from './site-model';
+import { PERMISSIONS, defaultValue, isCustomized, isSecure, siteHost, type PermissionKey, type SiteExtension, type SiteInfo, type SiteValue, type SiteBlocker } from './site-model';
 
 const ICONS: Record<PermissionKey, IconName> = {
   camera: 'camera', microphone: 'mic', location: 'location', notifications: 'bell', clipboard: 'clipboard', popups: 'popup',
@@ -9,7 +9,8 @@ const ICONS: Record<PermissionKey, IconName> = {
 type View = 'main' | 'permissions';
 
 /** Arc-style site popover: share, extensions, then connection and permissions behind "Secure". */
-export function SitePanel({ site, extensions, details, changed, set, reset, reload, autoPip, command }: { site: SiteInfo; extensions: SiteExtension[]; details: number;
+export function SitePanel({ site, extensions, details, changed, set, reset, reload, autoPip, command, blocker, setBlocker, extensionsAvailable }: { site: SiteInfo; extensions: SiteExtension[]; details: number;
+    blocker?: SiteBlocker; setBlocker: (enabled: boolean) => void; extensionsAvailable: boolean;
     changed: boolean; set: (key: PermissionKey, value: SiteValue) => void; reset: () => void; reload: () => void; autoPip: (value: boolean) => Promise<unknown>;
     command: (request: object) => void }) {
   const t = useMessages();
@@ -58,7 +59,15 @@ export function SitePanel({ site, extensions, details, changed, set, reset, relo
       <button type="button" className="site-share site-capture" aria-label={t('site.capture')} title={t('site.capture')} disabled={!site.origin}
         onClick={() => command({ method: 'site.capture' })}><Icon name="shot" /></button>
     </div>
-    <div className="site-group">
+    {/* Built-in ad blocker (uBlock Origin), Sol's own control: on or off for this site. */}
+    {blocker && <div className="site-group site-blocker">
+      <label className="site-switch"><span>{t('site.blocker')}<small>{blocker.enabled ?
+          t('site.blockerCount', { count: blocker.blocked }) : t('site.blockerOff')}</small></span>
+        <input type="checkbox" role="switch" checked={blocker.enabled} aria-label={t('site.blocker')}
+          onChange={event => setBlocker(event.target.checked)} /></label>
+    </div>}
+    {/* Chromium runs no extensions in a private window. */}
+    {extensionsAvailable && <div className="site-group">
       <h3 className="site-section">{t('settings.extensions.title')}</h3>
       <ul className="site-extensions" aria-label={t('settings.extensions.title')}>
         {extensions.map(item => <li key={item.id}>
@@ -70,7 +79,7 @@ export function SitePanel({ site, extensions, details, changed, set, reset, relo
         <li><button type="button" className="site-extension site-extension-add" title={t('site.addExtensions')} aria-label={t('site.addExtensions')}
           onClick={() => command({ method: 'extension.store' })}><Icon name="plus" /></button></li>
       </ul>
-    </div>
+    </div>}
     {(decided.length > 0 || live) && <div className="site-group">
       {liveNotice}
       {decided.length > 0 && <ul className="site-switches">{decided.map(({ key, value }) =>

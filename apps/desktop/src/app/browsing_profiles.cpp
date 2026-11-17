@@ -84,12 +84,19 @@ std::shared_ptr<BrowsingProfile> BrowsingProfiles::ForContext(CefRefPtr<CefReque
   for (const auto& [id,profile] : profiles_) if (context && profile->context->IsSharingWith(context)) return profile;
   return nullptr;
 }
+std::vector<std::shared_ptr<BrowsingProfile>> BrowsingProfiles::All() const {
+  std::lock_guard lock(mutex_);
+  std::vector<std::shared_ptr<BrowsingProfile>> all;
+  for (const auto& [id,profile] : profiles_) all.push_back(profile);
+  return all;
+}
 void BrowsingProfiles::Stop() {
   std::lock_guard lock(mutex_);
   for (const auto& [id,profile] : profiles_) {
     // Clean exit (app/chrome_session_restore.h). The default profile is the global context.
     if (profile->context && profile->initialized) KeepSessionCookiesForNextStart(profile->context);
     profile->install_watch = nullptr;
+    if (profile->blocker) { profile->blocker->Stop(); profile->blocker = nullptr; }
     profile->history->Stop();
   }
   profiles_.clear();

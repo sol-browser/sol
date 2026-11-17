@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useMessages } from './i18n';
 import { useIntl } from 'react-intl';
 import { integrationEnabled, integrationSettingsCatalog, unlistedIntegrations, parseSettingsSnapshot, type Backdrop, type Clock, type InterfaceLanguage, type SettingsCommand, type SettingsSnapshot } from '../../../packages/browser-contracts/src';
-import { Settings2, Palette, ArrowUpRight, Check, Puzzle, Info, Search, Keyboard, Archive, UserRound, Languages } from 'lucide-react';
+import { Settings2, Palette, ArrowUpRight, Check, Puzzle, Info, Search, Keyboard, Archive, UserRound, Languages, ShieldCheck } from 'lucide-react';
+import { BlockerSettings } from './BlockerSettings';
 import { PreferencesSettings } from './PreferencesSettings';
 import { SettingsToggle } from './SettingsToggle';
 import { Icon } from './Icon';
@@ -37,6 +38,7 @@ const navigation = [
   { id: 'tabs', label: 'settings.section.tabs', icon: Archive },
   { id: 'appearance', label: 'settings.section.appearance', icon: Palette },
   { id: 'search', label: 'settings.section.search', icon: Search },
+  { id: 'blocker', label: 'settings.section.blocker', icon: ShieldCheck },
   { id: 'languages', label: 'settings.category.languages', icon: Languages },
   { id: 'profiles', label: 'settings.category.data', icon: UserRound },
   { id: 'integrations', label: 'settings.category.integrations', icon: Puzzle },
@@ -298,6 +300,8 @@ export function Settings() {
           onOpen={(profile, settings) => void action({ method: 'settings.passwords', profile, settings })} />;
       case 'sync':
         return <SyncSettings ready={!!data?.ready} />;
+      case 'blocker':
+        return <BlockerSettings preferences={data?.preferences} ready={!!data?.ready} busy={busy} save={action} />;
       case 'import':
         return <ImportSettings disabled={busy || !data?.ready} profileName={data?.profiles?.find(profile => profile.id === 'default')?.name ?? 'Default'} />;
       case 'releases':

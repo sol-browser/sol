@@ -75,6 +75,8 @@ int main() {
     check(red::ClassifyForeignPage(url) == ForeignPage::Reject, "unsupported foreign page rejected");
   check(red::AllowedInTrustedProfile(5, true) && red::AllowedInTrustedProfile(10, true), "component extensions allowed in shell profile");
   check(red::AllowedInTrustedProfile(6, false), "disabled default external extension tolerated");
+  check(!red::AllowedInTrustedProfile("fkgkibajhfbepljeaefdnfnegdcjomkh", 5, true) &&
+        red::AllowedInTrustedProfile("mhjfbmdgcfjbbpaeojofohoefgiehjai", 5, true), "built-in content blocker flagged in shell profile");
   check(!red::AllowedInTrustedProfile(8, true) && !red::AllowedInTrustedProfile(1, true) && !red::AllowedInTrustedProfile(4, true),
         "command-line, store or unpacked extensions denied in shell profile");
   check(red::IsTrackedExtensionInstallLocation(1) && red::IsTrackedExtensionInstallLocation(4),

@@ -214,7 +214,9 @@ def source_map(root, build, sdk):
                'licenses/chromium-credits.html': sdk / 'CREDITS.html',
                'licenses/velopack-license.txt': root / 'licenses/Velopack-LICENSE.txt',
                # zstd (cloud sync) is BSD-3-Clause.
-               'licenses/zstd-license.txt': root / 'third_party/zstd/LICENSE'}
+               'licenses/zstd-license.txt': root / 'third_party/zstd/LICENSE',
+               # uBlock Origin (the built-in content blocker) is GPL-3.0-or-later.
+               'licenses/ublock-origin-license.txt': root / 'third_party/ublock/LICENSE.txt'}
     lists = cef_lists(sdk)
     for group, directory in (('CEF_BINARY_FILES', sdk / 'Release'),
                              ('CEF_RESOURCE_FILES', sdk / 'Resources')):
@@ -231,6 +233,9 @@ def source_map(root, build, sdk):
         sources[('ui/' + relative).casefold()] = path
     for relative, path in inventory(root / 'apps/desktop/translator').values():
         sources[('translator/' + relative).casefold()] = path
+    for relative, path in inventory(root / 'third_party/ublock').values():
+        if relative != '.archive-sha256':  # fetch_ublock.py's marker stays out of the build
+            sources[('extensions/ublock/' + relative).casefold()] = path
     for relative, path in inventory(root / 'licenses/translation').values():
         sources[('licenses/translation/' + relative).casefold()] = path
     lock = json.loads((root / 'cmake/translation-engine.lock.json').read_text())

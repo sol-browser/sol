@@ -43,6 +43,7 @@ target_sources(${CEF_TARGET} PRIVATE src/workspace/folder_removal.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/window_transfer.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/session.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/browsing_profiles.cpp)
+target_sources(${CEF_TARGET} PRIVATE src/app/content_blocker_bridge.cpp src/app/content_blocker_settings.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/workspace/profiles_controller.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/profiles_probe.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/profile_settings_probe.cpp)
@@ -230,6 +231,17 @@ add_custom_target(translation_engine_assets ALL
   COMMENT "Staging the translation engine"
   VERBATIM)
 add_dependencies(${CEF_TARGET} translation_engine_assets)
+# uBlock Origin, which the engine loads as a component extension
+# (scripts/fetch_ublock.py, docs/ublock-origin.md). Replaced whole, so an
+# update never leaves files from the previous version behind.
+add_custom_target(content_blocker_assets ALL
+  COMMAND "${CMAKE_COMMAND}" -E rm -rf "${CEF_TARGET_OUT_DIR}/extensions/ublock"
+  COMMAND "${CMAKE_COMMAND}" -E copy_directory
+          "${CMAKE_SOURCE_DIR}/third_party/ublock" "${CEF_TARGET_OUT_DIR}/extensions/ublock"
+  COMMAND "${CMAKE_COMMAND}" -E rm -f "${CEF_TARGET_OUT_DIR}/extensions/ublock/.archive-sha256"
+  COMMENT "Staging uBlock Origin"
+  VERBATIM)
+add_dependencies(${CEF_TARGET} content_blocker_assets)
 # sol-tray.exe: the tray icon and Ctrl+Alt+N while no Sol window is open, without CEF
 # (src/tray/sol_tray.cpp, docs/little-sol.md). Next to sol.exe, so packages carry it.
 add_executable(sol_tray WIN32 src/tray/sol_tray.cpp)
@@ -246,6 +258,10 @@ add_executable(trust_policy_test "${CMAKE_SOURCE_DIR}/tests/native/trust_policy_
 target_include_directories(trust_policy_test PRIVATE src)
 target_compile_options(trust_policy_test PRIVATE /W4 /WX)
 add_test(NAME trust_policy COMMAND trust_policy_test)
+add_executable(trusted_sites_test "${CMAKE_SOURCE_DIR}/tests/native/trusted_sites_test.cpp")
+target_include_directories(trusted_sites_test PRIVATE src)
+target_compile_options(trusted_sites_test PRIVATE /W4 /WX /EHsc)
+add_test(NAME trusted_sites COMMAND trusted_sites_test)
 
 add_executable(page_translation_test "${CMAKE_SOURCE_DIR}/tests/native/page_translation_test.cpp" src/translation/page_translation_model.cpp src/translation/model_catalog.cpp)
 target_include_directories(page_translation_test PRIVATE src)

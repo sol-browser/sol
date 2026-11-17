@@ -41,6 +41,8 @@ struct Preferences {
   bool little_sol_hotkey = true;  // Global opening shortcut and notification-area mode.
   KeyBinding little_sol_binding = kDefaultLittleSolHotkey;
   int unload_minutes = 60;  // Idle tabs leave memory (0: never).
+  bool preload_on_hover = true;  // Hovering an unloaded Pinned/Favorite starts loading it.
+  bool content_blocker = true;  // Built-in uBlock Origin (engine component); applies at the next start.
   // Times on History and Downloads: "system" (the Windows short time format), "12" or "24".
   std::string clock = "system";
   std::string backdrop = "none";  // Window background: "none", "mica" or "acrylic" (Windows 11).
@@ -74,6 +76,10 @@ bool ReadTranslationKnownLanguages(CefRefPtr<CefListValue> list, std::set<std::s
 CefRefPtr<CefListValue> SiteSearchList(const std::vector<SiteSearch>& sites);
 bool ValidAutoArchiveHours(int hours);
 bool ValidUnloadMinutes(int minutes);
+// The engine reads the content blocker setting at startup, before Settings'
+// database opens: a marker file next to it records "off" (docs/ublock-origin.md).
+std::filesystem::path ContentBlockerOffMarker(const std::filesystem::path& profile);
+void WriteContentBlockerMarker(const std::filesystem::path& settings_database, bool enabled);
 bool ValidHomepage(const std::string& url);
 bool ValidBackdrop(const std::string& backdrop);
 bool ValidClock(const std::string& clock);

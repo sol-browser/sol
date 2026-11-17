@@ -4,6 +4,7 @@
 #include "windows/auto_pip.h"
 #include "windows/devtools_dock.h"
 #include "windows/focus.h"
+#include "windows/page_animations.h"
 #include "trust_policy.h"
 #include <windows.h>
 #include <dwmapi.h>
@@ -593,6 +594,7 @@ void EmbeddedContent::Activate(CefRefPtr<CefBrowser> browser, bool cold) {
     const bool changed = state->content != browser;
     state->content = browser; if (!state->ui_editing) state->keyboard_target = id;
     LayoutSplit();
+    ReleaseShownAnimations(id);
 #if CEF_API_ADDED(CEF_EXPERIMENTAL)
     if (changed) browser->GetHost()->NotifyTabActivated();
 #endif
@@ -675,6 +677,7 @@ void EmbeddedContent::Activate(CefRefPtr<CefBrowser> browser, bool cold) {
   if (covered) {
     BeginPresentation(browser, cold);
   } else {
+    ReleaseShownAnimations(id);
     if (state->ui_editing) FocusShell(state); else FocusBrowser(browser);
     auto direct = CefDictionaryValue::Create(); direct->SetInt("browser_id", id);
     direct->SetBool("no_outgoing_page", !retain_page); direct->SetBool("target_loading", browser->IsLoading());
@@ -684,7 +687,17 @@ void EmbeddedContent::Activate(CefRefPtr<CefBrowser> browser, bool cold) {
   data->SetBool("loading", browser->IsLoading()); data->SetBool("retained", covered); data->SetBool("contained", AllContained());
   state->Record("embedded_activated", data);
 }
+void EmbeddedContent::ReleaseAnimationsWhenShown(int id) { held_animations_.insert(id); }
+void EmbeddedContent::ReleaseShownAnimations(int id) {
+  const auto found = browsers_.find(id);
+  if (!held_animations_.erase(id) || found == browsers_.end()) return;
+  PausePageAnimations(found->second, false);
+  if (const auto state = state_.lock(); state && state->probe) {
+    auto data = CefDictionaryValue::Create(); data->SetInt("browser_id", id); state->Record("preload_animations_released", data);
+  }
+}
 void EmbeddedContent::OnClosed(int id) {
+  held_animations_.erase(id);
   if (id == link_status_browser_) HideLinkStatus();
   if (IsLinkPeek(id)) {
     link_peek_return_delay_=corners_.BeginLinkPeekReturn();

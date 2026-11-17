@@ -20,6 +20,7 @@
 #include "include/views/cef_window.h"
 
 namespace red {
+class ContentBlockerBridge;
 class TabProbe;
 class AppSession;
 struct WorkspaceData;
@@ -59,6 +60,7 @@ struct State {
   // This launch created the profile (no Chromium data yet): Sol shows its welcome
   // window first and this window once it finishes.
   bool fresh_profile = false;
+  bool content_blocker = true;  // The engine registers uBlock Origin (read at startup; preferences.h).
   // Windows 11 system backdrop (engine patch 12, docs/acrylic.md). |translucent| is fixed when
   // the window is created; |backdrop| ("none", "mica", "acrylic") follows Settings live.
   bool translucent = false;
@@ -132,6 +134,8 @@ struct State {
   std::shared_ptr<UpdateWindow> update_window;  // Check for Updates, on demand.
   std::shared_ptr<CaptureWindow> capture_window;  // Capture (Ctrl+Shift+5), on demand.
   std::shared_ptr<ExtensionCatalog> extensions;  // Web profile extensions (site popover).
+  // A private window's own uBlock Origin (Chromium runs it split, off the record).
+  std::shared_ptr<ContentBlockerBridge> private_blocker;
   std::shared_ptr<SidebarMenu> sidebar_menu;
   bool probe = false;
   bool passwords_probe = false;
@@ -209,7 +213,7 @@ struct State {
   bool import_done = false;
   bool platform_codecs_probe = false;
   bool devtools_regression = false;
-  bool link_headers_quick = false, link_headers_park = false, link_headers_minimize = false, link_headers_unload = false, link_headers_print = false, link_headers_menu = false, link_headers_tabmenu = false, link_headers_inspect = false, link_headers_zoom = false, link_headers_transfer = false;
+  bool link_headers_quick = false, link_headers_park = false, link_headers_minimize = false, link_headers_unload = false, link_headers_discard = false, link_headers_preload = false, link_headers_preload_open = false, link_headers_preload_fast = false, link_headers_preload_shown = false, link_headers_print = false, link_headers_menu = false, link_headers_tabmenu = false, link_headers_inspect = false, link_headers_zoom = false, link_headers_transfer = false;
   int link_headers_phase = 0, link_headers_cycles = 0;
   bool pin_probe = false, pin_started = false, pin_done = false;
   std::string pin_id;

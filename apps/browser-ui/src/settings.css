@@ -220,3 +220,27 @@
 .settings-card p.import-warning { display:flex; gap:9px; align-items:flex-start; margin-top:14px; padding:10px 12px; border-radius:8px; background:#e2b46a10; border:1px solid #e2b46a22; color:#dcc39b; font-size:11px; line-height:1.6; }
 .import-warning svg { flex:none; margin-top:2px; }
 @media (max-width:780px) { .import-sources { grid-template-columns:repeat(2,minmax(0,1fr)); } .import-types { grid-template-columns:minmax(0,1fr); } }
+/* Settings > Ad blocker (BlockerSettings.tsx). */
+.blocker-settings { display:grid; gap:inherit; }
+.blocker-heading { display:flex; gap:16px; align-items:flex-start; justify-content:space-between; }
+.blocker-heading h2 { margin-top:0; }
+.blocker-heading .settings-secondary { display:inline-flex; gap:6px; align-items:center; flex:none; }
+.blocker-spin { animation:blocker-spin 1s linear infinite; }
+@keyframes blocker-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .blocker-spin { animation:none; } }
+.blocker-group { margin-top:18px; }
+.blocker-group h3 { margin:0 0 8px; font-size:11px; font-weight:600; letter-spacing:.3px; text-transform:uppercase; color:var(--pop-muted); }
+.blocker-add { display:flex; gap:8px; margin-top:14px; }
+.blocker-add input, .blocker-rules { min-width:0; padding:8px 11px; border:1px solid var(--pop-hover-strong); border-radius:8px;
+  background:var(--pop-well); box-shadow:var(--pop-well-shadow); color:var(--pop-ink); font:inherit; font-size:12px; }
+.blocker-add input { flex:1; }
+.blocker-add input:focus-visible, .blocker-rules:focus-visible { outline:2px solid var(--pop-accent); outline-offset:2px; }
+.blocker-sites { margin:12px 0 0; padding:0; list-style:none; max-height:260px; overflow:auto; }
+.blocker-sites li { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 4px 6px 10px; border-radius:8px; font-size:12px; }
+.blocker-sites li:hover { background:var(--pop-hover); }
+.blocker-sites span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.blocker-remove { display:grid; place-items:center; width:24px; height:24px; padding:0; border:0; border-radius:6px; background:none; color:var(--pop-muted); cursor:pointer; }
+.blocker-remove:hover { background:var(--pop-hover-strong); color:inherit; }
+.blocker-remove:focus-visible { outline:2px solid var(--pop-accent); outline-offset:1px; }
+.blocker-rules { display:block; box-sizing:border-box; width:100%; min-height:160px; margin-top:14px; resize:vertical;
+  font-family:ui-monospace, "Cascadia Mono", Consolas, monospace; line-height:1.5; white-space:pre; }

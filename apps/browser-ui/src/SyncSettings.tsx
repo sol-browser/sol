@@ -151,7 +151,7 @@ export function SyncSettings({ ready }: { ready: boolean }) {
               {folder.clientRunning === false && <span className="sync-client-stopped">{t('settings.sync.clientNotRunning', { provider: providerName(folder.provider) })}</span>}</span>
           </label>)}
         {choice && !status.detected.some(folder => folder.path === choice.path) &&
-          <label className="sync-folder-option">
+          <label className="sync-folder-option" aria-label={`${providerName(choice.provider)} ${choice.path}`}>
             <input type="radio" name="sync-folder" checked readOnly />
             <span><strong>{providerName(choice.provider)}</strong><span className="sync-folder">{choice.path}</span></span>
           </label>}
@@ -174,9 +174,9 @@ export function SyncSettings({ ready }: { ready: boolean }) {
         {tooShort && <p className="settings-note">{t('settings.sync.error.weakPassphrase')}</p>}
         {mismatch && <p className="settings-error" role="alert">{t('settings.sync.mismatch')}</p>}
         {choice.hasVault && <div className="sync-join" role="radiogroup">
-          <label className="sync-folder-option"><input type="radio" name="sync-join" checked={join === 'synced'} disabled={disabled} onChange={() => setJoin('synced')} />
+          <label className="sync-folder-option" aria-label={t('settings.sync.joinSynced')}><input type="radio" name="sync-join" checked={join === 'synced'} disabled={disabled} onChange={() => setJoin('synced')} />
             <span><strong>{t('settings.sync.joinSynced')}</strong><span>{t('settings.sync.joinSyncedDetail')}</span></span></label>
-          <label className="sync-folder-option"><input type="radio" name="sync-join" checked={join === 'merge'} disabled={disabled} onChange={() => setJoin('merge')} />
+          <label className="sync-folder-option" aria-label={t('settings.sync.joinMerge')}><input type="radio" name="sync-join" checked={join === 'merge'} disabled={disabled} onChange={() => setJoin('merge')} />
             <span><strong>{t('settings.sync.joinMerge')}</strong></span></label>
         </div>}
         {creating && <p className="settings-note">{t('settings.sync.recovery')}</p>}

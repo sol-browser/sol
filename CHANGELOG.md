@@ -17,6 +17,33 @@ One short line that sums up the release. Optional; the website shows it as the h
 New things first, smaller fixes under "### Fixes". Describe the result for the user, not the code.
 -->
 
+## 0.9.0 — 2026-11-18
+
+A built-in ad blocker, a newer engine, and tabs that come back the way you left them.
+
+- **Ad blocker (Beta):** Sol now blocks ads and trackers with uBlock Origin,
+  built in. Manage it in Settings > Ad blocker:
+  - choose filter lists and update them;
+  - keep a list of sites where blocking is off;
+  - add your own rules;
+  - block from the very first page after Sol starts.
+
+  The site panel shows how many requests were blocked on the page and turns
+  blocking off for that site. Private windows use your ad blocker settings
+  too.
+- **Unloaded tabs keep their place:** when Sol frees memory from a tab you
+  haven't used in a while, it now remembers its back and forward history,
+  where you scrolled and what you typed into forms, and brings them back
+  when you open the tab again.
+- **Faster Pinned tabs and Favorites:** resting the pointer on an unloaded
+  Pinned tab or Favorite starts loading it, so it opens faster. If you don't
+  open it, it leaves memory again after 10 minutes. You can turn this off in
+  Settings > Tabs.
+- **Extensions in private windows:** right-click an extension in the site
+  panel and choose "Allow in private windows". Only the extensions you allow
+  run there.
+- **Engine:** Sol now runs on Chromium 158.0.8127.18.
+
 ## 0.8.0 — 2026-11-16
 
 Sync your Spaces and passwords between your PCs, through your own cloud folder.

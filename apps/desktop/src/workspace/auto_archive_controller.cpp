@@ -18,6 +18,7 @@ bool WorkspaceController::AutoArchiveBusy() const {
 }
 bool WorkspaceController::AutoArchiveProtected(const std::string& id) const {
   const auto state=state_.lock(); if (!state || !state->window) return false;
+  if (preloading_.contains(id)) return true;  // ExpirePreload unloads it on its own schedule.
   const auto browser=LiveBrowser(id);
   if (!state->window->IsMinimized() && IsWindowVisible(state->window->GetWindowHandle())) {
     if (tree_.active_id==id) return true;
@@ -32,6 +33,23 @@ bool WorkspaceController::AutoArchiveProtected(const std::string& id) const {
 }
 void WorkspaceController::AutoArchiveUnload(const std::string& id, std::function<void(bool)> done) {
   if (AutoArchiveBusy() || AutoArchiveProtected(id) || auto_closing_.contains(id)) { done(false); return; }
+  const auto browser=LiveBrowser(id); if (!browser) { done(true); return; }
+#if RED_CEF_NAVIGATION_STATE
+  // Kept like Chrome's discarded tabs; a beforeunload veto keeps the page and
+  // leaves an entry that the next unload or reopen replaces.
+  std::erase_if(discarded_, [&](const auto& entry) {
+    return std::none_of(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == entry.first && !n.archived; });
+  });
+  // Keyed by the page's address: Today tabs save it as theirs when the page closes;
+  // Pinned/Favorites unload only while on their saved address (UnloadKeepsPlace).
+  if (auto saved = browser->GetHost()->GetNavigationState()) discarded_[id] = {browser->GetMainFrame()->GetURL().ToString(), saved};
+  else discarded_.erase(id);
+#endif
+  auto_closing_[id]=std::move(done); Publish(); CloseBrowserWithDialogs(state_, browser, false);
+}
+void WorkspaceController::UnloadPreload(const std::string& id, std::function<void(bool)> done) {
+  if (!ready_ || stopped_ || shutting_down_ || pending_commands_ || closing_commits_ || !closing_.empty() || profile_changing_ ||
+      !moving_unloads_.empty() || auto_closing_.contains(id)) { done(false); return; }
   const auto browser=LiveBrowser(id); if (!browser) { done(true); return; }
   auto_closing_[id]=std::move(done); Publish(); CloseBrowserWithDialogs(state_, browser, false);
 }

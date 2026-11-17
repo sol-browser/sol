@@ -64,6 +64,23 @@ if(RED_CEF_HAS_PAGE_CONTAINER AND RED_CEF_BROWSER_H MATCHES "virtual void SetCon
   add_compile_definitions(RED_CEF_CONTAINER_CORNERS=1)
   message(STATUS "CEF: persistent resting page clip available")
 endif()
+# Engine patch red_16: Sol's own "Add extension?" modal (docs/cef-patches.md).
+file(READ "${CEF_ROOT}/include/cef_dialog_handler.h" RED_CEF_DIALOG_HANDLER_H)
+if(RED_CEF_DIALOG_HANDLER_H MATCHES "OnExtensionInstallPrompt")
+  add_compile_definitions(RED_CEF_INSTALL_PROMPT=1)
+  message(STATUS "CEF: extension install prompt available")
+endif()
+# Engine API: Chrome's "Allow in Incognito" for an extension (private windows).
+file(READ "${CEF_ROOT}/include/cef_request_context.h" RED_CEF_REQUEST_CONTEXT_H)
+if(RED_CEF_REQUEST_CONTEXT_H MATCHES "SetExtensionAllowedInIncognito")
+  add_compile_definitions(RED_CEF_EXTENSION_INCOGNITO=1)
+  message(STATUS "CEF: extension private-window permission available")
+endif()
+# Engine patch: session history kept across a memory unload (docs/today-auto-archive.md).
+if(RED_CEF_BROWSER_H MATCHES "virtual bool RestoreNavigationState\\(")
+  add_compile_definitions(RED_CEF_NAVIGATION_STATE=1)
+  message(STATUS "CEF: navigation state save/restore available")
+endif()
 if(RED_CEF_WINDOW_DELEGATE_H MATCHES "IsTranslucent")
   add_compile_definitions(RED_CEF_TRANSLUCENT=1)
   message(STATUS "CEF: translucent windows available")

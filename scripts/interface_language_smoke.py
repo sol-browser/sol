@@ -66,7 +66,7 @@ def main():
         "native_settings_title": details(second, "language_window").get("title") == "Налаштування — Sol",
         "localized_menu_action": all(any(row["event"] == "menu_action_ran" for row in rows) for rows in (first, second)),
         "settings_groups_and_links": all(group.get("sidebar") == [
-            "general", "tabs", "appearance", "search", "languages", "profiles", "integrations", "keyboard", "releases"]
+            "general", "tabs", "appearance", "search", "blocker", "languages", "profiles", "integrations", "keyboard", "releases"]
             and all(group.get(key) for key in ("browserGroup", "littleRows", "shortcutLink", "passwords", "imports",
                                                 "integrations", "appearance", "about", "languages")) for group in groups),
         "minimum_width": all(0 < doc.get("width", 0) <= 720 for doc in (before, after)),
