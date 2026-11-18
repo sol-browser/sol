@@ -289,6 +289,7 @@ std::string SettingsWindow::Response(bool refresh_default) const {
   const auto preferences = state->session ? state->session->preferences : nullptr;
   const auto current = preferences ? preferences->Get() : Preferences{};
   response->SetDictionary("preferences",BrowserPreferences::ToDictionary(current));
+  response->SetInt("linkRoutingRevision", preferences ? preferences->link_routing_revision() : 0);
   response->SetList("translationLanguages", PageTranslationLanguages());
   response->SetList("translationSourceLanguages", PageTranslationSourceLanguages());
   response->SetString("preferencesError",preferences ? preferences->error() : "Settings are not ready");
@@ -380,7 +381,9 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
     callback->Failure(400, "Invalid settings request"); return true;
   }
   const auto data = value->GetDictionary(); const auto method = data->GetString("method").ToString();
-  if (raw.length() > 8192 && !(method == "settings.set" && data->GetType("key") == VTYPE_STRING && data->GetString("key") == "siteSearches")) {
+  const auto setting_key = method == "settings.set" && data->GetType("key") == VTYPE_STRING ?
+      data->GetString("key").ToString() : std::string{};
+  if (raw.length() > 8192 && setting_key != "siteSearches" && setting_key != "linkRouting") {
     callback->Failure(400, "Settings request is too large"); return true;
   }
   if (HandleUiFocus(state, browser, method, data->GetSize(), persistent, callback)) return true;
@@ -392,6 +395,19 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
   }
   if (method.starts_with("settings.sync.")) { HandleSync(state, method, data, callback); return true; }
   if (method == "settings.get" && data->GetSize() == 1) { callback->Success(Response(true)); return true; }
+  if (setting_key == "linkRouting") {
+    const auto preferences = state->session ? state->session->preferences : nullptr;
+    if (!preferences || data->GetSize() != 4 || data->GetType("expectedRevision") != VTYPE_INT) {
+      callback->Failure(400, "Invalid link routing request"); return true;
+    }
+    preferences->SaveLinkRouting(data->GetDictionary("value"), data->GetInt("expectedRevision"),
+        [weak = weak_from_this(), callback](int code, const std::string& error) {
+          if (code) callback->Failure(code, error);
+          else if (const auto owner = weak.lock()) callback->Success(owner->Response());
+          else callback->Failure(410, "Settings closed");
+        });
+    return true;
+  }
   if (method == "settings.setIntegration") {
     const auto id = data->GetString("provider").ToString();
     if (data->GetSize() != 3 || data->GetType("provider") != VTYPE_STRING || !FindIntegrationSetting(id) || data->GetType("enabled") != VTYPE_BOOL) {

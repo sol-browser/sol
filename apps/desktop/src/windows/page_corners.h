@@ -82,6 +82,10 @@ class PageCorners {
   bool FadePopupShadow(HWND popup, int duration_ms);
   void EndPopupAnimation(HWND popup);
   bool ShowSidebarShadow(HWND parent, const RECT& panel, float scale, double progress);
+  // Draws the (still transparent) shadow for a panel size ahead of showing it.
+  bool PrepareSidebarShadow(HWND parent, int width, int height, float scale) {
+    return Init(parent) && sidebar_shadow_.Size(device_.Get(), d2d_.Get(), root_.Get(), width, height, scale);
+  }
   void HideSidebarShadow() { sidebar_shadow_.Hide(); }
   bool ShowLinkPeekShadow(HWND parent,const RECT& panel,float scale);
   void HideLinkPeekShadow() { link_peek_shadow_.Hide(); }

@@ -1,0 +1,99 @@
+/* The sidebar's Create Space form (SpaceCreator.tsx). Colours come from the
+   Library tokens (library.css: :is(.library, .space-creator)). */
+.space-creator {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0 2px;
+  color: var(--lib-ink);
+  animation: space-creator-in 320ms var(--lib-snap) backwards;
+}
+/* The heading and fields sit in the middle of the sidebar; Create and Cancel
+   stay at the bottom (the form's box is transparent to the column). */
+.space-creator { gap: 8px; }
+.space-creator-header { margin-top: auto; padding: 0 6px 14px; text-align: center; }
+.space-creator-header h2 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.1px; }
+.space-creator-header p { margin: 6px 0 0; color: var(--lib-muted); font-size: 12.5px; line-height: 1.45; }
+.space-creator-fields { display: contents; }
+.space-creator-name, .space-creator-row, .space-creator-theme {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  border-radius: 10px;
+  background: var(--lib-field);
+}
+.space-creator-name { position: relative; gap: 8px; padding: 0 10px 0 6px; transition: background-color 120ms ease; }
+.space-creator-name:focus-within { background: var(--lib-field-hover); }
+.space-creator-name input:focus-visible { outline: none; }
+/* The emoji picker (theme-editor.css) on Library tokens, as wide as the field. */
+.space-creator {
+  --orbit-surface: var(--lib-popover); --orbit-well: var(--lib-field); --orbit-ink: var(--lib-ink);
+  --orbit-muted: var(--lib-muted); --orbit-line: var(--lib-line);
+}
+.space-creator .space-emoji-picker { left: 0; right: 0; width: auto; top: calc(100% + 6px); border: 0; box-shadow: var(--lib-popover-shadow); }
+.space-creator-name input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--lib-ink);
+  font: inherit;
+  font-size: 13.5px;
+}
+.space-creator-name input::placeholder { color: var(--lib-faint); }
+.space-creator-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  font-size: 16px;
+  transition: background-color 120ms ease;
+}
+.space-creator-icon[data-empty="true"] { border: 1.5px dashed color-mix(in oklab, var(--lib-muted) 70%, transparent); }
+.space-creator-icon:hover { background: var(--lib-hover); }
+.space-creator-row { justify-content: space-between; gap: 10px; padding: 3px 3px 3px 12px; font-size: 13.5px; }
+.space-creator-row .space-creator-profile { width: auto; max-width: 60%; height: 34px; background: var(--lib-field-hover); }
+.space-creator-theme {
+  justify-content: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 550;
+  transition: background-color 120ms ease, scale 160ms var(--lib-spring);
+}
+.space-creator-theme:hover:enabled { background: var(--lib-field-hover); }
+.space-creator-theme:active:enabled { scale: .98; }
+.space-creator-theme > svg { color: var(--lib-muted); }
+.space-creator-note { margin: 2px 4px; color: var(--lib-danger); font-size: 12px; }
+.space-creator-actions { display: grid; gap: 6px; margin-top: auto; padding: 12px 0 10px; }
+.space-creator-note { margin-bottom: 0; }
+.space-creator-actions button {
+  height: 36px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: background-color 120ms ease, filter 120ms ease, opacity 120ms ease, scale 160ms var(--lib-spring);
+}
+.space-creator-submit { background: var(--lib-primary); color: var(--lib-primary-ink) !important; }
+.space-creator-submit:hover:enabled { filter: brightness(1.08); }
+.space-creator-submit:disabled { background: var(--lib-field); color: var(--lib-faint) !important; }
+.space-creator-cancel { background: var(--lib-field); }
+.space-creator-cancel:hover { background: var(--lib-field-hover); }
+.space-creator-actions button:active:enabled { scale: .98; }
+.space-creator :focus-visible { outline: none; }
+.space-creator :is(button, [role="option"]):focus-visible { box-shadow: 0 0 0 2px color-mix(in oklab, var(--lib-accent) 55%, transparent); }
+.space-creator button { color: inherit; }
+@keyframes space-creator-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .space-creator { animation: none; }
+  .space-creator-theme, .space-creator-actions button { transition: none; }
+}

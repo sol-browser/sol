@@ -10,6 +10,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "app/theme.h"
@@ -145,6 +146,10 @@ struct State {
   bool embedded_tabs_probe = false;
   bool workspace_mode = false;
   bool sidebar_visible = true;
+  bool library_open = false;
+  std::string library_section = "archive";
+  std::string_view VisibleLibrarySection() const { return library_open ? std::string_view(library_section) : std::string_view{}; }
+  int library_spaces = 0;  // Spaces in this window's workspace: the Spaces board's width.
   int sidebar_width = 256;
   Theme theme;  // Shell theme; persisted in the workspace store.
   bool theme_dark = false;  // Resolved mode (System follows Windows).

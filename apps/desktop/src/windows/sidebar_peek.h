@@ -6,11 +6,11 @@
 #include "include/wrapper/cef_message_router.h"
 namespace red {
 // Floating browser chrome backed by a trusted Chrome Runtime child browser.
-// Normal mode uses a small owned transparent host which clips its horizontal
-// slide. In F11 the same wrapper becomes a child of the main window, so clicks
-// keep that fullscreen window activated. A translating child frame carries
-// the browser; the existing root compositor paints only its outside shadow.
-// The browser's immediate parent stays that frame in both modes.
+// A small transparent child of the main window clips its horizontal slide, in
+// normal windows and F11 alike, so clicks keep that window activated and no
+// popup needs a different owner. (Test runs can still use the former owned
+// top-level host as a control.) A translating child frame carries the
+// browser; the existing root compositor paints only its outside shadow.
 // Chrome UI and site HWNDs use ordinary sibling z-order (UI first), with no
 // cutout, resize or snapshot of the website while the sidebar width changes.
 // Parked hosts remain shown off screen to avoid cold-show flashes.
@@ -73,7 +73,7 @@ class SidebarPeek : public std::enable_shared_from_this<SidebarPeek> {
   unsigned pacer_generation_ = 0;
   CefRect Target() const;
   std::weak_ptr<State> state_;
-  HWND host_ = nullptr;  // Owned popup normally; root child in F11.
+  HWND host_ = nullptr;  // Child of the root (owned popup only in control probes).
   HWND frame_ = nullptr;  // Sliding child containing the browser.
   HWND hwnd_ = nullptr;  // The sidebar browser, a child of frame_.
   bool shadow_recorded_ = false;
@@ -98,6 +98,7 @@ class SidebarPeek : public std::enable_shared_from_this<SidebarPeek> {
   double opening_hold_until_ = 0;
   int resize_start_x_ = 0, resize_start_width_ = 0;
   bool probe_clip_recorded_ = false, creating_ = false, pending_show_ = false;
+  bool probe_reach_marked_ = true;  // Probe: the next slide-in marks covering 40 DIP.
   unsigned prepare_generation_ = 0;
   int prepare_revision_ = 0, frame_request_ = 0;
   double retry_after_ = 0;

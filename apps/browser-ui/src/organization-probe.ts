@@ -1,4 +1,4 @@
-import { request, type Command, type Snapshot, type TreeMutation } from './bridge';
+import { request, type Snapshot, type TreeMutation } from './bridge';
 import { waitArchived } from './archive-probe';
 import { folderRemovalProbe } from './folder-removal-probe';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -259,11 +259,11 @@ export async function organizationProbe() {
   await waitFor(s => s.nodes!.some(n => n.id === tab.id && !n.pinned));
   (await dom<HTMLButtonElement>(`${row(tab.id)} .close-page`)).click();
   await waitArchived(tab.id);
-  // The Archive is a native popover window: open it from the real button, then
-  // click the row inside that window through the probe-only driver.
-  (await dom<HTMLButtonElement>('[data-action="archive"]')).click();
-  await request({ method: 'probe.panelClick', text: 'Project reference' } as unknown as Command);
+  // Restore from the real Library rail before continuing in the sidebar.
+  (await dom<HTMLButtonElement>('[data-action="library"]')).click();
+  (await dom<HTMLButtonElement>(`[data-library-restore="${tab.id}"]`)).click();
   await loaded(tab.id);
+  (await dom<HTMLButtonElement>('[data-action="close-library"]')).click();
   await drop(tab.id, row(folder.id));
   await waitFor(s => s.nodes!.some(n => n.id === tab.id && n.parentId === folder.id && n.pinned));
   // Genuine beforeunload: local CEF DevTools input produces sticky activation.

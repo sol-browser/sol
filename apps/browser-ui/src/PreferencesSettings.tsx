@@ -101,8 +101,6 @@ export function PreferencesSettings({ section, preferences: prefs, keyboard, dis
       ['littleSolHotkey', t('settings.preference.littleHotkey'),
         t('settings.preference.littleHotkeyDetail')],
       ['littleSolClick', t('settings.preference.littleClick'), undefined],
-      ['littleSolLinks', t('settings.preference.littleLinks'),
-        t('settings.preference.littleLinksDetail')],
     ] as const;
     return <section className="settings-card" aria-labelledby="little-sol-heading">
       <div className="settings-group-heading">

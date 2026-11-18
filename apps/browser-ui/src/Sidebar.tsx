@@ -2,11 +2,12 @@ import React, { memo, useEffect, useLayoutEffect, useMemo, useReducer, useRef, u
 import { useIntl } from 'react-intl';
 import { message, useMessages } from './i18n';
 import { openSidebarMenu, type TreeNode, type TreeMutation } from './bridge';
-import type { Command, MediaInfo, SpaceInfo } from '../../../packages/browser-contracts/src';
+import type { BrowsingProfileInfo, Command, MediaInfo, SpaceInfo } from '../../../packages/browser-contracts/src';
 import { MediaStack } from './MediaPlayer';
 import { faviconColor } from './favicon-color';
 import { crossProfileLiveMove, descendant, inSpace, neighborSpace, ordered, placement, sectionOf, favoriteColumnLimit, favoriteColumns, displayTitle, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, withoutClosingTabs, sameRowNode, spaceDisplayName, preloadable, preloadHoverMs, type Section } from './sidebar-model';
 import { swatchColor } from './theme-model';
+import { SpaceCreator } from './SpaceCreator';
 import { splitLanding, splitMembers, splitNamedMember } from './split-model';
 import { Icon } from './Icon';
 import { FolderIcon } from './FolderIcon';
@@ -33,14 +34,18 @@ export type SidebarProps = { nodes: TreeNode[]; treeRevision: number; activeId: 
   media?: MediaInfo[];
   /** Opens the native space editor (name, icon, theme) anchored at the element. */
   editSpace: (anchor: HTMLElement) => void;
-  newSpace: (anchor: HTMLElement) => void;
+  /** The theme editor of the Space being created in the sidebar's Create Space form. */
+  spaceTheme: (anchor: HTMLElement) => void;
+  /** Browsing profiles a new Space can use, and the one on screen. */
+  profiles?: BrowsingProfileInfo[]; activeProfile?: string;
   /** A browser-menu flow; only the active surface consumes it. */
-  request?: { id: number; action: 'newSpace' | 'editSpace' | 'newFolder' };
+  request?: { id: number; action: 'newSpace' | 'newSpaceFromLibrary' | 'editSpace' | 'newFolder' };
   action: (command: TreeMutation) => Promise<boolean>;
   // Local files dropped on the sidebar (paths stay native; see OnDragEnter).
   openDroppedFiles: () => void;
   /** Opens the native Archive popover anchored at the given button. */
   openArchive: (button: HTMLElement) => void;
+  openLibrary?: () => void;
   /** Tab commands outside the tree revision model (duplicate, mute). */
   tabCommand: (command: TabCommand) => void;
   /** A downloaded Sol version; the pill restarts Sol into it. */
@@ -289,7 +294,7 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
   return keys.length === Object.keys(previous).length && keys.every(key => key === 'node'
     ? sameRowNode(previous[key], next[key]) : Object.is(previous[key], next[key]));
 });
-export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, activeSurface = true, action, openArchive, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, newSpace, request, media, previewIntegration, integrations, xUnread, whatsappUnread, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate, splitLeaving }: Props) {
+export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, activeSurface = true, action, openArchive, openLibrary, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, spaceTheme, profiles, activeProfile, request, media, previewIntegration, integrations, xUnread, whatsappUnread, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate, splitLeaving }: Props) {
   const t = useMessages();
   const intl = useIntl();
   ++renderCounts.sidebar;
@@ -358,18 +363,27 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   const header = useRef<HTMLDivElement>(null);
   const space = spaces.find(s => s.id === activeSpace);
   const switchSpace = (id: string | undefined) => { if (id && id !== activeSpace && !current.current.busy) void action({ method: 'space.switch', id }); };
-  // A new space is set up first (name, icon, theme) and made only when confirmed.
-  function createSpace() {
-    if (busy || spaces.length >= 24 || !header.current) return;
-    newSpace(header.current);
+  // A new space is set up first (name, icon, profile, theme) in the sidebar's
+  // Create Space form and made only when confirmed.
+  // 'library': started from Library's +; Create and Cancel go back there.
+  const [creatingSpace, setCreatingSpace] = useState<false | 'sidebar' | 'library'>(false);
+  function createSpace(from: 'sidebar' | 'library' = 'sidebar') {
+    if (busy || spaces.length >= 24 || standalone) return;
+    setCreatingSpace(from);
   }
+  // Another Space on screen (switched, or the new one made) ends the form.
+  const formSpace = useRef(activeSpace);
+  useEffect(() => {
+    if (formSpace.current === activeSpace) return;
+    formSpace.current = activeSpace; setCreatingSpace(false);
+  }, [activeSpace]);
   // Each browser-menu request runs once; the first snapshot only records where the count stands.
   const handled = useRef(request?.id);
   useEffect(() => {
     if (!request || request.id === handled.current) return;
     handled.current = request.id;
     if (hidden || !activeSurface) return;
-    if (request.action === 'newSpace') createSpace();
+    if (request.action === 'newSpace' || request.action === 'newSpaceFromLibrary') createSpace(request.action === 'newSpace' ? 'sidebar' : 'library');
     else if (request.action === 'newFolder') void createFolder();
     else if (header.current) editSpace(header.current);
   });
@@ -576,7 +590,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
         if (choice.action === 'newTab') openNewTab();
         else if (choice.action === 'newFolder') await createFolder();
         else if (choice.action === 'showArchive' && archiveButton.current) openArchive(archiveButton.current);
-        else if (choice.action === 'newSpace') createSpace();
+        else if (choice.action === 'newSpace') createSpace('sidebar');
         else if (choice.action === 'editTheme' && header.current) editSpace(header.current);
         else if (choice.action === 'setProfile') await perform({method:'space.profile',id:ownerSpace,profileId:choice.targetId});
         else if (choice.action === 'newProfile') tabCommand({method:'settings.openProfiles'});
@@ -764,7 +778,9 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       <div><button type="button" autoFocus onClick={()=>setDeletingSpace(undefined)}>{message(intl, 'common.cancel')}</button>
         <button type="button" disabled={busy} onClick={()=>void perform({method:'space.delete',id:deletingSpace.id}).then(ok=>{if(ok)setDeletingSpace(undefined);})}>{message(intl, 'sidebar.space.delete')}</button></div>
     </section>}
-    {!standalone && <div className="sidebar-fixed">
+    {creatingSpace && <SpaceCreator profiles={profiles} activeProfile={activeProfile} full={spaces.length >= 24}
+      fromLibrary={creatingSpace === 'library'} editTheme={spaceTheme} done={() => setCreatingSpace(false)} />}
+    {!standalone && !creatingSpace && <div className="sidebar-fixed">
     <div className="sidebar-favorites" ref={favoriteMotion.scrollRef}>
       {zone('favorites', message(intl, 'sidebar.favorites'))}
       <div className="sidebar-motion-layer" ref={favoriteMotion.layerRef} aria-hidden="true" />
@@ -773,18 +789,20 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       const bounds=anchor.getBoundingClientRect(); void context('',bounds.left,bounds.bottom,true);
     }} />
     </div>}
-    <SpaceTransition spaceId={activeSpace} position={space?.position ?? 0} hidden={hidden} scrollRef={scrollRef} layerRef={layerRef}>
+    {!creatingSpace && <SpaceTransition spaceId={activeSpace} position={space?.position ?? 0} hidden={hidden} scrollRef={scrollRef} layerRef={layerRef}>
     {!standalone && <>{zone('pinned', message(intl, 'sidebar.pinned'))}
     <TodayDivider tabs={clearableTabs} busy={busy} confirming={clearing} setConfirming={setClearing}
       clear={() => { if (clearableTabs[0]) tabCommand({ method: 'tab.clearToday', id: clearableTabs[0].id }); setClearing(false); }} /></>}
     {zone('today', message(intl, 'sidebar.today'))}
-    </SpaceTransition>
+    </SpaceTransition>}
     {!standalone && <div className="sidebar-footer">
     {!!media?.length && <MediaStack media={media} nodes={tree} command={tabCommand} />}
     {updateReady && restartToUpdate && <button type="button" className="update-pill" data-action="restart-to-update"
       title={message(intl, 'sidebar.update.ready', { version: updateReady })} onClick={restartToUpdate}><Icon name="logo" /><span>{message(intl, 'sidebar.update.restart')}</span></button>}
     <div className="sidebar-bottom">
-      <button ref={archiveButton} data-action="archive" title={message(intl, 'sidebar.archive.title')} aria-label={message(intl, 'sidebar.archive')} onClick={e => openArchive(e.currentTarget)}><Icon name="archive" /></button>
+      <button ref={archiveButton} className="sidebar-library-button" data-action={openLibrary ? 'library' : 'archive'}
+        title={message(intl, openLibrary ? 'library.title' : 'sidebar.archive.title')} aria-label={message(intl, openLibrary ? 'library.title' : 'sidebar.archive')}
+        onClick={e => openLibrary ? openLibrary() : openArchive(e.currentTarget)}><Icon name="archive" /></button>
       {/* Arc: the space switcher along the bottom; Ctrl+1…9 or a horizontal swipe also switch. */}
       <nav className="space-switcher" aria-label={message(intl, 'sidebar.spaces')}>
         {[...spaces].sort((a, b) => a.position - b.position).map((s, index) => {
@@ -796,7 +814,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
         })}
       </nav>
       <button type="button" className="space-add" aria-label={message(intl, 'sidebar.space.new')} title={message(intl, 'sidebar.space.new')} disabled={busy || spaces.length >= 24}
-        onClick={createSpace}><Icon name="plus" /></button>
+        onClick={() => createSpace('sidebar')}><Icon name="plus" /></button>
     </div>
     </div>}
   </aside>;

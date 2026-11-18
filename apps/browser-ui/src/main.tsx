@@ -5,6 +5,7 @@ import { createInterfaceIntl, useMessages, type Translate } from './i18n';
 import { request, subscribe, type Command, type Snapshot, type TreeMutation, type TreeNode } from './bridge';
 import { ipcProbe, translationOfferProbe, workspaceProbe } from './probes';
 import { WorkspaceSidebar } from './WorkspaceSidebar';
+import { Library } from './Library';
 import { Peek } from './Peek';
 import { SidebarResizer } from './SidebarResizer';
 import { AddressLoading } from './AddressLoading';
@@ -172,7 +173,7 @@ function Shell() {
     return { x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)),
       width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) };
   }
-  function openPanel(kind: 'archive' | 'downloads' | 'site' | 'space' | 'newSpace' | 'translation', button: HTMLElement) {
+  function openPanel(kind: 'archive' | 'downloads' | 'site' | 'space' | 'spaceTheme' | 'translation', button: HTMLElement) {
     void send({ method: 'panel.open', kind, ...panelAnchor(button) });
   }
   function navigate(event: FormEvent) {
@@ -190,6 +191,18 @@ function Shell() {
   const offer = snapshot?.isLoading ? undefined : tabOffer;
   const translationTarget = offer ? new Intl.DisplayNames(locale, { type: 'language' }).of(offer.to.replace('_', '-')) ?? offer.to : '';
   const ready = workspace ? snapshot.ready && !snapshot.windowClosing : connected;
+  const library = workspace && snapshot.libraryOpen === true;
+  // Library open, close and section changes glide the native page for 420 ms
+  // (WorkspaceController::StepRail); the shell's page card follows on the same
+  // curve, set in the same render as its new position (library.css).
+  const libraryLayout = library ? snapshot.librarySection ?? 'archive' : '';
+  const [libraryMotion, setLibraryMotion] = useState({ layout: libraryLayout, active: false });
+  if (libraryMotion.layout !== libraryLayout) setLibraryMotion({ layout: libraryLayout, active: true });
+  useEffect(() => {
+    if (!libraryMotion.active) return;
+    const timer = setTimeout(() => setLibraryMotion(current => ({ ...current, active: false })), 500);
+    return () => clearTimeout(timer);
+  }, [libraryMotion]);
   const globe = useRef<HTMLButtonElement>(null);
   const offerId = ready && offer?.automatic ? offer.id : undefined;
   useEffect(() => {
@@ -200,11 +213,13 @@ function Shell() {
   const notice = workspace && snapshot.notice && snapshot.noticeId !== dismissedNotice ? snapshot.notice : '';
   const toolbarNotice = notice || (little ? error : '');
   const status = error || snapshot?.error || (workspace ? snapshot.ready ? busy ? t('toolbar.saving') : snapshot.isLoading ? t('toolbar.loading') : t('toolbar.saved') : t('toolbar.workspaceLoading') : connected ? t('toolbar.connected') : t('toolbar.connecting'));
-  return <main className={workspace ? 'workspace' : 'legacy'} style={{ '--sidebar-size': `${snapshot?.sidebarWidth ?? 256}px`,
+  return <main className={workspace ? 'workspace' : 'legacy'} style={{ '--sidebar-size': `${library ? Math.max(0, (snapshot.contentBounds?.x ?? 8) - 8) : snapshot?.sidebarWidth ?? 256}px`,
+    '--page-width': `${snapshot?.contentBounds?.width ?? 0}px`,
     '--peek-center-x':`${snapshot?.linkPeek ? snapshot.linkPeek.area.x+snapshot.linkPeek.area.width/2 : 0}px`,
     '--peek-center-y':`${snapshot?.linkPeek ? snapshot.linkPeek.area.y+snapshot.linkPeek.area.height/2 : 0}px` } as CSSProperties}
-    data-peek={!!snapshot?.linkPeek?.depthReady} data-peek-returning={!!snapshot?.linkPeek?.returning} data-sidebar-visible={snapshot?.sidebarVisible !== false} data-window-maximized={snapshot?.windowMaximized === true} data-little-window={!!little} onKeyDown={event => {
+    data-peek={!!snapshot?.linkPeek?.depthReady} data-peek-returning={!!snapshot?.linkPeek?.returning} data-sidebar-visible={library || snapshot?.sidebarVisible !== false} data-library={library} data-library-motion={libraryMotion.active} data-window-maximized={snapshot?.windowMaximized === true} data-little-window={!!little} onKeyDown={event => {
     if (!workspace || event.metaKey || event.nativeEvent.isComposing) return;
+    if (event.key === 'Escape' && library) { event.preventDefault(); void send({ method: 'library.setOpen', open: false }); return; }
     if (event.key==='Escape' && snapshot.linkPeek) { event.preventDefault(); void send({method:'linkPeek.control',id:snapshot.linkPeek.id,action:'close'}); return; }
     if (event.ctrlKey && event.shiftKey && !event.altKey && event.code === 'KeyM' && snapshot.devicePreview) {
       event.preventDefault(); void send({ method: 'devtools.control', id: snapshot.devicePreview.id, action: 'device' }); return;
@@ -240,9 +255,9 @@ function Shell() {
           {snapshot?.privateWindow && <span className="private-badge" role="note"
             title={t('toolbar.privateHint')}>
             <VenetianMask size={14} strokeWidth={2} aria-hidden="true" />{t('toolbar.private')}</span>}
-          {workspace && <button className="icon-button sidebar-toggle" data-action="toggle-sidebar" type="button" aria-label={snapshot.sidebarVisible ? t('toolbar.hideSidebar') : t('toolbar.showSidebar')}
-            aria-expanded={snapshot.sidebarVisible} aria-controls="browser-sidebar"
-            onClick={() => void send({ method: 'workspace.setSidebarVisible', visible: !snapshot.sidebarVisible })}><Icon name="sidebar" /></button>}
+          {workspace && <button className="icon-button sidebar-toggle" data-action="toggle-sidebar" type="button" aria-label={library ? t('library.close') : snapshot.sidebarVisible ? t('toolbar.hideSidebar') : t('toolbar.showSidebar')}
+            aria-expanded={library || snapshot.sidebarVisible} aria-controls={library ? 'browser-library' : 'browser-sidebar'}
+            onClick={() => void send(library ? { method: 'library.setOpen', open: false } : { method: 'workspace.setSidebarVisible', visible: !snapshot.sidebarVisible })}><Icon name="sidebar" /></button>}
           {/* Arc puts Downloads beside the sidebar button; it opens a popover downward. */}
           {/* Only once something was downloaded in this session; Ctrl+J opens the full page anytime. */}
           {workspace && (snapshot.downloadsStarted ?? 0) > 0 && <DownloadsButton downloads={snapshot.downloads ?? []} pulse={snapshot.downloadsStarted ?? 0} onOpen={button => openPanel('downloads', button)} />}
@@ -328,8 +343,12 @@ function Shell() {
     {workspace && <>
       {!little && <>
         <WorkspaceSidebar snapshot={snapshot} surface="docked" command={send} mutate={action} panel={openPanel} />
-        <SidebarResizer width={snapshot.sidebarWidth ?? 256} hidden={snapshot.sidebarVisible === false} disabled={!ready} apply={apply} onError={setError} />
+        <SidebarResizer width={snapshot.sidebarWidth ?? 256} hidden={library || snapshot.sidebarVisible === false} disabled={!ready || library} apply={apply} onError={setError} />
       </>}
+      {library && <Library snapshot={snapshot} mutate={action} section={snapshot.librarySection ?? 'archive'}
+        select={section => void send({ method: 'library.setSection', section })} error={error}
+        createSpace={() => void send({ method: 'space.startCreate' })} editSpace={anchor => openPanel('space', anchor)}
+        openProfiles={() => void send({ method: 'settings.openProfiles' })} close={() => void send({ method: 'library.setOpen', open: false })} />}
       {snapshot.splitView && <SplitView view={snapshot.splitView} nodes={snapshot.nodes ?? []} disabled={!ready || busy} command={send} action={action} />}
       {snapshot.devTools && <DevToolsDock key={`${snapshot.devTools.id}-${snapshot.devTools.side}`} dock={snapshot.devTools} deviceEnabled={!!snapshot.devicePreview?.enabled} apply={apply} onError={setError} />}
       {snapshot.devicePreview?.enabled && <DeviceToolbar key={snapshot.devicePreview.id} device={snapshot.devicePreview} apply={apply} onError={setError} />}

@@ -1,4 +1,5 @@
 #include "windows/embedded_content.h"
+#include "windows/workspace_layout.h"
 #include "app/session.h"
 #include "interface_strings.h"
 #include "windows/auto_pip.h"
@@ -182,6 +183,10 @@ bool EmbeddedContent::ShowSidebarShadow(const RECT& panel, float scale, double p
   const auto state = state_.lock();
   return state && state->window && corners_.ShowSidebarShadow(state->window->GetWindowHandle(), panel, scale, progress);
 }
+bool EmbeddedContent::PrepareSidebarShadow(int width, int height, float scale) {
+  const auto state = state_.lock();
+  return state && state->window && corners_.PrepareSidebarShadow(state->window->GetWindowHandle(), width, height, scale);
+}
 void EmbeddedContent::ConfigureNewTabWindow(CefWindowInfo& info) const {
   const auto state = state_.lock();
   if (!state || !state->window) return;
@@ -311,6 +316,7 @@ void EmbeddedContent::ApplyFullscreenWindow(bool was_fullscreen) {
   auto state = state_.lock(); if (!state || !state->window) return;
   const bool fullscreen = IsFullscreen();
   if (fullscreen) {
+    if (state->library_open && state->workspace) state->workspace->SetLibraryOpen(false);
     if (!was_fullscreen) window_was_fullscreen_ = state->window->IsFullscreen();
     if (state->command_bar) state->command_bar->Hide(false);
     if (state->panel_popup) state->panel_popup->Hide(false);
@@ -396,7 +402,13 @@ void EmbeddedContent::SelectTabSwitcher(int selected) {
 void EmbeddedContent::HideTabSwitcher() { corners_.HideTabSwitcher(); }
 CefRect EmbeddedContent::NotificationArea() const {
   if (IsFullscreen()) return FullClientBounds();
-  return notification_page_ != -1 && browsers_.contains(notification_page_) ? PagePhysicalBounds(notification_page_) : PhysicalBounds();
+  auto area = notification_page_ != -1 && browsers_.contains(notification_page_) ? PagePhysicalBounds(notification_page_) : PhysicalBounds();
+  // With Library open the page runs past the window edge: notices stay in its visible part.
+  const auto state = state_.lock();
+  const double scale = state && state->window ? state->window->GetDisplay()->GetDeviceScaleFactor() : 1.;
+  const int right = FullClientBounds().width - static_cast<int>(std::lround(kContentInset * scale));
+  area.width = std::max(1, std::min(area.width, right - area.x));
+  return area;
 }
 void EmbeddedContent::Notify(const std::string& kind, const std::wstring& text, const std::vector<std::wstring>& keys,
                              const std::wstring& tail, int duration_ms, int page) {

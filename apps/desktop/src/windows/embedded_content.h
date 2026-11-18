@@ -50,6 +50,8 @@ class EmbeddedContent {
   int SplitSlot(int id) const;
   bool HasSplit() const { return split_enabled_; }
   bool HasLinkPeek() const { return link_peek_id_!=-1; }
+  // The workspace page area last laid out (DIP, client coordinates).
+  const CefRect& Bounds() const { return bounds_; }
   bool IsLinkPeek(int id) const { return id==link_peek_id_ && id!=-1; }
   // -2: creating, real browser ID: presented. |resume|: a parked preview
   // returns with its tab, already painted: no glow, no entry, shown at once.
@@ -130,6 +132,7 @@ class EmbeddedContent {
   void RestorePopupOwners(HWND sidebar);
   bool ShowSidebarShadow(const RECT& panel, float scale, double progress);
   void HideSidebarShadow() { corners_.HideSidebarShadow(); }
+  bool PrepareSidebarShadow(int width, int height, float scale);
   void OnPresentationResult(CefRefPtr<CefBrowser> browser, int message, bool success, const void* data, size_t size);
   void OnPresentationEvent(CefRefPtr<CefBrowser> browser, const std::string& method, const std::string& json);
  private:

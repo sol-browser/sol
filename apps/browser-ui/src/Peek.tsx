@@ -44,7 +44,7 @@ export function Peek() {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); return false; }
     finally { inFlight.current = false; }
   }
-  const openPanel = (kind: 'archive' | 'space' | 'newSpace', anchor: HTMLElement) => {
+  const openPanel = (kind: 'archive' | 'space' | 'spaceTheme', anchor: HTMLElement) => {
     const r = anchor.getBoundingClientRect();
     void send({ method: 'panel.open', kind, x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)),
       width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });

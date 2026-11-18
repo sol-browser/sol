@@ -9,6 +9,7 @@
 #include <thread>
 #include "include/base/cef_callback.h"
 #include "include/cef_app.h"
+#include "include/cef_command_line.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_id_mappers.h"
 #include "include/cef_parser.h"
@@ -272,6 +273,22 @@ void Style(HWND host) {
 // Parked hosts stay "shown" off screen: moving one into place shows it with
 // no window-show path at all.
 constexpr int kParked = -32000;
+// The host is a child of the main window in every window mode
+// (docs/sidebar-host-feasibility.md). Test runs keep the former owned
+// top-level host as the control: --probe-sidebar-peek=owned[-edge|-cold-<ms>].
+bool ChildHost(const std::shared_ptr<State>& state) {
+  if (!state->probe) return true;
+  static const auto mode = CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-sidebar-peek").ToString();
+  return !mode.starts_with("owned");
+}
+// Probe-only timing of the opening pipeline (QueryPerformanceCounter ms, the
+// clock std::chrono::steady_clock also reads on Windows).
+void Mark(const std::shared_ptr<State>& state, const char* event, double ms, int bytes = -1) {
+  if (!state || !state->probe) return;
+  auto data = CefDictionaryValue::Create(); data->SetDouble("ms", ms);
+  if (bytes >= 0) data->SetInt("bytes", bytes);
+  state->Record(event, data);
+}
 }  // namespace
 
 // F11 has no toolbar: use the same small inset at the top and bottom.
@@ -285,7 +302,7 @@ CefRect SidebarPeek::Target() const {
 void SidebarPeek::ConfigureHost() {
   const auto s = state_.lock();
   if (!s || !s->window || !host_) return;
-  const bool child = s->embedded && s->embedded->IsBrowserFullscreen() && !s->embedded->IsPageFullscreen();
+  const bool child = ChildHost(s) || (s->embedded && s->embedded->IsBrowserFullscreen() && !s->embedded->IsPageFullscreen());
   if (child == inline_host_) return;
   const HWND root = s->window->GetWindowHandle();
   const auto style = GetWindowLongPtrW(host_, GWL_STYLE);
@@ -415,7 +432,11 @@ bool SidebarPeek::Ensure() {
   if (creating_ || !s->ui_context) return false;
   // A tight clipping host contains only the browser. Passive decoration is
   // composed on the root, never in padded non-layered child HWNDs.
-  if (!host_) host_ = CreateHost(s->window->GetWindowHandle());
+  if (!host_) {
+    const bool child = ChildHost(s);
+    host_ = CreateHost(s->window->GetWindowHandle(), child);
+    inline_host_ = child && host_;
+  }
   if (!host_) return false;
   if (!frame_) frame_ = CreateHost(host_, true);
   if (!frame_) return false;
@@ -427,6 +448,7 @@ bool SidebarPeek::Ensure() {
   SetWindowPos(host_, nullptr, kParked, kParked, width, height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   SetWindowPos(frame_, nullptr, 0, 0, width, height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   creating_ = true;
+  Mark(s, "peek_create_requested", Now());
   CefWindowInfo info;
   info.SetAsChild(frame_, CefRect(0, 0, width, height));
   info.runtime_style = CEF_RUNTIME_STYLE_CHROME;
@@ -445,6 +467,7 @@ void SidebarPeek::Show() {
   if (!s || !s->window || !s->workspace || !enabled_ || open_ || pending_show_ || shutdown_ || Now() < retry_after_) return;
   if (s->workspace->WindowClosing() || s->window->IsMinimized() || FullscreenBlocksPeek(s)) return;
   pending_show_ = true;
+  Mark(s, "peek_show_requested", Now());
   if (!Ensure()) return;
   ConfigureHost();
   // Re-entry during slide-out cancels its ticks before touching the viewport.
@@ -461,6 +484,12 @@ void SidebarPeek::Show() {
   prepare_revision_ = static_cast<int>(s->workspace->revision());
   const auto generation = ++prepare_generation_;
   Publish();
+  // While the sidebar renders that snapshot: the first shadow of a size is
+  // drawn with Direct2D (~7 ms), which otherwise delayed the first slide step.
+  if (s->embedded) {
+    s->embedded->PrepareSidebarShadow(width, height, scale);
+    Mark(s, "peek_shadow_prepared", Now());
+  }
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<SidebarPeek> weak, unsigned generation) {
     if (auto self = weak.lock(); self && self->prepare_generation_ == generation && self->pending_show_) {
       self->pending_show_ = false; self->frame_request_ = 0; self->retry_after_ = Now() + 250;
@@ -526,6 +555,8 @@ void SidebarPeek::PreparedFrame(int message, bool success, size_t size) {
   }
   pending_show_ = false; ++prepare_generation_;
   open_ = true; away_ = 0;
+  Mark(s, "peek_ready_to_slide", Now());
+  probe_reach_marked_ = !s->probe;
   Slide(true, false);
   s->Record("sidebar_peek_frame_ready"); s->Record("sidebar_peek_shown");
 }
@@ -583,6 +614,9 @@ void SidebarPeek::PlaceHost(double progress) {
   if (host_changed || (inline_host_ && GetWindow(host_, GW_HWNDPREV)))
     SetWindowPos(host_, inline_host_ ? HWND_TOP : nullptr, inline_host_ ? x - origin.x : x, inline_host_ ? y - origin.y : y,
         host_width, host_height, SWP_NOACTIVATE | SWP_NOOWNERZORDER | (inline_host_ ? 0 : SWP_NOZORDER));
+  if (!probe_reach_marked_ && visible >= std::lround(40 * scale)) {
+    probe_reach_marked_ = true; Mark(s, "peek_placed_over_sample", Now());
+  }
 }
 // |progress| 0 = just left of the host, 1 = in place. The viewport stays full
 // sized; the root shadow receives the same panel rectangle/progress per tick.
@@ -620,9 +654,24 @@ void SidebarPeek::Park() {
 void SidebarPeek::Slide(bool in, bool activate) {
   if (!hwnd_) return;
   (void)activate;  // Focus moves to the sidebar only when the person clicks it.
-  if (in) { Present(); Place(0.0); }
+  if (in) {
+    const double unpark = Now();
+    Present(); Place(0.0);
+    if (auto s = state_.lock(); s && s->probe) {
+      auto data = CefDictionaryValue::Create(); data->SetDouble("ms", unpark); data->SetDouble("cost", Now() - unpark);
+      s->Record("peek_unpark", data);
+    }
+  }
   motion_done_ = false;
-  Animate(++motion_, Now(), in);
+  // The first placement reaches the screen with the next composed frame, not
+  // now: start the clock one display frame early so that frame already shows
+  // the first step of the slide instead of a 1 px sliver (~one frame sooner).
+  double lead = 0;
+  DWM_TIMING_INFO timing{}; timing.cbSize = sizeof(timing);
+  LARGE_INTEGER frequency;
+  if (SUCCEEDED(DwmGetCompositionTimingInfo(nullptr, &timing)) && timing.qpcRefreshPeriod && QueryPerformanceFrequency(&frequency))
+    lead = std::clamp(timing.qpcRefreshPeriod * 1000.0 / frequency.QuadPart, 0.0, 20.0);
+  Animate(++motion_, Now() - lead, in);
 }
 double SidebarPeek::Now() {
   LARGE_INTEGER counter, frequency; QueryPerformanceCounter(&counter); QueryPerformanceFrequency(&frequency);
@@ -662,10 +711,12 @@ void SidebarPeek::Animate(unsigned generation, double started, bool in) {
       return;
     }
   }
+  const double placing = Now();
   Place(in ? eased : 1 - eased);
-  if (auto s = state_.lock(); s && s->sidebar_peek_probe) {
-    // Frame pacing evidence: when each position was applied.
-    auto data = CefDictionaryValue::Create(); data->SetDouble("ms", Now() - started); data->SetBool("in", in);
+  if (auto s = state_.lock(); s && s->probe) {
+    // Frame pacing evidence: when each position was applied and its cost.
+    auto data = CefDictionaryValue::Create(); data->SetDouble("ms", placing - started); data->SetBool("in", in);
+    data->SetDouble("at", placing); data->SetDouble("cost", Now() - placing); data->SetDouble("progress", in ? eased : 1 - eased);
     s->Record("peek_frame", data);
   }
   if (t < 1) {
@@ -704,12 +755,18 @@ void SidebarPeek::Send(CefRefPtr<CefDictionaryValue> update) {
   auto s = state_.lock();
   if (!observer_ || !s || !s->workspace) return;
   if (!update || (!update->HasKey("layoutOnly") && !update->HasKey("themeOnly"))) sent_request_ = s->workspace->sidebar_request();
+  const double started = Now();
   const auto json = Json(update ? update : s->workspace->Snapshot());
   ++s->snapshot_counters.peek_messages; s->snapshot_counters.peek_bytes += json.length();
   observer_->Success(json);
+  if (pending_show_) {
+    Mark(s, "peek_snapshot_built", started);
+    Mark(s, "peek_snapshot_sent", Now(), static_cast<int>(json.length()));
+  }
 }
 void SidebarPeek::Created(CefRefPtr<CefBrowser> browser) {
   browser_ = browser; creating_ = false;
+  Mark(state_.lock(), "peek_created", Now());
   hwnd_ = browser->GetHost()->GetWindowHandle();
   frame_observer_ = browser->GetHost()->AddDevToolsMessageObserver(new PeekFrameObserver(weak_from_this()));
   ShowWindow(hwnd_, SW_SHOWNA);  // Full-sized, still parked outside the desktop.
@@ -722,7 +779,16 @@ void SidebarPeek::Created(CefRefPtr<CefBrowser> browser) {
     }
   }
   if (shutdown_) { browser->GetHost()->CloseBrowser(true); return; }
-  if (pending_show_) { pending_show_ = false; Show(); }
+  if (pending_show_) { pending_show_ = false; Show(); return; }
+  // Draw the first shadow off the opening path, once startup has settled.
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<SidebarPeek> weak) {
+    const auto self = weak.lock(); const auto s = self ? self->state_.lock() : nullptr;
+    if (!s || !s->window || !s->embedded || self->shutdown_ || self->open_ || self->pending_show_) return;
+    const auto target = self->Target();
+    const float scale = s->window->GetDisplay()->GetDeviceScaleFactor();
+    s->embedded->PrepareSidebarShadow(static_cast<int>(std::lround(target.width * scale)),
+                                      static_cast<int>(std::lround(target.height * scale)), scale);
+  }, weak_from_this()), 500);
 }
 void SidebarPeek::Closed(int id) {
   observer_ = nullptr; frame_observer_ = nullptr; browser_ = nullptr; hwnd_ = nullptr; open_ = false;
@@ -764,6 +830,7 @@ bool SidebarPeek::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t 
   if (persistent != (method == "browser.subscribe")) { cb->Failure(400, "Only the subscription persists"); return true; }
   if (method == "browser.subscribe" && d->GetSize() == 1) {
     if (observer_) { cb->Failure(409, "Already subscribed"); return true; }
+    Mark(s, "peek_subscribed", Now());
     observer_ = cb; observer_id_ = query; Send(nullptr); return true;
   }
   if (method == "browser.getSnapshot" && d->GetSize() == 1) { cb->Success(Json(s->workspace->Snapshot())); return true; }
@@ -824,7 +891,10 @@ bool SidebarPeek::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t 
       d->GetType("width") == VTYPE_INT && d->GetType("height") == VTYPE_INT) {
     const auto target = Target();
     if (d->GetInt("revision") >= prepare_revision_ && std::abs(d->GetInt("width") - target.width) <= 1 &&
-        std::abs(d->GetInt("height") - target.height) <= 1) PrepareFrame();
+        std::abs(d->GetInt("height") - target.height) <= 1) {
+      if (pending_show_ && !frame_request_) Mark(s, "peek_ui_ready", Now());
+      PrepareFrame();
+    }
     cb->Success("{}"); return true;
   }
   if (IsTreeMethod(method)) {
@@ -843,7 +913,7 @@ bool SidebarPeek::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t 
     const int x = std::clamp(d->GetInt("x") + dx, 0, std::max(0, SidebarWidth(s->sidebar_width, client.width) - 1));
     s->sidebar_menu->Open(d->GetString("id"), x, d->GetInt("y") + dy, query, cb, b,method=="workspace.spaceMenu"); return true;
   }
-  if (method == "panel.open" && s->panel_popup && d->GetSize() == 6 && d->GetType("kind") == VTYPE_STRING && (d->GetString("kind") == "archive" || d->GetString("kind") == "space" || d->GetString("kind") == "newSpace") &&
+  if (method == "panel.open" && s->panel_popup && d->GetSize() == 6 && d->GetType("kind") == VTYPE_STRING && (d->GetString("kind") == "archive" || d->GetString("kind") == "space" || d->GetString("kind") == "newSpace" || d->GetString("kind") == "spaceTheme") &&
       d->GetType("x") == VTYPE_INT && d->GetType("y") == VTYPE_INT && d->GetType("width") == VTYPE_INT && d->GetType("height") == VTYPE_INT) {
     const CefRect anchor(std::max(0, d->GetInt("x") + dx), std::max(0, d->GetInt("y") + dy),
                          std::clamp(d->GetInt("width"), 1, 400), std::clamp(d->GetInt("height"), 1, 400));

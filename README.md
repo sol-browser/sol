@@ -86,7 +86,7 @@ Arc for macOS, including its signature features.
 | JavaScript Boosts | No | ✓ |
 | Easels | No | ✓ |
 | GitHub Live Folders | No | ✓ |
-| Air Traffic Control | No | ✓ |
+| Air Traffic Control | ✓ | ✓ |
 | AI tools / Arc Max | No | ✓ |
 | Browser account required | No | Yes |
 | Sync across devices | Beta³ | Arc Sync |

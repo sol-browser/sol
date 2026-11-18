@@ -8,8 +8,8 @@ export function sidebarPresentation(snapshot: Snapshot, surface: SidebarSurface)
   return {
     nodes: snapshot.nodes ?? EMPTY_NODES, treeRevision: snapshot.treeRevision ?? 0,
     activeId: snapshot.activeId ?? '', busy: !snapshot.ready || !!snapshot.windowClosing,
-    hidden: surface === 'docked' && !docked,
-    activeSurface: surface === 'docked' ? docked : !docked,
+    hidden: !!snapshot.libraryOpen || (surface === 'docked' && !docked),
+    activeSurface: !snapshot.libraryOpen && (surface === 'docked' ? docked : !docked),
     standalone: snapshot.windowKind === 'standalone',
     newTabShortcut: snapshot.shortcutLabels?.newTab,
     media: snapshot.media, spaces: snapshot.spaces ?? EMPTY_SPACES,

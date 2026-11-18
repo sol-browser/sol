@@ -283,19 +283,29 @@ void PanelPopup::Reposition() {
   const bool compact_integration = hover_only_ && integration_ &&
       (integration_->HasKey("kind") || integration_->GetString("service") == "figma");
   const bool modal = this->modal();
-  const int desired=kind_=="translation" ? 292 : kind_=="selectionTranslation" || kind_=="moveToProfile" ? 360 : kind_=="installExtension" ? 400 : kind_=="history" || modal ? kHistoryWidth : compact_integration ? 248 : kPanelWidth;
-  const bool editor=kind_=="space" || kind_=="newSpace" || kind_=="theme";
+  const int desired=kind_=="translation" ? 292 : kind_=="selectionTranslation" || kind_=="moveToProfile" || kind_=="deleteSpace" ? 360 : kind_=="installExtension" ? 400 : kind_=="history" || modal ? kHistoryWidth : compact_integration ? 248 : kPanelWidth;
+  // spaceTheme: the theme of a Space being created in the sidebar (preview only).
+  const bool editor=kind_=="space" || kind_=="newSpace" || kind_=="theme" || kind_=="spaceTheme";
   const auto state=state_.lock();
-  const auto page=WorkspaceContentArea(root.width,root.height,state && state->sidebar_visible,state?state->sidebar_width:kSidebarWidth);
-  const int width = std::max(1, std::min(desired, editor?page.width-32:root.width-16));
+  const auto page=WorkspaceContentArea(root.width,root.height,state && state->sidebar_visible,state?state->sidebar_width:kSidebarWidth,
+                                       state ? state->VisibleLibrarySection() : std::string_view{}, state ? state->library_spaces : 0);
+  // From a Library column the editor opens at its brush, over the Library.
+  const bool beside_library = editor && state && (state->library_open || kind_ == "spaceTheme");  // spaceTheme: centred below
+  const int width = std::max(1, std::min(desired, editor && !beside_library ? VisibleContentWidth(page,root.width)-32 : root.width-16));
   const float button_center = anchor_.x + anchor_.width / 2.f;
   int x = static_cast<int>(std::lround(button_center - width / 2.f));
   int y = kind_ == "archive" ? anchor_.y - height - 6 : anchor_.y + anchor_.height + 6;
   x = std::clamp(x, 8, std::max(8, root.width - width - 8));
   y = std::clamp(y, kToolbarHeight, std::max(kToolbarHeight, root.height - height - 8));
-  if (editor) { x=page.x+std::min(24,std::max(0,(page.width-width)/2)); y=std::min(kToolbarHeight+24,std::max(kToolbarHeight,root.height-height-8)); }
+  if (editor && !beside_library) { x=page.x+std::min(24,std::max(0,(page.width-width)/2)); y=std::min(kToolbarHeight+24,std::max(kToolbarHeight,root.height-height-8)); }
+  // The Create Space form's theme editor opens in the middle of the window.
+  if (kind_ == "spaceTheme") { x = std::max(8, (root.width - width) / 2); y = std::max(kToolbarHeight, (root.height - height) / 2); }
+  if (beside_library) {
+    x = std::clamp(anchor_.x + anchor_.width - width, 8, std::max(8, root.width - width - 8));
+    y = std::clamp(anchor_.y + anchor_.height + 6, kToolbarHeight, std::max(kToolbarHeight, root.height - height - 8));
+  }
   origin_x_ = std::clamp((button_center - x) / width, 0.f, 1.f);
-  if (editor) origin_x_=0;
+  if (editor && !beside_library) origin_x_=0;
   if (modal) { x = (root.width - width) / 2; y = (root.height - height) / 2; origin_x_ = .5f; }
   CefRect target(root.x + x, root.y + y, width, height);
   if (hover_only_) {
@@ -325,6 +335,32 @@ bool PanelPopup::EditPinnedPage(const std::string& id) {
     pinned_page_->SetString("url", node->GetString("url"));
     Toggle("editPinned", {});
     return editing_pin();
+  }
+  return false;
+}
+bool PanelPopup::ConfirmSpaceDelete(const std::string& id) {
+  const auto s = state_.lock();
+  if (!s || !s->workspace || shutdown_ || modal() || menu_open_) return false;
+  const auto snapshot = s->workspace->Snapshot();
+  const auto spaces = snapshot->GetList("spaces");
+  if (!spaces || spaces->GetSize() < 2) return false;
+  for (size_t i = 0; i < spaces->GetSize(); ++i) {
+    const auto row = spaces->GetDictionary(i);
+    if (row->GetString("id") != id) continue;
+    int tabs = 0;
+    const auto nodes = snapshot->GetList("nodes");
+    for (size_t n = 0; nodes && n < nodes->GetSize(); ++n) {
+      const auto node = nodes->GetDictionary(n);
+      if (node->GetString("space") == id && node->GetString("kind") == "tab" && !node->GetBool("archived") && !node->GetBool("favorite")) ++tabs;
+    }
+    space_delete_ = CefDictionaryValue::Create();
+    space_delete_->SetString("id", id);
+    space_delete_->SetString("name", row->GetString("name").ToString().substr(0, 120));
+    space_delete_->SetInt("position", row->GetInt("position"));
+    space_delete_->SetInt("tabs", tabs);
+    deleting_space_ = false;
+    Toggle("deleteSpace", {});
+    return open_ && kind_ == "deleteSpace";
   }
   return false;
 }
@@ -920,6 +956,7 @@ std::string PanelPopup::Response(CefRefPtr<CefDictionaryValue> theme) const {
   if (kind_ == "integration" && integration_) d->SetDictionary("integration", integration_->Copy(false));
   if (editing_pin() && pinned_page_) d->SetDictionary("pinnedPage", pinned_page_->Copy(false));
   if (open_ && kind_ == "moveToProfile" && profile_move_) d->SetDictionary("profileMove", profile_move_->Copy(false));
+  if (open_ && kind_ == "deleteSpace" && space_delete_) d->SetDictionary("spaceDelete", space_delete_->Copy(false));
   if (open_ && kind_ == "installExtension" && install_prompt_) d->SetDictionary("extensionInstall", install_prompt_->Copy(false));
   if (s && kind_ == "site") {
     d->SetDictionary("site", SiteInfo(s));
@@ -1160,6 +1197,24 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     Hide(true);
     return true;
   }
+  if (kind_ == "deleteSpace") {
+    if (method != "space.deleteConfirm") { cb->Failure(404, "Unknown delete confirmation command"); return true; }
+    if (d->GetSize() != 2 || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_ ||
+        !presented_ || deleting_space_ || !space_delete_) { cb->Failure(409, "Delete confirmation changed"); return true; }
+    auto command = CefDictionaryValue::Create();
+    command->SetString("method", "space.delete");
+    command->SetString("id", space_delete_->GetString("id"));
+    command->SetDouble("expectedRevision", s->workspace->Snapshot()->GetDouble("treeRevision"));
+    deleting_space_ = true;
+    s->workspace->Handle(command, [weak = weak_from_this(), cb, opening = request_](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
+      if (code) cb->Failure(code, error); else cb->Success("{}");
+      const auto self = weak.lock();
+      if (!self || self->request_ != opening || !self->open_ || self->kind_ != "deleteSpace") return;
+      self->deleting_space_ = false;
+      if (!code) self->Hide(true);
+    });
+    return true;
+  }
   if (kind_ == "moveToProfile") {
     if (method != "move.confirm") { cb->Failure(404, "Unknown move confirmation command"); return true; }
     if (d->GetSize() != 2 || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_ ||
@@ -1303,11 +1358,14 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     });
     return true;
   }
-  if ((kind_ == "theme" || kind_ == "space" || kind_ == "newSpace") && method == "workspace.setTheme") {
+  if ((kind_ == "theme" || kind_ == "space" || kind_ == "newSpace" || kind_ == "spaceTheme") && method == "workspace.setTheme") {
     Theme theme; bool save = false;
     if (!WorkspaceController::ParseThemeCommand(d, theme, save)) { cb->Failure(400, "Invalid theme command"); return true; }
     // The new-space editor only previews; its theme is saved with the space.
     if (kind_ == "newSpace") { if (save) { cb->Failure(400, "Create the space to keep its theme"); return true; } draft_theme_ = true; }
+    // The sidebar's Create Space form owns this preview: closing the editor keeps
+    // it; Create saves it to the new Space, Cancel reverts it (sidebar_actions.cpp).
+    if (kind_ == "spaceTheme" && save) { cb->Failure(400, "Create the space to keep its theme"); return true; }
     s->workspace->SetTheme(theme, save, [weak = weak_from_this(), cb, save](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
       auto self = weak.lock(); if (!self) return;
       if (code) { cb->Failure(code, error); return; }

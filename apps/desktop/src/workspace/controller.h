@@ -126,12 +126,11 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   // |opener|: the page the link was clicked in; its Today tab gets the new tab right below it.
   void OpenLink(const std::string& url, bool foreground, Reply done = {}, const std::string& initiator = "",
                 CefRefPtr<CefBrowser> opener = nullptr);
-  void QueueExternalUrls(const std::vector<std::string>& urls);
+  void QueueExternalUrls(const std::vector<std::string>& urls, bool os_launch = false);
   // Website links from other apps (Settings > Links): each opens in its own Little Sol, with this
   // window as its source, once this window is ready. A link that cannot open there becomes a tab.
   void QueueLittleSolLinks(const std::vector<std::string>& urls);
   // Whether a link from another app opens in Little Sol rather than as a tab.
-  static bool OpensInLittleSol(const AppSession& session, const std::string& url);
   // Ctrl+Alt+N: opens this hidden Little Sol's command bar on its own, once the window is ready.
   // Finish shows the window with the page the bar opened, or closes it when nothing was opened.
   void StartLittleSolLauncher(int attempts = 100);
@@ -161,7 +160,11 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   int SetMuted(const std::string& id, bool muted, std::string& error);
   // Visible, user-dismissable message in the trusted UI.
   void Notify(const std::string& text);
-  void SetSidebarVisible(bool visible, bool live = false);
+  // |animate| glides the page edge to the new rail width (Library open,
+  // close and section changes) instead of moving it at once.
+  void SetSidebarVisible(bool visible, bool live = false, bool animate = false);
+  bool SetLibraryOpen(bool open);
+  bool SetLibrarySection(const std::string& section);
   void SetSidebarWidth(int width, bool save, Reply done);
   // Live preview while dragging (save=false), persisted on release. Also
   // re-resolves the System mode against Windows' current app mode.
@@ -254,6 +257,11 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void DrainExternalUrls();
   // Gives the page the space beside a docked sidebar of |width|.
   void LayoutSidebar(double width, bool settled);
+  // Moves the page edge from rail width |from| to |to| over kRailMotionMs.
+  void AnimateRail(int from, int to);
+  void StepRail(int generation);
+  int rail_generation_ = 0, rail_from_ = 0, rail_to_ = 0, rail_frames_ = 0;
+  long long rail_started_ = 0;
   // Probe only: sidebar layout evidence once no page is being revealed.
   static void RecordSidebarLayout(std::weak_ptr<State> weak, int attempts);
   void Publish();
@@ -338,7 +346,8 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void ShowRecentStrip();
   std::vector<PageCorners::SwitcherCard> SwitcherCards();
   bool strip_shown_ = false;  // This cycle has asked for its strip.
-  std::vector<std::string> external_pending_;
+  struct ExternalUrl { std::string url; bool os_launch; };
+  std::vector<ExternalUrl> external_pending_;
   bool external_opening_ = false;
   std::function<void(CefRefPtr<CefDictionaryValue>)> observer_;
   std::string error_, notice_;

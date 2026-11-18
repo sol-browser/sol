@@ -40,7 +40,10 @@ bool ExecuteShortcut(const std::shared_ptr<State>& state, Shortcut action) {
     case Shortcut::Capture: StartCapturePicker(state); break;
     case Shortcut::Screenshot: CapturePage(state, false); break;
     case Shortcut::FullPageScreenshot: CapturePage(state, true); break;
-    case Shortcut::Sidebar: state->workspace->SetSidebarVisible(!state->sidebar_visible); FocusBrowser(page); break;
+    case Shortcut::Sidebar:
+      if (state->library_open) state->workspace->SetLibraryOpen(false);
+      else { state->workspace->SetSidebarVisible(!state->sidebar_visible); FocusBrowser(page); }
+      break;
     case Shortcut::Pin:
       if (state->workspace->HasLinkPeek()) state->workspace->Notify("Open the preview as a tab to pin it");
       else state->workspace->TogglePin(); break;

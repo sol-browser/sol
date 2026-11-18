@@ -63,6 +63,7 @@ body:has(.panel-root), :root[data-ui="menu"] body { background: linear-gradient(
   transition: scale 140ms ease-out, filter 140ms ease-out;
 }
 .pin-editor button[type="submit"] { background: var(--pop-primary); color: var(--pop-primary-ink); font-weight: 600; }
+.pin-editor button[type="submit"].danger { background: #d9435f; color: #fff; }
 .pin-editor button:enabled:active { scale: .94; filter: brightness(.86); transition-duration: 60ms; }
 .pin-editor button:disabled { opacity: .55; }
 @media (prefers-reduced-motion: reduce) {

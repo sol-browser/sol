@@ -25,6 +25,17 @@ int main() {
   const auto minimum = red::WorkspaceContentArea(1, 1, true);
   check(minimum.width == 1 && minimum.height == 1, "transient small bounds never produce invalid native sizes");
   check(red::WorkspaceContentArea(1200, 820, true, 336).x == 344, "resized sidebar moves the native page");
+  const auto library = red::WorkspaceContentArea(1200, 820, true, 256, "archive");
+  const auto board = red::WorkspaceContentArea(1600, 820, false, 256, "spaces");
+  check(library.x == 464 && library.width == expanded.width && library.height == expanded.height,
+        "Library shifts the page and keeps its sidebar size");
+  check(board.x == 1128 && board.width == 1584 && red::VisibleContentWidth(board, 1600) == 464,
+        "Spaces board shifts a full-width page, cut by the window edge");
+  check(red::VisibleContentWidth(expanded, 1200) == expanded.width, "a docked page is fully visible");
+  check(red::WorkspaceRailWidth(2560, true, 256, "spaces", 4) == red::LibraryBoardWidth(4) &&
+        red::LibraryBoardWidth(4) == 1288 && red::WorkspaceRailWidth(1600, true, 256, "spaces", 9) == 1264 &&
+        red::WorkspaceRailWidth(1600, true, 256, "spaces", 1) == 456,
+        "the Spaces board fits its columns and keeps 320 DIP of the page");
   const auto little = red::WorkspaceContentArea(660, 490, false);
   check(little.x == 8 && little.y == expanded.y && little.width == 644 && little.height == 451,
         "Little Sol keeps the canvas inset below the shared title bar");

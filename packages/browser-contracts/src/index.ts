@@ -58,6 +58,7 @@ export type SplitViewInfo = { anchor: string; focused: string; expanded: string;
 export type DevToolsInfo = { id: number; side: 'right' | 'bottom' | 'left' | 'window'; extent: number; header: DockBounds; divider: DockBounds };
 export type DeviceSettings = { enabled: boolean; width: number; height: number; dpr: number; scale: number; mobile: boolean; touch: boolean };
 export type DevicePreview = DeviceSettings & { id: number; pending: boolean; error: string; effectiveScale: number; toolbar: DockBounds; viewport: DockBounds; area: DockBounds };
+export type LibrarySection = 'spaces' | 'archive' | 'routes';
 export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boolean; probeMode: boolean;
   workspaceEnabled?: boolean; schemaVersion?: number; treeRevision?: number; ready?: boolean; error?: string; browserFullscreen?: boolean;
   windowKind?: 'workspace' | 'standalone';
@@ -76,11 +77,12 @@ export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boo
   linkPeek?: LinkPeekInfo;
   /** Sidebar players (newest first, at most 3): tabs that played sound and are not on screen. */
   media?: MediaInfo[];
-  sidebarVisible?: boolean; sidebarWidth?: number; sidebarResizing?: boolean; contentBounds?: { x: number; y: number; width: number; height: number };
+  sidebarVisible?: boolean; sidebarWidth?: number; sidebarResizing?: boolean; libraryOpen?: boolean; librarySection?: LibrarySection;
+  contentBounds?: { x: number; y: number; width: number; height: number };
   activeId?: string; url?: string; isLoading?: boolean; workspaceProbe?: boolean; nodes?: TreeNode[]; createdId?: string; newTabRequest?: number;
   organizationProbe?: boolean; organizationArmed?: boolean; organizationUnloadDecisions?: number; addressRequest?: number;
   /** A flow the docked sidebar should start (from the browser menu); id grows with each request. */
-  sidebarRequest?: { id: number; action: 'newSpace' | 'editSpace' | 'newFolder' };
+  sidebarRequest?: { id: number; action: 'newSpace' | 'newSpaceFromLibrary' | 'editSpace' | 'newFolder' };
   /** A private (incognito) window: nothing it browses is kept. */
   privateWindow?: boolean;
   /** Windows 11 system backdrop behind a translucent window (the UI paints a tint over it). */
@@ -125,8 +127,39 @@ export type Backdrop = 'none' | 'mica' | 'acrylic';
 /** Times on History and Downloads: the Windows short time format, or a fixed clock. */
 export type Clock = 'system' | '12' | '24';
 export type KeyBinding = { key: number; ctrl: boolean; shift: boolean; alt: boolean };
+export type LinkRoute = { match: 'contains' | 'exact' | 'regex'; pattern: string; destination: string };
+export type LinkRouting = { rules: LinkRoute[]; fallback: string };
+export type LinkRoutingSnapshot = { routing: LinkRouting; revision: number };
+export const maxLinkRoutes = 24;
+export const maxLinkPatternBytes = 1024;
+function validLinkDestination(value: unknown): value is string {
+  return typeof value === 'string' && (value === 'littleSol' || value === 'recent' ||
+    /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(value));
+}
+export function validLinkRouting(value: unknown): value is LinkRouting {
+  if (!object(value) || Object.keys(value).length !== 2 || !validLinkDestination(value.fallback) ||
+      !Array.isArray(value.rules) || value.rules.length > maxLinkRoutes) return false;
+  return value.rules.every(rule => {
+    if (!object(rule) || Object.keys(rule).length !== 3 || !validLinkDestination(rule.destination) ||
+        typeof rule.pattern !== 'string' || !rule.pattern || rule.pattern.startsWith(' ') || rule.pattern.endsWith(' ') ||
+        /[\x00-\x1f\x7f]/u.test(rule.pattern) || new TextEncoder().encode(rule.pattern).length > maxLinkPatternBytes) return false;
+    // The native ICU engine validates regex syntax when saving the rules.
+    if (rule.match === 'contains' || rule.match === 'regex') return true;
+    if (rule.match !== 'exact' || !/^https?:\/\//u.test(rule.pattern)) return false;
+    try {
+      const url = new URL(rule.pattern);
+      return !!url.hostname && !url.username && !url.password;
+    } catch { return false; }
+  });
+}
+export function parseLinkRoutingSnapshot(value: unknown): LinkRoutingSnapshot {
+  if (!object(value) || !integer(value.revision) || value.revision < 0 || !validLinkRouting(value.routing))
+    throw new Error('Invalid link routing snapshot');
+  return { routing: value.routing, revision: value.revision };
+}
 export type BrowserPreferences = { schema: 1; searchEngine: SearchEngine; searchSuggestions?: boolean; siteSearches?: SiteSearch[]; siteSearchActivation?: SiteSearchActivation; autoArchiveHours?: number; autoPictureInPicture?: boolean; autoPipSites?: Record<string, boolean>; pipButton?: boolean; preloadOnHover?: boolean; contentBlocker?: boolean; littleSolLinks?: boolean; littleSolClick?: boolean; littleSolHotkey?: boolean; unloadMinutes?: number; clock?: Clock; backdrop?: Backdrop; downloadDirectory: string; askDownload: boolean;
   littleSolBinding?: KeyBinding;
+  linkRouting?: LinkRouting;
   notesProvider?: 'googleDocs' | 'word'; integrations?: IntegrationSettings; interfaceLanguage?: InterfaceLanguage;
   translationTarget?: string; translationOffers?: boolean; translationExcludedSites?: string[]; translationKnownLanguages?: string[];
   startup: 'restore' | 'newTab' | 'homepage'; homepage: string; shortcuts: Record<string, KeyBinding> };
@@ -138,6 +171,7 @@ export type SettingsCommand = { method: 'settings.get' | 'settings.ready' | 'set
   | { method: 'settings.set'; key: 'notesProvider'; value: 'googleDocs' | 'word' }
   | { method: 'settings.setIntegration'; provider: IntegrationId; enabled: boolean }
   | { method: 'settings.set'; key: 'siteSearches'; value: SiteSearch[] }
+  | { method: 'settings.set'; key: 'linkRouting'; value: LinkRouting; expectedRevision: number }
   | { method: 'settings.set'; key: 'siteSearchActivation'; value: SiteSearchActivation }
   | { method: 'settings.set'; key: 'backdrop'; value: Backdrop }
   | { method: 'settings.set'; key: 'clock'; value: Clock }
@@ -161,7 +195,7 @@ export type SettingsSnapshot = {
   standalone?: boolean;
   theme: Theme; ready: boolean; spaceName: string; spaceId: string; version: string; chromiumVersion: string;
   defaultBrowser: { installed: boolean; registered: boolean; isDefault: boolean | null };
-  preferences: BrowserPreferences; preferencesError: string; keyboard: KeyboardSetting[];
+  preferences: BrowserPreferences; preferencesError: string; keyboard: KeyboardSetting[]; linkRoutingRevision?: number;
   /** Whether Windows' short time format uses AM/PM ("Same as Windows"). */
   systemHour12?: boolean;
   /** available: Windows 11 22H2+ and an engine with patch 12; active: this window is translucent. */
@@ -194,6 +228,9 @@ export function parseSettingsSnapshot(raw: string): SettingsSnapshot {
     value.preferencesError = 'Restart Sol to enable these settings.'; value.keyboard = [];
   }
   const prefs = value.preferences;
+  if (value.linkRoutingRevision !== undefined && (!integer(value.linkRoutingRevision) || value.linkRoutingRevision < 0))
+    throw new Error('Invalid link routing revision');
+  if (object(prefs) && prefs.linkRouting !== undefined && !validLinkRouting(prefs.linkRouting)) throw new Error('Invalid link routing');
   if (object(prefs) && prefs.siteSearches !== undefined && !validSiteSearches(prefs.siteSearches)) throw new Error('Invalid site searches');
   if (object(prefs) && prefs.siteSearchActivation !== undefined && (typeof prefs.siteSearchActivation !== 'string' || !['spaceOrTab','tab'].includes(prefs.siteSearchActivation))) throw new Error('Invalid site search activation');
   if (object(prefs) && prefs.searchSuggestions !== undefined && typeof prefs.searchSuggestions !== 'boolean') throw new Error('Invalid suggestion preference');
@@ -313,6 +350,13 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'browser.shortcut'; action: ShortcutAction }
   | { method: 'browser.restartToUpdate' }
   | { method: 'workspace.setSidebarVisible'; visible: boolean }
+  | { method: 'library.setOpen'; open: boolean }
+  | { method: 'library.setSection'; section: LibrarySection }
+  /** The sidebar's Create Space form; its theme is previewed by the spaceTheme editor. */
+  | { method: 'space.startCreate' } | { method: 'space.cancelDraft'; themed: boolean; library: boolean }
+  | { method: 'space.createDraft'; title: string; icon: string; themed: boolean; library: boolean; profileId?: string }
+  /** Library: the window's modal confirms before a Space is deleted. */
+  | { method: 'space.confirmDelete'; id: string }
   | { method: 'workspace.setSidebarWidth'; width: number; save: boolean }
   | { method: 'workspace.beginSidebarResize' }
   | { method: 'devtools.control'; id: number; action: 'right' | 'bottom' | 'left' | 'window' | 'close' | 'device' | 'focus' }
@@ -335,7 +379,7 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'tab.mute'; id: string; muted: boolean }
   | { method: 'tab.setXBadgeHidden'; id: string; hidden: boolean }
   | { method: 'tab.setIntegration'; id: string; provider: IntegrationId; enabled: boolean }
-  | { method: 'panel.open'; kind: 'archive' | 'downloads' | 'site' | 'history' | 'space' | 'newSpace' | 'translation';
+  | { method: 'panel.open'; kind: 'archive' | 'downloads' | 'site' | 'history' | 'space' | 'newSpace' | 'spaceTheme' | 'translation';
       x: number; y: number; width: number; height: number; offerId?: number }
   | { method: 'integration.preview'; id: string; x: number; y: number; width: number; height: number }
   | { method: 'navigation.load'; url: string }
@@ -472,7 +516,7 @@ export function parseSnapshot(raw: string): Snapshot {
           (v.icon !== undefined && (typeof v.icon !== 'string' || !v.icon.startsWith('data:image/png;base64,') || v.icon.length > 65536));
       }))) throw new Error('Invalid pinned extensions');
     if (s.sidebarRequest !== undefined && (typeof s.sidebarRequest !== 'object' || !s.sidebarRequest || !integer((s.sidebarRequest as { id?: unknown }).id) ||
-        !['newSpace', 'editSpace', 'newFolder'].includes((s.sidebarRequest as { action?: unknown }).action as string))) throw new Error('Invalid sidebar request');
+        !['newSpace', 'newSpaceFromLibrary', 'editSpace', 'newFolder'].includes((s.sidebarRequest as { action?: unknown }).action as string))) throw new Error('Invalid sidebar request');
     if (s.popupCount !== undefined && !integer(s.popupCount)) throw new Error('Invalid popup count');
     if (s.windowMaximized !== undefined && typeof s.windowMaximized !== 'boolean') throw new Error('Invalid window state');
     if (s.downloadsStarted !== undefined && !integer(s.downloadsStarted)) throw new Error('Invalid downloads counter');
@@ -520,7 +564,8 @@ export function parseSnapshot(raw: string): Snapshot {
       }
       if (typeof s.activeSpace !== 'string' || (s.windowKind !== 'standalone' && !seen.has(s.activeSpace))) throw new Error('Invalid active space');
     }
-    if (typeof s.sidebarVisible !== 'boolean' || !object(s.contentBounds)
+    if (typeof s.sidebarVisible !== 'boolean' || (s.libraryOpen !== undefined && typeof s.libraryOpen !== 'boolean') ||
+        (s.librarySection !== undefined && s.librarySection !== 'archive' && s.librarySection !== 'spaces' && s.librarySection !== 'routes') || !object(s.contentBounds)
       || !integer(s.contentBounds.x) || !integer(s.contentBounds.y)
       || !integer(s.contentBounds.width) || s.contentBounds.width < 1
       || !integer(s.contentBounds.height) || s.contentBounds.height < 1) throw new Error('Invalid workspace layout');

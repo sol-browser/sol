@@ -11,22 +11,24 @@ import { ThemePanel } from './Theme';
 import { NewSpacePanel, SpacePanel } from './Space';
 import { applyTheme } from './theme-apply';
 import { parseExtensions, parseSiteBlocker, parseSiteInfo, type SiteBlocker, type SiteExtension, type SiteInfo } from './site-model';
-import { archiveOrder, displayTitle } from './sidebar-model';
+import { archiveOrder, displayTitle, spaceDisplayName } from './sidebar-model';
 import { usePopupPresentation } from './usePopupPresentation';
 import { parseIntegrationCard, type IntegrationCard as Card } from './integrations';
 import { IntegrationCard } from './IntegrationCard';
 import { SelectionTranslationPanel, TranslationPanel } from './TranslationPanel';
+import { focusOnMount } from './focus-on-mount';
 
 // The Archive/Downloads popover document (sol://ui/panel.html), hosted by its
 // own owned window. It only speaks the panel IPC; native code validates all.
 type PinnedPage = { title: string; url: string };
 type ProfileMove = { title: string; spaceName: string };
-type Payload = { request: number; kind: 'archive' | 'downloads' | 'site' | 'history' | 'theme' | 'space' | 'newSpace' | 'integration' | 'editPinned' | 'moveToProfile' | 'installExtension' | 'translation' | 'selectionTranslation'; open: boolean; extensionInstall?: ExtensionInstall; blocker?: SiteBlocker; extensionsAvailable?: boolean; snapshot: Snapshot; archive?: TreeNode[]; site?: SiteInfo; extensions?: SiteExtension[]; siteDetails?: number; integration?: Card; pinnedPage?: PinnedPage; profileMove?: ProfileMove; translationLanguages?: string[]; selectionTranslation?: SelectionTranslation };
+type SpaceDelete = { name: string; position: number; tabs: number };
+type Payload = { request: number; kind: 'archive' | 'downloads' | 'site' | 'history' | 'theme' | 'space' | 'newSpace' | 'spaceTheme' | 'integration' | 'editPinned' | 'moveToProfile' | 'deleteSpace' | 'installExtension' | 'translation' | 'selectionTranslation'; open: boolean; extensionInstall?: ExtensionInstall; blocker?: SiteBlocker; extensionsAvailable?: boolean; snapshot: Snapshot; archive?: TreeNode[]; site?: SiteInfo; extensions?: SiteExtension[]; siteDetails?: number; integration?: Card; pinnedPage?: PinnedPage; profileMove?: ProfileMove; spaceDelete?: SpaceDelete; translationLanguages?: string[]; selectionTranslation?: SelectionTranslation };
 function parsePayload(raw: string, previous?:Payload): Payload {
   const value: unknown = JSON.parse(raw);
   if (typeof value !== 'object' || value === null) throw new Error('Invalid panel payload');
   const v = value as Record<string, unknown>;
-  if (!Number.isSafeInteger(v.request) || (v.kind !== 'archive' && v.kind !== 'downloads' && v.kind !== 'site' && v.kind !== 'history' && v.kind !== 'theme' && v.kind !== 'space' && v.kind !== 'newSpace' && v.kind !== 'integration' && v.kind !== 'editPinned' && v.kind !== 'moveToProfile' && v.kind !== 'installExtension' && v.kind !== 'translation' && v.kind !== 'selectionTranslation') || typeof v.open !== 'boolean')
+  if (!Number.isSafeInteger(v.request) || (v.kind !== 'archive' && v.kind !== 'downloads' && v.kind !== 'site' && v.kind !== 'history' && v.kind !== 'theme' && v.kind !== 'space' && v.kind !== 'newSpace' && v.kind !== 'spaceTheme' && v.kind !== 'integration' && v.kind !== 'editPinned' && v.kind !== 'moveToProfile' && v.kind !== 'deleteSpace' && v.kind !== 'installExtension' && v.kind !== 'translation' && v.kind !== 'selectionTranslation') || typeof v.open !== 'boolean')
     throw new Error('Invalid panel payload');
   const snapshot = parseSnapshotUpdate(JSON.stringify(v.snapshot),previous?.snapshot);
   const pinned = v.pinnedPage as Partial<PinnedPage> | null | undefined;
@@ -35,12 +37,16 @@ function parsePayload(raw: string, previous?:Payload): Payload {
   const move = v.profileMove as Partial<ProfileMove> | null | undefined;
   if (v.kind === 'moveToProfile' && v.open && (typeof move?.title !== 'string' || typeof move?.spaceName !== 'string'))
     throw new Error('Invalid move confirmation');
+  const deleting = v.spaceDelete as Partial<SpaceDelete> | null | undefined;
+  if (v.kind === 'deleteSpace' && v.open && (typeof deleting?.name !== 'string' || !Number.isSafeInteger(deleting?.position) || !Number.isSafeInteger(deleting?.tabs)))
+    throw new Error('Invalid delete confirmation');
   const install = v.kind === 'installExtension' && v.open ? parseExtensionInstall(v.extensionInstall) : undefined;
   return { request: v.request as number, kind: v.kind, open: v.open, snapshot, extensionInstall: install,
     // Sent while the Archive panel is open; kept while it closes.
     archive: v.kind === 'archive' ? v.archive !== undefined ? parseArchive(v.archive) : previous?.archive : undefined,
     translationLanguages: Array.isArray(v.translationLanguages) ? v.translationLanguages.filter(validTranslationLanguage) : undefined,
     selectionTranslation: v.kind === 'selectionTranslation' && v.open ? parseSelectionTranslation(v.selectionTranslation) : undefined,
+    spaceDelete: v.kind === 'deleteSpace' && typeof deleting?.name === 'string' ? { name: deleting.name, position: deleting.position as number, tabs: deleting.tabs as number } : undefined,
     profileMove: typeof move?.title === 'string' && typeof move.spaceName === 'string' ? { title: move.title, spaceName: move.spaceName } : undefined,
     pinnedPage: typeof pinned?.title === 'string' && typeof pinned.url === 'string' ? { title: pinned.title, url: pinned.url } : undefined,
     integration: v.kind === 'integration' ? v.open ? parseIntegrationCard(v.integration, snapshot.integrations) : previous?.integration : undefined,
@@ -105,6 +111,35 @@ function PinnedPageEditor({ page, opening }: { page: PinnedPage; opening: number
         <button type="submit" disabled={saving || !url.trim()}>{t('common.save')}</button>
       </footer>
     </form>
+  </section>;
+}
+
+// Library: deleting a Space asks in the window's modal, like moving a tab across profiles.
+function SpaceDeleteConfirm({ space, opening }: { space: SpaceDelete; opening: number }) {
+  const t = useMessages();
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState('');
+  const report = (error: unknown) => setError(error instanceof Error ? error.message.replace(/^\d+: /, '') : String(error));
+  const name = spaceDisplayName(space, t);
+  return <section className="pin-editor move-confirm" role="alertdialog" aria-modal="true" aria-labelledby="delete-space-heading" aria-describedby="delete-space-note"
+    onKeyDown={event => {
+      if (event.key === 'Escape') { event.preventDefault(); if (!deleting) void call({ method: 'panel.close' }).catch(report); }
+      else if (event.key === 'Tab') {
+        const controls = event.currentTarget.querySelectorAll<HTMLElement>('button:enabled');
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey ? event.target === first : event.target === last) { event.preventDefault(); (event.shiftKey ? last : first)?.focus(); }
+      }
+    }}>
+    <h2 id="delete-space-heading">{t('sidebar.space.confirmDelete', { name })}</h2>
+    <p id="delete-space-note">{t('library.deleteDetail', { count: space.tabs })}</p>
+    {error && <p className="popover-error" role="alert">{error}</p>}
+    <footer>
+      <button type="button" ref={focusOnMount} disabled={deleting} onClick={() => void call({ method: 'panel.close' }).catch(report)}>{t('common.cancel')}</button>
+      <button type="submit" className="danger" data-action="confirm-space-delete" disabled={deleting} onClick={() => {
+        setDeleting(true); setError('');
+        void call({ method: 'space.deleteConfirm', request: opening }).catch(error => { report(error); setDeleting(false); });
+      }}>{t('sidebar.space.delete')}</button>
+    </footer>
   </section>;
 }
 
@@ -253,6 +288,8 @@ export function Panel() {
   return <div className="panel-root" ref={root} data-kind={payload?.kind} data-pointer={pointer} onMouseMove={() => { if (!pointer) setPointer(true); }}>
     {payload?.kind === 'editPinned' ? payload.open && payload.pinnedPage &&
       <PinnedPageEditor key={payload.request} page={payload.pinnedPage} opening={payload.request} /> :
+    payload?.kind === 'deleteSpace' ? payload.open && payload.spaceDelete &&
+      <SpaceDeleteConfirm key={payload.request} space={payload.spaceDelete} opening={payload.request} /> :
     payload?.kind === 'moveToProfile' ? payload.open && payload.profileMove &&
       <ProfileMoveConfirm key={payload.request} move={payload.profileMove} opening={payload.request} /> :
     payload?.kind === 'installExtension' ? payload.open && payload.extensionInstall &&
@@ -264,6 +301,8 @@ export function Panel() {
     payload?.kind === 'theme' ? <ThemePanel key={`${payload.request}:${snapshot?.activeSpace}`} theme={snapshot?.theme} spaceId={snapshot?.activeSpace} probe={snapshot?.paletteProbe} closeOnDone command={call} /> :
     payload?.kind === 'space' && snapshot ? <SpacePanel key={`${payload.request}:${snapshot.activeSpace}`} snapshot={snapshot} command={call} /> :
     payload?.kind === 'newSpace' && snapshot ? <NewSpacePanel key={payload.request} snapshot={snapshot} command={call} /> :
+    payload?.kind === 'spaceTheme' && snapshot ? <ThemePanel key={payload.request} theme={snapshot.theme} spaceId={snapshot.activeSpace} command={call}
+      label={t('space.theme')} draft={{ ready: true, current: true, create: () => call({ method: 'panel.close' }) }} /> :
     payload?.kind === 'translation' && snapshot?.translationOffer ? <TranslationPanel key={payload.request} page={snapshot.translationOffer}
       languages={payload.translationLanguages ?? []} privateWindow={!!snapshot.privateWindow} command={run} /> :
     payload?.kind === 'selectionTranslation' && payload.selectionTranslation ? <SelectionTranslationPanel key={payload.request}

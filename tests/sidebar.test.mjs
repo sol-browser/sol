@@ -164,6 +164,17 @@ test('closing, standalone and empty sidebar states have identical semantics in b
   }
 });
 
+test('the Library parks both normal sidebar surfaces without changing the saved visibility', () => {
+  for (const sidebarVisible of [true, false]) {
+    for (const surface of ['docked', 'floating']) {
+      const projection = sidebarPresentation({ ready: true, sidebarVisible, libraryOpen: true }, surface);
+      assert.equal(projection.hidden, true);
+      assert.equal(projection.activeSurface, false);
+    }
+    assert.equal(sidebarPresentation({ ready: true, sidebarVisible }, 'docked').activeSurface, sidebarVisible);
+  }
+});
+
 test('favorites rearrange into fewer columns as the sidebar narrows', () => {
   // Grid width = sidebar width - 20 px padding - 8 px zone margins.
   assert.equal(favoriteColumnLimit(256 - 28), 4); assert.equal(favoriteColumnLimit(200 - 28), 3);

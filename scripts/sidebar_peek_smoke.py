@@ -1,24 +1,141 @@
 """Floating sidebar acceptance (--probe-sidebar-peek) through actual CEF."""
+import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import shutil
 import sqlite3
 import threading
 from uuid import uuid4
 from smoke import ROOT, run
 
 
+PHASES = (('detect', 'entered', 'peek_show_requested'), ('snapshot', 'peek_show_requested', 'peek_snapshot_sent'),
+          ('react', 'peek_snapshot_sent', 'peek_ui_ready'), ('frame', 'peek_ui_ready', 'peek_ready_to_slide'),
+          ('place', 'peek_ready_to_slide', 'peek_placed_over_sample'), ('compose', 'peek_placed_over_sample', 'painted'),
+          ('reveal', 'peek_ready_to_slide', 'painted'))
+
+
+def phases(rows, entered, painted):
+    """Split one pointer entry into native pipeline phases (all QPC ms)."""
+    marks = {'entered': entered, 'painted': painted}
+    for row in rows:
+        ms = row.get('details', {}).get('ms')
+        if row['event'] in ('peek_show_requested', 'peek_snapshot_sent', 'peek_ui_ready', 'peek_ready_to_slide',
+                            'peek_placed_over_sample') and \
+                ms is not None and entered - 5 <= ms <= painted and row['event'] not in marks:
+            marks[row['event']] = ms
+            if row['event'] == 'peek_snapshot_sent':
+                marks['bytes'] = row['details'].get('bytes')
+    out = {name: round(marks[end] - marks[start], 1) if start in marks and end in marks else None
+           for name, start, end in PHASES}
+    out['total'] = round(painted - entered, 1)
+    out['snapshot_bytes'] = marks.get('bytes')
+    return out
+
+
+def seed(profile, url, tabs):
+    database = profile / 'BrowserData' / 'workspace.sqlite3'
+    database.parent.mkdir(parents=True)
+    with sqlite3.connect(database) as db:
+        db.executescript('CREATE TABLE nodes(id TEXT PRIMARY KEY,parent_id TEXT,kind INTEGER,title TEXT,url TEXT,position INTEGER,pinned INTEGER,expanded INTEGER,favorite INTEGER,archived INTEGER);'
+                         'CREATE TABLE state(singleton INTEGER PRIMARY KEY,revision INTEGER,active_id TEXT);'
+                         'PRAGMA application_id=1380271170; PRAGMA user_version=2;')
+        base = url.removesuffix('/a')
+        for position in range(tabs + 1):
+            node = f'22222222-2222-4222-8222-{position:012d}'
+            title, address = ('Start', url) if position == 0 else (f'Saved tab {position}', f'{base}/t{position}')
+            db.execute('INSERT INTO nodes VALUES(?,?,?,?,?,?,?,?,?,?)',
+                       (node, None, 0, title, address, position, int(0 < position <= 8), 1, 0, 0))
+            if position == 0:
+                db.execute('INSERT INTO state VALUES(1,1,?)', (node,))
+
+
+def cold(host, url, wait, repeat, tabs):
+    """First opening of each fresh process after |wait| ms idle."""
+    template = None
+    if tabs:
+        # An existing, already migrated profile, copied for every process (the
+        # probe changes its tabs). Only its workspace database is kept.
+        template = ROOT / 'artifacts' / ('sidebar-cold-' + uuid4().hex[:8])
+        seed(template / 'seed', url, tabs)
+        run(url, ['--workspace'], profile=template / 'seed')
+    samples = []
+    for index in range(repeat):
+        profile = None
+        if template:
+            profile = template / f'run{index}'
+            (profile / 'BrowserData').mkdir(parents=True)
+            shutil.copy2(template / 'seed' / 'BrowserData' / 'workspace.sqlite3', profile / 'BrowserData' / 'workspace.sqlite3')
+        directory, rows = run(url, [f'--probe-sidebar-peek={host}-cold-{wait}'], allow_failure=True, profile=profile)
+        found = [r['details'] for r in rows if r['event'] == 'peek_edge_measurement']
+        if len(found) != 1 or found[0]['error'] or len(found[0]['edge_to_pixel_ms']) != 1:
+            samples.append({'error': found[0]['error'] if found else 'missing measurement', 'run': str(directory)})
+            continue
+        sample = phases(rows, found[0]['entered_ms'][0], found[0]['painted_ms'][0])
+        sample['child'] = found[0].get('child'); sample['run'] = directory.name
+        startup = {r['event']: r['details']['ms'] for r in rows if r['event'] in ('peek_create_requested', 'peek_created', 'peek_subscribed')}
+        sample['subscribed_before_entry_ms'] = round(found[0]['entered_ms'][0] - startup['peek_subscribed'], 1) if 'peek_subscribed' in startup else None
+        samples.append(sample)
+        print(json.dumps(sample), flush=True)
+    result = {'host': host, 'wait_ms': wait, 'tabs': tabs, 'samples': samples}
+    totals = sorted(s['total'] for s in samples if 'total' in s)
+    result['median_total_ms'] = totals[len(totals) // 2] if totals else None
+    result['passed'] = len(totals) == repeat and all(s['child'] == (host == 'child') for s in samples)
+    out = ROOT / 'artifacts' / f'sidebar-cold-{host}-{uuid4().hex[:8]}.json'
+    out.write_text(json.dumps(result, indent=2) + '\n')
+    print(json.dumps({k: v for k, v in result.items() if k != 'samples'}), out, flush=True)
+    if not result['passed']:
+        raise RuntimeError(f'Cold experiment incomplete: {out}')
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--host', choices=('owned', 'child'), help='Compare native hosts on an interactive display')
+    parser.add_argument('--edge', action='store_true', help='Measure 15 pointer entries against a solid page')
+    parser.add_argument('--cold', type=int, metavar='MS', help='Measure the first opening of each process after MS idle')
+    parser.add_argument('--repeat', type=int, default=5, help='Processes for --cold')
+    parser.add_argument('--tabs', type=int, default=0, help='Extra saved tabs in the --cold profile')
+    args = parser.parse_args()
+    host = args.host
+    if (args.edge or args.cold) and not host:
+        parser.error('--edge and --cold require --host')
+    if args.cold:
+        args.edge = True  # Same solid fixture page.
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args): pass
         def do_GET(self):
             name = self.path.strip('/') or 'a'
             body = f"<!doctype html><html lang='en'><title>{name}</title><h1>{name}</h1>".encode()
+            if args.edge:
+                body += b'<style>html {background:#216491}</style>'
             self.send_response(200); self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f'http://127.0.0.1:{server.server_port}/a'
+    if args.cold:
+        try:
+            cold(host, url, args.cold, args.repeat, args.tabs)
+        finally:
+            server.shutdown()
+            server.server_close()
+        return
+    if args.edge:
+        try:
+            directory, rows = run(url, [f'--probe-sidebar-peek={host}-edge'], allow_failure=True)
+            samples = [r['details'] for r in rows if r['event'] == 'peek_edge_measurement']
+            result = samples[0] if len(samples) == 1 else {'error': 'missing measurement', 'edge_to_pixel_ms': []}
+            result['passed'] = (not result['error'] and len(result['edge_to_pixel_ms']) == 15 and
+                                result.get('child') == (host == 'child') and json.loads((directory / 'summary.json').read_text())['passed'])
+            (directory / 'sidebar_edge.json').write_text(json.dumps(result, indent=2) + '\n')
+            print(json.dumps(result), flush=True)
+            if not result['passed']:
+                raise RuntimeError(f'Edge experiment failed: {directory}')
+        finally:
+            server.shutdown()
+            server.server_close()
+        return
     profile = ROOT / 'artifacts' / ('sidebar-profile-' + uuid4().hex[:8]) / 'profile'
     database = profile / 'BrowserData' / 'workspace.sqlite3'
     database.parent.mkdir(parents=True)
@@ -54,7 +171,8 @@ def main():
         run(url, ['--workspace'], profile=profile)
         with sqlite3.connect(database) as db:
             db.execute("UPDATE nodes SET x_badge_hidden=1 WHERE title='X disabled fixture'")
-        directory, rows = run(url, ['--probe-sidebar-peek'], allow_failure=True, profile=profile)
+        flag = f'--probe-sidebar-peek={host}' if host else '--probe-sidebar-peek'
+        directory, rows = run(url, [flag], allow_failure=True, profile=profile)
         with sqlite3.connect(database) as db:
             saved_pin = db.execute("SELECT title,url FROM nodes WHERE id='11111111-1111-4111-8111-000000000008'").fetchone()
     finally:
@@ -75,7 +193,11 @@ def main():
     editor_closes = {r['details']['floating']: r['details'] for r in rows if r['event'] == 'pin_editor_closed'}
     editor_presentations = [r['details'] for r in rows if r['event'] == 'popup_presented' and r['details'].get('kind') == 'editPinned']
     pinned_hints = {d['pinnedHint']: d for d in documents if 'pinnedHint' in d}
+    library = {r['details']['surface']: r['details'] for r in rows if r['event'] == 'library_sidebar_host'}
     checks = {
+        'both_hosts_open_library_and_restore_geometry': set(library) == {'docked', 'floating'} and
+            all(all(value.get(key) is True for key in ('opened', 'restored', 'same_browser')) for value in library.values()) and
+            {r['details']['surface'] for r in rows if r['event'] == 'shared_sidebar_action' and r['details']['method'] == 'library.setOpen'} == {'docked', 'floating'},
         'ukrainian_in_both_hosts': all(any(d.get('localeHost') == host and d.get('locale') == 'uk' and
                                           d.get('newTab') == 'Нова вкладка' and d.get('sidebarLabel') == 'Вкладки й папки' and
                                           d.get('overflow') is False and d.get('narrowOverflow') is False for d in documents)
@@ -164,16 +286,34 @@ def main():
         'peek_hidden_after_slide_out': first('peek_state_closed').get('open') is False and first('peek_state_closed').get('visible') is False,
         'probe_passed': any(r['event'] == 'probe_result' and r['details']['pass'] for r in rows),
     }
-    # Frame pacing of the slides: when each position was applied (ms since start).
+    host_state = first('peek_state_open')
+    if host:
+        checks['requested_native_host'] = host_state.get('root_child') == (host == 'child') and host_state.get('root_owned') == (host == 'owned')
+        checks['native_hit_inside_and_beside_panel'] = host_state.get('panel_hit') is True and host_state.get('page_hit') is True
+        checks['native_click_reached_panel_input'] = any(d.get('nativeInputClick') is True for d in documents)
+    # Compare successive placements only within the same slide.
     pacing = []
     frames = [r['details'] for r in rows if r['event'] == 'peek_frame']
     for direction in (True, False):
         times = [f['ms'] for f in frames if f['in'] == direction]
-        gaps = sorted(b - a for a, b in zip(times, times[1:]))
+        gaps = sorted(b['ms'] - a['ms'] for a, b in zip(frames, frames[1:])
+                      if a['in'] == b['in'] == direction and b['ms'] > a['ms'])
         if gaps:
             pacing.append({'in': direction, 'frames': len(times), 'median_ms': round(gaps[len(gaps) // 2], 1),
                            'max_ms': round(gaps[-1], 1), 'over_20ms': sum(g > 20 for g in gaps)})
-    result = {'passed': all(checks.values()), 'checks': checks, 'document': document, 'pacing': pacing,
+    ready_ms = []
+    requested = None
+    for row in rows:
+        if row['event'] == 'peek_show_requested' and requested is None:
+            requested = row['details']['ms']
+        elif row['event'] == 'peek_ready_to_slide' and requested is not None:
+            ready_ms.append(round(row['details']['ms'] - requested, 1))
+            requested = None
+        elif row['event'] in ('sidebar_peek_hidden', 'sidebar_peek_frame_timeout'):
+            requested = None
+    result = {'passed': all(checks.values()) and json.loads((directory / 'summary.json').read_text())['passed'],
+              'checks': checks, 'document': document, 'pacing': pacing, 'library': library,
+              'host': host, 'host_state': host_state, 'request_to_ready_ms': ready_ms,
               'context_menu': first('peek_context_menu'), 'pin_editors': editors, 'pin_editor_documents': editor_documents,
               'pin_editor_closes': editor_closes, 'pinned_hints': pinned_hints}
     (directory / 'sidebar_peek.json').write_text(json.dumps(result, indent=2) + '\n')

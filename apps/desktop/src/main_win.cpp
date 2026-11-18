@@ -812,6 +812,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     if (state_->session) red::ForgetBoostPage(*state_->session, browser->GetIdentifier());
     if (!shell_) red::ClosePageDevTools(state_, browser->GetIdentifier());
     lifecycle_capture_ = nullptr;
+    library_captures_.clear();
     page_load_trace_ = nullptr;
     router_->OnBeforeClose(browser);
     queries_->pending.clear();
@@ -1029,13 +1030,14 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       return true;
     }
     RestoreContentStack(state_);
-    if (request.length() > 8192) { callback->Failure(413, "Request too large"); return true; }
+    if (request.length() > 65536) { callback->Failure(413, "Request too large"); return true; }
     auto parsed = CefParseJSON(request, JSON_PARSER_RFC);
     auto dict = parsed && parsed->GetType() == VTYPE_DICTIONARY ? parsed->GetDictionary() : nullptr;
     if (!dict || dict->GetType("method") != VTYPE_STRING) {
       callback->Failure(400, "Invalid command"); return true;
     }
     auto method = dict->GetString("method").ToString();
+    if (request.length() > 8192 && method != "library.saveRoutes") { callback->Failure(413, "Request too large"); return true; }
     if (red::HandleUiFocus(state_, browser, method, dict->GetSize(), persistent, callback)) return true;
     if (method == "workspace.sidebarResizeHovered") {
       // Trusted shell only (checked above). Never expose global pointer
@@ -1063,13 +1065,18 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       callback->Success(hovered ? "true" : "false"); return true;
     }
     if (method == "workspace.contextMenu" || method == "workspace.spaceMenu") {
-      if (!state_->sidebar_menu || persistent || dict->GetSize() != 4 || dict->GetType("id") != VTYPE_STRING ||
-          (dict->GetString("id").length() != 36 && !dict->GetString("id").empty()) || dict->GetType("x") != VTYPE_INT || dict->GetType("y") != VTYPE_INT) {
+      // A Library column names its Space; the sidebar's menu is for the one on screen.
+      const bool space_menu = method == "workspace.spaceMenu", targeted = space_menu && dict->HasKey("space");
+      if (!state_->sidebar_menu || persistent || dict->GetSize() != (targeted ? 5U : 4U) || dict->GetType("id") != VTYPE_STRING ||
+          (dict->GetString("id").length() != 36 && !dict->GetString("id").empty()) || dict->GetType("x") != VTYPE_INT || dict->GetType("y") != VTYPE_INT ||
+          (targeted && (dict->GetType("space") != VTYPE_STRING || dict->GetString("space").length() != 36))) {
         callback->Failure(400, "Invalid sidebar menu request"); return true;
       }
-      state_->sidebar_menu->Open(dict->GetString("id"), dict->GetInt("x"), dict->GetInt("y"), query_id, callback,nullptr,method=="workspace.spaceMenu"); return true;
+      state_->sidebar_menu->Open(dict->GetString("id"), dict->GetInt("x"), dict->GetInt("y"), query_id, callback, nullptr, space_menu,
+                                 targeted ? dict->GetString("space").ToString() : std::string()); return true;
     }
-    if (method == "probe.contextMenuSelect" && state_->probe && state_->organization_probe && state_->sidebar_menu && !persistent) {
+    if (method == "probe.contextMenuSelect" && state_->probe && state_->sidebar_menu && !persistent && (state_->organization_probe ||
+        (state_->menu_probe && state_->library_open && CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-menu") == "library"))) {
       const auto action=dict->HasKey("action") ? dict->GetString("action").ToString() : "rename";
       if (dict->GetSize()!=(dict->HasKey("action") ? 2U : 1U) || (dict->HasKey("action") && dict->GetType("action")!=VTYPE_STRING) ||
           (action!="rename" && action!="removeFolder" && action!="editTheme")) { callback->Failure(400,"Invalid probe menu action"); return true; }
@@ -1160,6 +1167,24 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       callback->Failure(409, "Window is closing"); return true;
     }
     if (red::HandleSidebarAction(state_,browser,method,dict,persistent,callback)) return true;
+    if (method == "library.getRoutes" || method == "library.saveRoutes") {
+      const bool save = method == "library.saveRoutes";
+      const auto preferences = state_->session ? state_->session->preferences : nullptr;
+      if (!state_->library_open || !preferences || !preferences->error().empty()) {
+        callback->Failure(409, "Library settings are unavailable"); return true;
+      }
+      if (persistent || dict->GetSize() != (save ? 3 : 1) || (save && dict->GetType("expectedRevision") != VTYPE_INT)) {
+        callback->Failure(400, "Invalid link routing request"); return true;
+      }
+      const auto respond = [callback, preferences](int code, const std::string& error) {
+        if (code) { callback->Failure(code, error); return; }
+        auto value = CefValue::Create(); value->SetDictionary(preferences->LinkRoutingSnapshot());
+        callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT));
+      };
+      if (save) preferences->SaveLinkRouting(dict->GetDictionary("routing"), dict->GetInt("expectedRevision"), respond);
+      else respond(0, "");
+      return true;
+    }
     if (method == "workspace.openDroppedFiles") {
       // Files the OS drag carried into the shell (recorded natively in
       // OnDragEnter; the shell document never supplies paths).
@@ -1285,7 +1310,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       const auto bounds = state_->window ? state_->window->GetClientAreaBoundsInScreen() : CefRect();
       if (!state_->panel_popup || persistent || dict->GetSize() != (automatic ? 7 : 6) ||
           (automatic && (kind != "translation" || offer_id <= 0)) ||
-          (kind != "archive" && kind != "downloads" && kind != "site" && kind != "history" && kind != "space" && kind != "newSpace" && kind != "translation") || !numbers ||
+          (kind != "archive" && kind != "downloads" && kind != "site" && kind != "history" && kind != "space" && kind != "newSpace" && kind != "spaceTheme" && kind != "translation") || !numbers ||
           dict->GetInt("x") < 0 || dict->GetInt("y") < 0 || dict->GetInt("width") < 1 || dict->GetInt("height") < 1 ||
           dict->GetInt("x") + dict->GetInt("width") > bounds.width || dict->GetInt("y") + dict->GetInt("height") > bounds.height) {
         callback->Failure(400, "Invalid panel command"); return true;
@@ -1746,6 +1771,38 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   }
   bool OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t severity,
       const CefString& message, const CefString&, int) override {
+    if (state_->probe && state_->menu_probe && CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-menu") == "library") {
+      if (shell_ && state_->library_open && message == "RED_LIBRARY_RESIZE" && state_->window) {
+        auto bounds = state_->window->GetBounds(); bounds.width = bounds.width >= 800 ? 752 : 920;
+        state_->window->SetBounds(bounds);
+      }
+      if (shell_ && state_->library_open && message == "RED_LIBRARY_BOARD_SIZE" && state_->window) {
+        auto bounds = state_->window->GetBounds(); bounds.width = 1200;
+        state_->window->SetBounds(bounds);
+      }
+      if (shell_ && state_->library_open && message.ToString().starts_with("RED_LIBRARY_PREVIEW:")) {
+        const auto name = message.ToString().substr(20);
+        if (name == "spaces" || name == "archive" || name == "routes" || name == "editor")
+          library_captures_[name] = red::CaptureShell(browser, state_->evidence_directory / ("library-" + name + ".png"));
+      }
+      if (shell_ && message == "RED_LIBRARY_LAYOUT_DONE" && state_->content && state_->embedded) {
+        auto data = CefDictionaryValue::Create();
+        data->SetBool("native_bounds", state_->embedded->ActiveMatchesBounds());
+        data->SetBool("native_input", state_->embedded->ActiveOwnsInputArea());
+        data->SetBool("foreground", state_->window && GetForegroundWindow() == state_->window->GetWindowHandle());
+        data->SetBool("page_keyboard", red::BrowserOwnsKeyboard(state_, state_->content));
+        state_->Record("library_layout", data);
+        const auto frame = state_->content->GetMainFrame();
+        frame->ExecuteJavaScript("console.info('RED_LIBRARY_FORM:'+ (document.getElementById('library-fixture')?.value==='unsaved'));", frame->GetURL(), 0);
+      }
+      if (!shell_ && state_->content && browser->IsSame(state_->content) && message.ToString().starts_with("RED_LIBRARY_FORM:"))
+        state_->Record(message == "RED_LIBRARY_FORM:true" ? "library_form_preserved" : "library_form_lost");
+      if (shell_ && message.ToString().starts_with("RED_LIBRARY_RESULT:")) {
+        auto data = CefDictionaryValue::Create(); data->SetString("result", message.ToString().substr(19, 400));
+        state_->Record("library_result", data);
+        state_->menu_done = message == "RED_LIBRARY_RESULT:pass";
+      }
+    }
     if (state_->probe && state_->menu_translate_offer && shell_ && message.ToString().starts_with("RED_TRANSLATION_OFFER:")) {
       const bool passed = message == "RED_TRANSLATION_OFFER:pass";
       auto data = CefDictionaryValue::Create(); data->SetBool("passed", passed); state_->Record("translation_offer_probe", data);
@@ -1981,6 +2038,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   bool popup_created_ = false;
   CefRefPtr<CefMessageRouterBrowserSide> router_;
   CefRefPtr<CefRegistration> lifecycle_capture_;
+  std::map<std::string, CefRefPtr<CefRegistration>> library_captures_;
   CefRefPtr<CefRegistration> page_load_trace_;
   IMPLEMENT_REFCOUNTING(Client);
 };
@@ -2103,8 +2161,12 @@ class WindowDelegate final : public CefWindowDelegate {
       red::RefreshShortcuts(state_);
       ResizeWorkspace(window);
       state_->workspace->AttachContent();
+      // An existing profile's workspace often loads before this window exists;
+      // its preload then found no floating sidebar, which was created on the
+      // first edge hover instead (~250 ms of the first opening).
+      if (state_->sidebar_peek && state_->workspace->ready()) state_->sidebar_peek->Preload();
       state_->Record("window_shown");
-      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->sidebar_perf_probe ? 150000 : state_->split_probe ? 105000 : state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_peek_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->split_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->little_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe || state_->link_headers_discard ? 30000 : 15000);
+      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->sidebar_perf_probe ? 150000 : state_->sidebar_peek_probe ? 37000 : state_->split_probe ? 105000 : state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->split_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->little_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe || state_->link_headers_discard ? 30000 : 15000);
       if (state_->input_probe) red::ObserveNativeInput(state_);
       if (!state_->import_probe.empty()) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
         if (auto s = weak.lock()) red::RunImportProbe(s);
@@ -2169,7 +2231,7 @@ class WindowDelegate final : public CefWindowDelegate {
     const bool input_area_ok = !state_->embedded ||
         (state_->embedded->ActiveOwnsInputArea() && state_->embedded->ActiveMatchesBounds());
     details->SetBool("native_input_area", input_area_ok);
-    state_->layout_ok = state_->workspace_mode ? state_->embedded->AllContained() && state_->embedded->VisiblePagesMatchPresentation() && content.x == (state_->sidebar_visible ? red::SidebarWidth(state_->sidebar_width, state_->window->GetClientAreaBoundsInScreen().width) : 0) + red::kContentInset && content.y == red::kToolbarHeight && content.width > 0 :
+    state_->layout_ok = state_->workspace_mode ? state_->embedded->AllContained() && state_->embedded->VisiblePagesMatchPresentation() && content.x == red::WorkspaceRailWidth(state_->window->GetClientAreaBoundsInScreen().width, state_->sidebar_visible, state_->sidebar_width, state_->VisibleLibrarySection(), state_->library_spaces) + red::kContentInset && content.y == red::kToolbarHeight && content.width > 0 :
         state_->embedded ? state_->embedded->AllContained() &&
         shell.height > 0 && content.height > 0 && content.y >= shell.y + shell.height :
         state_->native_tabs_reference ? shell.height > 0 && state_->content &&
@@ -2383,7 +2445,7 @@ class WindowDelegate final : public CefWindowDelegate {
   }
   CefRect WorkspaceBounds(CefRefPtr<CefWindow> window) {
     const auto bounds = window->GetClientAreaBoundsInScreen();
-    const auto area = red::WorkspaceContentArea(bounds.width, bounds.height, state_->sidebar_visible, state_->sidebar_width);
+    const auto area = red::WorkspaceContentArea(bounds.width, bounds.height, state_->sidebar_visible, state_->sidebar_width, state_->VisibleLibrarySection(), state_->library_spaces);
     return CefRect(area.x, area.y, area.width, area.height);
   }
   void ResizeWorkspace(CefRefPtr<CefWindow> window) { state_->embedded->Resize(WorkspaceBounds(window)); }
@@ -2648,6 +2710,15 @@ std::shared_ptr<State> FindWindow(const std::shared_ptr<State>& root, bool (*acc
 std::shared_ptr<State> WindowSource(const std::shared_ptr<State>& root) {
   if (auto window = FindWindow(root, CanSourceWindows)) return window;
   return root;
+}
+std::vector<std::string> TakeLittleSolLaunchUrls(const red::AppSession& session, std::vector<std::string>& urls) {
+  std::vector<std::string> little;
+  std::erase_if(urls, [&](const std::string& url) {
+    if (red::ResolveExternalLink(session, url) != red::kLinkLittleSol) return false;
+    little.push_back(url);
+    return true;
+  });
+  return little;
 }
 void BringForward(const std::shared_ptr<State>& state) {
   if (!state || !state->window) return;
@@ -2966,13 +3037,9 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
           });
         }
         auto urls = state_->external_urls;
-        std::vector<std::string> little;
-        if (state_->session && !state_->private_window && !state_->standalone_window)
-          std::erase_if(urls, [&](const std::string& url) {
-            if (!red::WorkspaceController::OpensInLittleSol(*state_->session, url)) return false;
-            little.push_back(url); return true;
-          });
-        state_->workspace->QueueExternalUrls(urls);
+        const bool route = state_->session && !state_->private_window && !state_->standalone_window;
+        auto little = route ? TakeLittleSolLaunchUrls(*state_->session, urls) : std::vector<std::string>{};
+        state_->workspace->QueueExternalUrls(urls, route);
         state_->workspace->QueueLittleSolLinks(little);
         // sol-tray.exe kept the icon and Ctrl+Alt+N while Sol was closed; this Sol takes them back.
         const HWND tray = state_->probe ? nullptr : ::FindWindowW(L"SolTrayHelper", nullptr);
@@ -3054,13 +3121,9 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
       state_->Record("external_launch_received"); return true;
     }
     if (urls.empty()) { OpenSol(state_); state_->Record("external_launch_received"); return true; }
-    // Arc: a website link from another app opens in Little Sol (Settings > Links).
+    // Resolve OS launches using Settings > Links, including while Sol is in the background.
     if (state_->session) {
-      std::vector<std::string> little;
-      std::erase_if(urls, [&](const std::string& url) {
-        if (!red::WorkspaceController::OpensInLittleSol(*state_->session, url)) return false;
-        little.push_back(url); return true;
-      });
+      auto little = TakeLittleSolLaunchUrls(*state_->session, urls);
       if (!little.empty()) {
         // A live window opens them once it is ready; with none (Sol in the background), right away.
         if (const auto source = FindWindow(state_, CanSourceWindows)) source->workspace->QueueLittleSolLinks(little);
@@ -3075,7 +3138,7 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
       target = FindWindow(state_, TakesTabs);
     if (!target) target = state_;
     if (target->workspace && !target->workspace->WindowClosing()) {
-      target->workspace->QueueExternalUrls(urls);
+      target->workspace->QueueExternalUrls(urls, true);
       BringForward(target);
       state_->Record("external_launch_received");
     }
@@ -3213,7 +3276,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->menu_recent = command->GetSwitchValue("probe-menu") == "recent";
   state->menu_capture = command->GetSwitchValue("probe-menu") == "capture";
   state->menu_capture_tiles = command->GetSwitchValue("probe-menu") == "capture-tiles";
-  state->menu_settings = command->GetSwitchValue("probe-menu") == "settings";
+  state->menu_settings = command->GetSwitchValue("probe-menu") == "settings" || command->GetSwitchValue("probe-menu") == "link-routing";
   // The capture experiment: screenshots ask where to save, and the probe answers the dialog (Client::OnFileDialog).
   state->screenshot_ask_probe = state->probe && command->HasSwitch("probe-screenshot-ask");
   state->menu_copy = command->GetSwitchValue("probe-menu") == "copy";

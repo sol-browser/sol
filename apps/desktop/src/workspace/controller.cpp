@@ -16,6 +16,7 @@
 #include "navigation/shortcut_settings.h"
 #include "windows/tab_drag_preview.h"
 #include "windows/devtools_dock.h"
+#include "windows/motion.h"
 #include "app/snapshot_counters.h"
 #include <windows.h>
 #include <dwmapi.h>
@@ -222,6 +223,12 @@ WorkspaceController::Reply WorkspaceController::Ordered(Reply done) {
 }
 void WorkspaceController::FlushPublish() {
   publish_pending_ = false;
+  // The Spaces board fits its columns: a new or deleted Space resizes it (gliding).
+  if (const auto state = state_.lock(); state && !state->standalone_window &&
+      state->library_spaces != static_cast<int>(tree_.spaces.size())) {
+    state->library_spaces = static_cast<int>(tree_.spaces.size());
+    if (state->library_open && state->library_section == "spaces") SetSidebarVisible(state->sidebar_visible, false, true);
+  }
   ++revision_;
   if (const auto state = state_.lock()) ++state->snapshot_counters.publishes;
   UpdateIntegrationPreviews();
@@ -272,7 +279,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::LayoutSnapshot() const {
   if (state && state->window) {
     const auto client = state->window->GetClientAreaBoundsInScreen();
     result->SetInt("sidebarWidth", SidebarWidth(state->sidebar_width, client.width));
-    const auto area = WorkspaceContentArea(client.width, client.height, state->sidebar_visible, state->sidebar_width);
+    const auto area = WorkspaceContentArea(client.width, client.height, state->sidebar_visible, state->sidebar_width, state->VisibleLibrarySection(), state->library_spaces);
     auto bounds = CefDictionaryValue::Create();
     bounds->SetInt("x", area.x); bounds->SetInt("y", area.y); bounds->SetInt("width", area.width); bounds->SetInt("height", area.height);
     result->SetDictionary("contentBounds", bounds);
@@ -353,6 +360,8 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     result->SetList("pinnedExtensions", pins->Items(*state->extensions, state->WebContext()));
   result->SetBool("windowClosing", shutting_down_);
   result->SetBool("sidebarVisible", !state || state->sidebar_visible);
+  result->SetBool("libraryOpen", state && state->library_open);
+  if (state) result->SetString("librarySection", state->library_section);
   result->SetBool("sidebarResizing", state && state->sidebar_peek && state->sidebar_peek->is_resizing());
   result->SetInt("sidebarWidth", state && state->window ? SidebarWidth(state->sidebar_width,
       state->window->GetClientAreaBoundsInScreen().width) : kSidebarWidth);
@@ -379,7 +388,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   result->SetDictionary("theme", ThemeSnapshot()->GetDictionary("theme")->Copy(false));
   if (state && state->window) {
     const auto client = state->window->GetClientAreaBoundsInScreen();
-    const auto area = WorkspaceContentArea(client.width, client.height, state->sidebar_visible, state->sidebar_width);
+    const auto area = WorkspaceContentArea(client.width, client.height, state->sidebar_visible, state->sidebar_width, state->VisibleLibrarySection(), state->library_spaces);
     auto bounds = CefDictionaryValue::Create();
     bounds->SetInt("x", area.x); bounds->SetInt("y", area.y);
     bounds->SetInt("width", area.width); bounds->SetInt("height", area.height);
@@ -1628,7 +1637,8 @@ void WorkspaceController::FocusAddress() {
   ++address_request_; Publish();
 }
 void WorkspaceController::RequestSidebar(const std::string& action) {
-  if (shutting_down_ || (action != "newSpace" && action != "editSpace" && action != "newFolder")) return;
+  if (shutting_down_ || (action != "newSpace" && action != "newSpaceFromLibrary" && action != "editSpace" && action != "newFolder")) return;
+  if (const auto state = state_.lock(); state && state->library_open) SetLibraryOpen(false);
   sidebar_action_ = action; ++sidebar_request_; Publish();
 }
 void WorkspaceController::CloseActive() {
@@ -1807,10 +1817,10 @@ void WorkspaceController::SwitchSpaceAt(int index) {
   TreeCommand command{TreeAction::SwitchSpace}; command.id = spaces[index].id;
   Dispatch(command, {}, true);
 }
-void WorkspaceController::QueueExternalUrls(const std::vector<std::string>& urls) {
+void WorkspaceController::QueueExternalUrls(const std::vector<std::string>& urls, bool os_launch) {
   for (const auto& url : urls) {
     if (external_pending_.size() >= 16) break;
-    if (UrlAllowed(url) || IsLocalFileUrl(url)) external_pending_.push_back(url);
+    if (UrlAllowed(url) || IsLocalFileUrl(url)) external_pending_.push_back({url, os_launch});
   }
   DrainExternalUrls();
 }
@@ -1818,15 +1828,28 @@ void WorkspaceController::DrainExternalUrls() {
   DrainLittleSolLinks();
   const auto state = state_.lock();
   if (external_opening_ || external_pending_.empty() || !CanOpen() || !state || !state->embedded || !state->window) return;
-  auto url = std::move(external_pending_.front()); external_pending_.erase(external_pending_.begin());
+  auto [url, os_launch] = std::move(external_pending_.front());
+  external_pending_.erase(external_pending_.begin());
+  const auto destination = os_launch && session_ ? ResolveExternalLink(*session_, url) : kLinkRecentSpace;
+  if (destination == kLinkLittleSol && session_->new_little_window && session_->new_little_window(state, url)) {
+    DrainExternalUrls();
+    return;
+  }
   external_opening_ = true;
-  OpenTyped(url, [weak = weak_from_this()](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
+  auto done = [weak = weak_from_this()](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
     if (const auto self = weak.lock()) {
       self->external_opening_ = false;
       if (code) self->Notify(error);
       self->DrainExternalUrls();
     }
-  });
+  };
+  if (destination == kLinkRecentSpace || destination == kLinkLittleSol) {
+    OpenTyped(url, std::move(done));
+  } else {
+    CefURLParts parts;
+    CefParseURL(url, parts);
+    OpenPage(url, CefString(&parts.host).ToString().substr(0, 240), true, std::move(done), "", "", std::string(destination));
+  }
 }
 void WorkspaceController::OpenLink(const std::string& url, bool foreground, Reply done, const std::string& initiator,
                                    CefRefPtr<CefBrowser> opener) {
@@ -1986,7 +2009,7 @@ void WorkspaceController::OpenPage(const std::string& url, const std::string& ti
     if (done) done(code, error, snapshot);
   }, true);
 }
-void WorkspaceController::SetSidebarVisible(bool visible, bool live) {
+void WorkspaceController::SetSidebarVisible(bool visible, bool live, bool animate) {
   auto state = state_.lock();
   if (!state || !state->window || !state->embedded || shutting_down_) return;
   if (state->little_window) visible = false;
@@ -1996,14 +2019,23 @@ void WorkspaceController::SetSidebarVisible(bool visible, bool live) {
   // shell slides its content in (Arc). Hiding is instant (user decision after
   // two animated variants stuttered).
   const auto client = state->window->GetClientAreaBoundsInScreen();
-  const double width = SidebarWidth(state->sidebar_width, client.width);
+  const int width = WorkspaceRailWidth(client.width, visible, state->sidebar_width, state->VisibleLibrarySection(), state->library_spaces);
   LARGE_INTEGER frequency, t0, t1, t2, t3; QueryPerformanceFrequency(&frequency); QueryPerformanceCounter(&t0);
-  if (state->sidebar_peek) state->sidebar_peek->SetEnabled(!visible || state->embedded->IsBrowserFullscreen());
+  if (state->sidebar_peek) state->sidebar_peek->SetEnabled((!visible && !state->library_open) || state->embedded->IsBrowserFullscreen());
   QueryPerformanceCounter(&t1);
   // A live drag publishes only the layout delta; the DevTools dock follows
   // the page without queuing its own workspace refresh.
   if (live && state->devtools_dock) state->devtools_dock->SetLive(true);
-  LayoutSidebar(visible ? width : 0, true);
+  const int from = state->embedded->Bounds().x - kContentInset;
+  // Any other layout settles a running Library glide at once.
+  ++rail_generation_;
+  // Only a lone page glides: split panes, Link Peek, docked DevTools and
+  // fullscreen keep their own layouts and move at once.
+  if (animate && !live && from >= 0 && from != width && NativeMotionEnabled() && !state->embedded->HasSplit() &&
+      !state->embedded->HasLinkPeek() && !state->embedded->IsFullscreen() &&
+      !(state->devtools_dock && state->devtools_dock->Describe()))
+    AnimateRail(from, width);
+  else LayoutSidebar(width, true);
   if (live && state->devtools_dock) state->devtools_dock->SetLive(false);
   QueryPerformanceCounter(&t2);
   if (live) PublishLayout(); else Publish();
@@ -2015,18 +2047,115 @@ void WorkspaceController::SetSidebarVisible(bool visible, bool live) {
     state->Record("sidebar_visible_timing", data);
   }
 }
+bool WorkspaceController::SetLibraryOpen(bool open) {
+  const auto state = state_.lock();
+  if (!ready_ || shutting_down_ || !state || !state->window || !state->embedded || state->standalone_window ||
+      state->private_window || (open && state->embedded->IsFullscreen())) return false;
+  if (state->library_open == open) return true;
+  // Moving between the floating sidebar and the Library retires the old
+  // text input target. The floating browser may still exist off-screen.
+  state->ui_editing = false;
+  state->library_open = open;
+  SetSidebarVisible(state->sidebar_visible, false, true);
+  if (open || !state->content) FocusShell(state);
+  else FocusBrowser(state->content);
+  return true;
+}
+bool WorkspaceController::SetLibrarySection(const std::string& section) {
+  const auto state = state_.lock();
+  if (!state || !state->library_open || (section != "spaces" && section != "archive" && section != "routes")) return false;
+  if (section == state->library_section) return true;
+  state->library_section = section;
+  SetSidebarVisible(state->sidebar_visible, false, true);
+  return true;
+}
 void WorkspaceController::LayoutSidebar(double width, bool settled) {
   auto state = state_.lock();
   if (!state || !state->window || !state->embedded) return;
   const auto client = state->window->GetClientAreaBoundsInScreen();
   const int x = static_cast<int>(std::lround(width)) + kContentInset;
-  state->embedded->Resize(CefRect(x, kToolbarHeight, std::max(1, client.width - x - kContentInset),
+  // Library shifts the page by its width and keeps the sidebar layout's size.
+  const int beside = state->library_open ? WorkspaceRailWidth(client.width, state->sidebar_visible, state->sidebar_width, {}) + kContentInset : x;
+  state->embedded->Resize(CefRect(x, kToolbarHeight, std::max(1, client.width - beside - kContentInset),
                                   std::max(1, client.height - kToolbarHeight - kContentInset)));
   if (!settled) return;
   state->embedded->QueueRaise();
   // Probe evidence once the animation has settled and the page is revealed
   // (a cold page's input is held until its first frame; up to ~2 s).
   if (state->probe) RecordSidebarLayout(state_, 40);
+}
+// The Library glide only moves the page: Library keeps the page at its
+// sidebar-layout size (WorkspaceContentArea), so open, close and section
+// changes never resize it, and the window edge cuts off what does not fit.
+// The shell eases the Library's own width on the same curve (library.css), so
+// the two edges travel together.
+namespace { constexpr double kRailMotionMs = 420; }
+void WorkspaceController::AnimateRail(int from, int to) {
+  LARGE_INTEGER now; QueryPerformanceCounter(&now);
+  rail_from_ = from; rail_to_ = to; rail_started_ = now.QuadPart; rail_frames_ = 0;
+  StepRail(rail_generation_);
+}
+void WorkspaceController::StepRail(int generation) {
+  const auto state = state_.lock();
+  if (generation != rail_generation_ || shutting_down_ || !state || !state->window || !state->embedded) return;
+  LARGE_INTEGER now, frequency; QueryPerformanceCounter(&now); QueryPerformanceFrequency(&frequency);
+  const double t = std::clamp(static_cast<double>(now.QuadPart - rail_started_) * 1000.0 / frequency.QuadPart / kRailMotionMs, 0.0, 1.0);
+  if (t >= 1 || state->embedded->HasSplit() || state->embedded->HasLinkPeek() || state->embedded->IsFullscreen()) {
+    ++rail_generation_;
+    LayoutSidebar(rail_to_, true);
+    if (state->probe) {
+      auto data = CefDictionaryValue::Create();
+      data->SetInt("from", rail_from_); data->SetInt("to", rail_to_); data->SetInt("frames", rail_frames_);
+      state->Record("library_rail_animation", data);
+    }
+    return;
+  }
+  if (state->probe && state->content) {
+    // Probe evidence of what the screen shows, not only what was asked: the
+    // page window's left edge and where the composited screen shows the
+    // page's colour (scripts/library_smoke.py paints its fixture #e0115f).
+    RECT page{}; POINT origin{0, 0};
+    GetWindowRect(state->content->GetHost()->GetWindowHandle(), &page); ClientToScreen(state->window->GetWindowHandle(), &origin);
+    RECT client{}; GetClientRect(state->window->GetWindowHandle(), &client);
+    int visible = -1;
+    // One row of the composited screen, copied in a single blit (per-pixel reads take ~1 ms each).
+    if (HDC screen = GetDC(nullptr)) {
+      const int width = client.right, y = origin.y + client.bottom / 2;
+      HDC memory = CreateCompatibleDC(screen);
+      BITMAPINFO info{}; info.bmiHeader.biSize = sizeof(info.bmiHeader); info.bmiHeader.biWidth = width;
+      info.bmiHeader.biHeight = -1; info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32; info.bmiHeader.biCompression = BI_RGB;
+      void* bits = nullptr;
+      if (HBITMAP row = CreateDIBSection(screen, &info, DIB_RGB_COLORS, &bits, nullptr, 0); row && bits) {
+        const auto old = SelectObject(memory, row);
+        BitBlt(memory, 0, 0, width, 1, screen, origin.x, y, SRCCOPY);
+        GdiFlush();
+        const auto* pixels = static_cast<const unsigned char*>(bits);  // BGRA
+        for (int x = 0; x < width; ++x) {
+          const unsigned char b = pixels[x * 4], g = pixels[x * 4 + 1], r = pixels[x * 4 + 2];
+          if (r > 200 && g < 60 && b > 70 && b < 130) { visible = x; break; }
+        }
+        SelectObject(memory, old); DeleteObject(row);
+      }
+      DeleteDC(memory); ReleaseDC(nullptr, screen);
+    }
+    auto frame = CefDictionaryValue::Create();
+    frame->SetDouble("t", t); frame->SetInt("asked", state->embedded->Bounds().x);
+    frame->SetInt("window", page.left - origin.x); frame->SetInt("screen", visible);
+    frame->SetDouble("scale", state->window->GetDisplay()->GetDeviceScaleFactor());
+    state->Record("library_rail_frame", frame);
+  }
+  // cubic-bezier(.4, 0, .2, 1), as in library.css: a gentle start. Ease-out
+  // quart moved ~70% of the way in the first third and read as a jump (probe).
+  const double eased = CubicBezier(.4, 0, .2, 1, t);
+  const double rail = rail_from_ + (rail_to_ - rail_from_) * eased;
+  const auto client = state->window->GetClientAreaBoundsInScreen();
+  const int x = static_cast<int>(std::lround(rail)) + kContentInset;
+  const int width = std::max(1, client.width - WorkspaceRailWidth(client.width, state->sidebar_visible, state->sidebar_width, {}) - 2 * kContentInset);
+  state->embedded->Resize(CefRect(x, kToolbarHeight, width, std::max(1, client.height - kToolbarHeight - kContentInset)));
+  ++rail_frames_;
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, int generation) {
+    if (const auto state = weak.lock(); state && state->workspace) state->workspace->StepRail(generation);
+  }, state_, generation), 8);
 }
 void WorkspaceController::RecordSidebarLayout(std::weak_ptr<State> weak, int attempts) {
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, int attempts) {

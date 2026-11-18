@@ -176,6 +176,159 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
   state->menu_probe_started = true;
   const auto mode = CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-menu").ToString();
   if (mode == "translate-offer") return;  // The trusted shell drives the offer scenario.
+  if (mode == "library") {
+    state->menu_popup = std::make_shared<MenuPopup>(state);  // Later() requires the probe owner.
+    Later(state, 1200, [](const std::shared_ptr<State>& s) {
+      const auto shell = s->browsers.find(s->shell_id);
+      if (shell == s->browsers.end() || !s->content) return;
+      const auto page = s->content->GetMainFrame();
+      page->ExecuteJavaScript("document.getElementById('library-fixture').value='unsaved';", page->GetURL(), 0);
+      const auto frame = shell->second->GetMainFrame();
+      frame->ExecuteJavaScript(R"JS((async()=>{
+        const get=(selector,root=document)=>root.querySelector(selector);
+        const pause=()=>new Promise(resolve=>setTimeout(resolve,30));
+        const wait=async(fn)=>{for(let i=0;i<160;++i){const item=fn();if(item)return item;await pause();}throw Error('Library DOM wait timed out');};
+        const q=request=>new Promise((resolve,reject)=>cefQuery({request:JSON.stringify(request),persistent:false,
+          onSuccess:raw=>resolve(JSON.parse(raw)),onFailure:(code,message)=>reject(Error(code+': '+message))}));
+        const snapshot=()=>q({method:'browser.getSnapshot'});
+        const mutation=async request=>q({...request,expectedRevision:(await snapshot()).treeRevision});
+        const input=(element,text)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,text);
+          element.dispatchEvent(new Event('input',{bubbles:true}));};
+        const preview=async name=>{
+          await new Promise(resolve=>setTimeout(resolve,230));
+          console.info('RED_LIBRARY_PREVIEW:'+name);
+          await new Promise(resolve=>setTimeout(resolve,350));
+        };
+        try {
+          const before=await snapshot();
+          await q({method:'library.getRoutes'}).then(()=>{throw Error('Closed Library exposed routing');},error=>{if(!error.message.startsWith('409'))throw error;});
+          const open=()=>get('[data-action=library]').click();
+          const close=()=>get('[data-action=close-library]').click();
+          open(); await wait(()=>get('.library'));
+          const expanded=await snapshot();
+          if(!expanded.libraryOpen||expanded.contentBounds.x<=before.contentBounds.x||expanded.activeId!==before.activeId)throw Error('Open geometry');
+          console.info('RED_LIBRARY_RESIZE');
+          await wait(()=>get('.library').getBoundingClientRect().width!==expanded.contentBounds.x-8);
+          const resized=await snapshot();
+          // The Library's width eases to the new layout (library.css, 420 ms).
+          await wait(()=>Math.abs(get('.library').getBoundingClientRect().right-(resized.contentBounds.x-8))<=1);
+          if(resized.activeId!==before.activeId||resized.contentBounds.width<320||
+              Math.abs(get('.library').getBoundingClientRect().right-(resized.contentBounds.x-8))>1)throw Error('Resize alignment');
+          close(); await wait(()=>!get('.library'));
+          const restored=await snapshot();
+          if(restored.contentBounds.x!==before.contentBounds.x||restored.activeId!==before.activeId)throw Error('Close geometry');
+          await new Promise(resolve=>setTimeout(resolve,560));  // The page edge glides (420 ms).
+          console.info('RED_LIBRARY_LAYOUT_DONE');
+          await new Promise(resolve=>setTimeout(resolve,250));
+          open(); await wait(()=>get('[data-library-section=spaces]'));
+          const themed=getComputedStyle(get('.library-rail'));
+          const background=themed.backgroundColor;
+          if(background==='rgba(0, 0, 0, 0)'||!themed.getPropertyValue('--lib-line').trim())throw Error('Missing Library palette');
+          const theme=document.documentElement.dataset.theme;
+          document.documentElement.dataset.theme=theme==='dark'?'light':'dark';
+          if(getComputedStyle(get('.library-rail')).backgroundColor===background)throw Error('Library palettes are identical');
+          document.documentElement.dataset.theme=theme;
+          console.info('RED_LIBRARY_BOARD_SIZE');
+          await wait(()=>window.innerWidth>=1000);
+          // Two Spaces: the board fits its columns, so one Space is no wider than the lists.
+          const created=await mutation({method:'space.create',title:'Library Work',icon:''});
+          const work=created.spaces.find(space=>space.name==='Library Work');
+          const narrow=await snapshot();
+          get('[data-library-section=spaces]').click(); await wait(()=>get('.library-spaces'));
+          // The shell's page card (an empty tab draws only this) glides with the native page.
+          const glide=getComputedStyle(get('.web-slot'));
+          if(!matchMedia('(prefers-reduced-motion: reduce)').matches&&(!glide.transitionProperty.includes('left')||
+              get('main').dataset.libraryMotion!=='true'))throw Error('Page card does not glide');
+          const wide=await snapshot();
+          if(wide.librarySection!=='spaces'||wide.contentBounds.x<=narrow.contentBounds.x||
+              wide.activeId!==narrow.activeId||wide.contentBounds.width<320)throw Error('Spaces board geometry');
+          const animation=getComputedStyle(get('.library-content')).animationName;
+          if(!matchMedia('(prefers-reduced-motion: reduce)').matches&&animation==='none')throw Error('No section transition');
+          const card=()=>get(`[data-library-space="${work.id}"]`);
+          await wait(card);
+          get('[data-action=space-menu]',card()).click();  // The Space's own native menu: Rename.
+          for(let tries=0;;++tries){try{await q({method:'probe.contextMenuSelect',action:'rename'});break;}
+            catch(error){if(tries>40)throw error;await new Promise(resolve=>setTimeout(resolve,100));}}
+          input(await wait(()=>get('.library-rename input')),'Renamed Work'); await pause();
+          get('.library-rename [type=submit]').click();
+          await wait(()=>get('.library-space-name',card()).textContent.includes('Renamed Work'));
+          get('[data-action=move-space]',card()).dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true}));
+          await wait(()=>get('.library-space')===card());
+          {  // Drag the column by its handle past the last one.
+            const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+            const handover=new DataTransfer(), board=get('.library-spaces');
+            get('[data-action=move-space]',card()).dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:handover}));
+            await frame();
+            const last=[...document.querySelectorAll('.library-space')].at(-1).getBoundingClientRect();
+            const at={bubbles:true,cancelable:true,dataTransfer:handover,clientX:Math.round(last.right-4),clientY:Math.round(last.top+40)};
+            board.dispatchEvent(new DragEvent('dragover',at)); await frame();
+            board.dispatchEvent(new DragEvent('drop',at));
+            await wait(()=>[...document.querySelectorAll('.library-space')].at(-1)===card());
+          }
+          const transfer=new DataTransfer();
+          const source=await wait(()=>get(`[data-library-tab="${before.activeId}"] button`));
+          source.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+          card().dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+          await wait(()=>get(`[data-library-tab="${before.activeId}"]`,card()));
+          await preview('spaces');
+          const url=new URL('?archive=library-keyword', before.url).href;
+          const archived=await mutation({method:'tree.createTab',parentId:'',title:'Library Archive Fixture',url});
+          await mutation({method:'tree.archive',id:archived.createdId});
+          get('[data-library-section=archive]').click();
+          const archiveRow=()=>get(`[data-library-restore="${archived.createdId}"]`);
+          await wait(archiveRow);
+          const list=get('.library-archive .library-scroll');
+          if(!get('.library-day h2')||list.scrollWidth>list.clientWidth+1||(await snapshot()).contentBounds.x!==narrow.contentBounds.x)
+            throw Error('Archive groups or narrow geometry');
+          await preview('archive');
+          const search=get('.library input[type=search]');
+          input(search,'missing-xyz'); await wait(()=>!archiveRow());
+          input(search,'library-keyword'); await wait(archiveRow);
+          archiveRow().click(); await wait(()=>!archiveRow());
+          const selected=await snapshot();
+          if(selected.activeId!==archived.createdId||selected.activeSpace!==work.id)throw Error('Archive restore');
+          get('[data-library-section=routes]').click();
+          (await wait(()=>get('[data-action=new-library-route]:enabled'))).click();
+          const editor=await wait(()=>get('.library-route-editor'));
+          const regex=get('.library-match-types button:last-child',editor);
+          regex.click();
+          await wait(()=>regex.getAttribute('aria-pressed')==='true');
+          const contains=get('.library-match-types button:first-child',editor);
+          contains.click();
+          await wait(()=>contains.getAttribute('aria-pressed')==='true');
+          input(get('input',editor),'example.test/team/'); await pause();
+          await preview('editor');
+          const saved=await q({method:'library.getRoutes'});
+          get('.library-route-editor [type=submit]').click();
+          await wait(()=>!get('.library-route-editor')&&get('.library-route-row'));
+          const stored=await q({method:'library.getRoutes'});
+          if(stored.revision!==saved.revision+1||stored.routing.rules[0].match!=='contains'||
+              stored.routing.rules[0].pattern!=='example.test/team/')throw Error('Settings persistence');
+          const routeSearch=get('.library-routes input[type=search]');
+          input(routeSearch,'no matching rule'); await wait(()=>!get('.library-route-row'));
+          input(routeSearch,'example.test'); await wait(()=>get('.library-route-row'));
+          await preview('routes');
+          await q({method:'library.saveRoutes',expectedRevision:saved.revision,routing:saved.routing}).then(
+            ()=>{throw Error('Stale save accepted');},error=>{if(!error.message.startsWith('409'))throw error;});
+          // Library's + closes it and turns the docked sidebar into the Create Space form.
+          get('[data-library-section=spaces]').click();
+          (await wait(()=>get('.library-new-space:enabled'))).click();
+          const form=await wait(()=>!get('.library')&&get('.space-creator input'));
+          input(form,'Made in form'); await pause();
+          (await wait(()=>get('.space-creator-submit:enabled'))).click();
+          // Started from Library: Create returns there, with the new Space on screen.
+          await wait(()=>!get('.space-creator')&&get('.library'));
+          const made=await snapshot(), madeSpace=made.spaces.find(space=>space.name==='Made in form');
+          if(!madeSpace||made.activeSpace!==madeSpace.id||!made.libraryOpen)throw Error('Create Space form');
+          // Back to a Space with the fixture page, so the final layout check has a page on screen.
+          await mutation({method:'space.delete',id:madeSpace.id}); await pause();
+          close(); await wait(()=>!get('.library'));
+          console.info('RED_LIBRARY_RESULT:pass');
+        } catch(error){console.info('RED_LIBRARY_RESULT:'+error);}
+      })())JS", frame->GetURL(), 0);
+    });
+    return;
+  }
   if (mode == "page-passwords") {
     // Menu > Passwords > Passwords for This Page on a page with no saved
     // passwords (scripts/page_passwords_smoke.py): Sol's password manager
@@ -540,11 +693,63 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
       const auto window = s->settings_window ? s->settings_window->window() : nullptr;
       data->SetBool("exists", window != nullptr); data->SetBool("visible", window && window->IsVisible());
       s->Record("settings_probe", data);
-      if (const auto browser = s->settings_window ? s->settings_window->browser() : nullptr)
+      const auto browser = s->settings_window ? s->settings_window->browser() : nullptr;
+      if (!browser) return;
+      if (CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-menu") == "link-routing") {
+        browser->GetMainFrame()->ExecuteJavaScript(R"JS((async () => {
+          const pause = () => new Promise(resolve => setTimeout(resolve, 30));
+          const wait = async fn => { for (let i = 0; i < 100; ++i) { if (fn()) return; await pause(); } throw Error('Editor timed out'); };
+          const query = request => new Promise((resolve, reject) => cefQuery({request: JSON.stringify(request),
+            onSuccess: raw => resolve(JSON.parse(raw)), onFailure: reject}));
+          try {
+            document.querySelector('[data-subsection="links"]').click();
+            const add = () => document.querySelector('.settings-add-link-route:enabled');
+            const rows = () => [...document.querySelectorAll('.settings-link-route')];
+            const save = () => document.querySelector('#link-routing-heading').parentElement.querySelector('button[type=submit]');
+            const enter = async (input, value) => {
+              Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
+              input.dispatchEvent(new Event('input', {bubbles: true})); await pause();
+            };
+            await wait(add);
+            for (const [index, pattern] of ['example.test/', 'example.test/team/'].entries()) {
+              add().click(); await wait(() => rows().length === index + 1);
+              const input = rows()[index].querySelector('input');
+              if (document.activeElement !== input || !save().disabled) throw Error('New rule field state');
+              if (index === 1) {
+                const mode = rows()[index].querySelector('select');
+                mode.value = 'regex'; mode.dispatchEvent(new Event('change', {bubbles: true})); await pause();
+              }
+              await enter(input, pattern);
+            }
+            rows()[1].querySelector('.settings-link-route-actions button').click();
+            await wait(() => rows()[0].querySelector('input').value === 'example.test/team/');
+            save().click(); await wait(() => save().disabled && add());
+            document.querySelector('[data-subsection="general"]').click(); await pause();
+            document.querySelector('[data-subsection="links"]').click(); await wait(add);
+            const stored = await query({method: 'settings.get'});
+            const {linkRouting} = stored.preferences;
+            if (linkRouting.fallback !== 'littleSol' || linkRouting.rules[0].match !== 'regex' ||
+                linkRouting.rules.map(rule => rule.pattern).join(',') !== 'example.test/team/,example.test/' ||
+                rows()[0].querySelector('input').value !== 'example.test/team/' || !save().disabled) throw Error('Saved rule order');
+            let rejected = 0;
+            try { await query({method: 'settings.set', key: 'linkRouting', expectedRevision: stored.linkRoutingRevision,
+                value: {...linkRouting, fallback: '../default'}}); }
+            catch (code) { rejected = code; }
+            if (rejected !== 400) throw Error('Native settings accepted an invalid destination');
+            rejected = 0;
+            try { await query({method: 'settings.set', key: 'linkRouting', expectedRevision: stored.linkRoutingRevision, value: {...linkRouting,
+                rules: [{match: 'regex', pattern: '(', destination: 'recent'}]}}); }
+            catch (code) { rejected = code; }
+            if (rejected !== 400) throw Error('Native settings accepted invalid regex syntax');
+            console.info('LINK_ROUTING_SETTINGS pass');
+          } catch (error) { console.info('LINK_ROUTING_SETTINGS fail ' + error); }
+        })())JS", "", 0);
+      } else {
         browser->GetMainFrame()->ExecuteJavaScript(
             "(() => { const t = performance.now(); window.cefQuery({ request: JSON.stringify({ method: 'settings.get' }), persistent: false,"
             " onSuccess: r => console.log('SETTINGS_GET ' + Math.round(performance.now() - t) + 'ms ' + r),"
             " onFailure: (c, m) => console.log('SETTINGS_FAIL ' + Math.round(performance.now() - t) + 'ms ' + c + ' ' + m) }); })()", "", 0);
+      }
     });
     Later(state, 16000, [](const std::shared_ptr<State>& s) {
       auto done = CefDictionaryValue::Create(); done->SetBool("closed", true);

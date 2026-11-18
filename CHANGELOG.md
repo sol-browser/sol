@@ -17,6 +17,33 @@ One short line that sums up the release. Optional; the website shows it as the h
 New things first, smaller fixes under "### Fixes". Describe the result for the user, not the code.
 -->
 
+## 0.10.0 — 2026-11-18
+
+A Library for your Spaces, rules for where links open, and a calmer way to make a Space.
+
+- **Library:** the button at the bottom of the sidebar opens Library, with
+  three sections:
+  - Spaces: every Space as a column in its own colour. Open, rename,
+    re-theme or delete a Space from its column, drag columns to reorder them,
+    and drag a tab into another Space. Library widens to fit your Spaces;
+    arrows and the mouse wheel scroll to the rest.
+  - Archive: closed tabs from all Spaces, grouped by day. Search them or
+    pick a Space, and restore a tab with one click.
+  - Routes: your link rules (see below), with search and a quick editor.
+- **Air Traffic Control:** choose where links from other apps open. In
+  Settings > Browser > Links or Library > Routes, add rules ("URL contains",
+  "URL equals" or a regular expression) and send matching links to Little Sol,
+  the most recent Space or a specific Space. Sol checks the rules from the top
+  down, and a default covers every other link.
+- **New Space, right in the sidebar:** making a Space now happens in the
+  sidebar itself: name and icon, browsing profile and theme, then Create
+  Space.
+
+### Optimizations
+
+- **Floating sidebar:** the first opening after Sol starts is about three
+  times faster (317 → 96 ms with 150 saved tabs).
+
 ## 0.9.0 — 2026-11-18
 
 A built-in ad blocker, a newer engine, and tabs that come back the way you left them.

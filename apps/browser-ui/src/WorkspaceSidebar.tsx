@@ -6,7 +6,7 @@ type Props = {
   snapshot: Snapshot; surface: SidebarSurface;
   command: (command: Command) => void;
   mutate: (command: TreeMutation) => Promise<boolean>;
-  panel: (kind: 'archive' | 'space' | 'newSpace', anchor: HTMLElement) => void;
+  panel: (kind: 'archive' | 'space' | 'spaceTheme', anchor: HTMLElement) => void;
 };
 /** Shared connection to state/actions: neither host binds Sidebar props itself. */
 export function WorkspaceSidebar({ snapshot, surface, command, mutate, panel }: Props) {
@@ -23,10 +23,13 @@ export function WorkspaceSidebar({ snapshot, surface, command, mutate, panel }: 
     },
     action: mutate,
     openArchive: (anchor: HTMLElement) => panel('archive', anchor),
+    openLibrary: snapshot.privateWindow ? undefined : () => command({ method: 'library.setOpen', open: true }),
     tabCommand: command,
     openDroppedFiles: () => command({ method: 'workspace.openDroppedFiles' }),
     editSpace: (anchor: HTMLElement) => panel('space', anchor),
-    newSpace: (anchor: HTMLElement) => panel('newSpace', anchor),
+    spaceTheme: (anchor: HTMLElement) => panel('spaceTheme', anchor),
+    profiles: snapshot.privateWindow ? undefined : snapshot.profiles,
+    activeProfile: snapshot.activeProfile,
     restartToUpdate: () => command({ method: 'browser.restartToUpdate' }),
   } satisfies SidebarProps & Record<keyof SidebarProps, unknown>;
   // Record makes even a newly added optional prop a compile error until this

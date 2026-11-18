@@ -27,6 +27,24 @@ test('the Little Sol preferences are booleans', () => {
   }
 });
 
+test('Air Traffic Control accepts ordered rules and rejects invalid settings', () => {
+  const value = settings(0);
+  const read = () => parseSettingsSnapshot(JSON.stringify(value)).preferences.linkRouting;
+  assert.equal(read(), undefined);
+  const space = 'abcdef01-2345-6789-abcd-ef0123456789';
+  const contains = { match: 'contains', pattern: 'example.com/', destination: 'recent' };
+  const exact = { match: 'exact', pattern: 'https://example.com/path?x=1', destination: space };
+  const regex = { match: 'regex', pattern: String.raw`example\.com/\d+$`, destination: space };
+  value.preferences.linkRouting = { fallback: 'littleSol', rules: [contains, exact, regex] };
+  assert.deepEqual(read(), value.preferences.linkRouting);
+  for (const rule of [{ ...contains, pattern: '' }, { ...contains, pattern: 'é'.repeat(513) },
+    { ...contains, destination: '../default' }, { ...exact, pattern: 'example.com' },
+    { ...exact, pattern: 'https://user:pass@example.com/' }, { ...exact, extra: true }]) {
+    value.preferences.linkRouting.rules = [rule];
+    assert.throws(read, /Invalid link routing/);
+  }
+});
+
 test('the Little Sol global shortcut round-trips and validates its keys', () => {
   const value = settings(0);
   assert.equal(parseSettingsSnapshot(JSON.stringify(value)).preferences.littleSolBinding, undefined);

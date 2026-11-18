@@ -47,13 +47,18 @@ void SidebarMenu::Fill(MenuPopup::Builder& menu, const std::vector<SidebarMenuIt
   }
 }
 void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRefPtr<CefMessageRouterBrowserSide::Callback> callback,
-                       CefRefPtr<CefBrowser> source, bool space_menu) {
+                       CefRefPtr<CefBrowser> source, bool space_menu, const std::string& space) {
   auto state = state_.lock();
-  // The docked sidebar, or the floating one while the docked one is hidden.
-  const bool shown = state && (state->sidebar_visible || (state->sidebar_peek && state->sidebar_peek->is_open()));
+  // The docked sidebar, or the floating one while the docked one is hidden;
+  // a Space's own menu comes from its Library column.
+  const bool library = !space.empty();
+  const bool shown = state && (library ? state->library_open :
+      state->sidebar_visible || (state->sidebar_peek && state->sidebar_peek->is_open()));
   if (!state || !state->window || !state->workspace || !shown || state->workspace->WindowClosing()) { callback->Failure(409, "Sidebar is unavailable"); return; }
   const auto bounds = state->window->GetClientAreaBoundsInScreen();
-  if (x < 0 || x >= SidebarWidth(state->sidebar_width, bounds.width) || y < kToolbarHeight || y >= bounds.height) { callback->Failure(400, "Invalid menu position"); return; }
+  const int surface = library ? WorkspaceRailWidth(bounds.width, state->sidebar_visible, state->sidebar_width, state->VisibleLibrarySection(), state->library_spaces)
+                              : SidebarWidth(state->sidebar_width, bounds.width);
+  if (x < 0 || x >= surface || y < kToolbarHeight || y >= bounds.height) { callback->Failure(400, "Invalid menu position"); return; }
   const auto snapshot = state->workspace->Snapshot();
   if (!snapshot->GetBool("ready")) { callback->Failure(409, "Workspace is loading"); return; }
   std::vector<MenuNode> nodes; const auto rows = snapshot->GetList("nodes");
@@ -75,7 +80,19 @@ void SidebarMenu::Open(const std::string& id, int x, int y, int64_t query, CefRe
     if (state->standalone_window || !id.empty()) { callback->Failure(403,"Space actions are unavailable"); return; }
     std::vector<MenuProfile> profiles; const auto list=snapshot->GetList("profiles");
     for (size_t i=0;list && i<list->GetSize();++i) profiles.push_back({list->GetDictionary(i)->GetString("id"),list->GetDictionary(i)->GetString("name")});
-    items=SpaceMenuItems(spaces,profiles,snapshot->GetString("activeSpace"),snapshot->GetString("activeProfile"), locale);
+    std::string owner = library ? space : snapshot->GetString("activeSpace").ToString(), profile = snapshot->GetString("activeProfile");
+    if (library) {
+      bool found = false;
+      for (size_t i = 0; space_rows && i < space_rows->GetSize(); ++i)
+        if (const auto row = space_rows->GetDictionary(i); row->GetString("id") == space) { found = true; profile = row->GetString("profileId"); }
+      if (!found) { callback->Failure(404, "Space is unavailable"); return; }
+    }
+    items=SpaceMenuItems(spaces,profiles,owner,profile, locale);
+    if (library) {
+      // A folder belongs to the Space on screen; a column is renamed here instead.
+      std::erase_if(items, [](const auto& item) { return item.action == "newFolder"; });
+      items.insert(items.begin(), {label(InterfaceMessage::SidebarRename), "rename", "", true, {}});
+    }
   }
   CefRefPtr<CefDictionaryValue> entry, active;
   for (size_t i = 0; i < rows->GetSize(); ++i) {
@@ -181,7 +198,8 @@ void SidebarMenu::Closed(unsigned generation) {
 bool SidebarMenu::ProbeSelect(const std::string& wanted) {
   auto state = state_.lock();
   if (!state || !state->probe || !shown_ ||
-      (!state->organization_probe && !(state->sidebar_peek_probe && wanted == "editPinned"))) return false;
+      (!state->organization_probe && !(state->sidebar_peek_probe && wanted == "editPinned") &&
+       !(state->menu_probe && state->library_open && wanted == "rename"))) return false;
   for (const auto& [command, action] : actions_) if (action.first == wanted) {
     Choose(generation_, command); if (state->menu_popup) state->menu_popup->Close(false); return true;
   }

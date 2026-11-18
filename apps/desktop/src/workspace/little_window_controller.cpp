@@ -24,10 +24,6 @@ const Space* FindSessionSpace(const std::shared_ptr<AppSession>& session, const 
 }
 }  // namespace
 
-bool WorkspaceController::OpensInLittleSol(const AppSession& session, const std::string& url) {
-  return (!session.preferences || session.preferences->Get().little_sol_links) && HasWebScheme(url) && url.size() <= 8192;
-}
-
 void WorkspaceController::QueueLittleSolLinks(const std::vector<std::string>& urls) {
   for (const auto& url : urls) {
     if (little_pending_.size() >= 16) break;

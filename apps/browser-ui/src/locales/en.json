@@ -51,6 +51,84 @@
   "settings.section.integrations": {
     "defaultMessage": "Integrations"
   },
+  "space.create.title": { "defaultMessage": "Create a Space" },
+  "space.create.detail": { "defaultMessage": "A Space keeps its own tabs, pins and theme." },
+  "space.create.profile": { "defaultMessage": "Profile" },
+  "space.create.theme": { "defaultMessage": "Theme…" },
+  "space.create.submit": { "defaultMessage": "Create Space" },
+  "space.theme": { "defaultMessage": "Space theme" },
+  "library.deleteDetail": { "defaultMessage": "{count, plural, =0 {It has no open or pinned tabs.} one {Its # tab is deleted with it.} other {Its # tabs are deleted with it.}}" },
+  "library.title": {
+    "defaultMessage": "Library"
+  },
+  "library.routes": { "defaultMessage": "Routes" },
+  "library.searchRoutes": { "defaultMessage": "Search routes" },
+  "library.newRoute": { "defaultMessage": "New route" },
+  "library.editRoute": { "defaultMessage": "Edit route" },
+  "library.addRoute": { "defaultMessage": "Add route" },
+  "library.noRoutes": { "defaultMessage": "No routes yet" },
+  "library.noMatchingRoutes": { "defaultMessage": "No matching routes" },
+  "library.whenLink": { "defaultMessage": "When the link" },
+  "library.openIn": { "defaultMessage": "Open it in" },
+  "library.match.contains": { "defaultMessage": "Contains" },
+  "library.match.exact": { "defaultMessage": "Exactly" },
+  "library.match.regex": { "defaultMessage": "Regex" },
+  "library.close": {
+    "defaultMessage": "Close Library"
+  },
+  "library.searchArchive": {
+    "defaultMessage": "Search archived tabs"
+  },
+  "library.filterSpace": {
+    "defaultMessage": "Filter by Space"
+  },
+  "library.allSpaces": {
+    "defaultMessage": "All Spaces"
+  },
+  "library.archiveFailed": {
+    "defaultMessage": "Couldn't load archived tabs."
+  },
+  "library.noMatches": {
+    "defaultMessage": "No matching tabs"
+  },
+  "library.more": {
+    "defaultMessage": "Show more"
+  },
+  "library.emptySpace": {
+    "defaultMessage": "No tabs in this Space"
+  },
+  "library.moveTab": {
+    "defaultMessage": "Move tab to Space"
+  },
+  "library.moveHere": {
+    "defaultMessage": "Drop tabs here"
+  },
+  "library.spaceName": {
+    "defaultMessage": "Space name"
+  },
+  "library.editName": {
+    "defaultMessage": "Rename Space"
+  },
+  "library.editTheme": { "defaultMessage": "Edit theme" },
+  "library.spaceMenu": { "defaultMessage": "Space options" },
+  "library.moveSpace": { "defaultMessage": "Move Space (drag, or use arrow keys)" },
+  "library.earlierSpaces": { "defaultMessage": "Earlier Spaces" },
+  "library.laterSpaces": { "defaultMessage": "More Spaces" },
+  "library.moveTitle": {
+    "defaultMessage": "Move to {space}?"
+  },
+  "library.moveDetail": {
+    "defaultMessage": "The tab will open in the destination profile when selected."
+  },
+  "library.moveConfirm": {
+    "defaultMessage": "Move tab"
+  },
+  "library.routesFailed": {
+    "defaultMessage": "Couldn't load link routing rules."
+  },
+  "library.reloadRoutes": {
+    "defaultMessage": "Reload saved rules"
+  },
   "settings.section.profiles": {
     "defaultMessage": "Profiles"
   },
@@ -356,7 +434,7 @@
     "defaultMessage": "Global"
   },
   "settings.preference.keyboardLittleSolDisabled": {
-    "defaultMessage": "The global shortcut is off. Enable it in Browser → Little Sol."
+    "defaultMessage": "The global shortcut is off. Enable it in Browser → Links."
   },
   "settings.preference.keyboardModifiers": {
     "defaultMessage": "Modifiers"
@@ -373,11 +451,56 @@
   "settings.preference.littleClickDetail": {
     "defaultMessage": "Hold Ctrl+Alt while you click a link on a page."
   },
-  "settings.preference.littleLinks": {
-    "defaultMessage": "Links from other apps"
+  "settings.routes.title": {
+    "defaultMessage": "Air Traffic Control"
   },
-  "settings.preference.littleLinksDetail": {
-    "defaultMessage": "Open links from chats, email, and other apps in Little Sol."
+  "settings.routes.detail": {
+    "defaultMessage": "Sol checks links from other apps against these rules from top to bottom and uses the first match."
+  },
+  "settings.routes.recent": {
+    "defaultMessage": "Most recent Space"
+  },
+  "settings.routes.missing": {
+    "defaultMessage": "Space unavailable"
+  },
+  "settings.routes.rule": {
+    "defaultMessage": "Rule {number}"
+  },
+  "settings.routes.match": {
+    "defaultMessage": "Match"
+  },
+  "settings.routes.contains": {
+    "defaultMessage": "URL contains"
+  },
+  "settings.routes.exact": {
+    "defaultMessage": "URL equals"
+  },
+  "settings.routes.regex": {
+    "defaultMessage": "URL matches regex"
+  },
+  "settings.routes.address": {
+    "defaultMessage": "Address or text"
+  },
+  "settings.routes.destination": {
+    "defaultMessage": "Open in"
+  },
+  "settings.routes.up": {
+    "defaultMessage": "Move rule up"
+  },
+  "settings.routes.down": {
+    "defaultMessage": "Move rule down"
+  },
+  "settings.routes.delete": {
+    "defaultMessage": "Delete rule"
+  },
+  "settings.routes.add": {
+    "defaultMessage": "Add rule"
+  },
+  "settings.routes.fallback": {
+    "defaultMessage": "When no rule matches"
+  },
+  "settings.routes.invalid": {
+    "defaultMessage": "Enter text for each rule. For an exact match, enter the full HTTP(S) address."
   },
   "settings.preference.startupCategory": {
     "defaultMessage": "WHEN SOL STARTS"

@@ -53,7 +53,7 @@
 .settings-error { padding:12px 14px; border-radius:8px; background:#d67d9012; border:1px solid #d67d9025; color:#e8a8b8; font-size:12px; line-height:1.6; }
 @keyframes settings-page-in { from { opacity:0; transform:translateY(3px); } to { opacity:1; transform:none; } }
 .settings-field { display:grid; gap:8px; margin-top:20px; color:var(--pop-muted); font-size:12px; }
-.settings-shell select, .settings-homepage input { min-width:0; padding:8px 11px; border:1px solid var(--pop-hover-strong);
+.settings-shell select, .settings-homepage input, .settings-link-route input { min-width:0; padding:8px 11px; border:1px solid var(--pop-hover-strong);
   border-radius:8px; background:var(--pop-well); box-shadow:var(--pop-well-shadow); color:var(--pop-ink); font:inherit; }
 .settings-shell select { width:100%; max-width:310px; min-height:36px; }
 .settings-shell select:enabled:hover { border-color:#ffffff2d; }
@@ -76,7 +76,14 @@
   .settings-shell option::checkmark { order:1; margin-inline-start:auto; }
 }
 .settings-language-card select { width:45%; max-width:210px; }
-.settings-shell select:focus-visible, .settings-homepage input:focus-visible { outline:2px solid var(--pop-accent); outline-offset:2px; }
+.settings-shell select:focus-visible, .settings-homepage input:focus-visible, .settings-link-route input:focus-visible { outline:2px solid var(--pop-accent); outline-offset:2px; }
+.settings-link-routes { display:grid; gap:10px; list-style:none; padding:0; margin:12px 0; }
+.settings-link-route { margin:0; min-width:0; padding:9px 12px 12px; border:1px solid var(--pop-line); border-radius:9px; }
+.settings-link-route legend { padding:0 5px; font-weight:600; }
+.settings-link-route-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,125px),1fr)); gap:8px; }
+.settings-link-route-fields label { display:grid; gap:6px; min-width:0; color:var(--pop-muted); }
+.settings-link-route-fields select { max-width:none; }
+.settings-link-route-actions { display:flex; justify-content:flex-end; gap:4px; margin-top:8px; }
 .settings-folder { display:flex; align-items:center; gap:11px; padding:13px; margin-top:21px; background:#1c1a2080; border:1px solid #ffffff09; border-radius:8px; color:#c2b7cf; }
 .settings-folder code { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:inherit; font-size:11px; line-height:1.6; user-select:text; }
 /* Settings → Sync */

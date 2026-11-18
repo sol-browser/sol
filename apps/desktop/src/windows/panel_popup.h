@@ -22,7 +22,7 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   bool EditPinnedPage(const std::string& id);
   bool editing_pin() const { return open_ && kind_ == "editPinned"; }
   // Centered over the window with the page shaded and the window disabled.
-  bool modal() const { return open_ && (kind_ == "editPinned" || kind_ == "moveToProfile" || kind_ == "installExtension"); }
+  bool modal() const { return open_ && (kind_ == "editPinned" || kind_ == "moveToProfile" || kind_ == "installExtension" || kind_ == "deleteSpace"); }
   // Chrome's "Add extension?" prompt for a page of this window (engine patch
   // red_16, CefDialogHandler::OnExtensionInstallPrompt). Returns false when it
   // cannot be shown here, so Chrome shows its own dialog. Closing the modal, the
@@ -31,6 +31,8 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   void PageClosed(int page);
   // Confirms moving a loaded tab to a Space that uses another browsing profile.
   bool ConfirmProfileMove(const std::string& id, const std::string& space);
+  // Library: the window's modal asks before a Space is deleted.
+  bool ConfirmSpaceDelete(const std::string& id);
   bool PreviewIntegration(const std::string& node, const CefRect& anchor, HWND surface);
   bool DismissIntegration();
   void Hide(bool restore_focus, bool animate = false);
@@ -48,6 +50,7 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   void Attach(CefRefPtr<CefWindow> window) { window_ = window; presentation_.Attach(window, state_); Reposition(); }
   bool shutting_down() const { return shutdown_; }
   bool is_open() const { return open_ || presentation_.closing() || (hover_ && hover_->is_open()); }
+  const std::string& kind() const { return kind_; }
   bool is_presented() const { return presented_; }
   CefRefPtr<CefWindow> parent() const;
   // The download menu closed; hide too if the person clicked outside.
@@ -91,7 +94,7 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   CefRefPtr<CefDictionaryValue> pinned_page_;
   HWND modal_owner_ = nullptr;
   bool saving_pin_ = false;
-  CefRefPtr<CefDictionaryValue> profile_move_;
+  CefRefPtr<CefDictionaryValue> profile_move_, space_delete_;
   // Site popover: the built-in ad blocker on this page ({available, enabled, blocked}),
   // read from uBlock Origin after the popover opens (app/content_blocker_settings.h).
   void ReadSiteBlocker();
@@ -102,7 +105,7 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   int install_page_ = 0;
   int install_delay_ms_ = 0;
   unsigned long long install_shown_at_ = 0;  // GetTickCount64 when presented.
-  bool moving_tab_ = false;
+  bool moving_tab_ = false, deleting_space_ = false;
   CefRect anchor_;
   float origin_x_ = .5f, integration_origin_y_ = 0.f;
   PopupPresentation presentation_;

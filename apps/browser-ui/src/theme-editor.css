@@ -1,6 +1,6 @@
 /* Orbit is intentionally neutral: the canvas previews the edited Space color. */
 .popover.theme-popover.orbit-editor{--orbit-top:#2e3037;--orbit-surface:#24252b;--orbit-well:#17191f;--orbit-ink:#eeedf2;--orbit-muted:#a9a7b1;--orbit-line:#ffffff0c;--orbit-tick:#ffffff16;box-sizing:border-box;padding:16px;border:0;border-radius:0;color:var(--orbit-ink);background:linear-gradient(145deg,var(--orbit-top),var(--orbit-surface) 55%);box-shadow:none;font-size:12px}
-.panel-root:is([data-kind=theme],[data-kind=space],[data-kind=newSpace]){padding:0}
+.panel-root:is([data-kind=theme],[data-kind=space],[data-kind=newSpace],[data-kind=spaceTheme]){padding:0}
 .popover.theme-popover.orbit-editor[data-appearance=light]{--orbit-top:#f0efec;--orbit-surface:#dededb;--orbit-well:#d2d2d0;--orbit-ink:#33343c;--orbit-muted:#686974;--orbit-line:#0000000c;--orbit-tick:#00000018;color-scheme:light}
 .orbit-editor *{box-sizing:border-box}
 .orbit-editor [hidden]{display:none!important}
@@ -19,21 +19,21 @@
 .orbit-editor .space-name-mark[data-empty=true]{font-size:19px;font-weight:400;color:var(--orbit-muted)}
 .popover.orbit-editor .space-name>input:is(:hover,:focus,:focus-visible){outline:none;border:0;background:transparent;box-shadow:none}
 .orbit-editor[data-focus-mode=keyboard] .space-name>input:focus-visible{box-shadow:inset 0 -1px var(--orbit-muted)}
-.orbit-editor .space-emoji-picker{position:absolute;z-index:20;left:0;top:calc(100% + 8px);width:288px;max-width:calc(100vw - 32px);padding:10px;border:1px solid var(--orbit-line);border-radius:16px;background:var(--orbit-surface);box-shadow:0 8px 25px #0005;color:var(--orbit-ink);font-size:12px;font-weight:400;overflow:hidden}
-.orbit-editor .emoji-search{display:flex;align-items:center;gap:7px;height:32px;padding:0 9px;border-radius:9px;background:var(--orbit-well);color:var(--orbit-muted)}
-.popover.orbit-editor .emoji-search input{width:100%;height:100%;min-width:0;padding:0;border:0;outline:none;box-shadow:none;border-radius:0;background:transparent;color:var(--orbit-ink);font-size:12px;font-weight:400}
-.orbit-editor .emoji-search:focus-within{box-shadow:inset 0 -1px var(--orbit-muted)}
-.orbit-editor .emoji-groups{display:flex;justify-content:space-between;gap:2px;margin:8px 0;padding-bottom:7px;border-bottom:1px solid var(--orbit-line)}
-.orbit-editor .emoji-groups button{display:grid;place-items:center;width:27px;height:27px;padding:0;border-radius:7px;background:transparent;color:var(--orbit-muted)}
-.orbit-editor .emoji-groups button[aria-pressed=true],.orbit-editor .emoji-groups button:hover{background:var(--orbit-well);color:var(--orbit-ink)}
-.orbit-editor .emoji-results{height:184px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-gutter:stable}
-.orbit-editor .emoji-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:2px;padding:2px}
-.orbit-editor .emoji-grid button{height:30px;min-width:0;padding:0;border-radius:7px;background:transparent;font-family:"Segoe UI Emoji",sans-serif;font-size:22px;line-height:1}
-.orbit-editor .emoji-grid button:hover,.orbit-editor .emoji-grid button[aria-pressed=true]{background:var(--orbit-well)}
-.orbit-editor .emoji-more,.orbit-editor .emoji-letter{width:100%;padding:7px;border-radius:7px;font-size:11px;background:transparent;color:var(--orbit-muted)}
-.orbit-editor .emoji-letter{margin-top:7px;border-top:1px solid var(--orbit-line);border-radius:0}
-.orbit-editor .emoji-more:hover,.orbit-editor .emoji-letter:hover{color:var(--orbit-ink)}
-.orbit-editor .emoji-empty{padding:35px 10px;text-align:center;color:var(--orbit-muted)}
+:is(.orbit-editor, .space-creator) .space-emoji-picker{position:absolute;z-index:20;left:0;top:calc(100% + 8px);width:288px;max-width:calc(100vw - 32px);padding:10px;border:1px solid var(--orbit-line);border-radius:16px;background:var(--orbit-surface);box-shadow:0 8px 25px #0005;color:var(--orbit-ink);font-size:12px;font-weight:400;overflow:hidden}
+:is(.orbit-editor, .space-creator) .emoji-search{display:flex;align-items:center;gap:7px;height:32px;padding:0 9px;border-radius:9px;background:var(--orbit-well);color:var(--orbit-muted)}
+:is(.popover.orbit-editor, .space-creator) .emoji-search input{width:100%;height:100%;min-width:0;padding:0;border:0;outline:none;box-shadow:none;border-radius:0;background:transparent;color:var(--orbit-ink);font-size:12px;font-weight:400}
+:is(.orbit-editor, .space-creator) .emoji-search:focus-within{box-shadow:inset 0 -1px var(--orbit-muted)}
+:is(.orbit-editor, .space-creator) .emoji-groups{display:flex;justify-content:space-between;gap:2px;margin:8px 0;padding-bottom:7px;border-bottom:1px solid var(--orbit-line)}
+:is(.orbit-editor, .space-creator) .emoji-groups button{display:grid;place-items:center;width:27px;height:27px;padding:0;border-radius:7px;background:transparent;color:var(--orbit-muted)}
+:is(.orbit-editor, .space-creator) .emoji-groups button[aria-pressed=true],:is(.orbit-editor, .space-creator) .emoji-groups button:hover{background:var(--orbit-well);color:var(--orbit-ink)}
+:is(.orbit-editor, .space-creator) .emoji-results{height:184px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-gutter:stable}
+:is(.orbit-editor, .space-creator) .emoji-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:2px;padding:2px}
+:is(.orbit-editor, .space-creator) .emoji-grid button{height:30px;min-width:0;padding:0;border-radius:7px;background:transparent;font-family:"Segoe UI Emoji",sans-serif;font-size:22px;line-height:1}
+:is(.orbit-editor, .space-creator) .emoji-grid button:hover,:is(.orbit-editor, .space-creator) .emoji-grid button[aria-pressed=true]{background:var(--orbit-well)}
+:is(.orbit-editor, .space-creator) .emoji-more,:is(.orbit-editor, .space-creator) .emoji-letter{width:100%;padding:7px;border-radius:7px;font-size:11px;background:transparent;color:var(--orbit-muted)}
+:is(.orbit-editor, .space-creator) .emoji-letter{margin-top:7px;border-top:1px solid var(--orbit-line);border-radius:0}
+:is(.orbit-editor, .space-creator) .emoji-more:hover,:is(.orbit-editor, .space-creator) .emoji-letter:hover{color:var(--orbit-ink)}
+:is(.orbit-editor, .space-creator) .emoji-empty{padding:35px 10px;text-align:center;color:var(--orbit-muted)}
 .orbit-editor .orbit-field{width:100%;aspect-ratio:1.35;position:relative;border-radius:20px;background:radial-gradient(ellipse at 50% 42%,transparent,var(--orbit-well) 75%);touch-action:none;overflow:hidden;box-shadow:inset 0 2px 9px #0005,inset 0 -1px #ffffff08}
 .orbit-editor .orbit-grid,.orbit-editor .orbit-colors{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .orbit-editor .orbit-grid{fill:none;stroke:var(--orbit-muted);stroke-width:.7;opacity:.23}

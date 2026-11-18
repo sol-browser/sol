@@ -137,15 +137,15 @@ void OnSpacesProbeLoad(const std::shared_ptr<State>& state, const std::string& u
                     if (auto peek = s->sidebar_peek ? s->sidebar_peek->browser() : nullptr)
                       peek->GetMainFrame()->ExecuteJavaScript("document.querySelector('.space-add')?.click()", peek->GetMainFrame()->GetURL(), 0);
                   });
-                  // + opens the new-space panel: name the space, then Create space.
+                  // + turns the floating sidebar into the Create Space form: name it, then Create Space.
                   Later(s, 2900, [](const std::shared_ptr<State>& s) {
-                    if (auto panel = s->panel_popup ? s->panel_popup->browser() : nullptr)
-                      panel->GetMainFrame()->ExecuteJavaScript(
-                          "(() => { const input = document.querySelector('input[placeholder=\"Name your space\"]'); if (!input) return;"
+                    if (auto peek = s->sidebar_peek ? s->sidebar_peek->browser() : nullptr)
+                      peek->GetMainFrame()->ExecuteJavaScript(
+                          "(() => { const input = document.querySelector('.space-creator input'); if (!input) return;"
                           " Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Brief');"
                           " input.dispatchEvent(new Event('input', { bubbles: true }));"
-                          " setTimeout(() => document.querySelector('.orbit-done:not(:disabled)')?.click(), 300); })()",
-                          panel->GetMainFrame()->GetURL(), 0);
+                          " setTimeout(() => document.querySelector('.space-creator-submit:not(:disabled)')?.click(), 300); })()",
+                          peek->GetMainFrame()->GetURL(), 0);
                   });
                   Later(s, 4400, [](const std::shared_ptr<State>& s) {
                     Step(s, "brief_empty");

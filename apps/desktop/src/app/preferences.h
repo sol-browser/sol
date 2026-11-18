@@ -7,6 +7,7 @@
 #include <string>
 #include "include/cef_thread.h"
 #include "include/cef_values.h"
+#include "navigation/external_launch.h"
 #include "navigation/site_search.h"
 #include "integrations/providers.h"
 #include "windows/little_sol_hotkey.h"
@@ -37,6 +38,7 @@ struct Preferences {
   std::map<std::string, bool> auto_pip_sites;  // Per-site override (origin -> on/off).
   bool pip_button = true;  // Picture-in-picture button over website videos.
   bool little_sol_links = true;  // Website links from other apps open in Little Sol (Arc default).
+  LinkRouting link_routing;
   bool little_sol_click = true;  // Ctrl+Alt+click on a link opens it in Little Sol.
   bool little_sol_hotkey = true;  // Global opening shortcut and notification-area mode.
   KeyBinding little_sol_binding = kDefaultLittleSolHotkey;
@@ -58,6 +60,10 @@ class BrowserPreferences : public std::enable_shared_from_this<BrowserPreference
   const Preferences& Get() const { return value_; }
   const std::string& error() const { return error_; }
   bool busy() const { return busy_; }
+  int link_routing_revision() const { return link_routing_revision_; }
+  CefRefPtr<CefDictionaryValue> LinkRoutingSnapshot() const;
+  void SaveLinkRouting(CefRefPtr<CefDictionaryValue> value, int expected_revision,
+                       std::function<void(int, const std::string&)> done);
   void Save(Preferences next, Reply done);
   void Stop();
   static CefRefPtr<CefDictionaryValue> ToDictionary(const Preferences& value);
@@ -67,6 +73,7 @@ class BrowserPreferences : public std::enable_shared_from_this<BrowserPreference
   std::string error_;
   CefRefPtr<CefThread> worker_;
   bool busy_ = false;
+  int link_routing_revision_ = 0;
 };
 bool ValidSearchEngine(const std::string& engine);
 std::optional<KeyBinding> ReadKeyBinding(CefRefPtr<CefDictionaryValue> binding);

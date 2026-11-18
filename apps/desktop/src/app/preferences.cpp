@@ -128,6 +128,7 @@ bool Decode(const std::string& json, Preferences& value) {
     if (data->GetType(key) != VTYPE_BOOL) return false;
     value.*field = data->GetBool(key);
   }
+  if (data->HasKey("linkRouting") && !ReadLinkRouting(data->GetDictionary("linkRouting"), value.link_routing)) return false;
   if (data->HasKey("autoPipSites")) {
     if (data->GetType("autoPipSites") != VTYPE_DICTIONARY) return false;
     const auto sites = data->GetDictionary("autoPipSites"); CefDictionaryValue::KeyList origins; sites->GetKeys(origins);
@@ -317,6 +318,7 @@ CefRefPtr<CefDictionaryValue> BrowserPreferences::ToDictionary(const Preferences
   data->SetBool("preloadOnHover", value.preload_on_hover);
   data->SetBool("contentBlocker", value.content_blocker);
   data->SetBool("littleSolLinks", value.little_sol_links);
+  if (!value.link_routing.fallback.empty()) data->SetDictionary("linkRouting", DescribeLinkRouting(value.link_routing));
   data->SetBool("littleSolClick", value.little_sol_click);
   data->SetBool("littleSolHotkey", value.little_sol_hotkey);
   data->SetInt("unloadMinutes", value.unload_minutes);
@@ -345,10 +347,35 @@ void BrowserPreferences::Save(Preferences next, Reply done) {
     auto error = Write(self->path_, json);
     CefPostTask(TID_UI, base::BindOnce([](std::shared_ptr<BrowserPreferences> self, Preferences next, std::string error, Reply done) {
       self->busy_ = false;
-      if (error.empty()) { self->value_ = std::move(next); WriteContentBlockerMarker(self->path_, self->value_.content_blocker); }
+      if (error.empty()) {
+        if (next.link_routing.fallback.empty() && next.little_sol_links != self->value_.little_sol_links) ++self->link_routing_revision_;
+        self->value_ = std::move(next); WriteContentBlockerMarker(self->path_, self->value_.content_blocker);
+      }
       done(error);
     }, self, std::move(next), std::move(error), std::move(done)));
   }, shared_from_this(), std::move(next), json, std::move(done))));
+}
+CefRefPtr<CefDictionaryValue> BrowserPreferences::LinkRoutingSnapshot() const {
+  auto snapshot = CefDictionaryValue::Create();
+  auto routing = value_.link_routing;
+  if (routing.fallback.empty()) routing.fallback = value_.little_sol_links ? kLinkLittleSol : kLinkRecentSpace;
+  snapshot->SetDictionary("routing", DescribeLinkRouting(routing));
+  snapshot->SetInt("revision", link_routing_revision_);
+  return snapshot;
+}
+void BrowserPreferences::SaveLinkRouting(CefRefPtr<CefDictionaryValue> value, int expected_revision,
+                                        std::function<void(int, const std::string&)> done) {
+  if (expected_revision != link_routing_revision_) { done(409, "Link routing changed; reload the saved rules."); return; }
+  auto next = value_;
+  std::string error;
+  if (!ReadLinkRouting(value, next.link_routing, &error)) {
+    done(400, error.empty() ? "Invalid link routing rules." : error);
+    return;
+  }
+  Save(std::move(next), [self = shared_from_this(), done = std::move(done)](const std::string& error) {
+    if (error.empty()) ++self->link_routing_revision_;
+    done(error.empty() ? 0 : 409, error);
+  });
 }
 std::filesystem::path ContentBlockerOffMarker(const std::filesystem::path& profile) {
   return profile / "BrowserData" / "content-blocker-off";

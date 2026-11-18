@@ -12,7 +12,9 @@ import './theme-editor.css';
 type Props={theme:Theme|undefined;spaceId?:string;probe?:boolean;command:(request:object)=>Promise<void>;
   heading?:ReactNode;intro?:ReactNode;footer?:ReactNode;label?:string;creating?:boolean;closeOnDone?:boolean;
   /** A space that does not exist yet: the theme is only previewed, and Create hands it over. */
-  draft?:{ready:boolean;create:(theme:ThemeChoice)=>Promise<void>}};
+  draft?:{ready:boolean;create:(theme:ThemeChoice)=>Promise<void>;
+    /** Start from the theme on screen (a draft already previewed) instead of a turned one; Done instead of Create. */
+    current?:boolean}};
 const modes=[{mode:'light',Icon:Sun},{mode:'dark',Icon:Moon},{mode:'system',Icon:Monitor}] as const;
 type Drag={id:number;index:number;mode:'move'|'size';startX:number;startY:number;circle:OrbitPalette['circles'][number];x:number;y:number;radius:number;distance:number};
 
@@ -21,7 +23,7 @@ export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,lab
   const drafting=useRef(!!draft).current;
   const [choice,setChoice]=useState<ThemeChoice>(()=>{
     const value=theme??DEFAULT_THEME;
-    if(drafting){
+    if(drafting&&!draft?.current){
       // A new space starts from the current colors turned round the wheel, so it looks like its own place.
       const palette=orbitPalette(value),circles=palette.circles.map(c=>({...c,hue:(c.hue+137)%360}));
       return {...value,hue:circles[0].hue,palette:{...palette,count:3,circles}};
@@ -172,7 +174,7 @@ export function ThemePanel({theme,spaceId,probe,command,heading,intro,footer,lab
       <input className="palette-noise" type="range" min={0} max={100} value={choice.noise} aria-label={t('theme.grain')} aria-valuetext={`${choice.noise}%`} onChange={e=>update({...latest.current,noise:Number(e.currentTarget.value)},false)} onKeyUp={finish} onBlur={finish}/>
     </div></div>
     <div className="orbit-bottom"><div className="orbit-modes" role="group" aria-label={t('settings.section.appearance')}>{modes.map(({mode,Icon})=><button key={mode} data-mode={mode} type="button" aria-label={t(`theme.mode.${mode}`)} title={t(`theme.mode.${mode}`)} aria-pressed={choice.mode===mode} onClick={()=>update({...latest.current,mode},true,t(`theme.mode.${mode}`))}><Icon size={16}/></button>)}</div>
-      <button type="button" className="orbit-done" disabled={!!draft&&!draft.ready} onClick={done}>{creating||draft?t('theme.create'):closeOnDone?t('theme.done'):t('common.save')}<Check size={15}/></button></div>
+      <button type="button" className="orbit-done" disabled={!!draft&&!draft.ready} onClick={done}>{draft?.current?t('theme.done'):creating||draft?t('theme.create'):closeOnDone?t('theme.done'):t('common.save')}<Check size={15}/></button></div>
     {footer}<span className="sr-only" aria-live="polite">{announcement}</span>{error&&<p className="popover-error" role="alert">{error}</p>}
   </section>;
 }

@@ -50,6 +50,84 @@
   "settings.section.integrations": {
     "defaultMessage": "Інтеграції"
   },
+  "space.create.title": { "defaultMessage": "Створити простір" },
+  "space.create.detail": { "defaultMessage": "Простір має власні вкладки, закріплене й тему." },
+  "space.create.profile": { "defaultMessage": "Профіль" },
+  "space.create.theme": { "defaultMessage": "Тема…" },
+  "space.create.submit": { "defaultMessage": "Створити простір" },
+  "space.theme": { "defaultMessage": "Тема простору" },
+  "library.deleteDetail": { "defaultMessage": "{count, plural, =0 {У ньому немає вкладок.} one {Його # вкладку буде видалено разом з ним.} few {Його # вкладки буде видалено разом з ним.} many {Його # вкладок буде видалено разом з ним.} other {Його # вкладки буде видалено разом з ним.}}" },
+  "library.title": {
+    "defaultMessage": "Бібліотека"
+  },
+  "library.routes": { "defaultMessage": "Маршрути" },
+  "library.searchRoutes": { "defaultMessage": "Пошук маршрутів" },
+  "library.newRoute": { "defaultMessage": "Новий маршрут" },
+  "library.editRoute": { "defaultMessage": "Редагувати маршрут" },
+  "library.addRoute": { "defaultMessage": "Додати маршрут" },
+  "library.noRoutes": { "defaultMessage": "Маршрутів ще немає" },
+  "library.noMatchingRoutes": { "defaultMessage": "Маршрутів не знайдено" },
+  "library.whenLink": { "defaultMessage": "Коли посилання" },
+  "library.openIn": { "defaultMessage": "Відкрити в" },
+  "library.match.contains": { "defaultMessage": "Містить" },
+  "library.match.exact": { "defaultMessage": "Точно" },
+  "library.match.regex": { "defaultMessage": "Regex" },
+  "library.close": {
+    "defaultMessage": "Закрити бібліотеку"
+  },
+  "library.searchArchive": {
+    "defaultMessage": "Пошук в архіві"
+  },
+  "library.filterSpace": {
+    "defaultMessage": "Фільтрувати за простором"
+  },
+  "library.allSpaces": {
+    "defaultMessage": "Усі простори"
+  },
+  "library.archiveFailed": {
+    "defaultMessage": "Не вдалося завантажити архів вкладок."
+  },
+  "library.noMatches": {
+    "defaultMessage": "Немає відповідних вкладок"
+  },
+  "library.more": {
+    "defaultMessage": "Показати більше"
+  },
+  "library.emptySpace": {
+    "defaultMessage": "У цьому просторі немає вкладок"
+  },
+  "library.moveTab": {
+    "defaultMessage": "Перемістити вкладку до простору"
+  },
+  "library.moveHere": {
+    "defaultMessage": "Перетягніть вкладку сюди"
+  },
+  "library.spaceName": {
+    "defaultMessage": "Назва простору"
+  },
+  "library.editName": {
+    "defaultMessage": "Перейменувати простір"
+  },
+  "library.editTheme": { "defaultMessage": "Змінити тему" },
+  "library.spaceMenu": { "defaultMessage": "Параметри простору" },
+  "library.moveSpace": { "defaultMessage": "Перемістити простір (перетягніть або натисніть стрілки)" },
+  "library.earlierSpaces": { "defaultMessage": "Попередні простори" },
+  "library.laterSpaces": { "defaultMessage": "Наступні простори" },
+  "library.moveTitle": {
+    "defaultMessage": "Перемістити до простору «{space}»?"
+  },
+  "library.moveDetail": {
+    "defaultMessage": "Вкладка відкриється в профілі нового простору після вибору."
+  },
+  "library.moveConfirm": {
+    "defaultMessage": "Перемістити вкладку"
+  },
+  "library.routesFailed": {
+    "defaultMessage": "Не вдалося завантажити правила маршрутизації."
+  },
+  "library.reloadRoutes": {
+    "defaultMessage": "Завантажити збережені правила"
+  },
   "settings.section.profiles": {
     "defaultMessage": "Профілі"
   },
@@ -369,11 +447,56 @@
   "settings.preference.littleClickDetail": {
     "defaultMessage": "Утримуйте Ctrl+Alt, коли натискаєте посилання на сторінці."
   },
-  "settings.preference.littleLinks": {
-    "defaultMessage": "Посилання з інших програм"
+  "settings.routes.title": {
+    "defaultMessage": "Керування маршрутами"
   },
-  "settings.preference.littleLinksDetail": {
-    "defaultMessage": "Відкривати посилання з чатів, пошти й інших програм у Little Sol."
+  "settings.routes.detail": {
+    "defaultMessage": "Sol перевіряє посилання з інших програм за цими правилами згори вниз і застосовує перше відповідне правило."
+  },
+  "settings.routes.recent": {
+    "defaultMessage": "Останній простір"
+  },
+  "settings.routes.missing": {
+    "defaultMessage": "Простір недоступний"
+  },
+  "settings.routes.rule": {
+    "defaultMessage": "Правило {number}"
+  },
+  "settings.routes.match": {
+    "defaultMessage": "Умова"
+  },
+  "settings.routes.contains": {
+    "defaultMessage": "URL містить"
+  },
+  "settings.routes.exact": {
+    "defaultMessage": "URL дорівнює"
+  },
+  "settings.routes.regex": {
+    "defaultMessage": "URL відповідає регулярному виразу"
+  },
+  "settings.routes.address": {
+    "defaultMessage": "Адреса або текст"
+  },
+  "settings.routes.destination": {
+    "defaultMessage": "Відкрити в"
+  },
+  "settings.routes.up": {
+    "defaultMessage": "Перемістити правило вгору"
+  },
+  "settings.routes.down": {
+    "defaultMessage": "Перемістити правило вниз"
+  },
+  "settings.routes.delete": {
+    "defaultMessage": "Видалити правило"
+  },
+  "settings.routes.add": {
+    "defaultMessage": "Додати правило"
+  },
+  "settings.routes.fallback": {
+    "defaultMessage": "Якщо жодне правило не підходить"
+  },
+  "settings.routes.invalid": {
+    "defaultMessage": "Введіть текст для кожного правила. Для точного збігу введіть повну HTTP(S)-адресу."
   },
   "settings.preference.startupCategory": {
     "defaultMessage": "ПІД ЧАС ЗАПУСКУ SOL"

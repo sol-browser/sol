@@ -5,14 +5,20 @@
 #include "windows/command_actions.h"
 #include <windows.h>
 #include <dwmapi.h>
+#include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#include <chrono>
+#include <thread>
 #include "include/base/cef_callback.h"
+#include "include/cef_command_line.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_parser.h"
 #include "include/views/cef_display.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "windows/sidebar_menu.h"
 #include "windows/sidebar_peek.h"
+#include "windows/workspace_layout.h"
 #include "workspace/controller.h"
 #include "integrations/x_unread.h"
 #include "app/browsing_profiles.h"
@@ -69,9 +75,7 @@ void PinEditorMouse(CefRefPtr<CefBrowser> browser, const char* type, int x, int 
   params->SetInt("clickCount", 1);
   browser->GetHost()->ExecuteDevToolsMethod(0, "Input.dispatchMouseEvent", params);
 }
-void CheckPinEditor(const std::shared_ptr<State>& s, bool floating) {
-  const auto host = s->browsers.find(floating ? s->peek_id : s->shell_id);
-  if (host == s->browsers.end()) return;
+void ActivateProbeWindow(const std::shared_ptr<State>& s) {
   s->window->Activate();
   const auto root = s->window->GetWindowHandle();
   if (!SetForegroundWindow(root) && !PopupOwnerIsForeground(s->window)) {
@@ -82,6 +86,12 @@ void CheckPinEditor(const std::shared_ptr<State>& s, bool floating) {
     SendInput(2, keys, sizeof(INPUT));
     SetForegroundWindow(root);
   }
+}
+void CheckPinEditor(const std::shared_ptr<State>& s, bool floating) {
+  const auto host = s->browsers.find(floating ? s->peek_id : s->shell_id);
+  if (host == s->browsers.end()) return;
+  ActivateProbeWindow(s);
+  const auto root = s->window->GetWindowHandle();
   RECT client{};
   GetClientRect(root, &client);
   POINT page_sample{client.right - 48, client.bottom - 48};
@@ -411,6 +421,7 @@ void CheckPinnedHint(const std::shared_ptr<State>& s, bool floating) {
     return;
   }
 }
+void CheckLibraryHost(const std::shared_ptr<State>& state, bool floating);
 void CheckFigmaCreate(std::weak_ptr<State> weak, Hover invoke, std::shared_ptr<POINT> cursor) {
   const auto s=weak.lock(); if(!s)return;
   const auto snapshot=s->workspace->Snapshot();
@@ -451,6 +462,11 @@ void CheckFigmaCreate(std::weak_ptr<State> weak, Hover invoke, std::shared_ptr<P
         s->sidebar_peek->Show();
       });
       Later(s, 2500, [](const std::shared_ptr<State>& s) { CheckPinnedHint(s, true); });
+      // Library last, after these tab switches: each check records 1.3 s
+      // after it starts (open, close, glide) and must keep the same page.
+      Later(s, 4300, [](const std::shared_ptr<State>& s) { s->workspace->SetSidebarVisible(true); CheckLibraryHost(s, false); });
+      Later(s, 6000, [](const std::shared_ptr<State>& s) { s->workspace->SetSidebarVisible(false); s->sidebar_peek->Show(); });
+      Later(s, 6900, [](const std::shared_ptr<State>& s) { CheckLibraryHost(s, true); });
     },weak,node,count,cursor),1200);
   },weak,node,nodes->GetSize(),cursor),350);
 }
@@ -620,6 +636,46 @@ void IntegrationProbe(const std::shared_ptr<State>& s) {
     },weak,id),300);
   });
 }
+void CheckLibraryHost(const std::shared_ptr<State>& state, bool floating) {
+  const auto shell = state->browsers.find(state->shell_id);
+  const auto source = floating && state->sidebar_peek ? state->sidebar_peek->browser() : shell == state->browsers.end() ? nullptr : shell->second;
+  if (!source || shell == state->browsers.end()) return;
+  const auto before = state->workspace->Snapshot();
+  const int x = before->GetDictionary("contentBounds")->GetInt("x");
+  const auto active = state->content;
+  const auto frame = source->GetMainFrame();
+  frame->ExecuteJavaScript("document.querySelector('[data-action=library]')?.click()", frame->GetURL(), 0);
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, bool floating, int x, CefRefPtr<CefBrowser> active) {
+    const auto state = weak.lock();
+    if (!state) return;
+    const auto snapshot = state->workspace->Snapshot();
+    const auto bounds = snapshot->GetDictionary("contentBounds");
+    const auto client = state->window->GetClientAreaBoundsInScreen();
+    const auto expected = WorkspaceContentArea(client.width, client.height, state->sidebar_visible,
+                                               state->sidebar_width, state->VisibleLibrarySection(), state->library_spaces);
+    const bool opened = state->library_open && bounds && bounds->GetInt("x") == expected.x &&
+                        bounds->GetInt("width") == expected.width && expected.width >= 320;
+    const bool layout = state->embedded && state->embedded->ActiveMatchesBounds();
+    const auto shell = state->browsers.find(state->shell_id);
+    if (shell == state->browsers.end()) return;
+    const auto frame = shell->second->GetMainFrame();
+    frame->ExecuteJavaScript("document.querySelector('[data-action=close-library]')?.click()", frame->GetURL(), 0);
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, bool floating, int x, CefRefPtr<CefBrowser> active,
+                                                bool opened, bool layout) {
+      const auto state = weak.lock(); if (!state) return;
+      const auto after = state->workspace->Snapshot();
+      auto data = CefDictionaryValue::Create();
+      data->SetString("surface", floating ? "floating" : "docked");
+      data->SetBool("opened", opened && layout);
+      data->SetBool("restored", !state->library_open && state->sidebar_visible != floating &&
+                    after->GetDictionary("contentBounds")->GetInt("x") == x && state->embedded->ActiveMatchesBounds());
+      data->SetBool("same_browser", !active || (state->content && active->IsSame(state->content)));
+      data->SetInt("x_before", x); data->SetInt("x_after", after->GetDictionary("contentBounds")->GetInt("x"));
+      data->SetBool("page_matches", state->embedded->ActiveMatchesBounds()); data->SetBool("sidebar_visible", state->sidebar_visible);
+      state->Record("library_sidebar_host", data);
+    }, weak, floating, x, active, opened, layout), 600);  // Library's page glide is 420 ms.
+  }, std::weak_ptr<State>(state), floating, x, active), 700);
+}
 void Record(const std::shared_ptr<State>& s, const char* event) {
   auto data = CefDictionaryValue::Create();
   // Colour in the middle of where the open sidebar rests, from a capture of
@@ -637,6 +693,18 @@ void Record(const std::shared_ptr<State>& s, const char* event) {
   data->SetString("pixel", hex);
   // The sidebar's own rendering inside its host window.
   if (const HWND host = s->sidebar_peek ? s->sidebar_peek->host() : nullptr; host && IsWindowVisible(host)) {
+    data->SetBool("root_child", (GetWindowLongPtrW(host, GWL_STYLE) & WS_CHILD) && GetAncestor(host, GA_PARENT) == root);
+    data->SetBool("root_owned", (GetWindowLongPtrW(host, GWL_STYLE) & WS_POPUP) && GetWindow(host, GW_OWNER) == root);
+    data->SetDouble("display_scale", scale);
+    if (s->sidebar_peek->is_open() && s->content) {
+      RECT bounds{}; GetWindowRect(host, &bounds);
+      const LONG middle = (bounds.top + bounds.bottom) / 2;
+      const HWND inside = WindowFromPoint({(bounds.left + bounds.right) / 2, middle});
+      const HWND outside = WindowFromPoint({bounds.right + 2, middle});
+      const HWND page = s->content->GetHost()->GetWindowHandle();
+      data->SetBool("panel_hit", IsChild(host, inside));
+      data->SetBool("page_hit", page == outside || IsChild(page, outside));
+    }
     RECT box; GetClientRect(host, &box);
     HDC screen2 = GetDC(nullptr), memory2 = CreateCompatibleDC(screen2);
     HBITMAP bitmap2 = CreateCompatibleBitmap(screen2, box.right, box.bottom);
@@ -652,6 +720,89 @@ void Record(const std::shared_ptr<State>& s, const char* event) {
   s->Record(event, data);
 }
 }  // namespace
+// Measure the first changed screen pixel 32 DIP inside the window from a real
+// pointer entry. Sampling from a worker keeps GetPixel off the CEF UI thread.
+// |count| entries; the first waits |first_wait_ms| with the pointer away.
+static void MeasureEdge(const std::shared_ptr<State>& state, int count, int first_wait_ms) {
+  const HWND root = state->window->GetWindowHandle();
+  const auto scale = state->window->GetDisplay()->GetDeviceScaleFactor();
+  state->sidebar_peek_probe = false;  // Exercise ordinary edge polling and leave detection.
+  POINT origin{};
+  ClientToScreen(root, &origin);
+  const LONG y = origin.y + static_cast<LONG>(350 * scale);
+  const POINT edge{origin.x + static_cast<LONG>(3 * scale), y};
+  const POINT sample{origin.x + static_cast<LONG>(32 * scale), y};
+  const POINT away{origin.x + static_cast<LONG>(550 * scale), y};
+  std::thread([root, edge, sample, away, weak = std::weak_ptr<State>(state), scale, count, first_wait_ms] {
+    using Clock = std::chrono::steady_clock;
+    // steady_clock reads QueryPerformanceCounter, like the native marks.
+    const auto clock_ms = [](Clock::time_point t) { return std::chrono::duration<double, std::milli>(t.time_since_epoch()).count(); };
+    std::vector<double> entered, painted;
+    auto own = [root](POINT p) {
+      return GetAncestor(WindowFromPoint(p), GA_ROOTOWNER) == root;
+    };
+    std::vector<double> delays;
+    std::string error;
+    POINT old{}, last{};
+    const bool have_cursor = GetCursorPos(&old) != FALSE;
+    bool moved = false;
+    auto move = [&](POINT p) {
+      POINT current{};
+      if (!have_cursor || !GetCursorPos(&current) || (moved && (current.x != last.x || current.y != last.y)) ||
+          !own(p) || !SetCursorPos(p.x, p.y)) return false;
+      moved = true; last = p; return true;
+    };
+    HDC dc = GetDC(nullptr);
+    const COLORREF page = RGB(33, 100, 145);
+    // 15 cycles per process, then repeat in reverse host order for 30 per host.
+    for (int i = 0; i < count && dc; ++i) {
+      if (!move(away)) { error = "cursor moved or window covered"; break; }
+      Sleep(i ? 650 : first_wait_ms);
+      if (!own(sample) || GetPixel(dc, sample.x, sample.y) != page) { error = "fixture pixel unavailable"; break; }
+      const auto start = Clock::now();
+      if (!move(edge)) { error = "edge unavailable"; break; }
+      bool shown = false;
+      while (Clock::now() - start < std::chrono::seconds(1)) {
+        if (!own(sample)) break;
+        const auto color = GetPixel(dc, sample.x, sample.y);
+        // The neutral panel is much brighter in red than the blue fixture.
+        // A dark shadow over that fixture cannot cross this threshold.
+        if (color != CLR_INVALID && GetRValue(color) > 100) {
+          const auto now = Clock::now();
+          delays.push_back(std::chrono::duration<double, std::milli>(now - start).count());
+          entered.push_back(clock_ms(start)); painted.push_back(clock_ms(now));
+          shown = true; break;
+        }
+        Sleep(1);
+      }
+      if (!shown) { error = "no visible panel pixel"; break; }
+      Sleep(190);  // Complete the 170 ms entry before leaving.
+    }
+    if (dc) ReleaseDC(nullptr, dc); else error = "screen DC unavailable";
+    POINT current{};
+    if (moved && GetCursorPos(&current) && current.x == last.x && current.y == last.y) SetCursorPos(old.x, old.y);
+    CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, std::vector<double> delays, std::vector<double> entered,
+                                          std::vector<double> painted, std::string error, float scale, int count) {
+      if (auto s = weak.lock()) {
+        s->sidebar_peek_probe = true;
+        s->sidebar_peek->Hide();
+        auto data = CefDictionaryValue::Create();
+        const auto list = [](const std::vector<double>& values) {
+          auto out = CefListValue::Create();
+          for (size_t i = 0; i < values.size(); ++i) out->SetDouble(i, values[i]);
+          return out;
+        };
+        data->SetList("edge_to_pixel_ms", list(delays)); data->SetString("error", error); data->SetDouble("scale", scale);
+        data->SetList("entered_ms", list(entered)); data->SetList("painted_ms", list(painted));
+        const HWND host = s->sidebar_peek->host();
+        data->SetBool("child", host && (GetWindowLongPtrW(host, GWL_STYLE) & WS_CHILD) &&
+            GetAncestor(host, GA_PARENT) == s->window->GetWindowHandle());
+        s->sidebar_peek_done = error.empty() && static_cast<int>(delays.size()) == count;
+        s->Record("peek_edge_measurement", data);
+      }
+    }, weak, std::move(delays), std::move(entered), std::move(painted), std::move(error), scale, count));
+  }).detach();
+}
 static void Start(const std::shared_ptr<State>& state);
 void OnSidebarPeekProbeLoad(const std::shared_ptr<State>& state, const std::string& url) {
   if (!state->sidebar_peek_probe || !url.starts_with("http") || !state->workspace) return;
@@ -672,6 +823,18 @@ static void Start(const std::shared_ptr<State>& state) {
       state->window->SetBounds(CefRect(area.x + 240, area.y + 80, 1100, 820));
     }
     state->workspace->SetSidebarVisible(false);
+    const auto mode = CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-sidebar-peek").ToString();
+    if (!mode.empty()) ActivateProbeWindow(state);
+    if (mode == "child-edge" || mode == "owned-edge") {
+      Later(state, 500, [](const std::shared_ptr<State>& s) { MeasureEdge(s, 15, 900); });
+      return;
+    }
+    // "<host>-cold-<ms>": the first opening of this process, after |ms| idle.
+    if (mode.starts_with("child-cold-") || mode.starts_with("owned-cold-")) {
+      const int wait = std::clamp(std::atoi(mode.substr(11).c_str()), 300, 60000);
+      MeasureEdge(state, 1, wait);
+      return;
+    }
     Later(state,650,[](const std::shared_ptr<State>& s){
       const auto shell=s->browsers.find(s->shell_id);
       if(shell!=s->browsers.end())shell->second->GetMainFrame()->ExecuteJavaScript(
@@ -710,8 +873,37 @@ static void Start(const std::shared_ptr<State>& state) {
         browser->GetMainFrame()->ExecuteJavaScript(
             "{const i=document.createElement('input');i.value='rename me';"
             "i.style.cssText='position:fixed;left:20px;top:200px;width:150px;height:24px;z-index:9';"
+            "i.addEventListener('click',e=>{if(e.isTrusted)console.info('RED_PEEK:'+JSON.stringify({nativeInputClick:true}));},{once:true});"
             "document.body.appendChild(i);i.focus();i.select();}", browser->GetMainFrame()->GetURL(), 0);
       }
+    });
+    // The editing-menu check at 2900 ms needs its original text selection.
+    // A native click collapses that selection, so exercise it afterwards.
+    Later(state, 3200, [](const std::shared_ptr<State>& s) {
+      if (CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-sidebar-peek").empty()) return;
+      auto browser = s->sidebar_peek ? s->sidebar_peek->browser() : nullptr;
+      if (!browser || !s->sidebar_peek->window_visible()) return;
+      const HWND widget = browser->GetHost()->GetWindowHandle();
+      const float scale = s->window->GetDisplay()->GetDeviceScaleFactor();
+      POINT point{static_cast<LONG>(95 * scale), static_cast<LONG>(212 * scale)};
+      ClientToScreen(widget, &point);
+      const auto hits_widget = [widget](POINT p) {
+        const HWND hit = WindowFromPoint(p);
+        return hit == widget || IsChild(widget, hit);
+      };
+      POINT old{}, current{};
+      if (!hits_widget(point) || !GetCursorPos(&old) || !SetCursorPos(point.x, point.y)) return;
+      if (GetCursorPos(&current) && current.x == point.x && current.y == point.y && hits_widget(current)) {
+        INPUT click[2]{};
+        click[0].type = click[1].type = INPUT_MOUSE;
+        click[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+        click[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+        SendInput(2, click, sizeof(INPUT));
+      }
+      CefPostDelayedTask(TID_UI, base::BindOnce([](POINT old, POINT point) {
+        POINT cursor{};
+        if (GetCursorPos(&cursor) && cursor.x == point.x && cursor.y == point.y) SetCursorPos(old.x, old.y);
+      }, old, point), 75);
     });
     Later(state, 2900, [](const std::shared_ptr<State>& s) {
       auto browser = s->sidebar_peek ? s->sidebar_peek->browser() : nullptr;
@@ -751,6 +943,7 @@ static void Start(const std::shared_ptr<State>& state) {
     Later(state,15300,&CheckWhatsAppPin);
     // Leave time for an interactive runner to foreground this owned test window.
     Later(state,18000,&IntegrationProbe);
+    // The Library checks follow the integration and pinned-hint chain (CheckFigmaCreate).
   }
 }
 }  // namespace red

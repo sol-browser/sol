@@ -6,6 +6,19 @@
 
 namespace red {
 inline constexpr int kPopupOpeningMs = 280;
+// CSS cubic-bezier(x1, y1, x2, y2) at progress |x| in 0..1 (x solved by bisection).
+inline double CubicBezier(double x1, double y1, double x2, double y2, double x) {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  double lo = 0, hi = 1, t = x;
+  for (int i = 0; i < 32; ++i) {
+    t = (lo + hi) / 2;
+    const double u = 1 - t, bx = 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t;
+    (bx < x ? lo : hi) = t;
+  }
+  const double u = 1 - t;
+  return 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t;
+}
 inline constexpr int kPopupClosingMs = 280;
 inline bool NativeMotionEnabled() {
   BOOL enabled = TRUE;

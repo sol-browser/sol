@@ -5,6 +5,7 @@ import { integrationEnabled, integrationSettingsCatalog, unlistedIntegrations, p
 import { Settings2, Palette, ArrowUpRight, Check, Puzzle, Info, Search, Keyboard, Archive, UserRound, Languages, ShieldCheck } from 'lucide-react';
 import { BlockerSettings } from './BlockerSettings';
 import { PreferencesSettings } from './PreferencesSettings';
+import { LinkRoutingSettings } from './LinkRoutingSettings';
 import { SettingsToggle } from './SettingsToggle';
 import { Icon } from './Icon';
 import { ThemePanel } from './Theme';
@@ -163,8 +164,15 @@ export function Settings() {
       case 'links':
       case 'keyboard':
       case 'tabs':
-        return <PreferencesSettings section={section} preferences={data?.preferences} keyboard={data?.keyboard ?? []}
-          disabled={disabled} save={action} onError={setError} navigate={setSection} />;
+        return <>
+          {section === 'links' && <LinkRoutingSettings
+            key={data?.linkRoutingRevision ?? 0}
+            routing={data?.preferences.linkRouting ?? { rules: [], fallback: data?.preferences.littleSolLinks === false ? 'recent' : 'littleSol' }}
+            spaces={data?.spaces ?? []} disabled={disabled} save={value => action({ method: 'settings.set', key: 'linkRouting', value,
+              expectedRevision: data?.linkRoutingRevision ?? 0 })} />}
+          <PreferencesSettings section={section} preferences={data?.preferences} keyboard={data?.keyboard ?? []}
+            disabled={disabled} save={action} onError={setError} navigate={setSection} />
+        </>;
       case 'siteSearch':
         return <SiteSearchSettings sites={data?.preferences.siteSearches} activation={data?.preferences.siteSearchActivation}
           disabled={disabled} save={action} onError={setError} nativeError={error} />;
@@ -336,7 +344,7 @@ export function Settings() {
         {subtabs.length > 0 && <nav className="settings-subnav" aria-label={heading}>
           {subtabs.map(item => <button type="button" key={item} data-subsection={item}
             aria-current={section === item ? 'page' : undefined} onClick={() => setSection(item)}>
-            {item === 'links' ? 'Little Sol' : t(`settings.section.${item}`)}
+            {t(`settings.section.${item}`)}
           </button>)}
         </nav>}
         {error && <p className="settings-error" role="alert">{error}</p>}

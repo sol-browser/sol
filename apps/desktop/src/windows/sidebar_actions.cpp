@@ -27,7 +27,10 @@ bool HandleSidebarAction(const std::shared_ptr<State>& s,CefRefPtr<CefBrowser> s
   const bool x_badge=method=="tab.setXBadgeHidden";
   const bool toggle_integration=method=="tab.setIntegration";
   const bool preload=method=="tab.preload";
-  if(!new_tab && !drag && !batch && !edit_pinned && !confirm_move && !mute && !duplicate && !integration && !x_badge && !toggle_integration && !preload && method!="browser.restartToUpdate" && method!="settings.openProfiles")return false;
+  const bool library=method=="library.setOpen" || method=="library.setSection";
+  const bool creating=method=="space.startCreate" || method=="space.createDraft" || method=="space.cancelDraft";
+  const bool confirm_delete=method=="space.confirmDelete";
+  if(!library && !creating && !confirm_delete && !new_tab && !drag && !batch && !edit_pinned && !confirm_move && !mute && !duplicate && !integration && !x_badge && !toggle_integration && !preload && method!="browser.restartToUpdate" && method!="settings.openProfiles")return false;
   if(!s || !s->workspace || persistent){cb->Failure(400,"Invalid sidebar action");return true;}
   if(s->workspace->WindowClosing()){cb->Failure(409,"Window is closing");return true;}
   if(s->probe) {
@@ -36,6 +39,69 @@ bool HandleSidebarAction(const std::shared_ptr<State>& s,CefRefPtr<CefBrowser> s
     s->Record("shared_sidebar_action",event);
   }
   const auto respond=[s,cb]{Reply(cb,s->workspace->Snapshot());};
+  if (library) {
+    const bool opening = method == "library.setOpen";
+    if (d->GetSize() != 2 || (opening ? d->GetType("open") != VTYPE_BOOL : d->GetType("section") != VTYPE_STRING))
+      cb->Failure(400, "Invalid Library action");
+    else if (!(opening ? s->workspace->SetLibraryOpen(d->GetBool("open")) :
+                          s->workspace->SetLibrarySection(d->GetString("section").ToString())))
+      cb->Failure(409, "Library action is unavailable in this window");
+    else respond();
+    return true;
+  }
+  if (confirm_delete) {
+    if (d->GetSize() != 2 || d->GetType("id") != VTYPE_STRING || d->GetString("id").length() != 36) { cb->Failure(400, "Invalid Space command"); return true; }
+    if (!s->panel_popup || !s->panel_popup->ConfirmSpaceDelete(d->GetString("id").ToString())) cb->Failure(409, "Delete confirmation is unavailable");
+    else respond();
+    return true;
+  }
+  if (creating) {
+    // The sidebar's Create Space form (both hosts). Its theme is previewed on the
+    // window by the spaceTheme editor; Create keeps that preview as the new
+    // Space's theme, Cancel reverts it.
+    if (s->standalone_window) { cb->Failure(403, "Spaces are unavailable in this window"); return true; }
+    const auto close_theme = [s] { if (s->panel_popup && s->panel_popup->is_open() && s->panel_popup->kind() == "spaceTheme") s->panel_popup->Hide(false); };
+    if (method == "space.startCreate") {
+      if (d->GetSize() != 1) { cb->Failure(400, "Invalid Space command"); return true; }
+      s->workspace->RequestSidebar("newSpaceFromLibrary"); respond(); return true;
+    }
+    if (method == "space.cancelDraft") {
+      if (d->GetSize() != 3 || d->GetType("themed") != VTYPE_BOOL || d->GetType("library") != VTYPE_BOOL) { cb->Failure(400, "Invalid Space command"); return true; }
+      close_theme();
+      if (d->GetBool("themed")) s->workspace->RevertThemePreview();
+      // Started from Library's +: back to Library.
+      if (d->GetBool("library")) s->workspace->SetLibraryOpen(true);
+      respond(); return true;
+    }
+    const bool profile = d->HasKey("profileId");
+    if (d->GetSize() != (profile ? 6U : 5U) || d->GetType("title") != VTYPE_STRING || d->GetType("icon") != VTYPE_STRING ||
+        d->GetType("themed") != VTYPE_BOOL || d->GetType("library") != VTYPE_BOOL ||
+        (profile && d->GetType("profileId") != VTYPE_STRING)) { cb->Failure(400, "Invalid Space command"); return true; }
+    auto command = CefDictionaryValue::Create();
+    command->SetString("method", "space.create"); command->SetString("title", d->GetString("title")); command->SetString("icon", d->GetString("icon"));
+    if (profile) command->SetString("profileId", d->GetString("profileId"));
+    command->SetDouble("expectedRevision", s->workspace->tree_revision());
+    close_theme();
+    const Theme theme = s->theme; const bool themed = d->GetBool("themed"), to_library = d->GetBool("library");
+    const auto before = s->workspace->Snapshot()->GetString("activeSpace").ToString();
+    s->workspace->Handle(command, [weak = std::weak_ptr<State>(s), cb, theme, themed, to_library, before](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
+      const auto state = weak.lock(); if (!state || !state->workspace) return;
+      if (code) { cb->Failure(code, error); return; }
+      const auto created = state->workspace->Snapshot()->GetString("activeSpace").ToString();
+      if (created.empty() || created == before) { cb->Failure(500, "The new space did not open"); return; }
+      // Started from Library's +: back to Library, where the new column now is.
+      const auto finish = [weak, cb, to_library] {
+        const auto state = weak.lock(); if (!state || !state->workspace) return;
+        if (to_library) state->workspace->SetLibraryOpen(true);
+        Reply(cb, state->workspace->Snapshot());
+      };
+      if (!themed) { finish(); return; }
+      state->workspace->SetTheme(theme, true, [cb, finish](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
+        if (code) cb->Failure(code, error); else finish();
+      }, created);
+    });
+    return true;
+  }
   if (preload) {
     // A hint, not a command: no snapshot in reply, and anything not eligible is ignored.
     if (d->GetSize()!=2 || d->GetType("id")!=VTYPE_STRING || d->GetString("id").length()!=36) { cb->Failure(400,"Invalid preload"); return true; }
