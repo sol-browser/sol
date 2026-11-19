@@ -32,9 +32,12 @@ test('theme preview merges only validated theme/revision and retains the existin
 test('live sidebar/developer tools resize merges only the validated layout',()=>{
   const box={x:0,y:0,width:10,height:10};
   const previous={revision:20,activeSpace:folder,nodes:[{id:tab}],theme:DEFAULT_THEME,devTools:{id:7,side:'right',extent:420,header:box,divider:box}};
-  const delta={layoutOnly:true,revision:21,sidebarWidth:300,sidebarResizing:false,devTools:{id:7,side:'right',extent:500,header:box,divider:{...box,x:300}}};
+  const sidebarBackground = {x:6,y:31,width:1100,height:820};
+  const delta={layoutOnly:true,revision:21,sidebarWidth:300,sidebarResizing:false,sidebarBackground,devTools:{id:7,side:'right',extent:500,header:box,divider:{...box,x:300}}};
   const next=parseSnapshotUpdate(JSON.stringify(delta),previous);
   assert.equal(next.nodes,previous.nodes);assert.equal(next.devTools.extent,500);assert.equal(next.revision,21);assert.equal(next.sidebarWidth,300);
+  assert.deepEqual(next.sidebarBackground, sidebarBackground);
+  assert.throws(() => parseSnapshotUpdate(JSON.stringify({...delta,sidebarBackground:{...sidebarBackground,width:0}}),previous));
   assert.equal(parseSnapshotUpdate(JSON.stringify({...delta,revision:19}),previous),previous);
   assert.equal(parseSnapshotUpdate(JSON.stringify({layoutOnly:true,revision:20,sidebarResizing:false}),previous).devTools,undefined);
   for(const bad of [{...delta,nodes:[]},{...delta,revision:-1},{...delta,devTools:{...delta.devTools,side:'top'}},{...delta,devicePreview:{id:1}},{...delta,sidebarWidth:100},{...delta,sidebarResizing:undefined}])

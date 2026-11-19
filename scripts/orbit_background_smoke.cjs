@@ -25,6 +25,61 @@ const fs=require('fs'),path=require('path'),assert=require('assert/strict');
    assert.equal(read.status,0,read.stderr?.toString());const actual=JSON.parse(read.stdout.toString());
    samples.forEach(([x,y],i)=>{const expected=paletteFieldAt(p,(x+.5)/width,(y+.5)/height,dark);assert(actual[i].every((c,j)=>Math.abs(c-expected[j])<=2),JSON.stringify({name,dark,rotation,fill,x,y,actual:actual[i],expected}));checked++;});
   }
-  console.log(JSON.stringify({passed:true,samples:checked,directory:output}));
+  const stylesheet=fs.readFileSync(path.resolve(__dirname,'../apps/browser-ui/src/style.css'),'utf8');
+  let crops=0;
+  for(const [width,height,panelWidth,y] of [[1100,820,256,31],[740,530,320,31],[1600,900,440,6]])for(const dark of [false,true]){
+   const x=6, panelHeight=height-y-8;
+   const palette={version:2,count:3,rotation:90,radius:380,lightness:66,harmony:0,kind:0,fill:100,
+    circles:[{hue:30,distance:850,size:27},{hue:120,distance:850,size:62},{hue:240,distance:850,size:37}]};
+   await page.setViewportSize({width,height});
+   await page.setContent('<main class="workspace"></main>');
+   await page.addStyleTag({content:stylesheet});
+   await page.locator('html').evaluate((root,variables)=>{
+    for(const [key,value] of Object.entries(variables))root.style.setProperty(key,value);
+   },paletteVariables({hue:30,intensity:70,mode:dark?'dark':'light',noise:0,dark,palette}));
+   const expected=path.join(output,`docked-${width}-${dark?'dark':'light'}.png`);
+   const actual=path.join(output,`floating-${width}-${dark?'dark':'light'}.png`);
+   await page.screenshot({path:expected,clip:{x,y,width:panelWidth,height:panelHeight}});
+   await page.setViewportSize({width:panelWidth,height:panelHeight});
+   await page.locator('main').evaluate((root,{width,height,x,y})=>{
+    root.className='peek-root';
+    root.style.setProperty('--peek-field-size',`${width}px ${height}px`);
+    root.style.setProperty('--peek-field-origin',`${-x}px ${-y}px`);
+   },{width,height,x,y});
+   await page.screenshot({path:actual});
+   const diff=spawnSync('python',['-c',`
+import ctypes, json, sys
+from PIL import Image, ImageChops
+a, b = (Image.open(p).convert("RGB") for p in sys.argv[1:])
+w, h = a.size
+delta = ImageChops.difference(a, b)
+edges = [(1, h//2), (w-2, h//2), (w//2, 1), (w//2, h-2)]
+gdi = ctypes.windll.gdi32
+gdi.CreateRoundRectRgn.restype = ctypes.c_void_p
+gdi.PtInRegion.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+gdi.DeleteObject.argtypes = [ctypes.c_void_p]
+# Sol's settled panel region at 100% scale (sidebar_peek.cpp).
+region = gdi.CreateRoundRectRgn(0, 0, w+1, h+1, 12, 12)
+assert region
+corners = [[(x+dx, y+dy) for dx in range(6) for dy in range(6)]
+           for x in (0, w-6) for y in (0, h-6)]
+clipped = sum(max(delta.getpixel(p)) > 2 and not gdi.PtInRegion(region, *p)
+              for corner in corners for p in corner)
+gdi.DeleteObject(region)
+print(json.dumps({
+    "interior": max(hi for _, hi in delta.crop((6, 6, w-6, h-6)).getextrema()),
+    "edges": [sum(b.getpixel(p))-sum(a.getpixel(p)) for p in edges],
+    "clipped": clipped,
+    "corners": [max(max(delta.getpixel(p)) for p in corner) for corner in corners]
+}))
+`,expected,actual]);
+   assert.equal(diff.status,0,diff.stderr?.toString());
+   const pixels=JSON.parse(diff.stdout);
+   assert(pixels.interior<=2,`Floating crop differs inside the outline at ${width} × ${height}: ${diff.stdout}`);
+   assert(pixels.edges.every(delta=>delta>0&&delta<85),`Expected a subtle outline: ${diff.stdout}`);
+   assert(pixels.clipped===0&&pixels.corners.every(delta=>delta>2),`Expected the outline inside all four rounded corners: ${diff.stdout}`);
+   crops++;
+  }
+  console.log(JSON.stringify({passed:true,samples:checked,crops,directory:output}));
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

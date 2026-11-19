@@ -37,9 +37,25 @@ class PopupPresentation {
     if (motion_->closing) { Conceal(); return; }
     ++motion_->generation; Uncloak(*motion_); ClearProxy(*motion_);
     if (motion_->layered && IsWindow(motion_->handle)) SetLayeredWindowAttributes(motion_->handle, 0, 255, LWA_ALPHA);
+    if (motion_->opening && motion_->resize) {
+      // A move of the owner settles motion immediately. Apply deferred content
+      // geometry after the caller finishes repositioning the popup.
+      CefPostTask(TID_UI, base::BindOnce(&PopupPresentation::ApplyResize, std::weak_ptr<Motion>(motion_)));
+    }
+    motion_->opening = false;
+  }
+  void ResizeAfterOpening(base::OnceClosure resize) {
+    if (motion_ && motion_->opening) {
+      // Keep only the latest layout report while the entry uses its staged viewport.
+      motion_->resize = std::move(resize);
+      return;
+    }
+    if (motion_) motion_->resize.Reset();
+    std::move(resize).Run();
   }
   void Conceal() {
     if (!motion_ || !motion_->window) return;
+    motion_->resize.Reset();
     motion_->closing = false;
     ++motion_->generation; motion_->window->Hide();
     Settle();
@@ -54,6 +70,7 @@ class PopupPresentation {
     auto& m = *motion_;
     const auto state = m.state.lock();
     if (!state || !state->embedded) { Conceal(); return false; }
+    m.resize.Reset(); m.opening = false;
     if (!m.composable || fade_ms > 0) {
       // Over another popup the composed proxy would draw below it: fade the window itself.
       const auto generation = ++m.generation;
@@ -98,6 +115,7 @@ class PopupPresentation {
               bool allow_sidebar = true) {
     if (!motion_ || !motion_->window) return;
     auto& m = *motion_; const auto generation = ++m.generation;
+    m.resize.Reset(); m.opening = false;
     SetOwner(m, allow_sidebar);
     m.reduced = reduced_motion; m.closing = false; m.growth_started = GetTickCount64(); m.composable = composable;
     if (m.layered) SetLayeredWindowAttributes(m.window->GetWindowHandle(), 0, reduced_motion ? 255 : 1, LWA_ALPHA);
@@ -107,6 +125,7 @@ class PopupPresentation {
       if (m.layered) SetLayeredWindowAttributes(m.handle, 0, 255, LWA_ALPHA);
       return;
     }
+    m.opening = true;
     const auto state = m.state.lock();
     const BOOL cloak = TRUE;
     if (composable && state && state->embedded && SUCCEEDED(DwmSetWindowAttribute(m.handle, DWMWA_CLOAK, &cloak, sizeof(cloak)))) {
@@ -131,7 +150,8 @@ class PopupPresentation {
     std::weak_ptr<State> state;
     HWND handle = nullptr;
     unsigned long long generation = 0, started = 0, growth_started = 0;
-    bool layered = false, composed = false, cloaked = false, closing = false, reduced = false;
+    base::OnceClosure resize;
+    bool layered = false, composed = false, cloaked = false, opening = false, closing = false, reduced = false;
     bool composable = true;  // False over another popup: opens and closes by its own alpha.
     int fade_ms = kPopupClosingMs;
   };
@@ -148,6 +168,13 @@ class PopupPresentation {
     if (!motion.composed) return;
     if (const auto state = motion.state.lock(); state && state->embedded) state->embedded->EndPopupAnimation(motion.handle);
     motion.composed = false;
+  }
+  static void ApplyResize(std::weak_ptr<Motion> weak) {
+    const auto m = weak.lock();
+    if (m && m->window && !m->opening && m->resize) {
+      auto resize = std::move(m->resize);
+      std::move(resize).Run();
+    }
   }
   static void ContinueDismiss(std::weak_ptr<Motion> weak, unsigned long long generation, bool presented) {
     const auto m = weak.lock();
@@ -206,12 +233,17 @@ class PopupPresentation {
     else if (m->composed) {
       // Give DWM a frame with the host fully opaque before dropping the proxy.
       CefPostDelayedTask(TID_UI, base::BindOnce(&PopupPresentation::ClearAfterFade, weak, generation), 16);
+    } else {
+      m->opening = false;
+      ApplyResize(weak);
     }
   }
   static void ClearAfterFade(std::weak_ptr<Motion> weak, unsigned long long generation) {
     const auto m = weak.lock();
     if (!m || !m->window || m->generation != generation) return;
     ClearProxy(*m);
+    m->opening = false;
+    ApplyResize(weak);
   }
   static constexpr int kHandoffMs = 200;
   std::shared_ptr<Motion> motion_;

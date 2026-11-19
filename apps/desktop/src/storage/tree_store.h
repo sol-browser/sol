@@ -98,6 +98,12 @@ std::vector<std::string> FolderNodeIds(const TreeSnapshot& tree, const std::stri
 enum class TreeAction { CreateFolder, CreateTab, Rename, AutomaticTitle, Move, Place, Pin, Expand, Activate, RemoveLeaf, RemoveFolder, SetUrl, Unload, Archive, Restore,
   CreateSpace, EditSpace, DeleteSpace, SwitchSpace, MoveSpace, MoveToSpace,
   CreateSplit, RemoveSplit, RenameSplit, LayoutSplit, AddSplitPane, RemoveSplitPane, SwapSplit, AutoArchive, CreateProfile, RenameProfile, SetSpaceProfile, ExportSpace, SetXBadgeHidden };
+enum class SpaceDropMode { Before, After, Inside };
+struct SpacePlacement {
+  std::string target;
+  SpaceDropMode mode;
+  bool pinned;
+};
 struct TreeCommand {
   TreeAction action;
   std::int64_t expected_revision = 0;
@@ -120,7 +126,11 @@ struct TreeCommand {
   // SwapSplit: the second page (|parent| is the first); both empty swaps a two-page group.
   std::string split_pane;
   int64_t not_after = 0;  // Native auto-archive eligibility cutoff.
+  std::optional<SpacePlacement> placement;  // MoveToSpace relative to a row, or append to a section.
 };
+struct SpaceMovePosition { std::string parent; int position; };
+// Check before unloading live pages and resolve again against the tree in SQLite.
+std::optional<SpaceMovePosition> ResolveSpacePlacement(const TreeSnapshot& tree, const TreeCommand& command);
 struct TreeResult {
   int code = 0;
   std::string error, created_id;

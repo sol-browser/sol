@@ -15,6 +15,10 @@ inline int SidebarWidth(int preferred, int window_width) {
 inline constexpr int kToolbarHeight = 31;
 inline constexpr int kContentInset = 8;
 struct WorkspaceArea { int x, y, width, height; };
+inline constexpr int kSidebarPeekInset = 6;
+inline int SidebarPeekTop(bool browser_fullscreen) {
+  return browser_fullscreen ? kSidebarPeekInset : kToolbarHeight;
+}
 // The Spaces board is as wide as its columns need (library.css: an 84 DIP
 // rail, 24 of row padding, 268-wide columns 16 apart and a 56-wide new-Space
 // slot), up to what keeps 320 DIP of the page visible. 0: count unknown.

@@ -27,7 +27,6 @@
 
 namespace red {
 namespace {
-constexpr int kGap = 6;          // Space between the window edge and the floating sidebar (DIP).
 constexpr int kOutsideKeepOpenWidth = 144;  // Left-edge overshoot allowance (DIP), never an opening trigger.
 constexpr int kPoll = 15;        // Pointer polling interval near the edge/while open (ms).
 constexpr int kIdlePoll = 60;    // Far from the edge; edge passes are recovered from mouse history.
@@ -295,8 +294,8 @@ void Mark(const std::shared_ptr<State>& state, const char* event, double ms, int
 CefRect SidebarPeek::Target() const {
   auto s = state_.lock(); if (!s || !s->window) return {};
   const auto client = s->window->GetClientAreaBoundsInScreen();
-  const int top = s->embedded && s->embedded->IsBrowserFullscreen() ? kGap : kToolbarHeight;
-  return CefRect(kGap, top, SidebarWidth(s->sidebar_width, client.width),
+  const int top = SidebarPeekTop(s->embedded && s->embedded->IsBrowserFullscreen());
+  return CefRect(kSidebarPeekInset, top, SidebarWidth(s->sidebar_width, client.width),
                  std::max(120, client.height - top - kContentInset));
 }
 void SidebarPeek::ConfigureHost() {

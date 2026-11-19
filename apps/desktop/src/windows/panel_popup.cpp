@@ -312,7 +312,16 @@ void PanelPopup::Reposition() {
     const auto placement = PlaceIntegrationCard(root, anchor_, width, height, kToolbarHeight, integration_favorite_);
     target = placement.bounds; origin_x_ = placement.origin_x; integration_origin_y_ = placement.origin_y;
   }
-  if (window_->GetBounds() != target) { if (presented_) presentation_.Settle(); window_->SetBounds(target); }
+  const auto current = window_->GetBounds();
+  if (current != target) {
+    if (state && state->site_probe && presented_ && kind_ == "site" && current.height != target.height) {
+      auto details = CefDictionaryValue::Create(); details->SetInt("request", request_);
+      details->SetInt("height", target.height); details->SetBool("composed", presentation_.composed());
+      state->Record("site_popup_resized", details);
+    }
+    if (presented_) presentation_.Settle();
+    window_->SetBounds(target);
+  }
   if (modal_owner_ && state && state->embedded) state->embedded->SetModalShade(true);
 }
 bool PanelPopup::EditPinnedPage(const std::string& id) {
@@ -1079,7 +1088,18 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     if (!presented_ && !translation_probe && !(hover_only_ ? PointerOverIntegration() : PopupOwnerIsForeground(s->window))) {
       Hide(false); cb->Failure(409, "Panel opener is unavailable"); return true;
     }
-    height_ = d->GetInt("height"); Reposition(); window_->Layout();
+    const int height = d->GetInt("height");
+    if (s->site_probe && kind_ == "site" && presented_ && height != height_) {
+      auto details = CefDictionaryValue::Create(); details->SetInt("request", request_);
+      details->SetInt("height", height); details->SetBool("composed", presentation_.composed());
+      s->Record("site_popup_resize_requested", details);
+    }
+    presentation_.ResizeAfterOpening(base::BindOnce([](std::weak_ptr<PanelPopup> weak, int height) {
+      if (auto self = weak.lock(); self && self->open_ && self->window_) {
+        self->height_ = height;
+        self->Reposition(); self->window_->Layout();
+      }
+    }, weak_from_this(), height));
     // Cloaking a staged active window can move foreground away from its owner.
     // The modal appears at once at its final size, so it needs no staging.
     prepared_ = true; if (!presented_ && !modal()) presentation_.Stage();
@@ -1110,7 +1130,7 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
         }
       }
       auto details = CefDictionaryValue::Create(); details->SetInt("request", request_);
-      if (modal) details->SetString("kind", kind_);
+      details->SetString("kind", kind_);
       details->SetDouble("elapsed_ms", static_cast<double>(GetTickCount64() - opened_ms_));
       details->SetInt("height", window_->GetBounds().height); details->SetBool("layered", presentation_.layered());
       details->SetBool("composed", presentation_.composed());
@@ -1121,7 +1141,6 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
       details->SetBool("bottom", kind_ == "archive");
       if (hover_only_) {
         const auto bounds = window_->GetBounds();
-        details->SetString("kind", "integration");
         const auto peek = s->browsers.find(s->peek_id);
         details->SetString("surface", peek != s->browsers.end() &&
             peek->second->GetHost()->GetWindowHandle() == integration_surface_ ? "floating" : "docked");

@@ -264,6 +264,45 @@ bool ValidSpaceFields(const Space& s) {
 }
 bool ValidProfileName(const std::string& name) { return SafeText(name, 40); }
 
+std::optional<SpaceMovePosition> ResolveSpacePlacement(const TreeSnapshot& tree, const TreeCommand& command) {
+  const auto* source = FindConst(tree, command.id);
+  if (!command.placement || !source || source->favorite || source->archived ||
+      std::none_of(tree.spaces.begin(), tree.spaces.end(), [&](const auto& space) { return space.id == command.space; }))
+    return std::nullopt;
+  const auto& drop = *command.placement;
+  if (source->folder && !drop.pinned) return std::nullopt;
+  const bool inside = drop.mode == SpaceDropMode::Inside;
+  if (drop.target.empty()) {
+    if (!inside) return std::nullopt;
+    return SpaceMovePosition{"", -1};
+  }
+  const auto* target = FindConst(tree, drop.target);
+  if (!target || target == source || target->favorite || target->archived || SpaceOf(tree, *target) != command.space ||
+      target->pinned != drop.pinned || (inside && !target->folder)) return std::nullopt;
+  const auto& parent = inside ? target->id : target->parent;
+  int parent_depth = 0;
+  for (auto ancestor = FindConst(tree, parent); ancestor; ancestor = FindConst(tree, ancestor->parent)) {
+    if (ancestor == source) return std::nullopt;
+    ++parent_depth;
+  }
+  if (parent_depth >= 64) return std::nullopt;
+  if (source->folder && parent_depth) {
+    std::map<std::string, std::vector<std::string>> children;
+    for (const auto& entry : tree.nodes) if (!entry.parent.empty()) children[entry.parent].push_back(entry.id);
+    std::vector<std::pair<std::string, int>> pending{{source->id, parent_depth + 1}};
+    // A valid parent can still push a deeply nested descendant past the limit.
+    for (size_t i = 0; i < pending.size(); ++i) {
+      const auto depth = pending[i].second;
+      if (depth > 64) return std::nullopt;
+      const auto found = children.find(pending[i].first);
+      if (found != children.end()) for (const auto& child : found->second) pending.emplace_back(child, depth + 1);
+    }
+  }
+  const int slot = inside ? -1 : target->position - (source->parent == parent && source->position < target->position)
+      + (drop.mode == SpaceDropMode::After);
+  return SpaceMovePosition{parent, slot};
+}
+
 const Space* TreeSnapshot::ActiveSpace() const {
   auto it = std::find_if(spaces.begin(), spaces.end(), [&](const auto& s) { return s.id == active_space; });
   return it == spaces.end() ? nullptr : &*it;
@@ -802,19 +841,25 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         if (!node_space.empty()) tree.active_space = node_space;
         tree.active_id = node->id; node->last_active_at=now; break;
       case TreeAction::MoveToSpace: {
-        if (!node->parent.empty() || node->favorite || node->archived) return rollback(400, "Only top-level Pinned or Today entries move between spaces");
         if (!FindSpace(tree, command.space)) return rollback(404, "Unknown space");
-        if (command.space == node->space) break;
-        // Keep the shared root order; the entry just shows in the other space.
-        node->space = command.space;
-        if (tree.active_id == node->id) tree.active_id = command.next_active;
-        // The page on screen may have been inside the moved folder.
-        if (const auto* active = FindConst(tree, tree.active_id)) {
-          const auto owner = SpaceOf(tree, *active);
-          if (!owner.empty() && owner != tree.active_space) tree.active_id.clear();
+        if (command.placement) {
+          const auto destination = ResolveSpacePlacement(tree, command);
+          const bool was_pinned = node->pinned;
+          if (!destination || !MoveNode(tree, *node, destination->parent, destination->position))
+            return rollback(400, "Invalid destination for this entry");
+          if (command.placement->mode == SpaceDropMode::Inside && !destination->parent.empty())
+            Find(tree, destination->parent)->expanded = true;
+          node->pinned = command.placement->pinned;
+          if (was_pinned != node->pinned && !command.url.empty()) {
+            if (!SafeUrl(command.url)) return rollback(400, "Invalid pinned URL");
+            SetDestination(*node, command);
+          }
         } else {
-          tree.active_id.clear();
+          if (!node->parent.empty() || node->favorite || node->archived)
+            return rollback(400, "Only top-level Pinned or Today entries move between spaces");
+          if (command.space == node->space) break;
         }
+        node->space = command.space;
         break;
       }
       case TreeAction::SetUrl:
@@ -922,7 +967,15 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
       if (!MoveNode(tree,*other,"",-1)) return rollback(400,"Cannot move split member to the destination space");
       other->space = destination;
     }
-    if (const auto* active = FindConst(tree,tree.active_id); active && !active->favorite && SpaceOf(tree,*active) != tree.active_space) tree.active_id.clear();
+    if (const auto* active = FindConst(tree,tree.active_id); active && !active->favorite && SpaceOf(tree,*active) != tree.active_space) {
+      tree.active_id.clear();
+      if (command.action == TreeAction::MoveToSpace) {
+        const auto* fallback = FindConst(tree, command.next_active);
+        if (fallback && !fallback->folder && !fallback->archived &&
+            (fallback->favorite ? BrowsingProfileId(tree, fallback->id) == BrowsingProfileId(tree)
+                                : SpaceOf(tree, *fallback) == tree.active_space)) tree.active_id = fallback->id;
+      }
+    }
   }
   // A member that closed, left the space/profile or was archived alone leaves
   // its group; a group with fewer than two pages dissolves.

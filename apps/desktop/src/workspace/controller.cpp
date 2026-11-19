@@ -51,6 +51,23 @@
 
 namespace red {
 namespace {
+void SetWorkspaceGeometry(CefRefPtr<CefDictionaryValue> snapshot, const std::shared_ptr<State>& state,
+                          const CefRect& client) {
+  const auto area = WorkspaceContentArea(client.width, client.height, state->sidebar_visible, state->sidebar_width,
+                                         state->VisibleLibrarySection(), state->library_spaces);
+  auto bounds = CefDictionaryValue::Create();
+  bounds->SetInt("x", area.x); bounds->SetInt("y", area.y);
+  bounds->SetInt("width", area.width); bounds->SetInt("height", area.height);
+  snapshot->SetDictionary("contentBounds", bounds);
+  const int peek_top = SidebarPeekTop(state->embedded && state->embedded->IsBrowserFullscreen());
+  if (state->sidebar_peek && client.width > kSidebarPeekInset && client.height > peek_top) {
+    auto background = CefDictionaryValue::Create();
+    background->SetInt("x", kSidebarPeekInset);
+    background->SetInt("y", peek_top);
+    background->SetInt("width", client.width); background->SetInt("height", client.height);
+    snapshot->SetDictionary("sidebarBackground", background);
+  }
+}
 bool UrlAllowed(const std::string& url) {
   if (url.size() > 4096 || url.find_first_of("\r\n") != std::string::npos || url.find('\0') != std::string::npos) return false;
   CefURLParts parts;
@@ -279,10 +296,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::LayoutSnapshot() const {
   if (state && state->window) {
     const auto client = state->window->GetClientAreaBoundsInScreen();
     result->SetInt("sidebarWidth", SidebarWidth(state->sidebar_width, client.width));
-    const auto area = WorkspaceContentArea(client.width, client.height, state->sidebar_visible, state->sidebar_width, state->VisibleLibrarySection(), state->library_spaces);
-    auto bounds = CefDictionaryValue::Create();
-    bounds->SetInt("x", area.x); bounds->SetInt("y", area.y); bounds->SetInt("width", area.width); bounds->SetInt("height", area.height);
-    result->SetDictionary("contentBounds", bounds);
+    SetWorkspaceGeometry(result, state, client);
   }
   result->SetBool("sidebarResizing", state && state->sidebar_peek && state->sidebar_peek->is_resizing());
   if (state && state->devtools_dock) if (auto dock = state->devtools_dock->Describe()) result->SetDictionary("devTools", dock);
@@ -388,11 +402,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   result->SetDictionary("theme", ThemeSnapshot()->GetDictionary("theme")->Copy(false));
   if (state && state->window) {
     const auto client = state->window->GetClientAreaBoundsInScreen();
-    const auto area = WorkspaceContentArea(client.width, client.height, state->sidebar_visible, state->sidebar_width, state->VisibleLibrarySection(), state->library_spaces);
-    auto bounds = CefDictionaryValue::Create();
-    bounds->SetInt("x", area.x); bounds->SetInt("y", area.y);
-    bounds->SetInt("width", area.width); bounds->SetInt("height", area.height);
-    result->SetDictionary("contentBounds", bounds);
+    SetWorkspaceGeometry(result, state, client);
   }
   result->SetString("error", error_); result->SetString("activeId", tree_.active_id);
   result->SetString("notice", notice_); result->SetInt("noticeId", notice_id_);
@@ -2456,9 +2466,25 @@ void WorkspaceController::Handle(CefRefPtr<CefDictionaryValue> request, Reply do
       command.action = TreeAction::MoveToSpace; fields = 4 + size_t(request->HasKey("unload"));
       if (!text("space", 36, command.space) || (request->HasKey("unload") && request->GetType("unload") != VTYPE_BOOL)) { reject(); return; }
       command.value = request->HasKey("unload") && request->GetBool("unload");
+      if (request->HasKey("placement")) {
+        ++fields;
+        const auto placement = request->GetDictionary("placement");
+        if (!placement || placement->GetSize() != 3 || placement->GetType("targetId") != VTYPE_STRING ||
+            placement->GetString("targetId").length() > 36) { reject(); return; }
+        const auto mode = placement->GetString("mode").ToString();
+        const auto section = placement->GetString("section").ToString();
+        if ((mode != "before" && mode != "after" && mode != "inside") ||
+            (section != "pinned" && section != "today")) { reject(); return; }
+        command.placement = SpacePlacement{placement->GetString("targetId").ToString(),
+          mode == "inside" ? SpaceDropMode::Inside : mode == "before" ? SpaceDropMode::Before : SpaceDropMode::After,
+          section == "pinned"};
+      }
       // If the page on screen leaves, show the next one of this space.
+      const auto moved = FolderNodeIds(tree_, command.id);
       const auto order = OrderedTabsForSpace(tree_, tree_.active_space);
-      for (const auto& candidate : order) if (candidate != command.id) { command.next_active = candidate; break; }
+      for (const auto& candidate : order) if (candidate != command.id && !std::binary_search(moved.begin(), moved.end(), candidate)) {
+        command.next_active = candidate; break;
+      }
     }
     else if (method == "space.edit") {
       command.action = TreeAction::EditSpace; fields = 5;
@@ -2508,6 +2534,15 @@ void WorkspaceController::Handle(CefRefPtr<CefDictionaryValue> request, Reply do
     else { done(404, "Unknown workspace method", nullptr); return; }
   }
   if (request->GetSize() != fields) { reject(); return; }
+  if (command.placement) {
+    if (command.expected_revision != tree_.revision) { done(409, "Workspace changed; retry", nullptr); return; }
+    if (!ResolveSpacePlacement(tree_, command)) { done(400, "Invalid destination for this entry", nullptr); return; }
+    const auto source = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& node) { return node.id == command.id; });
+    if (source->pinned != command.placement->pinned) if (auto live = LiveBrowser(command.id)) {
+      auto url = live->GetMainFrame()->GetURL().ToString();
+      if (PageUrlAllowed(url)) command.url = std::move(url);
+    }
+  }
   if (command.action==TreeAction::SetSpaceProfile || command.action==TreeAction::CreateProfile || command.action==TreeAction::ExportSpace) {
     ChangeProfile(std::move(command),std::move(done)); return;
   }

@@ -4,7 +4,7 @@ import { maxLinkPatternBytes, maxLinkRoutes, parseLinkRoutingSnapshot, validLink
   type LinkRoutingSnapshot, type SpaceInfo } from '../../../packages/browser-contracts/src';
 import { Icon } from './Icon';
 import { useMessages } from './i18n';
-import { linkRoutePlaceholders } from './LinkRoutingSettings';
+import { linkRoutePlaceholders, trimSpaces } from './LinkRoutingSettings';
 import { LibrarySelect, type LibraryChoice } from './LibrarySelect';
 import { spaceDisplayName } from './sidebar-model';
 import { focusOnMount } from './focus-on-mount';
@@ -86,7 +86,7 @@ export function LibraryRoutes({ spaces }: { spaces: SpaceInfo[] }) {
     if (await save({ ...routing, rules })) setEditing(undefined);
   }
 
-  const draft = editing && { ...editing.rule, pattern: editing.rule.pattern.replace(/^ +| +$/gu, '') };
+  const draft = editing && { ...editing.rule, pattern: trimSpaces(editing.rule.pattern) };
   const draftRules = [...(routing?.rules ?? [])];
   if (draft && editing) draftRules[editing.index ?? draftRules.length] = draft;
   const valid = !!routing && validLinkRouting({ ...routing, rules: draftRules });

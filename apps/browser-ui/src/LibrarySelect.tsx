@@ -104,7 +104,8 @@ export function LibrarySelect({ value, choices, onChange, label, disabled, class
       {choices.map((choice, index) => <Fragment key={choice.value}>
         {choice.group && choice.group !== choices[index - 1]?.group &&
           <div className="library-popover-group" data-first={index === 0} aria-hidden="true">{choice.group}</div>}
-        <div id={`${id}-${index}`} data-index={index} role="option"
+        {/* The list holds focus (aria-activedescendant); options take none of their own. */}
+        <div id={`${id}-${index}`} data-index={index} role="option" tabIndex={-1}
         aria-selected={choice.value === value} aria-disabled={choice.disabled || undefined} data-active={index === active}
         className="library-popover-choice" onPointerMove={() => { if (!choice.disabled && active !== index) setActive(index); }}
         onClick={() => pick(index)}>

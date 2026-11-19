@@ -11,6 +11,15 @@ export const linkRoutePlaceholders: Record<LinkRoute['match'], string> = {
   contains: 'example.com/team/', exact: 'https://example.com/page', regex: String.raw`example\.com/team/\d+$`,
 };
 
+/** Leading and trailing spaces only, as native validation trims them; a loop, not a
+ * regular expression (SonarCloud S8786: `/^ +| +$/` backtracks on long runs of spaces). */
+export function trimSpaces(value: string) {
+  let start = 0, end = value.length;
+  while (start < end && value[start] === ' ') start += 1;
+  while (end > start && value[end - 1] === ' ') end -= 1;
+  return value.slice(start, end);
+}
+
 export function LinkDestinationOptions({ selected, spaces }: { selected: string; spaces: SpaceInfo[] }) {
   const t = useMessages();
   return <>
@@ -28,7 +37,7 @@ export function LinkRoutingSettings({ routing, spaces, disabled, save }: Props) 
   const [fallback, setFallback] = useState(routing.fallback);
   const [added, setAdded] = useState<number>();
   const nextId = useRef(routing.rules.length);
-  const draft = { rules: rules.map(({ match, pattern, destination }) => ({ match, pattern: pattern.replace(/^ +| +$/gu, ''), destination })), fallback };
+  const draft = { rules: rules.map(({ match, pattern, destination }) => ({ match, pattern: trimSpaces(pattern), destination })), fallback };
   const valid = validLinkRouting(draft);
   const dirty = fallback !== routing.fallback || draft.rules.length !== routing.rules.length || draft.rules.some((rule, index) => {
     const saved = routing.rules[index];

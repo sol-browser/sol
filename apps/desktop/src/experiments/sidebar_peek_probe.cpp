@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>
+#include <cmath>
 #include <thread>
 #include "include/base/cef_callback.h"
 #include "include/cef_command_line.h"
@@ -44,7 +45,10 @@ console.info('RED_PEEK:'+JSON.stringify({restartRouted:document.querySelector('.
 const rows=[...document.querySelectorAll('.tree-row .node-title')].map(n=>n.textContent);
 const row=[...document.querySelectorAll('.tree-row')].find(r=>r.querySelector('.node-title')?.textContent==='a');
 row?.querySelector('.node-name')?.click();
-console.info('RED_PEEK:'+JSON.stringify({rows,refused,width:innerWidth,right:document.querySelector('.sidebar')?.getBoundingClientRect().right}));
+const background=getComputedStyle(document.querySelector('.peek-root'));
+console.info('RED_PEEK:'+JSON.stringify({rows,refused,width:innerWidth,right:document.querySelector('.sidebar')?.getBoundingClientRect().right,
+  backgroundPalette:background.backgroundImage.includes('data:image/bmp'),
+  backgroundSize:background.backgroundSize.split(', ')[1],backgroundOrigin:background.backgroundPosition.split(', ')[1]}));
 // The row menu must open from the floating sidebar (the docked one is hidden).
 const menu=await q({method:'workspace.contextMenu',id:'',x:20,y:60}).then(()=>'shown',c=>c);
 console.info('RED_PEEK:'+JSON.stringify({menu}));
@@ -698,6 +702,11 @@ void Record(const std::shared_ptr<State>& s, const char* event) {
     data->SetDouble("display_scale", scale);
     if (s->sidebar_peek->is_open() && s->content) {
       RECT bounds{}; GetWindowRect(host, &bounds);
+      POINT origin{}; ClientToScreen(root, &origin);
+      const auto workspace = s->window->GetClientAreaBoundsInScreen();
+      data->SetString("background_size", std::to_string(workspace.width) + "px " + std::to_string(workspace.height) + "px");
+      data->SetString("background_origin", std::to_string(-std::lround((bounds.left - origin.x) / scale)) +
+          "px " + std::to_string(-std::lround((bounds.top - origin.y) / scale)) + "px");
       const LONG middle = (bounds.top + bounds.bottom) / 2;
       const HWND inside = WindowFromPoint({(bounds.left + bounds.right) / 2, middle});
       const HWND outside = WindowFromPoint({bounds.right + 2, middle});

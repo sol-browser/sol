@@ -24,7 +24,8 @@ input { min-width: 0; }
 .authored-icon { background-color: currentColor; mask-repeat: no-repeat; mask-position: center; mask-size: 24px 24px;
   -webkit-mask-repeat: no-repeat; -webkit-mask-position: center; -webkit-mask-size: 24px 24px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.workspace { --sidebar-width: var(--sidebar-size, 256px); position: relative; height: 100vh; overflow: hidden; --theme-legacy-gradient: linear-gradient(155deg, oklch(calc(0.9182 + var(--theme-dark, 0) * -0.7058 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9182 - var(--theme-dark, 0) * -0.7058)) calc(0.0202 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 33.7)) 0%, oklch(calc(0.9134 + var(--theme-dark, 0) * -0.7053 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9134 - var(--theme-dark, 0) * -0.7053)) calc(0.0237 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) - 5.1)) 55%, oklch(calc(0.9031 + var(--theme-dark, 0) * -0.7043 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9031 - var(--theme-dark, 0) * -0.7043)) calc(0.0220 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) - 29.5)) 100%); background: var(--theme-grain, none), var(--theme-palette-gradient, var(--theme-legacy-gradient)); }
+.workspace, .peek-root { --theme-legacy-gradient: linear-gradient(155deg, oklch(calc(0.9182 + var(--theme-dark, 0) * -0.7058 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9182 - var(--theme-dark, 0) * -0.7058)) calc(0.0202 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 33.7)) 0%, oklch(calc(0.9134 + var(--theme-dark, 0) * -0.7053 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9134 - var(--theme-dark, 0) * -0.7053)) calc(0.0237 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) - 5.1)) 55%, oklch(calc(0.9031 + var(--theme-dark, 0) * -0.7043 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9031 - var(--theme-dark, 0) * -0.7043)) calc(0.0220 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) - 29.5)) 100%); background: var(--theme-grain, none), var(--theme-palette-gradient, var(--theme-legacy-gradient)); }
+.workspace { --sidebar-width: var(--sidebar-size, 256px); position: relative; height: 100vh; overflow: hidden; }
 .workspace[data-sidebar-visible="false"] { --sidebar-width: 0px; }
 /* Hide/show switch the docked layout at once: the page child changes width
    once, and the floating sidebar window (SidebarPeek) animates over it. */
@@ -717,7 +718,15 @@ kbd, .sidebar-bottom button, .local-badge, .archive-list p { color: var(--muted)
 .sidebar[data-file-drop="true"] { box-shadow: inset 0 0 0 2px oklch(calc(0.6235 + var(--theme-dark, 0) * -0.0306) min(calc(0.1609 * var(--theme-chroma, 1)), 0.24) calc(var(--theme-hue, 307) - 4.3)); border-radius: 10px; }
 /* Floating sidebar window (peek.html): same background as the workspace. */
 html:has(.peek-root), body:has(.peek-root) { margin: 0; height: 100%; overflow: hidden; background: oklch(calc(0.9179 + var(--theme-dark, 0) * -0.7058 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9179 - var(--theme-dark, 0) * -0.7058)) calc(0.0211 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 6.8)); }
-.peek-root { position: fixed; inset: 0; --theme-legacy-gradient: linear-gradient(155deg, oklch(calc(0.9182 + var(--theme-dark, 0) * -0.7058 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9182 - var(--theme-dark, 0) * -0.7058)) calc(0.0202 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 33.7)) 0%, oklch(calc(0.9134 + var(--theme-dark, 0) * -0.7053 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9134 - var(--theme-dark, 0) * -0.7053)) calc(0.0237 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) - 5.1)) 55%, oklch(calc(0.9031 + var(--theme-dark, 0) * -0.7043 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9031 - var(--theme-dark, 0) * -0.7043)) calc(0.0220 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) - 29.5)) 100%); background: var(--theme-grain, none), var(--theme-palette-gradient, var(--theme-legacy-gradient)); }
+.peek-root { position: fixed; inset: 0; }
+.peek-root::after {
+  /* Keep the antialiased stroke inside the native 6 DIP window region. */
+  content: ''; position: absolute; inset: 1px; z-index: 6; pointer-events: none;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 .5px color-mix(in oklch, white 55%,
+    var(--theme-palette-base, oklch(.88 min(calc(.08 * var(--theme-chroma, 1)), .18) var(--theme-hue, 307))));
+  opacity: .32;
+}
 .peek-root .sidebar { --sidebar-top: 0px; left: auto; right: 0; top: 0; bottom: 0; }
 .peek-root .sidebar-list { margin-right: calc(-1 * var(--sidebar-pad-x, 10px)); }
 .peek-root .sidebar-resizer { left: auto; right: 0; top: 0; bottom: 0; }
@@ -775,6 +784,12 @@ html:has(.peek-root), body:has(.peek-root) { margin: 0; height: 100%; overflow: 
 @property --theme-vivid { syntax: '<number>'; inherits: true; initial-value: 0; }
 :root { transition: --theme-hue .45s ease, --theme-chroma .45s ease, --theme-dark .45s ease, --theme-vivid .45s ease; }
 @media (prefers-reduced-motion: reduce) { :root { transition: none; } }
+/* Paint the workspace at full size and show the portion behind the resting panel.
+   Grain keeps its tile size and shares the field's origin. */
+.peek-root {
+  background-size: auto, var(--peek-field-size, 100% 100%), var(--peek-field-size, 100% 100%);
+  background-position: var(--peek-field-origin, 0 0);
+}
 /* Floating sidebar: the same translucent tint over an opaque stand-in for the
    material (DWM's dark/light Acrylic and Mica greys), so it matches the docked one. */
 /* Dark bases match measured docked pixels (2026-11-02: Acrylic transmits ~0.28,

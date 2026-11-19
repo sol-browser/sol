@@ -24,6 +24,48 @@ int wmain(int argc, wchar_t** argv) {
     if (sqlite3_exec(db, "BEGIN IMMEDIATE; UPDATE nodes SET title='uncommitted'; UPDATE state SET revision=999;", nullptr, nullptr, nullptr) != SQLITE_OK) return 88;
     ExitProcess(77); // Deliberate interrupted writer: no destructors/rollback.
   }
+  {
+    red::TreeStore store;
+    const auto initial = store.Open(":memory:");
+    const auto home = initial.snapshot.active_space;
+    auto apply = [&](red::TreeCommand command) {
+      command.expected_revision = store.Read().snapshot.revision;
+      return store.Apply(command);
+    };
+    auto folder = [&](std::string title, std::string parent = {}) {
+      red::TreeCommand command{red::TreeAction::CreateFolder};
+      command.title = std::move(title); command.parent = std::move(parent);
+      return apply(command).created_id;
+    };
+    const auto source = folder("Outer folder");
+    const auto child = folder("Nested folder", source);
+    red::TreeCommand command{red::TreeAction::CreateTab};
+    command.parent = child; command.title = "Saved page"; command.url = "https://example.com/";
+    const auto tab = apply(command).created_id;
+    command = {red::TreeAction::CreateSpace}; command.title = "Another Space";
+    const auto destination = apply(command).created_id;
+    command = {red::TreeAction::SwitchSpace}; command.id = destination; apply(command);
+    const auto target = folder("Destination folder");
+    const auto formerFirst = folder("Existing child", target);
+    command = {red::TreeAction::MoveToSpace}; command.id = source; command.space = destination;
+    command.placement = red::SpacePlacement{formerFirst, red::SpaceDropMode::Before, true};
+    const auto moved = apply(command);
+    Check(moved && Find(moved.snapshot, source).parent == target && Find(moved.snapshot, source).position == 0 &&
+          Find(moved.snapshot, formerFirst).position == 1 && Find(moved.snapshot, child).parent == source &&
+          Find(moved.snapshot, tab).parent == child, "place a folder before a row in another Space with its whole subtree");
+    command.id = target; command.placement = red::SpacePlacement{child, red::SpaceDropMode::Inside, true};
+    Check(apply(command).code == 400 && store.Read().snapshot.revision == moved.snapshot.revision,
+          "a drop into a descendant does not change the tree");
+    command.id = tab; command.space = home;
+    Check(apply(command).code == 400, "a target from the wrong Space is rejected");
+    command.placement = red::SpacePlacement{"", red::SpaceDropMode::Inside, false};
+    const auto out = apply(command);
+    Check(out && Find(out.snapshot, tab).parent.empty() && Find(out.snapshot, tab).space == home &&
+          !Find(out.snapshot, tab).pinned, "move a nested tab to Today in another Space");
+    command.id = source;
+    Check(apply(command).code == 400 && store.Read().snapshot.revision == out.snapshot.revision,
+          "moving a folder to Today is rejected atomically");
+  }
   const auto path = std::filesystem::temp_directory_path() / (L"red-tree-" + std::to_wstring(GetCurrentProcessId()) + L".sqlite3");
   const auto foreign_path = path.wstring() + L"-foreign";
   {

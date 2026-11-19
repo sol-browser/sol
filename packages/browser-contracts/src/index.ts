@@ -79,6 +79,8 @@ export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boo
   media?: MediaInfo[];
   sidebarVisible?: boolean; sidebarWidth?: number; sidebarResizing?: boolean; libraryOpen?: boolean; librarySection?: LibrarySection;
   contentBounds?: { x: number; y: number; width: number; height: number };
+  /** Floating sidebar origin at rest and full workspace dimensions, in DIP. */
+  sidebarBackground?: { x: number; y: number; width: number; height: number };
   activeId?: string; url?: string; isLoading?: boolean; workspaceProbe?: boolean; nodes?: TreeNode[]; createdId?: string; newTabRequest?: number;
   organizationProbe?: boolean; organizationArmed?: boolean; organizationUnloadDecisions?: number; addressRequest?: number;
   /** A flow the docked sidebar should start (from the browser menu); id grows with each request. */
@@ -307,6 +309,7 @@ export type DownloadAction = 'cancel' | 'pause' | 'resume' | 'open' | 'show' | '
 export type ShortcutAction = 'address' | 'newTab' | 'closeTab' | 'nextTab' | 'previousTab' | 'sidebar' | 'pin' | 'back' | 'forward' | 'reload' | 'reloadBypass' | 'stop' | 'focusPage' | 'closeWindow' | 'devTools' | 'history' | 'downloads' | 'historyPage' | 'reopenClosed'
   | 'space1' | 'space2' | 'space3' | 'space4' | 'space5' | 'space6' | 'space7' | 'space8' | 'space9' | 'fullscreen' | 'settings' | 'newWindow' | 'pictureInPicture' | 'newPrivateWindow' | 'print' | 'copyUrl' | 'recentTab' | 'recentTabBack' | 'screenshot' | 'fullPageScreenshot' | 'capture'
   | 'splitFocusLeft' | 'splitFocusRight' | 'splitFocusUp' | 'splitFocusDown' | 'splitExpand';
+export type SpacePlacement = { targetId: string; mode: 'before' | 'after' | 'inside'; section: 'pinned' | 'today' };
 export type TreeMutation =
   | { method: 'split.create'; id: string; otherId: string; vertical: boolean }
   | { method: 'split.remove'; id: string }
@@ -321,7 +324,7 @@ export type TreeMutation =
   | { method: 'tree.pin' | 'tree.expand'; id: string; value: boolean }
   | { method: 'tree.activate' | 'tree.close' | 'tree.archive' | 'tree.restore' | 'tree.reset' | 'tree.usePageTitle'; id: string }
   | { method: 'tree.removeFolder'; id: string; confirmation?: { revision: number; tabs: number } }
-  | { method: 'tree.moveToSpace'; id: string; space: string; unload?: boolean }
+  | { method: 'tree.moveToSpace'; id: string; space: string; unload?: boolean; placement?: SpacePlacement }
   | { method: 'space.create'; title: string; icon: string; profileId?: string }
   | { method: 'profile.create'; title: string; spaceIds?: string[] }
   | { method: 'profile.rename'; id: string; title: string }
@@ -402,6 +405,9 @@ export function parseSidebarMenuChoice(raw: string): SidebarMenuChoice {
 }
 const integer = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 const dockBounds = (r: unknown) => object(r) && ['x', 'y', 'width', 'height'].every(k => typeof r[k] === 'number' && Number.isFinite(r[k]) && (r[k] as number) >= 0 && (r[k] as number) <= 65536);
+const validSidebarBackground = (r: unknown) => object(r) && dockBounds(r) &&
+  ['x', 'y', 'width', 'height'].every(k => integer(r[k])) &&
+  (r.x as number) < (r.width as number) && (r.y as number) < (r.height as number);
 const validDevTools = (d: unknown) => object(d) && integer(d.id) && ['right', 'bottom', 'left', 'window'].includes(d.side as string) && integer(d.extent)
   && dockBounds(d.header) && dockBounds(d.divider);
 function validDevicePreview(d: unknown) {
@@ -417,9 +423,10 @@ function validDevicePreview(d: unknown) {
 export function parseSnapshotUpdate(raw:string, previous?:Snapshot):Snapshot {
   const delta:unknown=JSON.parse(raw);
   if(object(delta)&&delta.layoutOnly===true){
-    if(!integer(delta.revision)||Object.keys(delta).some(k=>!['layoutOnly','revision','sidebarWidth','sidebarResizing','contentBounds','devTools','devicePreview','splitView'].includes(k))
+    if(!integer(delta.revision)||Object.keys(delta).some(k=>!['layoutOnly','revision','sidebarWidth','sidebarResizing','contentBounds','sidebarBackground','devTools','devicePreview','splitView'].includes(k))
       ||(delta.sidebarWidth!==undefined&&(!integer(delta.sidebarWidth)||delta.sidebarWidth<150||delta.sidebarWidth>480))
       ||typeof delta.sidebarResizing!=='boolean'||(delta.contentBounds!==undefined&&!dockBounds(delta.contentBounds))
+      ||(delta.sidebarBackground!==undefined&&!validSidebarBackground(delta.sidebarBackground))
       ||(delta.devTools!==undefined&&!validDevTools(delta.devTools))||(delta.devicePreview!==undefined&&!validDevicePreview(delta.devicePreview))
       ||(delta.splitView!==undefined&&!validSplitView(delta.splitView)))
       throw new Error('Invalid layout update');
@@ -427,6 +434,7 @@ export function parseSnapshotUpdate(raw:string, previous?:Snapshot):Snapshot {
     if(delta.revision<previous.revision)return previous;
     return {...previous,revision:delta.revision,sidebarWidth:(delta.sidebarWidth as number|undefined)??previous.sidebarWidth,sidebarResizing:delta.sidebarResizing,
       contentBounds:(delta.contentBounds as Snapshot['contentBounds'])??previous.contentBounds,
+      sidebarBackground:(delta.sidebarBackground as Snapshot['sidebarBackground'])??previous.sidebarBackground,
       devTools:delta.devTools as Snapshot['devTools'],devicePreview:delta.devicePreview as Snapshot['devicePreview'],
       splitView:delta.splitView as Snapshot['splitView']};
   }
@@ -546,6 +554,7 @@ export function parseSnapshot(raw: string): Snapshot {
     }
     if (s.shellExtensions !== undefined && (!Number.isSafeInteger(s.shellExtensions) || (s.shellExtensions as number) < -1)) throw new Error('Invalid shell extension count');
     if (s.sidebarWidth !== undefined && (!integer(s.sidebarWidth) || s.sidebarWidth < 150 || s.sidebarWidth > 480)) throw new Error('Invalid sidebar width');
+    if (s.sidebarBackground !== undefined && !validSidebarBackground(s.sidebarBackground)) throw new Error('Invalid sidebar background geometry');
     if (s.devTools !== undefined && !validDevTools(s.devTools)) throw new Error('Invalid developer tools layout');
     if (s.devicePreview !== undefined && !validDevicePreview(s.devicePreview)) throw new Error('Invalid device preview');
     if (s.theme !== undefined && !validTheme(s.theme)) throw new Error('Invalid theme');

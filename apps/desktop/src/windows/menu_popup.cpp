@@ -375,7 +375,9 @@ bool MenuPopup::Query(int level, CefRefPtr<CefBrowser> browser, CefRefPtr<CefFra
   // Everything else belongs to the opening the document is showing.
   if (d->GetType("request") != VTYPE_INT || d->GetInt("request") != l.request || !l.open || !l.window) { cb->Failure(409, "Menu changed"); return true; }
   if (method == "menu.resize" && d->GetSize() == 4 && d->GetType("width") == VTYPE_INT && d->GetType("height") == VTYPE_INT) {
-    Place(level, d->GetInt("width"), d->GetInt("height"));
+    l.presentation.ResizeAfterOpening(base::BindOnce([](std::weak_ptr<MenuPopup> weak, int level, int width, int height) {
+      if (auto self = weak.lock(); self && self->levels_[level].open) self->Place(level, width, height);
+    }, weak_from_this(), level, d->GetInt("width"), d->GetInt("height")));
     l.prepared = true; if (!l.presented) l.presentation.Stage();
     // A submenu's staging shows its window; give activation back to the menu row that opened it.
     if (level > 0 && !l.focus && levels_[level - 1].window) levels_[level - 1].window->Activate();

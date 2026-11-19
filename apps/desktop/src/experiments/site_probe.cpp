@@ -59,6 +59,24 @@ bool ActiveNodeUsesCamera(const std::shared_ptr<State>& state) {
   }
   return false;
 }
+void OpenSitePermissionsDuringEntry(std::weak_ptr<State> weak, int attempts) {
+  const auto state = weak.lock();
+  if (!state || !state->panel_popup) return;
+  if (!state->panel_popup->is_presented()) {
+    if (!attempts) { Fail(state, "popover_present"); return; }
+    CefPostDelayedTask(TID_UI, base::BindOnce(&OpenSitePermissionsDuringEntry, weak, attempts - 1), 10);
+    return;
+  }
+  state->panel_popup->ProbeClickSelector(".site-security");
+  // Isolate the opening resize from later effects. On fast machines the
+  // camera and reset steps could otherwise close the panel during handoff.
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
+    const auto state = weak.lock(); if (!state) return;
+    Click(state, R"CSS([data-permission="location"] [data-value="block"])CSS");
+    WaitFor(weak, CEF_CONTENT_SETTING_TYPE_GEOLOCATION, CEF_CONTENT_SETTING_VALUE_BLOCK, "location_block",
+            [](const std::shared_ptr<State>& s) { s->Record("site_location_blocked"); Page(s, kQueryLocation); });
+  }, weak), 700);
+}
 void WaitForExtensionStore(std::weak_ptr<State> weak, int attempts) {
   auto state = weak.lock(); if (!state || !state->workspace) return;
   const auto snapshot = state->workspace->Snapshot();
@@ -78,10 +96,10 @@ void StartSiteProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser>) 
   if (!state->site_probe || state->site_phase != 0) return;
   state->site_phase = 1;
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
-    auto state = weak.lock(); if (!state) return;
-    Click(state, R"CSS([data-permission="location"] [data-value="block"])CSS");
-    WaitFor(weak, CEF_CONTENT_SETTING_TYPE_GEOLOCATION, CEF_CONTENT_SETTING_VALUE_BLOCK, "location_block",
-            [](const std::shared_ptr<State>& s) { s->Record("site_location_blocked"); Page(s, kQueryLocation); });
+    auto state = weak.lock(); if (!state || !state->window || !state->panel_popup) return;
+    state->window->Activate();
+    state->panel_popup->Toggle("site", CefRect(500, 8, 28, 28));
+    OpenSitePermissionsDuringEntry(weak, 250);
   }, std::weak_ptr<State>(state)), 1500);
 }
 void ObserveSiteProbe(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser>, const std::string& message) {

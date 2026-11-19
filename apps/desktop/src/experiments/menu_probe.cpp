@@ -200,11 +200,12 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
           await new Promise(resolve=>setTimeout(resolve,350));
         };
         try {
+          await wait(()=>get('[data-action=library]'));
           const before=await snapshot();
           await q({method:'library.getRoutes'}).then(()=>{throw Error('Closed Library exposed routing');},error=>{if(!error.message.startsWith('409'))throw error;});
-          const open=()=>get('[data-action=library]').click();
+          const open=async ()=>(await wait(()=>get('[data-action=library]'))).click();
           const close=()=>get('[data-action=close-library]').click();
-          open(); await wait(()=>get('.library'));
+          await open(); await wait(()=>get('.library'));
           const expanded=await snapshot();
           if(!expanded.libraryOpen||expanded.contentBounds.x<=before.contentBounds.x||expanded.activeId!==before.activeId)throw Error('Open geometry');
           console.info('RED_LIBRARY_RESIZE');
@@ -220,7 +221,7 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
           await new Promise(resolve=>setTimeout(resolve,560));  // The page edge glides (420 ms).
           console.info('RED_LIBRARY_LAYOUT_DONE');
           await new Promise(resolve=>setTimeout(resolve,250));
-          open(); await wait(()=>get('[data-library-section=spaces]'));
+          await open(); await wait(()=>get('[data-library-section=spaces]'));
           const themed=getComputedStyle(get('.library-rail'));
           const background=themed.backgroundColor;
           if(background==='rgba(0, 0, 0, 0)'||!themed.getPropertyValue('--lib-line').trim())throw Error('Missing Library palette');
@@ -270,6 +271,51 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
           source.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer}));
           card().dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));
           await wait(()=>get(`[data-library-tab="${before.activeId}"]`,card()));
+          const nodeRow=id=>get(`[data-library-node="${id}"]`);
+          const drag=async (source,destination,ratio,marker)=>{
+            const payload=new DataTransfer();
+            source.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:payload}));
+            await wait(()=>get('.library-board').dataset.dragging==='true');
+            const box=destination.getBoundingClientRect();
+            const args={bubbles:true,cancelable:true,dataTransfer:payload,
+              clientX:Math.round(box.left+box.width/2),clientY:Math.round(box.top+box.height*ratio)};
+            destination.dispatchEvent(new DragEvent('dragover',args));
+            const hint=()=>destination.closest('.library-tree-entry')?.dataset.entryDrop;
+            if(marker) {
+              await wait(()=>hint()===marker);
+              const entry=destination.closest('.library-tree-entry');
+              if(marker==='inside' ? getComputedStyle(destination).boxShadow==='none' :
+                  getComputedStyle(entry,'::after').height!=='2px')throw Error('Missing drop indicator');
+            } else {
+              await pause();
+              if(hint()) throw Error('Invalid drop advertised');
+            }
+            destination.dispatchEvent(new DragEvent('drop',args));
+            source.dispatchEvent(new DragEvent('dragend',args));
+          };
+          await mutation({method:'space.switch',id:work.id});
+          const target=(await mutation({method:'tree.createFolder',title:'Drop destination',parentId:''})).createdId;
+          const existing=(await mutation({method:'tree.createFolder',title:'Existing child',parentId:target})).createdId;
+          await mutation({method:'space.switch',id:before.activeSpace});
+          const sourceFolder=(await mutation({method:'tree.createFolder',title:'Folder to move',parentId:''})).createdId;
+          const nested=(await mutation({method:'tree.createFolder',title:'Nested child',parentId:sourceFolder})).createdId;
+          await wait(()=>nodeRow(sourceFolder) && nodeRow(target));
+          await drag(nodeRow(sourceFolder),nodeRow(target),.5,'inside');
+          await wait(()=>nodeRow(sourceFolder)?.closest('details')?.parentElement?.closest('details')===nodeRow(target)?.parentElement);
+          const placed=await snapshot();
+          if(placed.nodes.find(n=>n.id===nested)?.parentId!==sourceFolder)throw Error('Nested folder did not move');
+          await drag(nodeRow(sourceFolder),await wait(()=>nodeRow(existing)?.getClientRects().length && nodeRow(existing)),.06,'before');
+          const entry=id=>nodeRow(id)?.closest('.library-tree-entry');
+          await wait(()=>entry(sourceFolder)?.nextElementSibling===entry(existing));
+          await drag(nodeRow(sourceFolder),nodeRow(existing),.95,'after');
+          await wait(()=>entry(sourceFolder)?.previousElementSibling===entry(existing));
+          const after=await snapshot();
+          if(after.nodes.find(n=>n.id===sourceFolder)?.position<=after.nodes.find(n=>n.id===existing)?.position)
+            throw Error('Folder was not inserted after the indicated sibling');
+          await wait(()=>nodeRow(nested)?.getClientRects().length);
+          await drag(nodeRow(sourceFolder),nodeRow(nested),.5);
+          if((await snapshot()).treeRevision!==after.treeRevision)throw Error('A cyclic folder drop changed the tree');
+          await mutation({method:'space.switch',id:work.id});
           await preview('spaces');
           const url=new URL('?archive=library-keyword', before.url).href;
           const archived=await mutation({method:'tree.createTab',parentId:'',title:'Library Archive Fixture',url});
@@ -324,7 +370,9 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
           await mutation({method:'space.delete',id:madeSpace.id}); await pause();
           close(); await wait(()=>!get('.library'));
           console.info('RED_LIBRARY_RESULT:pass');
-        } catch(error){console.info('RED_LIBRARY_RESULT:'+error);}
+        } catch(error){
+          console.info('RED_LIBRARY_RESULT:'+error+' ['+document.body.innerText.trim().slice(0,180)+']');
+        }
       })())JS", frame->GetURL(), 0);
     });
     return;

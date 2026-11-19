@@ -543,9 +543,14 @@ bool CommandBar::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
       d->GetType("error") == VTYPE_BOOL && d->GetInt("rows") >= 0 && d->GetInt("rows") <= kMaxRows) {
     if (!presented_ && !detached_ && !PopupOwnerIsForeground(s->window)) { Hide(false); cb->Failure(409, "Command owner is inactive"); return true; }
     const int requested = kBaseHeight + std::max(1, d->GetInt("rows")) * kRowHeight + (d->GetBool("error") ? kErrorHeight : 0);
-    // Keep the viewport from shrinking/regrowing between local and async rows.
-    height_ = presented_ ? std::max(height_,requested) : requested;
-    Reposition(); window_->Layout(); prepared_ = true;
+    presentation_.ResizeAfterOpening(base::BindOnce([](std::weak_ptr<CommandBar> weak, int height) {
+      if (auto self = weak.lock(); self && self->open_ && self->window_) {
+        // Keep the viewport from shrinking/regrowing between local and async rows.
+        self->height_ = self->presented_ ? std::max(self->height_, height) : height;
+        self->Reposition(); self->window_->Layout();
+      }
+    }, weak_from_this(), requested));
+    prepared_ = true;
     if (!presented_) presentation_.Stage();
     cb->Success(PopupViewport(window_, request_)); return true;
   }

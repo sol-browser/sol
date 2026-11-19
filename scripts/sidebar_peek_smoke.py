@@ -171,6 +171,8 @@ def main():
         run(url, ['--workspace'], profile=profile)
         with sqlite3.connect(database) as db:
             db.execute("UPDATE nodes SET x_badge_hidden=1 WHERE title='X disabled fixture'")
+            db.execute("UPDATE spaces SET theme_palette=?, theme_noise=0 WHERE id=(SELECT active_space FROM state)",
+                       ('2,3,380,66,0,0,100,30,850,27,120,850,62,240,850,37,90',))
         flag = f'--probe-sidebar-peek={host}' if host else '--probe-sidebar-peek'
         directory, rows = run(url, [flag], allow_failure=True, profile=profile)
         with sqlite3.connect(database) as db:
@@ -222,6 +224,10 @@ def main():
         'peek_window_shown': first('peek_state_open').get('open') is True and first('peek_state_open').get('visible') is True,
         'peek_lists_tabs': {'a', 'b'} <= set(document.get('rows', [])),
         'sidebar_right_aligned_in_window': abs(document.get('right', -1) - document.get('width', -2)) <= 1,
+        'floating_background_matches_workspace_geometry': document.get('backgroundPalette') is True and
+            bool(first('peek_state_open').get('background_size')) and
+            first('peek_state_open').get('background_size') == document.get('backgroundSize') and
+            first('peek_state_open').get('background_origin') == document.get('backgroundOrigin'),
         'non_sidebar_command_refused': document.get('refused') == 404,
         'ready_update_visible_in_floating_sidebar': any(d.get('updateVisible') is True and d.get('updateVersion') is True for d in documents),
         'media_state_reaches_floating_sidebar': any(d.get('mediaVisible') is True for d in documents),

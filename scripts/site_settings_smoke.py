@@ -5,15 +5,37 @@ Drives the real site popover (Arc-style site controls): Location -> Block
 from Chromium's fake camera (no prompt; the tab and address-bar indicator data
 turn on, then off when the stream stops), Reset (the page sees "prompt").
 """
+import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
 from smoke import run
 
 PAGE = b"<!doctype html><html lang='en'><title>Site settings fixture</title><body style='font:20px Segoe UI;padding:40px'><h1>Site settings fixture</h1>"
+OPENING_MS = 280
+
+
+def opening_resize(rows):
+    opening = next((r for r in rows if r['event'] == 'popup_presented' and r['details'].get('kind') == 'site'), None)
+    if not opening or not opening['details']['composed']:
+        return False
+    request = opening['details']['request']
+    updates = [r for r in rows if r['event'].startswith('site_popup_resize') and r['details']['request'] == request]
+    first_resize = next((i for i, r in enumerate(updates) if r['event'] == 'site_popup_resized'), None)
+    if first_resize is None or first_resize == 0:
+        return False
+    pending = updates[:first_resize]
+    applied = updates[first_resize]
+    return (any(r['details']['composed'] and 0 <= r['tick_ms'] - opening['tick_ms'] < OPENING_MS for r in pending)
+            and applied['tick_ms'] - opening['tick_ms'] >= OPENING_MS
+            and not applied['details']['composed'] and applied['details']['height'] == pending[-1]['details']['height'])
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--check-motion', action='store_true', help='Require DirectComposition and enabled Windows animations')
+    args = parser.parse_args()
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args): pass
         def do_GET(self):
@@ -43,9 +65,12 @@ def main():
         'no_probe_failure': 'site_probe_failed' not in names,
         'probe_passed': any(r['event'] == 'probe_result' and r['details']['pass'] for r in rows),
     }
+    if args.check_motion:
+        checks['content_resize_preserves_opening_animation'] = opening_resize(rows)
     result = {'passed': all(checks.values()), 'checks': checks,
               'failures': [r['details'] for r in rows if r['event'] == 'site_probe_failed'],
-              'events': [r for r in rows if r['event'].startswith(('site_', 'media_access', 'panel_'))]}
+              'events': [r for r in rows if r['event'].startswith(('site_', 'media_access', 'panel_'))
+                         or r['event'] == 'popup_presented' and r['details'].get('kind') == 'site']}
     (directory / 'site_settings.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2), flush=True)
     if not result['passed']: raise RuntimeError('Site settings failed')

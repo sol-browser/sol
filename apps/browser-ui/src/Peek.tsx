@@ -10,6 +10,8 @@ import { applyTheme } from './theme-apply';
 export function Peek() {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   useLayoutEffect(() => {
+    // A never-activated peek uses an opaque stand-in for the workspace's material.
+    document.documentElement.dataset.backdropUnder = snapshot?.backdrop ?? 'none';
     applyTheme(snapshot?.theme, true, snapshot?.activeSpace ?? '');
     if (!snapshot?.ready || snapshot.windowClosing) return;
     // Acknowledge the committed rows/theme at the real viewport size. Native
@@ -27,10 +29,6 @@ export function Peek() {
     if (latest.current && next.revision < latest.current.revision) return;
     latest.current = next; setSnapshot(next);
   }, []);
-  // The floating window has no system backdrop of its own (a never-activated
-  // window gets DWM's solid fallback). Emulate the docked tint over an opaque
-  // material-like base instead of painting the bare palette (style.css).
-  useEffect(() => { document.documentElement.dataset.backdropUnder = snapshot?.backdrop ?? 'none'; }, [snapshot?.backdrop]);
   useEffect(() => subscribe(apply, setError, next=>{latest.current=next;applyTheme(next.theme);}), [apply]);
   async function send(command: Command) {
     setError('');
@@ -51,11 +49,16 @@ export function Peek() {
   };
   if (!snapshot) return null;
   const ready = snapshot.ready && !snapshot.windowClosing;
-  return <main className="peek-root" style={{ '--sidebar-size': `${snapshot.sidebarWidth ?? 256}px` } as CSSProperties}>
+  const field = snapshot.sidebarBackground;
+  return <main className="peek-root" style={{
+    '--sidebar-size': `${snapshot.sidebarWidth ?? 256}px`,
+    '--peek-field-size': field ? `${field.width}px ${field.height}px` : undefined,
+    '--peek-field-origin': field ? `${-field.x}px ${-field.y}px` : undefined,
+  } as CSSProperties}>
     <WorkspaceSidebar snapshot={snapshot} surface="floating" command={send} mutate={action} panel={openPanel} />
     <SidebarResizer width={snapshot.sidebarWidth ?? 256} hidden={false} disabled={!ready}
       nativeDragging={snapshot.sidebarResizing}
-      viewportWidth={(snapshot.contentBounds?.width ?? 784) + (snapshot.contentBounds?.x ?? 8) + 8}
+      viewportWidth={field?.width ?? (snapshot.contentBounds?.width ?? 784) + (snapshot.contentBounds?.x ?? 8) + 8}
       apply={apply} onError={setError} />
     {error && <p className="peek-error" role="alert">{error}</p>}
   </main>;

@@ -123,7 +123,8 @@ export function archiveOrder(nodes: TreeNode[]) {
 const retryableMethods = new Set(['tree.rename', 'tree.pin', 'tree.expand', 'tree.activate', 'tree.close', 'tree.archive',
   'tree.restore', 'tree.reset', 'tree.removeFolder', 'tree.usePageTitle', 'tree.moveToSpace', 'space.edit', 'space.switch']);
 export const retryable = (command: TreeMutation) => retryableMethods.has(command.method) &&
-  !(command.method === 'tree.removeFolder' && command.confirmation);
+  !(command.method === 'tree.removeFolder' && command.confirmation) &&
+  !(command.method === 'tree.moveToSpace' && command.placement);
 export const isStaleRevision = (error: unknown) => error instanceof Error && /^409: Workspace changed/u.test(error.message);
 
 /** Hover time before an unloaded saved tab starts loading in the background. */

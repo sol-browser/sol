@@ -100,9 +100,6 @@
   "library.moveTab": {
     "defaultMessage": "Move tab to Space"
   },
-  "library.moveHere": {
-    "defaultMessage": "Drop tabs here"
-  },
   "library.spaceName": {
     "defaultMessage": "Space name"
   },
@@ -120,6 +117,9 @@
   "library.moveDetail": {
     "defaultMessage": "The tab will open in the destination profile when selected."
   },
+  "library.moveFolderDetail": { "defaultMessage": "The folder’s tabs will open in the destination profile when selected." },
+  "library.moveFolderConfirm": { "defaultMessage": "Move folder" },
+  "library.destinationChanged": { "defaultMessage": "The destination changed. Choose where to move this item again." },
   "library.moveConfirm": {
     "defaultMessage": "Move tab"
   },

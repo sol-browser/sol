@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react';
 import { Archive, ArrowLeft, Brush, ChevronLeft, ChevronRight, Ellipsis, Folder, Layers2, Move, Plus, RotateCcw, Route } from 'lucide-react';
-import { parseArchive, type LibrarySection, type Snapshot, type SpaceInfo,
+import { parseArchive, type LibrarySection, type Snapshot, type SpaceInfo, type SpacePlacement,
   type TreeMutation, type TreeNode } from '../../../packages/browser-contracts/src';
 import { openSidebarMenu, request } from './bridge';
 import { Icon } from './Icon';
@@ -8,7 +8,7 @@ import { LibraryRoutes } from './LibraryRoutes';
 import { LibrarySelect, LibraryTooltip } from './LibrarySelect';
 import { dayKey, dayLabel } from './history-model';
 import { useMessages } from './i18n';
-import { archiveOrder, displayTitle, spaceDisplayName } from './sidebar-model';
+import { archiveOrder, descendant, displayTitle, spaceDisplayName } from './sidebar-model';
 import { chromaScale, swatchColor } from './theme-model';
 import './library.css';
 import { focusOnMount } from './focus-on-mount';
@@ -135,8 +135,9 @@ function LibraryArchive({ snapshot, mutate }: WorkspaceProps) {
   </section>;
 }
 
-const libraryTabType = 'application/x-sol-library-tab';
+const libraryEntryType = 'application/x-sol-library-entry';
 const librarySpaceType = 'application/x-sol-library-space';
+type EntryDrop = SpacePlacement & { space: string };
 function LibrarySpaces({ snapshot, mutate, createSpace, editSpace, openProfiles }: WorkspaceProps & SpaceActions) {
   const t = useMessages();
   const [rename, setRename] = useState<{ id: string; title: string }>();
@@ -150,26 +151,36 @@ function LibrarySpaces({ snapshot, mutate, createSpace, editSpace, openProfiles 
   const [dragging, setDragging] = useState(false);
   const [settling, setSettling] = useState(false);
   const dropping = useRef(false);
-  const edgeScroll = useRef({ speed: 0, frame: 0 });
+  const edgeScroll = useRef({ horizontal: 0, vertical: 0, list: null as HTMLElement | null, frame: 0 });
   // Near either end of the row the row scrolls toward it, faster closer in,
   // so a column or tab can reach Spaces that are out of view.
-  function scrollAtEdge(clientX: number) {
+  function scrollAtEdge(clientX: number, clientY: number, list: HTMLElement | null) {
     const row = board.current; if (!row) return;
-    const box = row.getBoundingClientRect(), zone = Math.min(96, box.width / 4);
-    const depth = clientX < box.left + zone ? (clientX - box.left) / zone - 1 : clientX > box.right - zone ? 1 - (box.right - clientX) / zone : 0;
-    edgeScroll.current.speed = Math.max(-1, Math.min(1, depth)) * 22;
-    if (!edgeScroll.current.speed || edgeScroll.current.frame) return;
+    const speed = (point: number, start: number, end: number, maximum: number) => {
+      const zone = Math.min(maximum, (end - start) / 4);
+      if (zone <= 0) return 0;
+      if (point < start + zone) return Math.max(-1, (point - start) / zone - 1);
+      if (point > end - zone) return Math.min(1, 1 - (end - point) / zone);
+      return 0;
+    };
+    const box = row.getBoundingClientRect(), listBox = list?.getBoundingClientRect();
+    const scroll = edgeScroll.current;
+    scroll.horizontal = speed(clientX, box.left, box.right, 96) * 22;
+    scroll.vertical = listBox ? speed(clientY, listBox.top, listBox.bottom, 44) * 12 : 0;
+    scroll.list = list;
+    if ((!scroll.horizontal && !scroll.vertical) || scroll.frame) return;
     const tick = () => {
-      const current = board.current, speed = edgeScroll.current.speed;
-      if (!current || !speed) { edgeScroll.current.frame = 0; return; }
-      current.scrollLeft += speed;
+      const current = board.current, { horizontal, vertical, list } = edgeScroll.current;
+      if (!current || (!horizontal && !vertical)) { edgeScroll.current.frame = 0; return; }
+      if (horizontal) current.scrollLeft += horizontal;
+      if (list?.isConnected && vertical) list.scrollTop += vertical;
       edgeScroll.current.frame = requestAnimationFrame(tick);
     };
     edgeScroll.current.frame = requestAnimationFrame(tick);
   }
   function stopEdgeScroll() {
     cancelAnimationFrame(edgeScroll.current.frame);
-    edgeScroll.current = { speed: 0, frame: 0 };
+    edgeScroll.current = { horizontal: 0, vertical: 0, list: null, frame: 0 };
   }
   function endDrag() { stopEdgeScroll(); setDragging(false); }
   useEffect(() => stopEdgeScroll, []);
@@ -193,12 +204,13 @@ function LibrarySpaces({ snapshot, mutate, createSpace, editSpace, openProfiles 
     observer.observe(row);
     return () => observer.disconnect();
   }, [snapshot.spaces?.length]);
-  const [transfer, setTransfer] = useState<{ id: string; space: SpaceInfo }>();
-  const [hoveredSpace, setHoveredSpace] = useState<string>();
+  const [transfer, setTransfer] = useState<{ id: string; space: string; placement?: SpacePlacement }>();
+  const [drop, setDrop] = useState<EntryDrop>();
   const [moving, setMoving] = useState(false);
   const dragId = useRef('');
   const spaces = [...(snapshot.spaces ?? [])].sort((a, b) => a.position - b.position);
   const nodes = snapshot.nodes ?? [];
+  const byId = useMemo(() => new Map(nodes.map(node => [node.id, node])), [nodes]);
   const blocked = moving || !snapshot.ready || !!snapshot.windowClosing;
   const rows = useMemo(() => {
     const byParent = new Map<string, TreeNode[]>();
@@ -214,15 +226,65 @@ function LibrarySpaces({ snapshot, mutate, createSpace, editSpace, openProfiles 
     return byParent;
   }, [nodes]);
 
-  async function move(id: string, space: SpaceInfo, confirmed = false) {
-    const node = nodes.find(item => item.id === id);
-    const origin = spaces.find(item => item.id === node?.space);
-    if (blocked || !node || !origin || node.parentId || node.favorite || node.closing || origin.id === space.id) return;
-    const crossProfile = origin.profileId !== space.profileId;
-    if (crossProfile && !confirmed) { setTransfer({ id, space }); return; }
+  function owner(node: TreeNode) {
+    for (let depth = 0; node.parentId && depth < 64; ++depth) {
+      const parent = byId.get(node.parentId);
+      if (!parent) return '';
+      node = parent;
+    }
+    return node.parentId ? '' : node.space;
+  }
+  function validDrop(node: TreeNode, space: string, placement: SpacePlacement) {
+    if (node.kind === 'folder' && placement.section !== 'pinned') return false;
+    if (!placement.targetId) return placement.mode === 'inside';
+    const row = byId.get(placement.targetId);
+    return !!row && !row.closing && !row.archived && !row.favorite && !row.splitHidden &&
+      (row.pinned ? 'pinned' : 'today') === placement.section &&
+      (placement.mode !== 'inside' || row.kind === 'folder') && owner(row) === space && !descendant(nodes, row.id, node.id);
+  }
+  async function move(id: string, spaceId: string, placement?: SpacePlacement, confirmed = false) {
+    const node = byId.get(id);
+    const space = spaces.find(item => item.id === spaceId);
+    const origin = node && spaces.find(item => item.id === owner(node));
+    if (blocked) return;
+    if (!node || !origin || !space || node.favorite || node.closing ||
+        (placement ? !validDrop(node, spaceId, placement) : node.parentId || origin.id === space.id)) {
+      if (confirmed) { setTransfer(undefined); setMenuError(t('library.destinationChanged')); }
+      return;
+    }
+    const crossProfile = (origin.profileId ?? 'default') !== (space.profileId ?? 'default');
+    if (crossProfile && !confirmed) { setTransfer({ id, space: spaceId, placement }); return; }
     setMoving(true);
-    if (await mutate({ method: 'tree.moveToSpace', id, space: space.id, unload: crossProfile })) setTransfer(undefined);
+    if (await mutate({ method: 'tree.moveToSpace', id, space: spaceId, unload: crossProfile, placement })) setTransfer(undefined);
     setMoving(false);
+  }
+  function nodeDragStart(event: DragEvent, node: TreeNode) {
+    if (blocked || node.closing) { event.preventDefault(); return; }
+    dragId.current = node.id;
+    event.dataTransfer.setData(libraryEntryType, node.id);
+    event.dataTransfer.effectAllowed = 'move';
+    setDragging(true);
+  }
+  function nodeDragEnd() {
+    dragId.current = ''; setDrop(undefined); endDrag();
+  }
+  function dropAt(event: DragEvent, space: string): EntryDrop | undefined {
+    const source = byId.get(dragId.current);
+    if (blocked || !source || source.closing || !event.dataTransfer.types.includes(libraryEntryType)) return;
+    const target = event.target instanceof Element ? event.target : event.currentTarget;
+    const row = target.closest<HTMLElement>('[data-library-node]');
+    const node = row?.dataset.libraryNode ? byId.get(row.dataset.libraryNode) : undefined;
+    const zone = target.closest<HTMLElement>('[data-library-zone]')?.dataset.libraryZone;
+    let section: SpacePlacement['section'] = zone === 'today' || zone === 'pinned' ? zone : source.pinned ? 'pinned' : 'today';
+    let mode: SpacePlacement['mode'] = 'inside';
+    if (row && node) {
+      const box = row.getBoundingClientRect();
+      const at = (event.clientY - box.top) / Math.max(1, box.height);
+      section = node.pinned ? 'pinned' : 'today';
+      if (node.kind !== 'folder' || at < .27 || at > .73) mode = at < .5 ? 'before' : 'after';
+    }
+    const placement = { targetId: node?.id ?? '', mode, section };
+    if (validDrop(source, space, placement)) return { ...placement, space };
   }
   // The theme editor works on the Space on screen (its window previews the theme).
   async function editTheme(space: SpaceInfo, anchor: HTMLElement) {
@@ -271,20 +333,18 @@ function LibrarySpaces({ snapshot, mutate, createSpace, editSpace, openProfiles 
     return (order.findIndex(space => space.id === id) - index) * reorder.step;
   }
   function renderRows(children: TreeNode[], space: SpaceInfo) {
-    return <ul className="library-list">{children.map(node => <li key={node.id}>
+    return <ul className="library-list">{children.map(node => <li key={node.id} className="library-tree-entry"
+      data-entry-drop={drop?.space === space.id && drop.targetId === node.id ? drop.mode : undefined}>
       {node.kind === 'folder' ? <details className="library-folder" open={node.expanded || undefined}>
-        <summary><ChevronRight size={13} strokeWidth={2} className="library-folder-chevron" aria-hidden="true" />
+        <summary data-library-node={node.id} draggable={!blocked && !node.closing}
+          onDragStart={event => nodeDragStart(event, node)} onDragEnd={nodeDragEnd}>
+          <ChevronRight size={13} strokeWidth={2} className="library-folder-chevron" aria-hidden="true" />
           <Folder size={16} strokeWidth={1.7} aria-hidden="true" /><span>{displayTitle(node)}</span></summary>
         {renderRows(rows.get(node.id) ?? [], space)}</details> :
-        <div className="library-space-tab" data-library-tab={node.id}>
-          <button type="button" className="library-row" draggable={!blocked && !node.parentId && !node.closing}
+        <div className="library-space-tab" data-library-tab={node.id} data-library-node={node.id}>
+          <button type="button" className="library-row" draggable={!blocked && !node.closing}
             aria-current={snapshot.activeId === node.id ? 'true' : undefined} disabled={blocked || node.closing}
-            onDragStart={event => {
-              dragId.current = node.id;
-              event.dataTransfer.setData(libraryTabType, node.id);
-              event.dataTransfer.effectAllowed = 'move';
-              setDragging(true);
-            }} onDragEnd={() => { dragId.current = ''; setHoveredSpace(undefined); endDrag(); }}
+            onDragStart={event => nodeDragStart(event, node)} onDragEnd={nodeDragEnd}
             onClick={() => void mutate({ method: 'tree.activate', id: node.id })}>
             {node.favicon ? <img src={node.favicon} alt="" draggable={false} /> : <Icon name="globe" />}
             <span className="library-row-text"><strong>{node.splitTitle || displayTitle(node)}</strong></span>
@@ -293,17 +353,21 @@ function LibrarySpaces({ snapshot, mutate, createSpace, editSpace, openProfiles 
             className="library-tab-move" align="end" disabled={blocked || node.closing}
             trigger={<Ellipsis size={15} aria-hidden="true" />}
             choices={spaces.filter(item => item.id !== space.id).map(item => ({ value: item.id, label: spaceDisplayName(item, t) }))}
-            onChange={value => { const destination = spaces.find(item => item.id === value); if (destination) void move(node.id, destination); }} />}
+            onChange={value => void move(node.id, value)} />}
         </div>}
     </li>)}</ul>;
   }
+  const transferSpace = transfer && spaces.find(space => space.id === transfer.space);
+  const transferFolder = transfer && byId.get(transfer.id)?.kind === 'folder';
+  const transferTitle = transferSpace && t('library.moveTitle', { space: spaceDisplayName(transferSpace, t) });
   return <>
     {menuError && <p className="library-notice" role="alert">{menuError}</p>}
-    {transfer && <section className="library-confirm" role="group" aria-label={t('library.moveTitle', { space: spaceDisplayName(transfer.space, t) })}>
-      <strong>{t('library.moveTitle', { space: spaceDisplayName(transfer.space, t) })}</strong><p>{t('library.moveDetail')}</p>
+    {transfer && transferTitle && <section className="library-confirm" role="group" aria-label={transferTitle}>
+      <strong>{transferTitle}</strong><p>{t(transferFolder ? 'library.moveFolderDetail' : 'library.moveDetail')}</p>
       <div className="library-confirm-actions">
         <button type="button" className="library-action" disabled={blocked} onClick={() => setTransfer(undefined)}>{t('common.cancel')}</button>
-        <button type="button" className="library-action library-primary" disabled={blocked} onClick={() => void move(transfer.id, transfer.space, true)}>{t('library.moveConfirm')}</button>
+        <button type="button" className="library-action library-primary" disabled={blocked}
+          onClick={() => void move(transfer.id, transfer.space, transfer.placement, true)}>{t(transferFolder ? 'library.moveFolderConfirm' : 'library.moveConfirm')}</button>
       </div>
     </section>}
     <div className="library-board" data-dragging={dragging}>
@@ -321,7 +385,9 @@ function LibrarySpaces({ snapshot, mutate, createSpace, editSpace, openProfiles 
       }} onDragLeave={event => {
         if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) stopEdgeScroll();
       }} onDragOver={event => {
-      if (event.dataTransfer.types.includes(libraryTabType) || event.dataTransfer.types.includes(librarySpaceType)) scrollAtEdge(event.clientX);
+      const entry = event.dataTransfer.types.includes(libraryEntryType);
+      if (entry || event.dataTransfer.types.includes(librarySpaceType))
+        scrollAtEdge(event.clientX, event.clientY, entry && event.target instanceof Element ? event.target.closest<HTMLElement>('.library-space-tabs') : null);
       if (!reorder || !event.dataTransfer.types.includes(librarySpaceType)) return;
       event.preventDefault(); event.dataTransfer.dropEffect = 'move';
       const target = slotAt(event.clientX);
@@ -345,19 +411,32 @@ function LibrarySpaces({ snapshot, mutate, createSpace, editSpace, openProfiles 
       const tabs = rows.get(space.id) ?? [];
       const pinned = tabs.filter(tab => tab.pinned || tab.kind === 'folder');
       const recent = tabs.filter(tab => !tab.pinned && tab.kind !== 'folder');
-      return <section key={space.id} className="library-space" data-library-space={space.id} data-drop={hoveredSpace === space.id}
+      const rootDrop = drop?.space === space.id && !drop.targetId ? drop.section : undefined;
+      return <section key={space.id} className="library-space" data-library-space={space.id} data-drop={!!rootDrop}
         data-active={snapshot.activeSpace === space.id} data-dragging={reorder?.id === space.id}
         style={{ '--library-space-color': swatchColor(space.hue, space.intensity), '--library-space-hue': space.hue,
           '--library-space-chroma': Math.min(0.11 * chromaScale(space.intensity), 0.24).toFixed(4),
           translate: `${offset(space.id, index)}px 0` } as CSSProperties}
         onDragOver={event => {
-          if (!dragId.current || blocked || !event.dataTransfer.types.includes(libraryTabType)) return;
-          event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setHoveredSpace(space.id);
+          if (!dragId.current || !event.dataTransfer.types.includes(libraryEntryType)) return;
+          const next = dropAt(event, space.id);
+          setDrop(current => current?.space === next?.space && current?.targetId === next?.targetId &&
+            current?.mode === next?.mode && current?.section === next?.section ? current : next);
+          if (next) event.preventDefault();
+          event.dataTransfer.dropEffect = next ? 'move' : 'none';
         }} onDragLeave={event => {
-          if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setHoveredSpace(undefined);
+          if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget))
+            setDrop(current => current?.space === space.id ? undefined : current);
         }} onDrop={event => {
-          if (!dragId.current || event.dataTransfer.getData(libraryTabType) !== dragId.current) return;
-          event.preventDefault(); void move(dragId.current, space); dragId.current = ''; setHoveredSpace(undefined);
+          const id = dragId.current;
+          if (!id || event.dataTransfer.getData(libraryEntryType) !== id) return;
+          event.preventDefault();
+          const next = dropAt(event, space.id);
+          nodeDragEnd();
+          if (next) {
+            const { space: destination, ...placement } = next;
+            void move(id, destination, placement);
+          }
         }}>
         <header className="library-space-header">
           <button type="button" className="library-space-name" data-tip={name} aria-current={snapshot.activeSpace === space.id ? 'true' : undefined}
@@ -378,10 +457,16 @@ function LibrarySpaces({ snapshot, mutate, createSpace, editSpace, openProfiles 
           <button className="library-action library-primary" type="submit" disabled={blocked}>{t('common.save')}</button>
         </form>}
         <div className="library-space-tabs library-scroll">
-          {pinned.length > 0 && renderRows(pinned, space)}
-          {recent.length > 0 && pinned.length > 0 && <hr />}
-          {recent.length > 0 && renderRows(recent, space)}
-          {!tabs.length && <p className="library-note">{t(hoveredSpace === space.id ? 'library.moveHere' : 'library.emptySpace')}</p>}
+          {(dragId.current || pinned.length > 0) && <div data-library-zone="pinned">
+            {dragId.current && <div className="library-drop-section" data-targeted={rootDrop === 'pinned'}>{t('sidebar.pinned')}</div>}
+            {renderRows(pinned, space)}
+          </div>}
+          {!dragId.current && recent.length > 0 && pinned.length > 0 && <hr />}
+          {(dragId.current || recent.length > 0) && <div data-library-zone="today">
+            {dragId.current && <div className="library-drop-section" data-targeted={rootDrop === 'today'}>{t('sidebar.today')}</div>}
+            {renderRows(recent, space)}
+          </div>}
+          {!tabs.length && !dragId.current && <p className="library-note">{t('library.emptySpace')}</p>}
         </div>
         <footer className="library-space-controls">
           {spaces.length > 1 ? <button type="button" className="library-icon-button library-space-handle" data-action="move-space"

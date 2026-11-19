@@ -17,6 +17,17 @@ One short line that sums up the release. Optional; the website shows it as the h
 New things first, smaller fixes under "### Fixes". Describe the result for the user, not the code.
 -->
 
+## 0.10.1 — 2026-11-19
+
+- Library now lets you move tabs and folders within and between Spaces.
+
+### Fixes
+
+- The floating sidebar matches the browser’s background on multi-color
+  themes and has a subtle outline.
+- Site settings and other popups finish their opening animation even
+  when their contents change size.
+
 ## 0.10.0 — 2026-11-18
 
 A Library for your Spaces, rules for where links open, and a calmer way to make a Space.

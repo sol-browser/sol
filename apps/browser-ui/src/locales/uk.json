@@ -99,9 +99,6 @@
   "library.moveTab": {
     "defaultMessage": "Перемістити вкладку до простору"
   },
-  "library.moveHere": {
-    "defaultMessage": "Перетягніть вкладку сюди"
-  },
   "library.spaceName": {
     "defaultMessage": "Назва простору"
   },
@@ -119,6 +116,9 @@
   "library.moveDetail": {
     "defaultMessage": "Вкладка відкриється в профілі нового простору після вибору."
   },
+  "library.moveFolderDetail": { "defaultMessage": "Вкладки папки відкриватимуться в профілі нового простору після вибору." },
+  "library.moveFolderConfirm": { "defaultMessage": "Перемістити папку" },
+  "library.destinationChanged": { "defaultMessage": "Місце призначення змінилося. Виберіть знову, куди перемістити цей елемент." },
   "library.moveConfirm": {
     "defaultMessage": "Перемістити вкладку"
   },

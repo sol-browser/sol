@@ -97,6 +97,8 @@ test('only id-addressed tree commands are retried after a revision race', async 
   assert.equal(retryable({ method: 'tree.removeFolder', id: 'a', confirmation: { revision: 1, tabs: 3 } }), false,
     'a changed workspace must never silently reuse destructive confirmation');
   assert.equal(retryable({ method: 'tree.move', id: 'a', parentId: '', position: 1 }), false);
+  assert.equal(retryable({ method: 'tree.moveToSpace', id: 'a', space: 'b',
+    placement: { mode: 'before', targetId: 'c', section: 'pinned' } }), false);
   assert.equal(retryable({ method: 'tree.place', id: 'a', parentId: '', position: 1, section: 'today' }), false);
   assert.equal(retryable({ method: 'tree.createTab', parentId: '', title: 'x', url: 'https://x/' }), false);
   assert.equal(isStaleRevision(new Error('409: Workspace changed; retry')), true);
