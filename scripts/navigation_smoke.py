@@ -9,7 +9,7 @@ import subprocess
 import threading
 import time
 import uuid
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 from smoke import ROOT, run
 
 PAGE = b'''<!doctype html><html lang="en"><meta charset="utf-8"><title>Owned navigation fixture</title>
@@ -30,6 +30,7 @@ NAMED = b'''<!doctype html><title>Named tab fixture</title><h1>Named tab</h1>
 def main():
     parser = argparse.ArgumentParser(); parser.add_argument('--manual', action='store_true'); parser.add_argument('--observe', action='store_true')
     parser.add_argument('--named-targets-only', action='store_true', help='Stop after the named-target and explicit popup checks')
+    parser.add_argument('--download-links-only', action='store_true', help='Download through new and existing tabs')
     args=parser.parse_args()
     counts=Counter()
     class Handler(BaseHTTPRequestHandler):
@@ -37,6 +38,21 @@ def main():
         def do_GET(self):
             counts[self.path]+=1
             path=urlsplit(self.path).path
+            if args.download_links_only and path == '/ctrl':
+                self.send_response(302)
+                self.send_header('Location', f'http://localhost:{self.server.server_port}/ctrl.bin')
+                self.end_headers()
+                return
+            if args.download_links_only and path in ('/middle', '/ctrl.bin', '/retained-page.bin'):
+                name = 'middle.bin' if path == '/middle' else path[1:]
+                body = name.encode() * 4096
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/octet-stream')
+                self.send_header('Content-Disposition', f'attachment; filename="{name}"')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if path=='/named-redirect':
                 self.send_response(302); self.send_header('Location','/named'); self.end_headers(); return
             if path=='/slow': time.sleep(3)
@@ -46,7 +62,7 @@ def main():
             try:self.wfile.write(body)
             except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):pass  # Expected for Stop.
     server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start()
-    fixture = '/fixture?named-targets-only=1' if args.named_targets_only else '/fixture'
+    fixture = '/fixture?download-links-only=1' if args.download_links_only else '/fixture?named-targets-only=1' if args.named_targets_only else '/fixture'
     url=f'http://127.0.0.1:{server.server_port}{fixture}'
     try:
         if args.manual:
@@ -59,6 +75,27 @@ def main():
             with (directory/'process.log').open('w') as log:
                 process=subprocess.Popen([exe,'--workspace',f'--profile-dir={directory / "profile"}',*extra],stdout=log,stderr=log,cwd=os.path.dirname(exe))
                 print(json.dumps({'directory':str(directory),'url':url,'pid':process.pid}),flush=True);process.wait()
+        elif args.download_links_only:
+            target = ROOT / 'artifacts' / ('link-downloads-' + uuid.uuid4().hex[:8])
+            target.mkdir()
+            directory, rows = run(url, ['--probe-browsing', f'--probe-downloads-dir={target}'], allow_failure=True, timeout=65)
+            expected = ('middle.bin', 'ctrl.bin', 'retained-page.bin')
+            with sqlite3.connect(directory / 'profile/BrowserData/workspace.sqlite3') as db:
+                leftovers, = db.execute('SELECT count(*) FROM nodes WHERE url IN (?, ?)',
+                    (urljoin(url, '/middle'), urljoin(url, '/ctrl'))).fetchone()
+            checks = {
+                'workspace_probe': any(r['event'] == 'probe_result' and r['details']['pass'] for r in rows),
+                'source_form_preserved': any(r['event'] == 'browsing_source_form_preserved' for r in rows),
+                'no_empty_tabs': sum(r['event'] == 'download_only_tab_close_requested' for r in rows) == 2,
+                'nothing_archived_for_downloads': leftovers == 0,
+                'files_once_with_exact_bytes': sorted(p.name for p in target.iterdir()) == sorted(expected) and
+                    all((target / name).read_bytes() == name.encode() * 4096 for name in expected),
+                'one_request_per_hop': all(counts[path] == 1 for path in ('/middle', '/ctrl', '/ctrl.bin', '/retained-page.bin')),
+            }
+            result = {'passed': all(checks.values()), 'checks': checks, 'requests': dict(counts), 'run': directory.name}
+            (directory / 'download-links.json').write_text(json.dumps(result, indent=2) + '\n')
+            print(json.dumps(result, indent=2), flush=True)
+            if not result['passed']: raise RuntimeError('Download-link regression failed')
         else:
             directory,rows=run(url,['--probe-browsing'])
             required=['browsing_checks_pass','browsing_source_form_preserved','popup_bridge_absent','popup_closed']

@@ -2698,6 +2698,18 @@
   "media.next": {
     "defaultMessage": "Next track"
   },
+  "media.shuffle": {
+    "defaultMessage": "Shuffle"
+  },
+  "media.repeatOff": {
+    "defaultMessage": "Repeat off"
+  },
+  "media.repeatAll": {
+    "defaultMessage": "Repeat all"
+  },
+  "media.repeatOne": {
+    "defaultMessage": "Repeat one"
+  },
   "media.pause": {
     "defaultMessage": "Pause"
   },
@@ -3259,6 +3271,10 @@
   "boost.reset": {
     "defaultMessage": "Reset Boost"
   },
+  "native.window.ProtectedMediaOffer": {
+    "defaultMessage": "{name} plays only with Streaming DRM. Turn it on in Settings.",
+    "description": "Toast when Spotify or Netflix opens in an ordinary tab because the Protected content component is not installed. {name} is the service name."
+  },
   "native.window.Copied": {
     "defaultMessage": "Copied current URL"
   },
@@ -3543,5 +3559,184 @@
   "native.menu.AllowPrivate": {
     "defaultMessage": "Allow in private windows",
     "description": "Extension right-click menu: Chrome's Allow in Incognito for this extension."
+  },
+  "settings.category.protected": {
+    "defaultMessage": "Streaming DRM",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "panel.protected.title": {
+    "defaultMessage": "{service} needs Streaming DRM",
+    "description": "Window modal when Spotify or Netflix opens in an ordinary tab while the Protected content component is not installed. {service} is the service name."
+  },
+  "panel.protected.detail": {
+    "defaultMessage": "{service} only plays in a browser that passes Widevine's protected playback check. Sol can add a separate component for this, used only for services like this one.",
+    "description": "Window modal when Spotify or Netflix opens in an ordinary tab while the Protected content component is not installed. {service} is the service name."
+  },
+  "panel.protected.differs": {
+    "defaultMessage": "Saved passwords, passkeys, autofill and extensions are not available in protected tabs.",
+    "description": "Window modal when Spotify or Netflix opens in an ordinary tab while the Protected content component is not installed. {service} is the service name."
+  },
+  "panel.protected.ready": {
+    "defaultMessage": "Streaming DRM is ready",
+    "description": "Window modal when Spotify or Netflix opens in an ordinary tab while the Protected content component is not installed. {service} is the service name."
+  },
+  "panel.protected.readyDetail": {
+    "defaultMessage": "Open {service} again to play it in a protected tab.",
+    "description": "Window modal when Spotify or Netflix opens in an ordinary tab while the Protected content component is not installed. {service} is the service name."
+  },
+  "panel.protected.open": {
+    "defaultMessage": "Open {service}",
+    "description": "Window modal when Spotify or Netflix opens in an ordinary tab while the Protected content component is not installed. {service} is the service name."
+  },
+  "panel.protected.more": {
+    "defaultMessage": "How it works",
+    "description": "Window modal when Spotify or Netflix opens in an ordinary tab while the Protected content component is not installed. {service} is the service name."
+  },
+  "panel.protected.later": {
+    "defaultMessage": "Not now",
+    "description": "Window modal when Spotify or Netflix opens in an ordinary tab while the Protected content component is not installed. {service} is the service name."
+  },
+  "panel.protected.background": {
+    "defaultMessage": "Continue in background",
+    "description": "Window modal when Spotify or Netflix opens in an ordinary tab while the Protected content component is not installed. {service} is the service name."
+  },
+  "settings.protected.category": {
+    "defaultMessage": "OPTIONAL COMPONENT",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.title": {
+    "defaultMessage": "Netflix, Spotify and other protected services",
+    "description": "Settings → Streaming DRM: the optional, experimental helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.experimental": {
+    "defaultMessage": "Experimental",
+    "description": "Settings → Streaming DRM and its install modal: tag beside the headings, the feature is experimental."
+  },
+  "settings.protected.experimentalDetail": {
+    "defaultMessage": "Experimental: a service may not play, or may stop working after it changes its site."
+  },
+  "settings.protected.detail": {
+    "defaultMessage": "Some services only play in a browser that passes Widevine's protected playback check. Sol does this with an extra component that you add here. Nothing is downloaded until you install it.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.detailInstalled": {
+    "defaultMessage": "Some services only play in a browser that passes Widevine's protected playback check. Sol uses an extra component for them, and it is updated together with Sol.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify). Shown once the component is installed."
+  },
+  "settings.protected.install": {
+    "defaultMessage": "Install ({size})",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.retry": {
+    "defaultMessage": "Try again ({size})",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.disk": {
+    "defaultMessage": "{size} on disk",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.downloading": {
+    "defaultMessage": "Downloading… {percent}%",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.downloadingLabel": {
+    "defaultMessage": "Download progress",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.installing": {
+    "defaultMessage": "Installing…",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.removing": {
+    "defaultMessage": "Removing…",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.installed": {
+    "defaultMessage": "Installed",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.outdated": {
+    "defaultMessage": "Updating the component. Protected tabs keep working in the meantime.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.remove": {
+    "defaultMessage": "Remove",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.removeDetail": {
+    "defaultMessage": "Frees {size}. Open protected tabs stop playing.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.removeData": {
+    "defaultMessage": "Also sign out of these services and delete their data",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.removeConfirm": {
+    "defaultMessage": "Remove component",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.cancel": {
+    "defaultMessage": "Cancel",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.manual": {
+    "defaultMessage": "A development copy of the component is in use.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.about": {
+    "defaultMessage": "How it works",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.how": {
+    "defaultMessage": "A separate engine just for these services",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.howDetail": {
+    "defaultMessage": "The component is a Chromium-based engine that castLabs signs for Widevine. Sol starts it only when you open a supported service and shows it inside that tab. Every other site opens in Sol as usual.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.differs": {
+    "defaultMessage": "No saved passwords, passkeys or extensions there",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.differsDetail": {
+    "defaultMessage": "Saved passwords, passkeys, autofill and extensions are not available in protected tabs, and signing in with Google, Apple or Facebook may not work. Sign in to each service there once; the sign-in is kept for that Sol profile.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.privacy": {
+    "defaultMessage": "Kept on this PC",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.privacyDetail": {
+    "defaultMessage": "Sign-ins and site data of these services are stored apart from the rest of your browsing, with cookies encrypted for your Windows account. Playback licences come from the service itself through Google's Widevine module.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.error.network": {
+    "defaultMessage": "Could not download the component. Check your connection and try again.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.error.integrity": {
+    "defaultMessage": "The download was damaged or changed, so it was not installed. Try again.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.error.disk": {
+    "defaultMessage": "Not enough disk space, or Sol cannot write to its folder.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.error.unpack": {
+    "defaultMessage": "The component could not be unpacked. Try again.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.error.inUse": {
+    "defaultMessage": "Some files are still in use. Close protected tabs and try again.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.error.busy": {
+    "defaultMessage": "Another change is in progress. Try again in a moment.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
+  },
+  "settings.protected.error.unavailable": {
+    "defaultMessage": "Streaming DRM is not available in this window.",
+    "description": "Settings → Protected content: the optional helper that plays Widevine-protected services (Netflix, Spotify)."
   }
 }

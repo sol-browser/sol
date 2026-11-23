@@ -18,8 +18,8 @@
 
 namespace red {
 namespace {
-// Chrome's extension popup limits and Sol's initial window size.
-const CefSize kMinimum(25, 25), kMaximum(800, 600), kInitialSize(320, 120);
+// Sol starts at a readable width and keeps Chrome's maximum size and minimum height.
+const CefSize kMinimum(320, 25), kMaximum(800, 600), kInitialSize(kMinimum.width, 120);
 
 std::string Origin(const std::string& id) { return "chrome-extension://" + id + "/"; }
 bool IsWebLink(const std::string& url) { return HasWebScheme(url); }
@@ -56,23 +56,7 @@ class PopupClient final : public CefClient, public CefLifeSpanHandler, public Ce
   }
   bool OnAutoResize(CefRefPtr<CefBrowser> browser, const CefSize& size) override {
     const auto owner = owner_.lock();
-    if (!owner || !owner->Owns(browser->GetIdentifier()) || auto_resize_disabled_) return true;
-    // A fluid extension page can keep getting narrower while its height is
-    // already capped. Recover when it hits the width floor after requesting
-    // a larger width at that height. A stable, deliberately narrow popup still
-    // uses its requested dimensions.
-    if (size.height == kMaximum.height && size.width == kMinimum.width &&
-        previous_size_.height == size.height && previous_size_.width > size.width &&
-        previous_size_.width < kInitialSize.width) {
-      auto_resize_disabled_ = true;
-      // Lay out this popup in a fixed viewport. Intrinsic sizing is what made
-      // its fluid page collapse, so keep it off for this popup's lifetime.
-      browser->GetHost()->SetAutoResizeEnabled(false, CefSize(), CefSize());
-      owner->Resize(CefSize(kInitialSize.width, size.height));
-      return true;
-    }
-    previous_size_ = size;
-    owner->Resize(size);
+    if (owner && owner->Owns(browser->GetIdentifier())) owner->Resize(size);
     return true;
   }
   bool OnPreKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& event, CefEventHandle, bool*) override {
@@ -119,8 +103,6 @@ class PopupClient final : public CefClient, public CefLifeSpanHandler, public Ce
   std::weak_ptr<ExtensionPopup> owner_;
   std::weak_ptr<State> state_;
   std::string id_;
-  CefSize previous_size_;
-  bool auto_resize_disabled_ = false;
   IMPLEMENT_REFCOUNTING(PopupClient);
 };
 class PopupView final : public CefBrowserViewDelegate {
@@ -254,6 +236,7 @@ void ExtensionPopup::Destroyed(CefRefPtr<CefWindow> window) {
   }
 }
 void RunExtension(const std::shared_ptr<State>& s, const std::string& id, const CefPoint& at, ExtensionPopupSide side) {
+  if (s->content && s->workspace && s->workspace->IsProtectedMediaBrowser(s->content->GetIdentifier())) return;
   const auto* item = s->extensions ? s->extensions->Find(id) : nullptr;
   if (!item) return;
 #if CEF_API_ADDED(CEF_EXPERIMENTAL)

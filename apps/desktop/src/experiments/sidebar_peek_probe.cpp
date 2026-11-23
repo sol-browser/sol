@@ -24,6 +24,7 @@
 #include "integrations/x_unread.h"
 #include "app/browsing_profiles.h"
 #include "history/history_service.h"
+#include "site/site_settings.h"
 #include "windows/focus.h"
 namespace red {
 namespace {
@@ -34,7 +35,7 @@ await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
 const update=document.querySelector('[data-action="restart-to-update"]');
 const box=update?.getBoundingClientRect();
 const hit=box&&document.elementFromPoint(box.x+box.width/2,box.y+box.height/2);
-console.info('RED_PEEK:'+JSON.stringify({updateVisible:!!update&&!!box&&box.width>0&&box.height>0,updateClickable:!!update&&!!hit&&update.contains(hit),updateVersion:update?.title.includes('0.1.999'),mediaVisible:document.querySelector('.media-stack')?.textContent?.includes('Synthetic media')===true}));
+console.info('RED_PEEK:'+JSON.stringify({updateVisible:!!update&&!!box&&box.width>0&&box.height>0,updateClickable:!!update&&!!hit&&update.contains(hit),updateVersion:update?.dataset.tip?.includes('0.1.999'),mediaVisible:document.querySelector('.media-stack')?.textContent?.includes('Synthetic media')===true}));
 // Click in the same render as the synthetic snapshot. A subsequent real
 // snapshot can remove the synthetic notice before the next task.
 update?.click();
@@ -59,6 +60,42 @@ void Later(const std::shared_ptr<State>& state, int delay, Step step) {
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, Step step) {
     if (auto state = weak.lock()) step(state);
   }, std::weak_ptr<State>(state), step), delay);
+}
+constexpr char kSpaceCreatorScript[] = R"JS((async()=>{
+const query=selector=>document.querySelector(selector);
+const until=async test=>{
+  for(let i=0;i<80;++i){if(test())return true;await new Promise(r=>setTimeout(r,25));}
+  return false;
+};
+const columns=()=>query('.favorites .tree') ? getComputedStyle(query('.favorites .tree')).gridTemplateColumns.split(' ').length : 0;
+const favorites=()=>document.querySelectorAll('.favorites .tree-row').length;
+const media=()=>query('.media-stack .media-player[data-playing="true"]');
+const before=await until(()=>favorites()===6&&columns()===3&&media());
+query('.space-add')?.click();
+await until(()=>query('.space-creator-cancel')?.getAnimations().every(a=>a.playState!=='running')&&query('.space-creator'));
+await new Promise(r=>setTimeout(r,350));
+const cancel=query('.space-creator-cancel');
+const hit=cancel?.getBoundingClientRect();
+const clickable=!!hit&&cancel.contains(document.elementFromPoint(hit.x+hit.width/2,hit.y+hit.height/2));
+const hiddenDuringCreate=!!cancel&&!query('.media-stack');
+cancel?.click();
+const restored=await until(()=>!query('.space-creator')&&!!media());
+const gridRestored=await until(()=>favorites()===6&&columns()===3);
+const fixed=query('.sidebar-fixed');
+if(fixed)fixed.style.width='130px';
+const shrank=await until(()=>columns()===2);
+fixed?.style.removeProperty('width');
+const grew=await until(()=>columns()===3);
+console.info('RED_PEEK:'+JSON.stringify({spaceCreator:query('.peek-root')?'floating':'docked',before,clickable,hiddenDuringCreate,restored,gridRestored,shrank,grew}));
+})())JS";
+void CheckSpaceCreator(const std::shared_ptr<State>& state, bool floating) {
+  const auto shell = state->browsers.find(state->shell_id);
+  const auto browser = floating && state->sidebar_peek ? state->sidebar_peek->browser() :
+      shell != state->browsers.end() ? shell->second : nullptr;
+  if (browser) {
+    const auto frame = browser->GetMainFrame();
+    frame->ExecuteJavaScript(kSpaceCreatorScript, frame->GetURL(), 0);
+  }
 }
 void ChoosePinEditor(const std::shared_ptr<State>& state, int attempts) {
   if (state->sidebar_menu && state->sidebar_menu->ProbeSelect("editPinned")) {
@@ -90,6 +127,78 @@ void ActivateProbeWindow(const std::shared_ptr<State>& s) {
     SendInput(2, keys, sizeof(INPUT));
     SetForegroundWindow(root);
   }
+}
+class SidebarTooltipHover final : public CefDevToolsMessageObserver {
+ public:
+  SidebarTooltipHover(std::weak_ptr<State> state, bool floating) : state_(std::move(state)), floating_(floating) {}
+  int query = 0;
+  void OnDevToolsMethodResult(CefRefPtr<CefBrowser> browser, int id, bool success, const void* bytes, size_t size) override {
+    const auto state = state_.lock();
+    if (id != query || !success || !state || !state->content) return;
+    const auto json = CefParseJSON(std::string(static_cast<const char*>(bytes), size), JSON_PARSER_RFC);
+    const auto result = json && json->GetType() == VTYPE_DICTIONARY ? json->GetDictionary()->GetDictionary("result") : nullptr;
+    const auto point = result ? result->GetDictionary("value") : nullptr;
+    if (!point) return;
+    const HWND widget = browser->GetHost()->GetWindowHandle();
+    const HWND content = state->content->GetHost()->GetWindowHandle();
+    RECT page{};
+    POINT original{};
+    const double scale = GetDpiForWindow(widget) / 96.0;
+    POINT button{std::lround(point->GetInt("x") * scale), std::lround(point->GetInt("y") * scale)};
+    if (!GetWindowRect(content, &page) || !ClientToScreen(widget, &button) || !GetCursorPos(&original)) return;
+    const HWND sidebar_hit = WindowFromPoint(button);
+    const bool reached_sidebar = scale > 0 && (sidebar_hit == widget || IsChild(widget, sidebar_hit)) &&
+        sidebar_hit != content && !IsChild(content, sidebar_hit) && SetCursorPos(button.x, button.y);
+    const POINT destination{page.right - (page.right - page.left) / 4, (page.top + page.bottom) / 2};
+    const bool floating = floating_;
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, HWND content, POINT destination,
+        POINT original, POINT button, bool reached_sidebar, bool floating) {
+      const auto state = weak.lock();
+      if (!state) return;
+      const HWND page_hit = WindowFromPoint(destination);
+      const bool reached_page = (page_hit == content || IsChild(content, page_hit)) && SetCursorPos(destination.x, destination.y);
+      auto evidence = CefDictionaryValue::Create();
+      evidence->SetString("host", floating ? "floating" : "docked");
+      evidence->SetBool("sidebar_hit", reached_sidebar);
+      evidence->SetBool("page_hit", reached_page);
+      state->Record("sidebar_tooltip_pointer", evidence);
+      CefPostDelayedTask(TID_UI, base::BindOnce([](POINT last, POINT original) {
+        POINT cursor{};
+        if (GetCursorPos(&cursor) && cursor.x == last.x && cursor.y == last.y) SetCursorPos(original.x, original.y);
+      }, reached_page ? destination : button, original), 1000);
+    }, state_, content, destination, original, button, reached_sidebar, floating), 900);
+  }
+ private:
+  std::weak_ptr<State> state_;
+  bool floating_;
+  IMPLEMENT_REFCOUNTING(SidebarTooltipHover);
+};
+void CheckSidebarTooltip(const std::shared_ptr<State>& state, bool floating) {
+  const auto entry = state->browsers.find(floating ? state->peek_id : state->shell_id);
+  if (entry == state->browsers.end()) return;
+  const auto host = entry->second->GetHost();
+  CefRefPtr<SidebarTooltipHover> observer = new SidebarTooltipHover(state, floating);
+  const auto registration = host->AddDevToolsMessageObserver(observer);
+  auto params = CefDictionaryValue::Create();
+  params->SetString("expression", R"JS((()=>{
+    const sidebar=document.querySelector('.sidebar'), button=sidebar?.querySelector('.close-page');
+    if(!button)return null;
+    let shown=false,left=false;
+    const tooltip=()=>sidebar.querySelector('.sidebar-tooltip');
+    const observer=new MutationObserver(()=>{if(button.dataset.tip&&tooltip()?.textContent===button.dataset.tip)shown=true;});
+    observer.observe(sidebar,{childList:true,subtree:true});
+    sidebar.addEventListener('pointerleave',event=>{if(event.isTrusted)left=true;},{once:true});
+    setTimeout(()=>{
+      observer.disconnect();
+      console.info('RED_PEEK:'+JSON.stringify({tooltipHost:document.querySelector('.peek-root')?'floating':'docked',
+        shown,left,dismissed:!tooltip(),nativeTitle:button.hasAttribute('title')}));
+    },1500);
+    const box=button.getBoundingClientRect();
+    return {x:Math.round(box.x+box.width/2),y:Math.round(box.y+box.height/2)};
+  })())JS");
+  params->SetBool("returnByValue", true);
+  observer->query = host->ExecuteDevToolsMethod(0, "Runtime.evaluate", params);
+  CefPostDelayedTask(TID_UI, base::BindOnce([](CefRefPtr<CefRegistration>) {}, registration), 2600);
 }
 void CheckPinEditor(const std::shared_ptr<State>& s, bool floating) {
   const auto host = s->browsers.find(floating ? s->peek_id : s->shell_id);
@@ -426,6 +535,41 @@ void CheckPinnedHint(const std::shared_ptr<State>& s, bool floating) {
   }
 }
 void CheckLibraryHost(const std::shared_ptr<State>& state, bool floating);
+void FinishFigmaCreate(std::weak_ptr<State> weak, std::string node, size_t count, std::shared_ptr<POINT> cursor, int retries) {
+  const auto s = weak.lock();
+  if (!s) return;
+  const auto browser = s->workspace->LiveBrowser(node);
+  const auto frame = browser ? browser->GetMainFrame() : nullptr;
+  const bool navigated = frame && frame->GetURL().ToString() == CommandDocumentUrl("newFigmaDesign");
+  if (!navigated && retries > 0) {
+    CefPostDelayedTask(TID_UI, base::BindOnce(&FinishFigmaCreate,
+        std::move(weak), std::move(node), count, std::move(cursor), retries - 1), 100);
+    return;
+  }
+  const auto snapshot = s->workspace->Snapshot();
+  const auto nodes = snapshot->GetList("nodes");
+  bool home = false;
+  for (size_t i = 0; i < nodes->GetSize(); ++i) {
+    const auto row = nodes->GetDictionary(i);
+    if (row->GetString("id") == node) home = row->GetString("url") == "https://www.figma.com/files";
+  }
+  auto result = CefDictionaryValue::Create();
+  result->SetBool("passed", navigated && s->workspace->ActiveNode() == node && nodes->GetSize() == count && home);
+  s->Record("figma_create_in_pin", result);
+  s->panel_popup->Hide(false); s->sidebar_peek->Hide(); s->workspace->SetSidebarVisible(true);
+  SetCursorPos(cursor->x, cursor->y);
+  Later(s, 400, [](const std::shared_ptr<State>& s) { CheckPinnedHint(s, false); });
+  Later(s, 1900, [](const std::shared_ptr<State>& s) {
+    s->workspace->SetSidebarVisible(false);
+    s->sidebar_peek->Show();
+  });
+  Later(s, 2500, [](const std::shared_ptr<State>& s) { CheckPinnedHint(s, true); });
+  // Library last, after these tab switches: each check records 1.3 s
+  // after it starts (open, close, glide) and must keep the same page.
+  Later(s, 4300, [](const std::shared_ptr<State>& s) { s->workspace->SetSidebarVisible(true); CheckLibraryHost(s, false); });
+  Later(s, 6000, [](const std::shared_ptr<State>& s) { s->workspace->SetSidebarVisible(false); s->sidebar_peek->Show(); });
+  Later(s, 6900, [](const std::shared_ptr<State>& s) { CheckLibraryHost(s, true); });
+}
 void CheckFigmaCreate(std::weak_ptr<State> weak, Hover invoke, std::shared_ptr<POINT> cursor) {
   const auto s=weak.lock(); if(!s)return;
   const auto snapshot=s->workspace->Snapshot();
@@ -443,35 +587,8 @@ void CheckFigmaCreate(std::weak_ptr<State> weak, Hover invoke, std::shared_ptr<P
       const auto frame=browser->GetMainFrame();
       frame->ExecuteJavaScript("document.querySelector('[data-action=\"createFigma\"]')?.click()",frame->GetURL(),0);
     }
-    CefPostDelayedTask(TID_UI,base::BindOnce([](std::weak_ptr<State> weak,std::string node,size_t count,std::shared_ptr<POINT> cursor){
-      const auto s=weak.lock();if(!s)return;
-      const auto browser=s->workspace->LiveBrowser(node);
-      const auto frame=browser?browser->GetMainFrame():nullptr;
-      const auto snapshot=s->workspace->Snapshot();
-      const auto nodes=snapshot->GetList("nodes");
-      bool home=false;
-      for(size_t i=0;i<nodes->GetSize();++i) {
-        const auto row=nodes->GetDictionary(i);
-        if(row->GetString("id")==node)home=row->GetString("url")=="https://www.figma.com/files";
-      }
-      auto result=CefDictionaryValue::Create();
-      result->SetBool("passed",frame&&frame->GetURL().ToString()==CommandDocumentUrl("newFigmaDesign")&&
-          s->workspace->ActiveNode()==node&&nodes->GetSize()==count&&home);
-      s->Record("figma_create_in_pin",result);
-      s->panel_popup->Hide(false);s->sidebar_peek->Hide();s->workspace->SetSidebarVisible(true);
-      SetCursorPos(cursor->x,cursor->y);
-      Later(s, 400, [](const std::shared_ptr<State>& s) { CheckPinnedHint(s, false); });
-      Later(s, 1900, [](const std::shared_ptr<State>& s) {
-        s->workspace->SetSidebarVisible(false);
-        s->sidebar_peek->Show();
-      });
-      Later(s, 2500, [](const std::shared_ptr<State>& s) { CheckPinnedHint(s, true); });
-      // Library last, after these tab switches: each check records 1.3 s
-      // after it starts (open, close, glide) and must keep the same page.
-      Later(s, 4300, [](const std::shared_ptr<State>& s) { s->workspace->SetSidebarVisible(true); CheckLibraryHost(s, false); });
-      Later(s, 6000, [](const std::shared_ptr<State>& s) { s->workspace->SetSidebarVisible(false); s->sidebar_peek->Show(); });
-      Later(s, 6900, [](const std::shared_ptr<State>& s) { CheckLibraryHost(s, true); });
-    },weak,node,count,cursor),1200);
+    CefPostDelayedTask(TID_UI, base::BindOnce(&FinishFigmaCreate,
+        std::move(weak), std::move(node), count, std::move(cursor), 15), 1200);
   },weak,node,nodes->GetSize(),cursor),350);
 }
 void CheckFloating(std::weak_ptr<State> weak, Hover invoke, std::shared_ptr<POINT> cursor) {
@@ -816,7 +933,18 @@ static void Start(const std::shared_ptr<State>& state);
 void OnSidebarPeekProbeLoad(const std::shared_ptr<State>& state, const std::string& url) {
   if (!state->sidebar_peek_probe || !url.starts_with("http") || !state->workspace) return;
   if (state->sidebar_peek_phase == 0 && url.ends_with("/a")) {
-    state->sidebar_peek_phase = 1; state->workspace->OpenLink(url.substr(0, url.rfind('/')) + "/b", true);
+    state->sidebar_peek_phase = 1;
+    const auto next = url.substr(0, url.rfind('/')) + "/b";
+    if (state->content && CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-sidebar-peek") == "space-creator") {
+      // Play the silent fixture and seed audibility so the regular media poll
+      // still supplies the card from a real background WebContents.
+      auto play = CefDictionaryValue::Create();
+      play->SetString("expression", "document.querySelector('audio').play()");
+      play->SetBool("userGesture", true);
+      state->content->GetHost()->ExecuteDevToolsMethod(0, "Runtime.evaluate", play);
+      SetFrameAudible(state, state->content->GetIdentifier(), "space-creator-fixture", true);
+    }
+    state->workspace->OpenLink(next, true);
   } else if (state->sidebar_peek_phase == 1 && url.ends_with("/b")) {
     state->sidebar_peek_phase = 2;
     Start(state);
@@ -825,6 +953,29 @@ void OnSidebarPeekProbeLoad(const std::shared_ptr<State>& state, const std::stri
 // After the shell's own IPC checks (they need the docked sidebar).
 static void Start(const std::shared_ptr<State>& state) {
   if (!state->ipc_rejections) { Later(state, 100, &Start); return; }
+  if (CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-sidebar-peek") == "tooltips") {
+    ActivateProbeWindow(state);
+    state->workspace->SetSidebarVisible(true);
+    Later(state, 900, [](const std::shared_ptr<State>& s) { CheckSidebarTooltip(s, false); });
+    Later(state, 3300, [](const std::shared_ptr<State>& s) {
+      s->workspace->SetSidebarVisible(false);
+      s->sidebar_peek->Show();
+    });
+    Later(state, 4300, [](const std::shared_ptr<State>& s) { CheckSidebarTooltip(s, true); });
+    Later(state, 6800, [](const std::shared_ptr<State>& s) { s->sidebar_peek_done = true; });
+    return;
+  }
+  if (CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-sidebar-peek") == "space-creator") {
+    state->workspace->SetSidebarVisible(true);
+    Later(state, 1400, [](const std::shared_ptr<State>& s) { CheckSpaceCreator(s, false); });
+    Later(state, 14500, [](const std::shared_ptr<State>& s) {
+      s->workspace->SetSidebarVisible(false);
+      s->sidebar_peek->Show();
+    });
+    Later(state, 15350, [](const std::shared_ptr<State>& s) { CheckSpaceCreator(s, true); });
+    Later(state, 29500, [](const std::shared_ptr<State>& s) { s->sidebar_peek_done = true; });
+    return;
+  }
   {
     // Leave room left of the window so the slide's clipping is visible on screen.
     if (!state->window->IsMaximized()) {

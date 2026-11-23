@@ -43,6 +43,15 @@ def serve(requests):
             if path == '/favicon.ico':
                 self.send_error(404)
                 return
+            if path == '/external-download':
+                body = b'Little Sol direct download\n' * 4096
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/octet-stream')
+                self.send_header('Content-Disposition', 'attachment; filename="little.bin"')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             body = f'<!doctype html><title>{path}</title><h1>{path}</h1><a href="/blank" target="_blank">blank</a>'.encode()
             if path == '/click-source':  # One link over the whole page, for the click scenario.
                 body = b'<!doctype html><title>click</title><a href="/clicked" style="position:fixed;inset:0">link</a>'
@@ -95,6 +104,8 @@ def other_apps():
     directory = ROOT / 'artifacts' / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ-little-external-') + uuid.uuid4().hex[:6])
     directory.mkdir(parents=True)
     native, profile = directory / 'native.jsonl', directory / 'profile'
+    downloads = directory / 'downloads'
+    downloads.mkdir()
     rows, launched = [], set()
 
     def launch(path):
@@ -106,13 +117,19 @@ def other_apps():
     try:
         with (directory / 'process.log').open('w', encoding='utf-8') as log:
             process = subprocess.Popen([str(EXE), f'--probe-report={native}', f'--profile-dir={profile}',
-                                        f'--probe-url={origin}/source', '--probe-little-window=external'],
+                                        f'--probe-url={origin}/source', '--probe-little-window=external',
+                                        f'--probe-downloads-dir={downloads}'],
                                        cwd=EXE.parent, stdout=log, stderr=log)
             deadline = time.monotonic() + 60
             while process.poll() is None and time.monotonic() < deadline:
                 rows = [json.loads(line) for line in native.read_text(encoding='utf-8').splitlines()] if native.exists() else []
                 seen = {row['event'] for row in rows}
-                if 'little_external_ready' in seen and '/external' not in launched: launch('/external')
+                if 'little_external_ready' in seen and '/external-download' not in launched: launch('/external-download')
+                child = directory / 'window-1.jsonl'
+                if child.exists() and '/external' not in launched:
+                    child_report = child.read_text(encoding='utf-8')
+                    if '"download_only_little_close_requested"' in child_report and '"window_destroyed"' in child_report:
+                        launch('/external')
                 if 'little_pref_off' in seen and '/external-tab' not in launched: launch('/external-tab')
                 time.sleep(.2)
             if process.poll() is None:
@@ -124,6 +141,9 @@ def other_apps():
     loaded, tab = events.get('little_external_loaded', {}), events.get('little_external_tab', {})
     passed = report('other apps', {
         'forwarded_to_little_sol': 'external_launch_little_sol' in events,
+        'download_only_little_closed': '/external' in launched and requests.count('/external-download') == 1,
+        'external_download_complete': (downloads / 'little.bin').is_file() and
+            (downloads / 'little.bin').read_bytes() == b'Little Sol direct download\n' * 4096,
         'opened_in_little_sol': loaded.get('pages') == 1 and loaded.get('little_windows') == 1 and loaded.get('in_workspace') is False,
         'loaded_once': requests.count('/external') == 1,
         'setting_saved': events.get('little_pref_off', {}).get('error') == '',

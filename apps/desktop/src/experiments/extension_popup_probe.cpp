@@ -12,7 +12,7 @@ void ClickExtension(const std::shared_ptr<State>& state, const char* name) {
   if (CefCommandLine::GetGlobalCommandLine()->GetSwitchValue("probe-extension-popup") != "menu") {
     if (state->panel_popup) {
       state->panel_popup->Toggle("site", CefRect(500, 8, 28, 28));
-      state->panel_popup->ProbeClick(std::string("Open ") + name);
+      state->panel_popup->ProbeClickSelector(std::string(".site-extension[title=\"") + name + "\"]");
     }
     return;
   }

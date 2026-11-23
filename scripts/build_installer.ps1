@@ -44,8 +44,13 @@ if ($LASTEXITCODE -or !(Test-Path -LiteralPath $compiler)) { throw 'Inno Setup s
 
 # Mirror the build output, skipping native tests, the sol-sync developer tool,
 # debug/link files and saved manual-probe/previous app DLLs (sol.dll itself is included).
-& robocopy $source $stage /MIR /XF *.pdb *.ilk *.lib *.exp *.log *_test.exe sol-sync.exe sol.*.dll /NFL /NDL /NJH /NJS /NP | Out-Null
+# Streaming DRM helpers that a development build downloaded or staged beside
+# sol.exe never ship: the helper is an opt-in download (docs/codecs.md).
+& robocopy $source $stage /MIR /XF *.pdb *.ilk *.lib *.exp *.log *_test.exe sol-sync.exe sol.*.dll /XD protected-media /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "Staging failed (robocopy $LASTEXITCODE)" }
+# Excluded folders survive /MIR in the destination: remove one left by an earlier staging.
+$stagedHelper = Join-Path $stage 'protected-media'
+if (Test-Path -LiteralPath $stagedHelper) { Remove-Item -LiteralPath $stagedHelper -Recurse -Force }
 # Build folders retain old hashed UI assets for already-running development
 # renderers. Ship only the current dist, whose entry must match this build.
 $uiDist = Join-Path $repoRoot 'apps/browser-ui/dist'

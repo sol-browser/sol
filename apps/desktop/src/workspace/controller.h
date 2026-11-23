@@ -55,6 +55,12 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   std::shared_ptr<XUnread> x_unread() const { return x_unread_; }
   std::shared_ptr<WhatsAppUnread> whatsapp_unread() const { return whatsapp_unread_; }
   const std::string& ActiveNode() const { return tree_.active_id; }
+  bool RoutesProtectedMedia(const std::string& url) const;
+  bool IsProtectedMedia(const std::string& node) const { return protected_media_mounts_.contains(node); }
+  bool IsProtectedMediaBrowser(int browser_id) const;
+  bool ActiveProtectedMedia() const { return IsProtectedMedia(ActiveNode()); }
+  bool ControlProtectedMedia(const std::string& action);
+  std::string ProtectedMediaUrl(const std::string& node) const;
   void HandleTabDrag(CefRefPtr<CefDictionaryValue> request, Reply done);
   // The pointer was released during a tab drag that its document no longer
   // reports (the floating sidebar slid away and lost the pointer): finish it here.
@@ -101,11 +107,16 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void OnTitleChanged(CefRefPtr<CefBrowser> browser);
   void OnFaviconChanged(CefRefPtr<CefBrowser> browser, const std::vector<CefString>& urls);
   void OnDocumentStarted(int browser, const CefString& url);
+  void OnTopLevelNavigation(int browser, const CefString& url, bool redirect);
+  void OnDownloadCompleted(CefRefPtr<CefBrowser> browser, const std::string& original_url);
   void OpenNewTab();
   void FocusAddress();
   // Asks the docked sidebar to start one of its own flows: newSpace, editSpace, newFolder.
   void RequestSidebar(const std::string& action);
   void CloseActive();
+  // Protected content was just installed: opens |url| in a protected tab, then closes
+  // the ordinary tab that could not play it (docs/codecs.md#protected-content-install).
+  void ReopenProtected(const std::string& url);
   void CycleTab(bool reverse);
   // Ctrl+Tab: the recently used order (workspace/recent_cycle.h).
   void CycleRecentTab(bool reverse);
@@ -302,6 +313,10 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   std::shared_ptr<WorkspaceData> data_;
   TreeSnapshot tree_;
   std::map<std::string, CefRefPtr<CefBrowser>> sessions_;
+  std::map<std::string, std::string> protected_media_mounts_;
+  std::set<std::string> protected_media_paused_;
+  void OnProtectedMediaChanged(int browser_id);
+  void RequestTabFavicon(CefRefPtr<CefBrowser> browser, const std::string& host, const CefString& url);
   // Links opened one after another from the same tab line up below it in click order (Chrome):
   // the opener and the last tab opened from it.
   std::string link_opener_, link_last_;
@@ -324,6 +339,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void UnloadPreload(const std::string& id, std::function<void(bool)> done);
   std::set<std::string> moving_unloads_;
   std::set<std::string> detached_removals_;
+  std::set<std::string> provisional_web_tabs_;
   std::map<std::string, std::function<void()>> tab_ready_;
   bool sending_little_page_ = false;
   std::vector<std::string> little_pending_;

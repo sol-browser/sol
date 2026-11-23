@@ -1,4 +1,5 @@
 #include "workspace/controller.h"
+#include "integrations/protected_media_host.h"
 #include "web_url.h"
 #include "app/session.h"
 #include "windows/auto_pip.h"
@@ -187,7 +188,26 @@ void WorkspaceController::OnMediaResult(int browser, int id, const std::string& 
 CefRefPtr<CefListValue> WorkspaceController::DescribeMedia() const {
   const auto state = state_.lock(); if (!state) return nullptr;
   auto list = CefListValue::Create();
+  if (session_ && session_->protected_media) {
+    for (auto it = recent_.rbegin(); it != recent_.rend() && list->GetSize() < kMaxPlayers; ++it) {
+      const auto& node = *it;
+      if (!IsProtectedMedia(node) || media_dismissed_.contains(node)) continue;
+      const auto browser = LiveBrowser(node);
+      const auto player = browser ? session_->protected_media->Get(browser->GetIdentifier()) : nullptr;
+      if (!player || !player->media || !player->child || (IsWindowVisible(player->child) && state->window && !state->window->IsMinimized()) ||
+          !BrowserIntegrationEnabled(state, player->service->id)) continue;
+      auto result = player->media->Copy(false);
+      result->SetString("id", node);
+      result->SetBool("muted", player->muted);
+      result->SetBool("video", false);
+      result->SetBool("seekable", result->GetBool("seek"));
+      result->Remove("seek");
+      if (result->GetString("title").empty()) result->SetString("title", player->service->title);
+      list->SetDictionary(list->GetSize(), result);
+    }
+  }
   for (const auto& node : media_nodes_) {
+    if (list->GetSize() == kMaxPlayers) break;
     const auto entry = media_.find(node); const auto browser = LiveBrowser(node);
     if (entry == media_.end() || !browser || !entry->second.polled || !entry->second.has) continue;
     const auto& media = entry->second;
@@ -215,8 +235,42 @@ bool WorkspaceController::HandleMedia(CefRefPtr<CefDictionaryValue> request, Rep
   const auto action = request->GetString("action").ToString();
   const auto id = request->GetType("id") == VTYPE_STRING ? request->GetString("id").ToString() : "";
   const auto browser = LiveBrowser(id);
-  if (std::find(media_nodes_.begin(), media_nodes_.end(), id) == media_nodes_.end() || !browser) {
+  const bool protected_tab = IsProtectedMedia(id);
+  if (!browser || (!protected_tab && std::find(media_nodes_.begin(), media_nodes_.end(), id) == media_nodes_.end())) {
     done(409, "Nothing is playing", nullptr); return true;
+  }
+  if (action == "open") {
+    TreeCommand command{TreeAction::Activate};
+    command.id = id;
+    Dispatch(std::move(command), std::move(done), true, true);
+    return true;
+  }
+  if (protected_tab) {
+    const auto player = session_ && session_->protected_media ? session_->protected_media->Get(browser->GetIdentifier()) : nullptr;
+    if (!player || !player->media || !BrowserIntegrationEnabled(state_.lock(), player->service->id)) {
+      done(409, "Nothing is playing", nullptr); return true;
+    }
+    double position = 0;
+    if (action == "seek") {
+      const auto type = request->GetType("value");
+      position = type == VTYPE_DOUBLE ? request->GetDouble("value") : type == VTYPE_INT ? request->GetInt("value") : -1;
+      if (!std::isfinite(position) || position < 0 || position > 1e7 || !player->media->GetBool("seek")) {
+        done(400, "Invalid position", nullptr); return true;
+      }
+    } else if (action == "previous" || action == "next" || action == "shuffle" || action == "repeat") {
+      const auto& media = player->media;
+      const bool available = action == "shuffle" ? media->GetType("shuffle") == VTYPE_BOOL :
+          action == "repeat" ? media->GetType("repeat") == VTYPE_STRING : media->GetBool(action);
+      if (!available) { done(409, "This control is unavailable", nullptr); return true; }
+    } else if (action != "toggle" && action != "mute" && action != "dismiss") {
+      done(400, "Unsupported Protected Media action", nullptr); return true;
+    }
+    if (!session_->protected_media->Control(browser->GetIdentifier(), action == "dismiss" ? "pause" : action, position)) {
+      done(409, "Protected Media is unavailable", nullptr); return true;
+    }
+    if (action == "dismiss") { media_dismissed_.insert(id); Publish(); }
+    done(0, "", Snapshot());
+    return true;
   }
   const auto run = [&](const std::string& body, bool gesture) {
     auto params = CefDictionaryValue::Create();
@@ -240,7 +294,6 @@ bool WorkspaceController::HandleMedia(CefRefPtr<CefDictionaryValue> request, Rep
   // The page's own previous/next handlers, as Chrome's media controls press them (engine patch 09).
   else if (action == "previous" || action == "next") browser->GetHost()->MediaSessionAction(action == "previous" ? "previoustrack" : "nexttrack");
 #endif
-  else if (action == "open") { TreeCommand command{TreeAction::Activate}; command.id = id; Dispatch(command, {}, true); }
   else { done(400, "Unknown media action", nullptr); return true; }
   UpdateMedia(); Publish(); done(0, "", Snapshot()); return true;
 }

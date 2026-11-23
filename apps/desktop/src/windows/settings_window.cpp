@@ -22,6 +22,8 @@
 #include "navigation/shortcut_settings.h"
 #include "workspace/controller.h"
 #include "app/sync_service.h"
+#include "integrations/protected_media_host.h"
+#include "integrations/protected_media_installer.h"
 #include "experiments/profile_settings_probe.h"
 #include "experiments/site_search_probe.h"
 #include "import/browser_import.h"
@@ -166,6 +168,7 @@ void SettingsWindow::ShowSection(const std::string& section) {
   if (requested == "import") browser_->GetMainFrame()->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'import'}))", std::string(kSettingsUrl), 0);
   if (requested == "search") browser_->GetMainFrame()->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'search'}))", std::string(kSettingsUrl), 0);
   if (requested == "siteSearch") browser_->GetMainFrame()->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'siteSearch'}))", std::string(kSettingsUrl), 0);
+  if (requested == "protectedMedia") browser_->GetMainFrame()->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'protectedMedia'}))", std::string(kSettingsUrl), 0);
   if (requested == "languages") {
     auto frame = browser_->GetMainFrame();
     frame->ExecuteJavaScript("window.dispatchEvent(new CustomEvent('red-settings-section',{detail:'languages'}))", std::string(kSettingsUrl), 0);
@@ -394,6 +397,23 @@ bool SettingsWindow::Query(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> fr
     return true;
   }
   if (method.starts_with("settings.sync.")) { HandleSync(state, method, data, callback); return true; }
+  // Settings → Protected content (docs/codecs.md#protected-content-install).
+  if (method.starts_with("settings.protectedMedia.")) {
+    const auto installer = state->session ? state->session->protected_media_installer : nullptr;
+    const auto host = state->session ? state->session->protected_media : nullptr;
+    if (!installer || !host) { callback->Failure(409, "unavailable"); return true; }
+    bool ok = true;
+    if (method == "settings.protectedMedia.install" && data->GetSize() == 1) ok = installer->Install();
+    else if (method == "settings.protectedMedia.cancel" && data->GetSize() == 1) installer->Cancel();
+    else if (method == "settings.protectedMedia.remove" && data->GetSize() == 2 && data->GetType("data") == VTYPE_BOOL)
+      ok = installer->Remove(data->GetBool("data") ? host->Storage() : std::filesystem::path{});
+    else if (method != "settings.protectedMedia.status" || data->GetSize() != 1) { callback->Failure(400, "Invalid request"); return true; }
+    if (!ok) { callback->Failure(409, "busy"); return true; }
+    if (method != "settings.protectedMedia.status") state->Record("settings_protected_media", nullptr);
+    auto reply = CefValue::Create(); reply->SetDictionary(installer->Status());
+    callback->Success(CefWriteJSON(reply, JSON_WRITER_DEFAULT));
+    return true;
+  }
   if (method == "settings.get" && data->GetSize() == 1) { callback->Success(Response(true)); return true; }
   if (setting_key == "linkRouting") {
     const auto preferences = state->session ? state->session->preferences : nullptr;

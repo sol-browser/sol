@@ -96,6 +96,8 @@ int main() {
         !red::IsTrackedExtensionInstallLocation(6), "startup and default extensions do not count as new installs");
   check(red::IsCommandUi(9, 9, true, red::kCommandUrl), "exact command document accepted");
   check(red::IsAllowedBrowserSwitch("probe-google-integrations",true)&&!red::IsAllowedBrowserSwitch("probe-google-integrations",false),"Google fixture is probe-only");
+  check(red::IsAllowedBrowserSwitch("probe-spotify-slot",true)&&!red::IsAllowedBrowserSwitch("probe-spotify-slot",false),"Spotify fixture is probe-only");
+  check(red::IsAllowedBrowserSwitch("probe-spotify-action",true)&&!red::IsAllowedBrowserSwitch("probe-spotify-action",false),"Spotify shortcut handoff is probe-only");
   check(red::IsAllowedBrowserSwitch("memory-report",false)&&!red::IsAllowedBrowserSwitch("memory-report",true),"memory report is a normal-mode request, not a probe input");
   check(!red::IsTrustedUi(9, 9, true, red::kCommandUrl), "command document cannot call full shell IPC");
   // The separate DevTools window's strip: only its own exact document, main frame, registered browser.

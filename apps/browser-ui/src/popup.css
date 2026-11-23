@@ -273,3 +273,13 @@ body:has(.panel-root), :root[data-ui="menu"] body { background: linear-gradient(
 .menu-icon { color: var(--pop-muted); }
 .menu-row[data-active="true"] .menu-icon { color: var(--pop-ink); }
 .menu-separator { margin: 5px 8px; background: var(--pop-line); }
+/* Protected content offer (ProtectedMediaOffer.tsx) */
+.protected-offer .install-confirm-icon { color: var(--pop-accent); }
+/* Streaming DRM is experimental: the same tag as beside Settings' headings (settings-beta). */
+.experimental-tag { display: inline-block; margin-left: 8px; padding: 1px 7px; border: 1px solid var(--pop-line); border-radius: 999px;
+  font-size: 10px; font-weight: 600; letter-spacing: .3px; line-height: 1.6; vertical-align: 2px; color: var(--pop-muted); white-space: nowrap; }
+.protected-offer-progress { display: grid; gap: 7px; margin: 0 0 16px; font-size: 12px; color: var(--pop-muted); font-variant-numeric: tabular-nums; }
+.protected-offer-bar { height: 6px; border-radius: 3px; background: var(--pop-hover); overflow: hidden; }
+.protected-offer-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--pop-accent); transition: width 300ms ease-out; }
+.protected-offer footer .protected-offer-more { margin-right: auto; }
+@media (prefers-reduced-motion: reduce) { .protected-offer-bar > span { transition: none; } }

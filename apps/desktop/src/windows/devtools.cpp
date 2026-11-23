@@ -90,6 +90,7 @@ void ConfigurePageDevTools(const std::shared_ptr<State>& state, int target, CefW
 bool ShowPageDevTools(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page, const CefPoint& inspect, bool toggle) {
   CEF_REQUIRE_UI_THREAD();
   if (!state->workspace || state->workspace->WindowClosing() || !page || !page->IsValid() ||
+      state->workspace->IsProtectedMediaBrowser(page->GetIdentifier()) ||
       page->GetIdentifier() == state->shell_id || page->GetIdentifier() == state->command_id ||
       state->internal_pages.contains(page->GetIdentifier()) ||  // Trusted UI is never inspected.
       state->devtools_targets.contains(page->GetIdentifier())) return false;

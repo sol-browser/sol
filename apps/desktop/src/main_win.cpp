@@ -37,6 +37,8 @@
 #include "trust_policy.h"
 #include "app/state.h"
 #include "app/session.h"
+#include "integrations/protected_media_host.h"
+#include "integrations/protected_media_installer.h"
 #include "app/browsing_profiles.h"
 #include "app/content_blocker_bridge.h"
 #include "app/content_blocker_settings.h"
@@ -478,15 +480,25 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   }
   bool OnBeforeDownload(CefRefPtr<CefBrowser> browser, CefRefPtr<CefDownloadItem> item, const CefString& suggested_name,
                         CefRefPtr<CefBeforeDownloadCallback> callback) override {
+    if (shell_) return false;
     const auto profile = red::ProfileForBrowser(state_,browser);
     const auto downloads = profile ? profile->downloads : state_->downloads;
-    return !shell_ && downloads && downloads->OnBeforeDownload(item, suggested_name, callback);
+    const auto shell = state_->browsers.find(state_->shell_id.load());
+    const auto dialog_browser = !popup_ && state_->workspace && shell != state_->browsers.end() ? shell->second : nullptr;
+    return downloads && downloads->OnBeforeDownload(browser, dialog_browser, item, suggested_name, callback);
   }
   void OnDownloadUpdated(CefRefPtr<CefBrowser> browser, CefRefPtr<CefDownloadItem> item,
                          CefRefPtr<CefDownloadItemCallback> callback) override {
     const auto profile = red::ProfileForBrowser(state_,browser);
     const auto downloads = profile ? profile->downloads : state_->downloads;
-    if (!shell_ && downloads) downloads->OnUpdated(item, callback);
+    if (!shell_ && downloads && downloads->OnUpdated(item, callback) && !popup_ && !foreign_ && !internal_page_ &&
+        state_->workspace) {
+      // Keep the browser alive until the final native callback has been handled.
+      CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<red::WorkspaceController> weak, CefRefPtr<CefBrowser> page,
+                                          std::string original_url) {
+        if (const auto workspace = weak.lock()) workspace->OnDownloadCompleted(page, original_url);
+      }, std::weak_ptr<red::WorkspaceController>(state_->workspace), browser, item->GetOriginalUrl().ToString()));
+    }
   }
   // Red's own UI (the shell) gets no browser page menu; website pages get Chrome's, drawn as Red's.
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { if (shell_) return new red::UiContextMenu(state_); return this; }
@@ -742,6 +754,15 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     }
     RestoreContentStack(state_);
     if (!shell_ && !foreign_ && state_->tabs) state_->tabs->OnFocus(browser->GetIdentifier());
+    // A service tab that loaded in the background offers Protected content once it is shown.
+    if (!shell_ && !popup_ && !foreign_ && !internal_page_ && browser->GetMainFrame())
+      OfferProtectedMedia(browser, browser->GetMainFrame()->GetURL().ToString());
+    // A protected tab's empty CEF mount never keeps the keyboard: pass it to the helper.
+    if (!shell_ && !popup_ && !foreign_ && state_->workspace && state_->content &&
+        state_->content->GetIdentifier() == browser->GetIdentifier() && state_->workspace->ActiveProtectedMedia())
+      CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<red::WorkspaceController> weak) {
+        if (const auto workspace = weak.lock()) workspace->ControlProtectedMedia("focus");
+      }, std::weak_ptr<red::WorkspaceController>(state_->workspace)));
   }
 
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
@@ -962,6 +983,20 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       state_->Record("page_load_navigation", metrics);
     }
     if (shell_) return request->GetURL().ToString() != red::kUiUrl || !frame->IsMain();
+    if (!popup_ && !foreign_ && !internal_page_ && state_->workspace) {
+      const auto url = request->GetURL().ToString();
+      if (state_->workspace->IsProtectedMedia(node_id_)) return !frame->IsMain() || url != "about:blank";
+      if (frame->IsMain() && request->GetMethod() == "GET" && state_->workspace->RoutesProtectedMedia(url) &&
+          (gesture || state_->content == browser)) {
+        CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<red::WorkspaceController> workspace, std::string url, bool foreground) {
+          if (const auto owner = workspace.lock()) owner->OpenLink(url, foreground);
+        }, std::weak_ptr<red::WorkspaceController>(state_->workspace), url, state_->content == browser));
+        return true;
+      }
+    }
+    if (!state_->spotify_probe_slot.empty() && frame->IsMain() &&
+        frame->GetURL().ToString() == state_->spotify_probe_slot)
+      return request->GetURL().ToString() != state_->spotify_probe_slot;
     // The history page is locked to its own document; pages open in new tabs.
     if (internal_page_) return !red::IsInternalPageUrl(request->GetURL().ToString()) || !frame->IsMain();
     if (foreign_) {
@@ -974,6 +1009,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     CefURLParts parts;
     if (!CefParseURL(request->GetURL(), parts)) return true;
     auto scheme = CefString(&parts.scheme).ToString();
+    if (!popup_ && state_->workspace && frame->IsMain()) state_->workspace->OnTopLevelNavigation(browser->GetIdentifier(), request->GetURL(), redirect);
     if (!popup_ && state_->workspace && frame->IsMain() && gesture && !redirect && request->GetMethod()=="GET" &&
         (request->GetTransitionType()&TT_SOURCE_MASK)==TT_LINK && !(GetAsyncKeyState(VK_CONTROL)&0x8000) && !(GetAsyncKeyState(VK_MENU)&0x8000) &&
         state_->workspace->RouteLinkPeek(browser,request->GetURL(),(GetAsyncKeyState(VK_SHIFT)&0x8000)!=0)) return true;
@@ -1029,7 +1065,6 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       callback->Failure(403, "Unauthorized caller");
       return true;
     }
-    RestoreContentStack(state_);
     if (request.length() > 65536) { callback->Failure(413, "Request too large"); return true; }
     auto parsed = CefParseJSON(request, JSON_PARSER_RFC);
     auto dict = parsed && parsed->GetType() == VTYPE_DICTIONARY ? parsed->GetDictionary() : nullptr;
@@ -1038,6 +1073,10 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     }
     auto method = dict->GetString("method").ToString();
     if (request.length() > 8192 && method != "library.saveRoutes") { callback->Failure(413, "Request too large"); return true; }
+    // A passive tooltip check must not raise the native page stack.
+    if (method == "workspace.sidebarHovered")
+      return red::HandleSidebarAction(state_, browser, method, dict, persistent, callback);
+    RestoreContentStack(state_);
     if (red::HandleUiFocus(state_, browser, method, dict->GetSize(), persistent, callback)) return true;
     if (method == "workspace.sidebarResizeHovered") {
       // Trusted shell only (checked above). Never expose global pointer
@@ -1532,8 +1571,8 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     } else if (method == "navigation.back") { if (state_->workspace) state_->workspace->NavigateHistory(false); else content->GoBack(); }
     else if (method == "navigation.forward") { if (state_->workspace) state_->workspace->NavigateHistory(true); else content->GoForward(); }
     else if (method == "navigation.reload") { if (state_->workspace) state_->workspace->Reload(); else content->Reload(); }
-    else if (method == "navigation.stop") content->StopLoad();
-    if (state_->workspace && method != "browser.getSnapshot") red::FocusBrowser(content);
+    else if (method == "navigation.stop" && (!state_->workspace || !state_->workspace->ControlProtectedMedia("stop"))) content->StopLoad();
+    if (state_->workspace && method != "browser.getSnapshot" && !state_->workspace->ControlProtectedMedia("focus")) red::FocusBrowser(content);
     if (method != "browser.getSnapshot") {
       ++state_->revision;
       state_->navigation_command = true;
@@ -1681,6 +1720,27 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     }
     return router_->OnProcessMessageReceived(browser, frame, source, message);
   }
+  // A supported service opened in an ordinary tab because Protected content is
+  // not installed: offer it once per session (docs/codecs.md#protected-content-install).
+  void OfferProtectedMedia(CefRefPtr<CefBrowser> browser, const std::string& url) {
+    const auto session = state_->session;
+    const auto* service = red::ProtectedMediaForUrl(url);
+    if (!service || !session || state_->private_window) return;
+    const char* skipped = !state_->embedded ? "embedded" :
+        !state_->content || state_->content->GetIdentifier() != browser->GetIdentifier() ? "background" :
+        !session->protected_media_installer || !session->protected_media ? "unavailable" :
+        session->protected_media->Available() ? "installed" :
+        session->protected_media_offered.contains(service->id) ? "offered" : nullptr;
+    auto details = CefDictionaryValue::Create();
+    details->SetString("service", service->id);
+    if (skipped) { details->SetString("skipped", skipped); state_->Record("protected_media_offer", details); return; }
+    session->protected_media_offered.insert(service->id);
+    state_->Record("protected_media_offer", details);
+    // The window's modal offers the install; a toast points to Settings when the modal cannot open now.
+    if (state_->panel_popup && state_->panel_popup->OfferProtectedMedia(service->title, url)) return;
+    const auto text = red::InterfaceTextWithName(session->interface_locale, red::InterfaceMessage::WindowProtectedMediaOffer, service->title);
+    state_->embedded->Notify("protected", CefString(text).ToWString(), {}, L"", 7000);
+  }
   void OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int status) override {
     if (!shell_ && !popup_ && !foreign_ && !internal_page_) red::OnProtocolsProbeFrame(state_, browser, frame->GetURL().ToString(), frame->IsMain());
     if (!frame->IsMain()) return;
@@ -1704,6 +1764,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
         red::CheckPageTranslationOffer(state_, browser);
       else red::CancelPageTranslationCheck(state_, browser);
     }
+    if (!shell_ && !popup_ && !internal_page_) OfferProtectedMedia(browser, frame->GetURL().ToString());
     if (!shell_ && !popup_ && !foreign_ && !internal_page_) red::OnGoogleIntegrationsProbeLoad(state_,browser);
     if (!shell_ && !popup_ && !foreign_ && !internal_page_) red::ScheduleIntegrationLiveCheck(state_,browser);
     auto details = CefDictionaryValue::Create();
@@ -2166,7 +2227,9 @@ class WindowDelegate final : public CefWindowDelegate {
       // first edge hover instead (~250 ms of the first opening).
       if (state_->sidebar_peek && state_->workspace->ready()) state_->sidebar_peek->Preload();
       state_->Record("window_shown");
-      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold") CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->sidebar_perf_probe ? 150000 : state_->sidebar_peek_probe ? 37000 : state_->split_probe ? 105000 : state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->split_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->little_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe || state_->link_headers_discard ? 30000 : 15000);
+      // The Spotify controller owns shutdown and may wait for a full track.
+      const bool proxy_auth_probe = state_->probe && CefCommandLine::GetGlobalCommandLine()->HasSwitch("probe-proxy-auth");
+      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold" && state_->spotify_probe_slot.empty()) CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->sidebar_perf_probe ? 150000 : state_->sidebar_peek_probe || proxy_auth_probe ? 37000 : state_->split_probe ? 105000 : state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->split_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->little_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe || state_->link_headers_discard ? 30000 : 15000);
       if (state_->input_probe) red::ObserveNativeInput(state_);
       if (!state_->import_probe.empty()) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
         if (auto s = weak.lock()) red::RunImportProbe(s);
@@ -2373,6 +2436,9 @@ class WindowDelegate final : public CefWindowDelegate {
         if (remembered != state->browsers.end()) target = remembered->second;
         else target = state->content;
       }
+      // A protected tab's keyboard belongs to its helper, not the empty CEF mount below it.
+      if (target && state->content && target->GetIdentifier() == state->content->GetIdentifier() &&
+          state->workspace->ControlProtectedMedia("focus")) return;
       if (target) red::FocusBrowser(target); else red::FocusShell(state);
     }, std::weak_ptr<State>(state_)));
     RestoreContentStack(state_);
@@ -2500,7 +2566,7 @@ bool TransferPage(const std::shared_ptr<State>& from, const std::shared_ptr<Stat
   if (from == to || !from->workspace || !from->embedded || !to->workspace || !to->embedded || !to->window ||
       to->workspace->WindowClosing() || !from->workspace->CanTransfer(source_id)) return false;
   // A page lives in its window's web profile: never between a private window and any other window.
-  if (from->private_window || to->private_window) return false;
+  if (from->private_window || to->private_window || from->workspace->IsProtectedMedia(source_id)) return false;
   const auto browser = from->workspace->LiveBrowser(source_id);
   if (!browser || !PageClients().contains(browser->GetIdentifier())) return false;
   const auto destination_profile = to->workspace->ProfileForNode(node_id);
@@ -2843,7 +2909,7 @@ class UiContextReady final : public CefRequestContextHandler {
   UiContextReady(std::shared_ptr<State> state, fs::path directory, std::string url)
       : state_(state), directory_(std::move(directory)), url_(std::move(url)) {}
   void OnRequestContextInitialized(CefRefPtr<CefRequestContext> ui_context) override {
-    if (!red::GuardShellProfile(state_, ui_context)) { CefQuitMessageLoop(); return; }
+    if (!red::GuardShellProfile(state_, ui_context)) return;
     ui_context->RegisterSchemeHandlerFactory("sol", "ui", new UiResources(state_, directory_ / "ui"));
     state_->ui_context = ui_context;  // History page tabs use this trusted profile.
     if (state_->session)
@@ -2955,9 +3021,12 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
       // A title-bar drag then never ended and held the mouse for the whole desktop (user report,
       // 2026-11-13, a Little Sol on a shop's site; focus_watch.py: GUI_INMOVESIZE for minutes).
       // Without the API, Google's sign-in falls back to its in-page prompt, as in Firefox.
-      const auto disabled = command->GetSwitchValue("disable-features").ToString();
-      if (disabled.find("FedCm") == std::string::npos)
-        command->AppendSwitchWithValue("disable-features", disabled.empty() ? "FedCm" : disabled + ",FedCm");
+      auto disabled = command->GetSwitchValue("disable-features").ToString();
+      if (disabled.find("FedCm") == std::string::npos) disabled += disabled.empty() ? "FedCm" : ",FedCm";
+      // No "make Chromium your default PDF viewer" infobar: accepting it registers
+      // Chromium, not Sol, in Windows Default Apps. Sol offers .pdf itself (default_browser.cpp).
+      if (disabled.find("PdfInfoBar") == std::string::npos) disabled += ",PdfInfoBar";
+      command->AppendSwitchWithValue("disable-features", disabled);
     }
     // Probe only: fake camera/microphone so tests never open real devices.
     if (type.empty() && state_->site_probe) command->AppendSwitch("use-fake-device-for-media-stream");
@@ -3092,6 +3161,14 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
       state_->session->profiles->AdoptDefault(state_);
       red::SelectBrowsingProfile(state_, "default");
     }
+    if (!red::PrepareShellProfile(state_->profile)) {
+      LOG(ERROR) << "Could not prepare the protected Shell profile";
+      MessageBoxW(nullptr, L"Sol could not prepare its interface profile. Close any other Sol windows and try again. "
+                  L"See cef.log in Sol's user data folder for details.", L"Sol", MB_OK | MB_ICONERROR);
+      state_->exit_code = 18;
+      CefQuitMessageLoop();
+      return;
+    }
     // A separate regular profile also avoids sharing the theme service between
     // an off-the-record profile and its parent in the same Chrome window.
     CefRequestContextSettings ui_settings;
@@ -3100,6 +3177,21 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
   }
   void ReleaseContext() { ui_context_ = nullptr; }
   bool OnAlreadyRunningAppRelaunch(CefRefPtr<CefCommandLine> command, const CefString&) override {
+    if (state_->shell_profile_failed) return true;
+    if (command->HasSwitch("probe-spotify-action")) {
+      if (state_->spotify_probe_slot.empty() ||
+          command->GetSwitchValue("probe-spotify-slot").ToString() != state_->spotify_probe_slot ||
+          !state_->workspace || !state_->content || !red::BrowserIsForeground(state_->content)) return true;
+      const auto frame = state_->content->GetMainFrame();
+      if (!frame || frame->GetURL().ToString() != state_->spotify_probe_slot) return true;
+      const auto action = command->GetSwitchValue("probe-spotify-action").ToString();
+      if (action == "next" || action == "previous") {
+        red::ExecuteShortcut(state_, action == "next" ? red::Shortcut::RecentTab : red::Shortcut::RecentTabBack);
+      } else if (action == "close") {
+        red::ExecuteShortcut(state_, red::Shortcut::CloseTab);
+      }
+      return true;
+    }
     // `sol.exe --memory-report=<file>` while Sol runs: describe its browsers, open nothing.
     if (command->HasSwitch("memory-report")) {
       const fs::path report = command->GetSwitchValue("memory-report").ToWString();
@@ -3337,6 +3429,21 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->probe_tabs = state->probe_tabs || state->native_tabs_reference || state->embedded_tabs_probe;
   auto url = command->HasSwitch("probe-url") ? command->GetSwitchValue("probe-url").ToString() : "https://example.com";
   state->initial_url = url;
+  if (command->HasSwitch("probe-spotify-slot") && command->HasSwitch("profile-dir")) {
+    const auto slot = command->GetSwitchValue("probe-spotify-slot").ToString();
+    CefURLParts parts;
+    if (CefParseURL(slot, parts) && CefString(&parts.scheme) == "http" &&
+        CefString(&parts.host) == "127.0.0.1" && !CefString(&parts.port).empty() &&
+        CefString(&parts.username).empty() && CefString(&parts.password).empty() &&
+        CefString(&parts.query).empty() && CefString(&parts.fragment).empty()) {
+      const auto path = CefString(&parts.path).ToString();
+      if (path.size() == 45 && path.starts_with("/spotify-tab-") &&
+          path.substr(13).find_first_not_of("0123456789abcdef") == std::string::npos) {
+        state->spotify_probe_slot = slot;
+        SetCurrentProcessExplicitAppUserModelID(L"SolBrowser.SpotifyProbe");
+      }
+    }
+  }
   if (!command->HasSwitch("type")) state->external_urls = red::ExternalLaunchUrls(command);
   if (state->probe_tabs) state->tabs = std::make_shared<red::TabProbe>(state, url);
   if (command->HasSwitch("probe-downloads-dir")) {
@@ -3408,7 +3515,8 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
     if (const auto s = weak.lock()) { auto d = CefDictionaryValue::Create(); d->SetString("step", step); d->SetString("detail", detail); s->Record("translator_host", d); }
   });
   // Sol up to 0.1.2 could run websites in Shell; move such data to Default first.
-  const auto web_repair = red::RepairWebProfile(profile);
+  const auto web_repair = red::ShellProfileHasProtection(profile) || red::ShellResetPending(profile)
+      ? red::WebProfileRepair::None : red::RepairWebProfile(profile);
   // The last theme, before any window or UI document exists (no light flash).
   if (auto cached = red::ReadThemeCache(profile / "BrowserData" / "theme-cache"); cached && state->workspace_mode) {
     state->theme = *cached;
@@ -3450,6 +3558,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
       window->shell_extension_watch = nullptr; window->extension_install_watch = nullptr;
     }
     state->session->StopWorkspaces();
+    state->session->protected_media.reset();
   } else if (state->workspace) state->workspace->Stop();
   if (state->history) state->history->Stop();
   state->Record("loop_ended");
@@ -3460,13 +3569,10 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->ui_context = nullptr;
   CefShutdown();
   state->Record("shutdown");
-  // The Shell profile guard found an extension there: reset that profile now that
-  // nothing holds it, then start again (shell_reset.h).
+  // The next process prepares Shell after it owns the CEF profile singleton.
   if (red::ShellResetScheduled()) {
-    const bool reset = red::ResetShellProfile(profile) == red::ShellReset::Done;
-    LOG(WARNING) << "Shell profile reset: " << (reset ? "done" : "failed");
-    if (!reset) MessageBoxW(nullptr, L"Sol could not reset its interface profile. Restart Windows, then start Sol again.", L"Sol", MB_OK | MB_ICONERROR);
-    else if (red::Relaunch()) return 0;
+    if (red::Relaunch()) return 0;
+    LOG(ERROR) << "Could not relaunch Sol for Shell recovery";
   }
   return state->exit_code;
 }

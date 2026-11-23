@@ -1,6 +1,7 @@
 #include "windows/browser_dialogs.h"
 #include "web_url.h"
 #include "workspace/controller.h"
+#include "integrations/protected_media_host.h"
 #include "app/session.h"
 #include "app/auto_archive.h"
 #include "windows/embedded_content.h"
@@ -27,6 +28,10 @@ bool WorkspaceController::AutoArchiveProtected(const std::string& id) const {
   if (browser) {
     const auto bid=browser->GetIdentifier();
     if (auto_archive_media_.contains(bid) || state->audible_frames.contains(bid) || browser->GetHost()->IsAudioMuted()) return true;
+    if (session_ && session_->protected_media) {
+      const auto player = session_->protected_media->Get(bid);
+      if (player && (player->audible || player->muted || (player->media && player->media->GetBool("playing")))) return true;
+    }
     if (const auto media=state->media_access.find(bid); media!=state->media_access.end() && (media->second.first || media->second.second)) return true;
   }
   return false;

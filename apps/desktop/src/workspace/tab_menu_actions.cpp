@@ -26,7 +26,7 @@ int WorkspaceController::CopyTabLink(const std::string& id, std::string& error, 
   const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
   if (node == tree_.nodes.end() || node->folder || node->archived) { error = "Tab is unavailable"; return 404; }
   const auto browser = LiveBrowser(id);
-  const auto url = browser ? browser->GetMainFrame()->GetURL().ToString() : node->url;
+  const auto url = IsProtectedMedia(id) ? ProtectedMediaUrl(id) : browser ? browser->GetMainFrame()->GetURL().ToString() : node->url;
   if (url.empty()) { error = "No page address to copy"; return 409; }
   const auto state = state_.lock();
   bool stripped = false;
@@ -51,7 +51,7 @@ int WorkspaceController::SetPinnedPage(const std::string& id, std::string url, c
   if (url.empty()) {  // "Replace Pinned URL with Current".
     const auto browser = LiveBrowser(id);
     if (!browser) { error = "Open the page first"; return 409; }
-    url = browser->GetMainFrame()->GetURL().ToString();
+    url = IsProtectedMedia(id) ? ProtectedMediaUrl(id) : browser->GetMainFrame()->GetURL().ToString();
   }
   if (!WebAddress(url)) { error = "Invalid address"; return 400; }
   TreeCommand command{TreeAction::SetUrl}; command.id = id; command.url = url; command.section = "home";

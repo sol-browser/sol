@@ -1,12 +1,14 @@
 """Floating sidebar acceptance (--probe-sidebar-peek) through actual CEF."""
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
 import json
 import os
 import shutil
 import sqlite3
 import threading
 from uuid import uuid4
+import wave
 from smoke import ROOT, run
 
 
@@ -96,17 +98,31 @@ def main():
     parser.add_argument('--cold', type=int, metavar='MS', help='Measure the first opening of each process after MS idle')
     parser.add_argument('--repeat', type=int, default=5, help='Processes for --cold')
     parser.add_argument('--tabs', type=int, default=0, help='Extra saved tabs in the --cold profile')
+    parser.add_argument('--space-creator', action='store_true', help='Check Create Space with six Favorites and playing media in both sidebars')
+    parser.add_argument('--tooltips', action='store_true', help='Move the real cursor from the sidebar tooltip into the native page in both hosts')
     args = parser.parse_args()
     host = args.host
     if (args.edge or args.cold) and not host:
         parser.error('--edge and --cold require --host')
     if args.cold:
         args.edge = True  # Same solid fixture page.
+    tone = BytesIO()
+    if args.space_creator:
+        with wave.open(tone, 'wb') as audio:
+            audio.setparams((1, 1, 8000, 0, 'NONE', 'not compressed'))
+            audio.writeframes(b'\x80' * 8000)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args): pass
         def do_GET(self):
+            if args.space_creator and self.path == '/silence.wav':
+                body = tone.getvalue()
+                self.send_response(200); self.send_header('Content-Type', 'audio/wav')
+                self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
+                return
             name = self.path.strip('/') or 'a'
             body = f"<!doctype html><html lang='en'><title>{name}</title><h1>{name}</h1>".encode()
+            if args.space_creator and self.path == '/a':
+                body += b'<audio src="/silence.wav" preload="auto" loop></audio>'
             if args.edge:
                 body += b'<style>html {background:#216491}</style>'
             self.send_response(200); self.send_header('Content-Type', 'text/html; charset=utf-8')
@@ -114,6 +130,43 @@ def main():
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f'http://127.0.0.1:{server.server_port}/a'
+    if args.tooltips:
+        try:
+            directory, rows = run(url, ['--probe-sidebar-peek=tooltips'], allow_failure=True)
+            documents = [json.loads(row['details']['result']) for row in rows if row['event'] == 'peek_document']
+            tips = {d['tooltipHost']: d for d in documents if 'tooltipHost' in d}
+            moves = {row['details']['host']: row['details'] for row in rows if row['event'] == 'sidebar_tooltip_pointer'}
+            passed = (set(tips) == set(moves) == {'docked', 'floating'} and
+                      all(d['sidebar_hit'] and d['page_hit'] for d in moves.values()) and
+                      all(t['shown'] and t['dismissed'] and not t['nativeTitle'] for t in tips.values()) and
+                      json.loads((directory / 'summary.json').read_text())['passed'])
+            print(json.dumps({'passed': passed, 'tooltips': tips, 'pointer': moves}, indent=2), flush=True)
+            if not passed:
+                raise RuntimeError(f'Sidebar tooltip transition incomplete: {directory}')
+        finally:
+            server.shutdown(); server.server_close()
+        return
+    if args.space_creator:
+        profile = ROOT / 'artifacts' / ('space-creator-profile-' + uuid4().hex[:8]) / 'profile'
+        try:
+            seed(profile, url, 6)
+            with sqlite3.connect(profile / 'BrowserData/workspace.sqlite3') as db:
+                db.execute('UPDATE nodes SET favorite=1 WHERE position>0')
+            directory, rows = run(url, ['--probe-sidebar-peek=space-creator'], allow_failure=True, profile=profile, timeout=65)
+            documents = [json.loads(row['details']['result']) for row in rows if row['event'] == 'peek_document']
+            results = {d['spaceCreator']: d for d in documents if 'spaceCreator' in d}
+            routes = {r['details']['surface'] for r in rows if r['event'] == 'shared_sidebar_action' and r['details']['method'] == 'space.cancelDraft'}
+            fields = ('before', 'clickable', 'hiddenDuringCreate', 'restored', 'gridRestored', 'shrank', 'grew')
+            passed = set(results) == routes == {'docked', 'floating'} and all(d.get(key) is True for d in results.values() for key in fields)
+            passed = passed and json.loads((directory / 'summary.json').read_text())['passed']
+            result = {'passed': passed, 'run': directory.name, 'hosts': results, 'cancel_routes': sorted(routes)}
+            (directory / 'space-creator.json').write_text(json.dumps(result, indent=2) + '\n')
+            print(json.dumps(result, indent=2), flush=True)
+            if not passed:
+                raise RuntimeError(f'Create Space regression: {directory}')
+        finally:
+            server.shutdown(); server.server_close()
+        return
     if args.cold:
         try:
             cold(host, url, args.cold, args.repeat, args.tabs)

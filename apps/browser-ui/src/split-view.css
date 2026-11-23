@@ -35,9 +35,11 @@
 .split-pane-placeholder button { pointer-events:auto; padding:6px 12px; background:color-mix(in oklch,currentColor 10%,transparent); }
 .tree-row[data-split="true"] .node-icon { position:relative; }
 .split-row-content { display:flex; align-items:center; gap:7px; flex:1; min-width:0; }
-/* Regular tabs center an 18px favicon in a 24px icon box: preserve its inset. */
-.tree-row[data-split="true"] > .split-row-content { padding-left:3px; }
+.tree-row[data-split="true"] > .split-row-content { padding-inline:0; }
 .split-row-part { position:relative; display:flex; align-items:center; gap:2px; flex:1; min-width:0; }
+/* The outer halves reach the row edges. Inset their controls inside each half. */
+.split-row-part:first-child { padding-inline-start:7px; }
+.split-row-part:last-child { padding-inline-end:7px; }
 /* Too narrow for every name (3-4 panes, or a narrow sidebar): the other panes keep
    their icon and the pane in focus keeps its name (split-model SPLIT_SEGMENT_MIN_WIDTH). */
 .split-row-content { container:split-row / inline-size; }

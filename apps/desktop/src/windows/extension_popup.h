@@ -11,7 +11,7 @@ enum class ExtensionPopupSide { Left, Right };
 // browser in the web profile: experiments showed that Chrome then resolves the
 // popup's chrome.tabs.query({active, currentWindow}) to the visible workspace
 // page, while a Chrome-style host resolves to the popup itself. The window
-// follows the document's size (like Chrome's 25..800 x 25..600 popup) and
+// follows the document's size within 320..800 × 25..600 DIP and
 // closes when it loses activation, on Escape or on window.close().
 // Opens an installed extension as a click on its toolbar button would: its action (with the
 // visible page's per-tab grants), its popup aligned to |anchor| (screen DIP),
@@ -45,7 +45,7 @@ class ExtensionPopup : public std::enable_shared_from_this<ExtensionPopup> {
   unsigned long long closed_at_ = 0;  // GetTickCount64.
   CefPoint anchor_;
   ExtensionPopupSide side_ = ExtensionPopupSide::Right;
-  CefSize size_{320, 120};
+  CefSize size_;
   int browser_id_ = -1;
 };
 }  // namespace red

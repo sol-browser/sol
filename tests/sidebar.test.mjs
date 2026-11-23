@@ -157,6 +157,21 @@ test('both sidebar surfaces receive updates, media and browser requests from the
   assert.equal(sidebarPresentation(open,'docked').activeSurface,true);
   assert.equal(sidebarPresentation(open,'floating').activeSurface,false);
 });
+
+test('protected service and playback changes update the row in both sidebar surfaces', () => {
+  const playing = { ...n('tab', '', 0), live: true, mediaService: 'spotify', mediaPlaying: true };
+  const paused = { ...playing, mediaPlaying: false };
+  const otherService = { ...paused, mediaService: 'netflix' };
+  const ordinary = { ...n('tab', '', 0), live: true };
+  for (const surface of ['docked', 'floating']) {
+    const row = tab => sidebarPresentation({ ready: true, nodes: [tab] }, surface).nodes[0];
+    assert.equal(row(playing).mediaService, 'spotify');
+    assert.equal(row(playing).mediaPlaying, true);
+    assert.equal(sameRowNode(row(playing), row(paused)), false);
+    assert.equal(sameRowNode(row(paused), row(otherService)), false);
+    assert.equal(sameRowNode(row(paused), row(ordinary)), false);
+  }
+});
 test('closing, standalone and empty sidebar states have identical semantics in both hosts', () => {
   for(const surface of ['docked','floating']) {
     const empty=sidebarPresentation({ready:false},surface);

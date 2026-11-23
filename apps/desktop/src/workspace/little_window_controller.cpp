@@ -159,7 +159,10 @@ void WorkspaceController::SendLittlePage(const std::string& space_id, Reply done
     Publish();
     return;
   }
-  const bool same_profile = space->profile == source->active_profile;
+  // A protected tab's page lives in the helper, not in a CEF browser that could
+  // move: the destination opens the same page in its own protected tab, and the
+  // helper keeps the sign-in (docs/codecs.md#protected-content-install).
+  const bool same_profile = space->profile == source->active_profile && !IsProtectedMedia(source_id);
   const auto target = LittleTargetWindow(space_id);
   if (!target) {
     done(409, "Cannot open a workspace window", nullptr);
@@ -198,7 +201,7 @@ void WorkspaceController::SendLittlePage(const std::string& space_id, Reply done
       }
       return;
     }
-    // Another profile must create its own page. A live browser keeps its original context.
+    // Another profile, or a protected tab, must create its own page. A live browser keeps its original context.
     TreeCommand activate{TreeAction::Activate};
     activate.id = id;
     target->workspace->Dispatch(std::move(activate),

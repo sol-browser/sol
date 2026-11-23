@@ -1,24 +1,16 @@
 #pragma once
-#include <chrono>
 #include <filesystem>
 
 namespace red {
-// Recovery from the Shell profile guard (profile_guard.cpp). When a
-// third-party extension turns up in the trusted UI profile, Sol closes; once
-// CEF has shut down it moves <profile>\Shell aside and starts with a clean
-// interface profile. A finished reset is remembered, so an extension that
-// comes straight back closes Sol instead of restarting it in a loop.
-enum class ShellReset { Done, Failed };
+enum class ShellQuarantine { Missing, Moved, Failed };
+// Call only while Chromium is not using Shell. Keep the entire old directory.
+ShellQuarantine QuarantineShellProfile(const std::filesystem::path& profile);
 
-// Whether the guard may reset now: no reset finished within |window| before |now|.
-bool ShellResetAllowed(const std::filesystem::path& profile, std::filesystem::file_time_type now,
-                       std::chrono::minutes window = std::chrono::minutes(10));
-// After CefShutdown: moves the Shell profile aside and remembers the reset.
-ShellReset ResetShellProfile(const std::filesystem::path& profile);
-
-// The guard's request to reset and start Sol again once this process shuts down.
-void ScheduleShellReset();
+// Claim a single emergency restart for this user-data root. Reserve it before
+// shutting down, so a failed repair or a repeated violation cannot relaunch.
+bool ScheduleShellReset(const std::filesystem::path& profile);
 bool ShellResetScheduled();
+bool ShellResetPending(const std::filesystem::path& profile);
 // Starts this executable again with its own command line.
 bool Relaunch();
 }  // namespace red

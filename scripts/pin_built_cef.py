@@ -1,6 +1,7 @@
 """Validate a completed official SDK archive, publish atomically and pin its bytes."""
 import argparse
 import bz2
+import datetime
 import hashlib
 import json
 import os
@@ -59,9 +60,9 @@ def main():
         if temporary.exists():temporary.unlink()
     old=json.loads(lock_path.read_text());new={**old,'cef_version':version,'cef_revision':head,
         'root':root,'archive':target.name,'size':before.st_size,'sha256':sha,
-        'distribution':'standard (local sol-156 official Release; Windows platform codecs)',
+        'distribution':f"standard (local {source_lock['branch']} official Release; Windows platform codecs)",
         'gn_defines':'is_official_build=true proprietary_codecs=true ffmpeg_branding=Chromium red_platform_codecs=true',
-        'locked_on':'2026-10-29'}
+        'locked_on':datetime.date.today().isoformat()}
     lock_path.write_text(json.dumps(new,indent=2)+'\n')
     receipt={'validated':True,'cefVersion':version,'revision':head,'archive':str(target),'size':before.st_size,
              'sha256':sha,'runtimeSha256':runtime_hash,'previousArchive':old['archive'],'completeBzip2':True}

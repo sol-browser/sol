@@ -52,7 +52,7 @@ target_sources(${CEF_TARGET} PRIVATE src/integrations/live_reader.cpp src/integr
 target_sources(${CEF_TARGET} PRIVATE src/experiments/google_integrations_probe.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/integration_live_check.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/auto_archive.cpp src/workspace/auto_archive_controller.cpp)
-target_sources(${CEF_TARGET} PRIVATE src/windows/link_peek_layout.cpp src/windows/link_peek_scene.cpp src/windows/auto_pip.cpp src/windows/video_pip_button.cpp src/windows/link_peek_close.cpp src/windows/link_peek_readiness.cpp src/workspace/link_peek_controller.cpp src/workspace/little_window_controller.cpp src/windows/background_host.cpp src/workspace/media_controller.cpp src/workspace/tab_menu_actions.cpp)
+target_sources(${CEF_TARGET} PRIVATE src/windows/link_peek_layout.cpp src/windows/link_peek_scene.cpp src/windows/auto_pip.cpp src/windows/video_pip_button.cpp src/windows/link_peek_close.cpp src/windows/link_peek_readiness.cpp src/workspace/link_peek_controller.cpp src/workspace/little_window_controller.cpp src/windows/background_host.cpp src/workspace/media_controller.cpp src/workspace/tab_menu_actions.cpp src/integrations/protected_media_host.cpp src/integrations/protected_media_installer.cpp src/integrations/protected_media_layout.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/preferences.cpp src/app/updates.cpp src/app/windows_locale.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/release_notes.cpp src/app/widevine.cpp src/app/memory_report.cpp src/integrations/x_unread.cpp src/integrations/whatsapp_unread.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/tab_drag_preview.cpp)
@@ -292,6 +292,18 @@ add_executable(url_clean_test "${CMAKE_SOURCE_DIR}/tests/native/url_clean_test.c
 target_include_directories(url_clean_test PRIVATE src)
 target_compile_options(url_clean_test PRIVATE /W4 /WX /EHsc)
 add_test(NAME url_clean COMMAND url_clean_test)
+
+add_executable(default_browser_rules_test "${CMAKE_SOURCE_DIR}/tests/native/default_browser_rules_test.cpp")
+target_include_directories(default_browser_rules_test PRIVATE src)
+target_compile_definitions(default_browser_rules_test PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(default_browser_rules_test PRIVATE /W4 /WX /EHsc /utf-8)
+add_test(NAME default_browser_rules COMMAND default_browser_rules_test)
+
+add_executable(protected_media_layout_test "${CMAKE_SOURCE_DIR}/tests/native/protected_media_layout_test.cpp" src/integrations/protected_media_layout.cpp)
+target_include_directories(protected_media_layout_test PRIVATE src)
+target_compile_definitions(protected_media_layout_test PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(protected_media_layout_test PRIVATE /W4 /WX /EHsc /utf-8)
+add_test(NAME protected_media_layout COMMAND protected_media_layout_test)
 
 add_executable(recent_cycle_test "${CMAKE_SOURCE_DIR}/tests/native/recent_cycle_test.cpp")
 target_include_directories(recent_cycle_test PRIVATE src)

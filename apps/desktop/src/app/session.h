@@ -4,6 +4,8 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
+#include <string>
 #include <vector>
 #include "app/state.h"
 #include "storage/tree_store.h"
@@ -40,6 +42,8 @@ struct WorkspaceData {
   bool ready = false;
 };
 class BackgroundHost;
+class ProtectedMediaHost;
+class ProtectedMediaInstaller;
 class AppSession {
  public:
   void Register(const std::shared_ptr<State>& window);
@@ -67,6 +71,9 @@ class AppSession {
   // Starts sol-tray.exe so Sol can exit instead of staying in memory; false keeps Sol running.
   std::function<bool()> hand_to_tray;
   std::shared_ptr<BackgroundHost> background;
+  std::shared_ptr<ProtectedMediaHost> protected_media;
+  std::shared_ptr<ProtectedMediaInstaller> protected_media_installer;  // Settings → Protected content.
+  std::set<std::string> protected_media_offered;  // Services whose install hint was shown this session.
   // Moves the live page of |from|'s entry into |to| for |node_id| without
   // reloading it (docs/multi-window.md); false when it cannot move live.
   std::function<bool(const std::shared_ptr<State>& from, const std::shared_ptr<State>& to, const std::string& source_id,

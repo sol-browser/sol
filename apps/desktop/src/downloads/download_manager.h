@@ -19,9 +19,11 @@ class DownloadManager : public std::enable_shared_from_this<DownloadManager> {
   void SetHistory(std::shared_ptr<HistoryService> history) { history_ = std::move(history); }
   // Default directory: FOLDERID_Downloads. Empty if Windows cannot provide it.
   static std::filesystem::path DefaultDirectory();
-  bool OnBeforeDownload(CefRefPtr<CefDownloadItem> item, const CefString& suggested_name,
+  bool OnBeforeDownload(CefRefPtr<CefBrowser> browser, CefRefPtr<CefBrowser> dialog_browser,
+                        CefRefPtr<CefDownloadItem> item, const CefString& suggested_name,
                         CefRefPtr<CefBeforeDownloadCallback> callback);
-  void OnUpdated(CefRefPtr<CefDownloadItem> item, CefRefPtr<CefDownloadItemCallback> callback);
+  // True on the first successful completion of a download accepted here.
+  bool OnUpdated(CefRefPtr<CefDownloadItem> item, CefRefPtr<CefDownloadItemCallback> callback);
   // This session's downloads, newest first, at most 30, for the workspace
   // snapshot (the popover). Earlier sessions live on the downloads page only.
   CefRefPtr<CefListValue> List() const;

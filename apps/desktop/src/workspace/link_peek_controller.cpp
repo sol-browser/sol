@@ -1,5 +1,6 @@
 #include "windows/browser_dialogs.h"
 #include "workspace/controller.h"
+#include "integrations/protected_media_host.h"
 #include "windows/embedded_content.h"
 #include "windows/focus.h"
 #include "windows/motion.h"
@@ -82,6 +83,10 @@ bool WorkspaceController::CanSplitLinkPeek() const {
   return source!=tree_.nodes.end() && (source->pinned || std::none_of(tree_.splits.begin(),tree_.splits.end(),[&](const auto& split) { return split.Contains(source->id); }));
 }
 bool WorkspaceController::RouteLinkPeek(CefRefPtr<CefBrowser> source,const std::string& url,bool force) {
+  // Spotify and Netflix sites (*.spotify.com, *.netflix.com) never open in a
+  // peek, installed helper or not: the link opens as a tab, which plays
+  // protected or offers to install the helper there.
+  if (IsProtectedMediaSiteUrl(url)) return false;
   const auto state=state_.lock();
   if (!state || state->little_window || !state->embedded || !source || !ready_ || stopped_ || shutting_down_ || HasLinkPeek() ||
       !closing_.empty() || closing_commits_ || state->embedded->IsPageFullscreen() || url.size()>4096 || Site(url).empty()) return false;

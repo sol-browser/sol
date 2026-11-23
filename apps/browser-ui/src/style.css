@@ -65,6 +65,13 @@ input { min-width: 0; }
   /* Side padding narrows from 10 px (170 DIP and wider) to 6 px at the 150 DIP minimum. */
   --sidebar-pad-x: clamp(6px, calc((var(--sidebar-size, 256px) - 150px) / 5 + 6px), 10px); padding: 9px var(--sidebar-pad-x) 10px; user-select: none;  font-size: 14px; }
 .sidebar[data-hidden="true"] { visibility: hidden; pointer-events: none; }
+.sidebar-tooltip {
+  position: absolute; z-index: 10; pointer-events: none; width: max-content; max-width: calc(100% - 12px);
+  padding: 4px 7px; border: 1px solid oklch(.65 .02 var(--theme-hue, 307) / .25); border-radius: 5px;
+  background: oklch(calc(.96 - var(--theme-dark, 0) * .71) .012 var(--theme-hue, 307));
+  box-shadow: 0 2px 8px #0003; font-size: 11px; line-height: 1.35;
+  white-space: pre-line; overflow-wrap: anywhere; overflow: hidden; max-height: 6em;
+}
 .sidebar-resizer { position: absolute; left: calc(var(--sidebar-width) + 8px - var(--sidebar-resize-hit-width, 8px)); top: var(--toolbar-height); bottom: 8px; width: var(--sidebar-resize-hit-width, 8px); cursor: col-resize; touch-action: none; user-select: none; z-index: 5; outline: none; }
 .sidebar-resizer::after { content: ''; position: absolute; right: 0; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: oklch(calc(0.5395 + var(--theme-dark, 0) * 0.1244) min(calc(0.1016 * var(--theme-chroma, 1)), 0.24) calc(var(--theme-hue, 307) + 2.3)); opacity: 0; transition: opacity .12s; }
 .sidebar-resizer[aria-disabled="false"][data-hovered="true"]::after, .sidebar-resizer[data-keyboard-focus="true"]::after, .sidebar-resizer[data-dragging="true"]::after { opacity: .65; }
@@ -152,18 +159,55 @@ html:has(.devtools-window-header), html:has(.devtools-window-header) body { back
 .tree-row:has(.favorite-status) .integration-unread[data-favorite="true"] { top:7px; bottom:auto; }
 .tree-row { --node-font-weight: 400; display: flex; position: relative; isolation: isolate; align-items: center; margin: 2px 0; min-height: 36px; border: 1px solid transparent; border-radius: 8px;
   transform-origin: 16px center; transition: background 160ms ease, border-color 160ms ease; }
-.tree-row[data-favorite="false"] { padding-inline: 4px; }
+.tree-row[data-favorite="false"]:not([data-split="true"]) { padding-inline: 4px; }
 .tree-row:hover { background: oklch(calc(1.0000 + var(--theme-dark, 0) * 0.0000) 0.0000 89.9 / calc(0.314 + var(--theme-dark, 0) * -0.257)); }
 .tree-row::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; border-radius: inherit;
   background: linear-gradient(145deg, oklch(calc(1.0000 + var(--theme-dark, 0) * 0.0000) 0.0000 89.9 / calc(0.925 + var(--theme-dark, 0) * -0.759)), oklch(calc(1.0000 + var(--theme-dark, 0) * 0.0000) 0.0000 89.9 / calc(0.659 + var(--theme-dark, 0) * -0.540)));
   opacity: 0; transform: scale(.975); transition: opacity 200ms ease, transform 260ms var(--motion-settle); }
 .tree-row[data-active="true"]::before { opacity: 1; transform: scale(1); }
+[data-media-service="spotify"] { --protected-media-color: #1ed760; }
+[data-media-service="netflix"] { --protected-media-color: #e50914; }
+[data-media-service="disneyplus"] { --protected-media-color: #12b9ad; }
+[data-media-service="hbomax"] { --protected-media-color: #8875ff; }
+[data-media-service="primevideo"] { --protected-media-color: #00a8e1; }
+[data-media-service="appletv"] { --protected-media-color: #8594ad; }
+[data-media-service="applemusic"] { --protected-media-color: #fa2d62; }
+[data-media-service="paramountplus"] { --protected-media-color: #0064ff; }
+[data-media-service="crunchyroll"] { --protected-media-color: #f47521; }
+[data-media-service="deezer"] { --protected-media-color: #a238ff; }
+/* light-dark() follows color-scheme, which the shell never sets: mix by the theme's darkness instead. */
+[data-media-service="tidal"] { --protected-media-color: color-mix(in srgb, #e0e7ed calc(var(--theme-dark, 0) * 100%), #454b53); }
+.protected-media-tint {
+  position: absolute; inset: 0; z-index: -1; overflow: hidden; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(105deg,
+    color-mix(in srgb, var(--protected-media-color) calc(21% + var(--theme-dark, 0) * 7%), transparent),
+    color-mix(in srgb, var(--protected-media-color) calc(7% + var(--theme-dark, 0) * 3%), transparent));
+}
+.split-row-part[data-media-service] { isolation: isolate; border-radius: 5px; }
+.spotify-waves {
+  display: block; width: 100%; height: 100%; opacity: 0;
+  transition: opacity 280ms ease;
+}
+[data-media-playing="true"] > .protected-media-tint > .spotify-waves { opacity: calc(.74 + var(--theme-dark, 0) * .26); }
+@media (prefers-reduced-motion: no-preference) {
+  /* steps(): 20 updates a second. Blink then wakes only for the next step instead of
+     repainting the sidebar on every frame of a high-refresh display (measured 2026-11-23). */
+  .spotify-wave-far, .spotify-wave-near {
+    transform-box: view-box;
+    animation: spotify-wave-flow 6s -1s steps(120) infinite paused;
+  }
+  .spotify-wave-near { animation-duration: 8s; animation-delay: -3s; animation-direction: reverse; animation-timing-function: steps(160); }
+  .sidebar:not([data-hidden="true"]) [data-media-playing="true"] > .protected-media-tint .spotify-waves > path {
+    animation-play-state: running;
+  }
+}
+@keyframes spotify-wave-flow { to { transform: translateX(-100%); } }
 .node-icon { display: flex; justify-content: center; align-items: center; width: 24px; min-width: 24px; height: 24px; padding: 0; color: oklch(calc(0.5210 + var(--theme-dark, 0) * 0.2113) calc(0.0597 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 2.1)); }
 .tree-row > .node-icon { margin-right: 6px; }
 .node-name { display: flex; gap: 12px; align-items: center; flex: 1; min-width: 0; min-height: 32px; padding: 0 3px 0 0; text-align: left; font-size: 14px; font-weight: var(--node-font-weight, 400); line-height: 20px; letter-spacing: -.1px; }
-/* A row is only locked (disabled) while its page closes or a command runs: it must not dim.
-   An unloading Pinned tab or Favorite stays put, so the dim read as a flicker (user report 2026-11-16). */
-.tree-row :is(.node-name, .split-row-title):disabled { opacity: 1; cursor: default; }
+/* Keep visible tab labels steady while a page closes or a command runs.
+   Favorite tiles use a transparent button over their icon. */
+.tree-row[data-favorite="false"] :is(.node-name, .split-row-title):disabled { opacity: 1; cursor: default; }
 .tree-row[data-kind="folder"] { --node-font-weight: 500; }
 .tree-row[data-kind="folder"][data-drop-inside="true"] { background:color-mix(in oklch,var(--accent) 15%,transparent); }
 .tree-row[data-kind="folder"][data-drop-inside="true"] .folder-icon { color:var(--accent); opacity:1; }
@@ -478,8 +522,9 @@ kbd { margin-left: auto; font-family: inherit; font-size: 10px; color: oklch(cal
 @keyframes media-pulse { 50% { opacity: .55; } }
 .tab-media { display: inline-flex; flex: 0 0 auto; margin-left: auto; color: oklch(calc(0.6043 + var(--theme-dark, 0) * 0.0052) 0.1858 13.9); }
 .tab-media .icon { width: 14px; height: 14px; }
-/* Audio button (before the title) stays visible while playing or muted. */
-.row-action.tab-audio { opacity: 1 !important; visibility: visible !important; margin: 0 2px 0 -4px; color: oklch(calc(0.4000 + var(--theme-dark, 0) * 0.5000) calc(0.0837 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 1.0)); background: color-mix(in oklch, currentColor 8%, transparent); }
+/* Audio button (before the title) stays visible while playing or muted. Not with
+   visibility: a visible child shows through the hidden sidebar (Library, user report 2026-11-23). */
+.row-action.tab-audio { opacity: 1 !important; margin: 0 2px 0 -4px; color: oklch(calc(0.4000 + var(--theme-dark, 0) * 0.5000) calc(0.0837 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 1.0)); background: color-mix(in oklch, currentColor 8%, transparent); }
 .row-action.tab-audio:hover { background: color-mix(in oklch, currentColor 15%, transparent); }
 .row-action.tab-audio[data-muted="true"] { color: oklch(calc(0.5882 + var(--theme-dark, 0) * 0.0853) calc(0.0587 * var(--theme-text-chroma, 0)) calc(var(--theme-hue, 307) + 3.4)); }
 .row-action.tab-audio .icon { width: 16px; height: 16px; }
@@ -771,10 +816,11 @@ html:has(.peek-root), body:has(.peek-root) { margin: 0; height: 100%; overflow: 
 :root:is([data-backdrop-under="mica"], [data-backdrop-under="acrylic"]) { --theme-material-alpha: var(--theme-palette-material-alpha, calc(var(--backdrop-alpha) * var(--theme-palette-fill, 1))); }
 :root[data-backdrop-under="acrylic"] { --backdrop-alpha: .6; --backdrop-chroma: 1; }
 :root[data-backdrop-under="mica"] { --backdrop-alpha: .5; --backdrop-chroma: 1.6; --backdrop-lift: calc(.14 * var(--theme-dark, 0) + .04); }
+/* Override the tint variable here so the shared background keeps the floating crop. */
 :root:is([data-backdrop="mica"], [data-backdrop="acrylic"]) .workspace, :root:is([data-backdrop-under="mica"], [data-backdrop-under="acrylic"]) .peek-root { --theme-legacy-gradient: linear-gradient(155deg,
   oklch(calc(var(--backdrop-lift, 0) + 0.9182 + var(--theme-dark, 0) * -0.7058 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9182 - var(--theme-dark, 0) * -0.7058)) calc(0.0202 * var(--theme-chroma, 1) * var(--backdrop-chroma)) calc(var(--theme-hue, 307) + 33.7) / var(--backdrop-alpha)) 0%,
   oklch(calc(var(--backdrop-lift, 0) + 0.9134 + var(--theme-dark, 0) * -0.7053 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9134 - var(--theme-dark, 0) * -0.7053)) calc(0.0237 * var(--theme-chroma, 1) * var(--backdrop-chroma)) calc(var(--theme-hue, 307) - 5.1) / calc(var(--backdrop-alpha) - .06)) 55%,
-  oklch(calc(var(--backdrop-lift, 0) + 0.9031 + var(--theme-dark, 0) * -0.7043 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9031 - var(--theme-dark, 0) * -0.7043)) calc(0.0220 * var(--theme-chroma, 1) * var(--backdrop-chroma)) calc(var(--theme-hue, 307) - 29.5) / var(--backdrop-alpha)) 100%); background: var(--theme-grain, none), var(--theme-palette-gradient, var(--theme-legacy-gradient)); }
+  oklch(calc(var(--backdrop-lift, 0) + 0.9031 + var(--theme-dark, 0) * -0.7043 + var(--theme-vivid, 0) * (0.74 - 0.28 * var(--theme-dark, 0) - 0.9031 - var(--theme-dark, 0) * -0.7043)) calc(0.0220 * var(--theme-chroma, 1) * var(--backdrop-chroma)) calc(var(--theme-hue, 307) - 29.5) / var(--backdrop-alpha)) 100%); }
 
 /* Theme changes (switching spaces, the colour wheel) blend instead of jumping: the theme
    variables are typed numbers, so the root transitions them and every themed colour follows. */

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useMessages } from './i18n';
 import { useIntl } from 'react-intl';
 import { integrationEnabled, integrationSettingsCatalog, unlistedIntegrations, parseSettingsSnapshot, type Backdrop, type Clock, type InterfaceLanguage, type SettingsCommand, type SettingsSnapshot } from '../../../packages/browser-contracts/src';
-import { Settings2, Palette, ArrowUpRight, Check, Puzzle, Info, Search, Keyboard, Archive, UserRound, Languages, ShieldCheck } from 'lucide-react';
+import { Settings2, Palette, ArrowUpRight, Check, Puzzle, Info, Search, Keyboard, Archive, UserRound, Languages, ShieldCheck, MonitorPlay, FlaskConical } from 'lucide-react';
 import { BlockerSettings } from './BlockerSettings';
 import { PreferencesSettings } from './PreferencesSettings';
 import { LinkRoutingSettings } from './LinkRoutingSettings';
@@ -13,6 +13,7 @@ import { ImportSettings } from './ImportSettings';
 import { applyTheme } from './theme-apply';
 import { PasswordsSettings } from './PasswordsSettings';
 import { SyncSettings } from './SyncSettings';
+import { ProtectedMediaSettings } from './ProtectedMediaSettings';
 import { ProfilesSettings } from './ProfilesSettings';
 import { SiteSearchSettings } from './SiteSearchSettings';
 import { translationLanguageName } from './TranslationPanel';
@@ -43,6 +44,7 @@ const navigation = [
   { id: 'languages', label: 'settings.category.languages', icon: Languages },
   { id: 'profiles', label: 'settings.category.data', icon: UserRound },
   { id: 'integrations', label: 'settings.category.integrations', icon: Puzzle },
+  { id: 'protectedMedia', label: 'settings.category.protected', icon: MonitorPlay },
   { id: 'keyboard', label: 'settings.section.keyboard', icon: Keyboard },
   { id: 'releases', label: 'settings.category.about', icon: Info },
 ] as const;
@@ -81,6 +83,7 @@ export function Settings() {
       if(target==='search')setSection('search');
       if(target==='siteSearch')setSection('siteSearch');
       if(target==='languages')setSection('languages');
+      if(target==='protectedMedia')setSection('protectedMedia');
       if(target==='profiles'||target==='newProfile'){setSection('profiles');if(target==='newProfile')setProfileCreateRequest(value=>value+1);}
     };
     window.addEventListener('red-settings-section', open);
@@ -308,6 +311,8 @@ export function Settings() {
           onOpen={(profile, settings) => void action({ method: 'settings.passwords', profile, settings })} />;
       case 'sync':
         return <SyncSettings ready={!!data?.ready} />;
+      case 'protectedMedia':
+        return <ProtectedMediaSettings ready={!!data?.ready} />;
       case 'blocker':
         return <BlockerSettings preferences={data?.preferences} ready={!!data?.ready} busy={busy} save={action} />;
       case 'import':
@@ -334,13 +339,16 @@ export function Settings() {
             }}>
             <Glyph size={18} strokeWidth={1.7} />
             <span>{t(id === 'profiles' && data?.standalone ? 'settings.section.passwords' : label)}</span>
+            {id === 'protectedMedia' && <FlaskConical className="settings-nav-experimental" size={13} strokeWidth={1.8}
+              role="img" aria-label={t('settings.protected.experimental')}><title>{t('settings.protected.experimental')}</title></FlaskConical>}
           </button>)}
       </nav>
     </aside>
     <main className="settings-content" ref={content}>
       <div className="settings-page" key={category}>
         {section === 'siteSearch' && <button type="button" className="settings-text site-search-back" onClick={() => setSection('search')}><Icon name="back" />{t('settings.section.search')}</button>}
-        <header className="settings-heading"><h1>{heading}</h1></header>
+        <header className="settings-heading"><h1>{heading}{category === 'protectedMedia' &&
+          <span className="settings-beta" data-protected-media="experimental">{t('settings.protected.experimental')}</span>}</h1></header>
         {subtabs.length > 0 && <nav className="settings-subnav" aria-label={heading}>
           {subtabs.map(item => <button type="button" key={item} data-subsection={item}
             aria-current={section === item ? 'page' : undefined} onClick={() => setSection(item)}>

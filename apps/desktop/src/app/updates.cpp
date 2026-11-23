@@ -38,6 +38,7 @@ void SetProgress(int percent) {
   auto& s = StatusState(); std::lock_guard lock(s.mutex);
   if (s.value.phase == UpdatePhase::Downloading) s.value.percent = percent < 0 ? 0 : percent > 100 ? 100 : percent;
 }
+}  // namespace
 // icacls <folder> /grant *S-1-15-2-2:(OI)(CI)(RX): "ALL RESTRICTED APPLICATION
 // PACKAGES" may read and execute Sol's own files, as the build and setup grant.
 bool GrantSandboxAccess(const std::filesystem::path& folder) {
@@ -52,6 +53,7 @@ bool GrantSandboxAccess(const std::filesystem::path& folder) {
   CloseHandle(process.hThread); CloseHandle(process.hProcess);
   return code == 0;
 }
+namespace {
 
 // The running sol.exe is the new version (Velopack starts it from its folder).
 // Grant on that folder and on the app root, so later versions placed under the

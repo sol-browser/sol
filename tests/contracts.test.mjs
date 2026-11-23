@@ -214,12 +214,20 @@ for (const [name, change] of [
   ['fractional archive time', s => { s.nodes[1].archivedAt = 1.5; }],
   ['string camera state', s => { s.nodes[1].mediaCamera = 'yes'; }],
   ['numeric microphone state', s => { s.nodes[1].mediaMicrophone = 1; }],
+  ['unknown protected media service', s => { s.nodes[1].mediaService = 'gmail'; }],
   ['remote favicon', s => { s.nodes[1].favicon = 'https://tracker.example/icon.png'; }],
   ['script favicon', s => { s.nodes[1].favicon = 'data:image/svg+xml;base64,PHN2Zz4='; }],
   ['inline PNG favicon (now served by address)', s => { s.nodes[1].favicon = 'data:image/png;base64,iVBORw0KGgo='; }],
   ['favicon path traversal', s => { s.nodes[1].favicon = 'sol://ui/favicon/../v1'; }],
   ['oversized page title', s => { s.nodes[1].pageTitle = 'x'.repeat(241); }],
 ]) test(`rejects ${name}`, () => { const value = fixture(); change(value); assert.throws(() => parseSnapshot(JSON.stringify(value))); });
+// Netflix was rejected as a media service and the sidebar stopped updating (2026-11-23).
+test('accepts every protected media service on a tab', () => {
+  for (const service of ['spotify', 'netflix', 'hbomax', 'primevideo', 'tidal']) {
+    const value = fixture(); value.nodes[1].mediaService = service; value.nodes[1].mediaPlaying = true;
+    assert.equal(parseSnapshot(JSON.stringify(value)).nodes[1].mediaService, service);
+  }
+});
 test('accepts a native theme and rejects out-of-range or unknown values', () => {
   const theme = { hue: 145, intensity: 120, mode: 'system', noise: 35, dark: true };
   assert.deepEqual(parseSnapshot(JSON.stringify({ ...fixture(), theme })).theme, theme);

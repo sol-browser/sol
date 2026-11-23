@@ -49,7 +49,7 @@ export function SpaceHeader({ space, busy, anchorRef, action, editSpace }: Props
           if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(); }
         }} />
     </form> : <h1 className="space-title"><button type="button" disabled={busy || !space}
-      aria-label={space?.name ? t('space.renameNamed', { name: space.name }) : t('space.rename')} title={t('space.rename')} onClick={start}>{space?.name ?? t('settings.appearance.space')}</button></h1>}
+      aria-label={space?.name ? t('space.renameNamed', { name: space.name }) : t('space.rename')} data-tip={t('space.rename')} onClick={start}>{space?.name ?? t('settings.appearance.space')}</button></h1>}
     <button type="button" className="space-edit" disabled={busy || !space} aria-label={t('space.edit')} aria-haspopup="menu"
       onMouseDown={event => event.preventDefault()}
       onClick={event => { const anchor = event.currentTarget; void save().then(saved => { if (saved && anchor.isConnected) editSpace(anchor); }); }}>{t('space.editButton')}</button>

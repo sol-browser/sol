@@ -9,11 +9,16 @@
 #include "app/updates.h"
 #include "windows/pointer.h"
 #include "app/session.h"
+#include "integrations/protected_media_host.h"
+#include "integrations/protected_media_installer.h"
+#include "integrations/protected_media_layout.h"
+#include "integrations/protected_media_title.h"
 #include "app/browsing_profiles.h"
 #include "app/auto_archive.h"
 #include "app/sync_service.h"
 #include "windows/boosts.h"
 #include "navigation/shortcut_settings.h"
+#include "navigation/shortcuts.h"
 #include "windows/tab_drag_preview.h"
 #include "windows/devtools_dock.h"
 #include "windows/motion.h"
@@ -30,6 +35,7 @@
 #include "include/cef_image.h"
 #include "include/cef_navigation_entry.h"
 #include "include/cef_parser.h"
+#include "include/cef_path_util.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "windows/embedded_content.h"
 #include "windows/page_corners.h"
@@ -150,6 +156,18 @@ void WorkspaceController::Start() {
   const auto state = state_.lock();
   if (!state) return;
   PrepareSession();
+  if (!session_->protected_media) {
+    CefString exe;
+    if (CefGetPath(PK_DIR_EXE, exe)) {
+      const auto base = ProtectedMediaBase(std::filesystem::path(exe.ToWString()));
+      session_->protected_media = std::make_shared<ProtectedMediaHost>(base, state->profile / "BrowserData" / "ProtectedMedia");
+      // Private windows never offer the helper; probes never tidy or update it on their own.
+      if (!state->private_window) {
+        session_->protected_media_installer = std::make_shared<ProtectedMediaInstaller>(base, session_->protected_media);
+        if (!state->probe) session_->protected_media_installer->Prepare();
+      }
+    }
+  }
   data_ = state->workspace_data ? state->workspace_data : (state->workspace_data = session_->workspace);
   if (!session_->auto_archive) session_->auto_archive=AutoArchive::Start(session_);
   // Cloud sync belongs to the shared workspace of a regular window (docs/sync.md).
@@ -206,6 +224,9 @@ void WorkspaceController::Stop() {
   // AppSession closes all data scopes on their worker threads after the last
   // window, including scopes whose standalone window was closed earlier.
   worker_ = nullptr;
+  if (session_ && session_->protected_media) for (const auto& [id, browser] : sessions_)
+    if (IsProtectedMedia(id)) session_->protected_media->Close(browser->GetIdentifier());
+  protected_media_mounts_.clear();
   sessions_.clear(); browser_nodes_.clear();
 }
 void WorkspaceController::SetObserver(std::function<void(CefRefPtr<CefDictionaryValue>)> observer) {
@@ -370,7 +391,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   // Pinned extensions for the top bar (none in a private window: no extensions run there).
   const auto active_profile = ProfileForNode("");
   const auto pins = active_profile ? active_profile->pins : session_ ? session_->pinned_extensions : nullptr;
-  if (state && !state->private_window && state->extensions && pins)
+  if (state && !state->private_window && !ActiveProtectedMedia() && state->extensions && pins)
     result->SetList("pinnedExtensions", pins->Items(*state->extensions, state->WebContext()));
   result->SetBool("windowClosing", shutting_down_);
   result->SetBool("sidebarVisible", !state || state->sidebar_visible);
@@ -436,18 +457,25 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     result->SetDictionary("sidebarRequest", request);
   }
   auto content = state ? state->content : nullptr;
+  const auto mount = protected_media_mounts_.find(tree_.active_id);
+  const bool protected_page = mount != protected_media_mounts_.end() && !HasLinkPeek();
+  const auto player = protected_page && content && session_->protected_media
+      ? session_->protected_media->Get(content->GetIdentifier()) : nullptr;
   if (auto peek=DescribeLinkPeek()) result->SetDictionary("linkPeek",peek);
   if (auto media=DescribeMedia()) result->SetList("media",media);
   if (x_unread_) if (const auto count = x_unread_->count()) result->SetInt("xUnread", *count);
   if (whatsapp_unread_) if (const auto count = whatsapp_unread_->count()) result->SetInt("whatsappUnread", *count);
-  result->SetBool("canGoBack", content && content->CanGoBack());
-  result->SetBool("canGoForward", content && content->CanGoForward());
+  result->SetBool("canGoBack", protected_page ? player && player->back : content && content->CanGoBack());
+  result->SetBool("canGoForward", protected_page ? player && player->forward : content && content->CanGoForward());
   const bool crashed = content && crashed_.contains(content->GetIdentifier());
   result->SetBool("activeCrashed", crashed);
-  result->SetBool("isLoading", content && !crashed && (content->IsLoading() || !loaded_.contains(content->GetIdentifier())));
-  result->SetString("url", crashed ? last_urls_.at(content->GetIdentifier()) : content ? content->GetMainFrame()->GetURL().ToString() : HasLinkPeek() ? link_peek_url_ : "");
+  result->SetBool("isLoading", protected_page ? !player || player->loading :
+      content && !crashed && (content->IsLoading() || !loaded_.contains(content->GetIdentifier())));
+  result->SetString("url", protected_page ? (player ? player->url : mount->second) :
+      crashed ? last_urls_.at(content->GetIdentifier()) : content ? content->GetMainFrame()->GetURL().ToString() : HasLinkPeek() ? link_peek_url_ : "");
+  if (protected_page) result->SetBool("protectedMedia", true);
   // The active page's zoom when it is not 100% (the address bar's badge).
-  if (content && !crashed) {
+  if (content && !crashed && !protected_page) {
     if (auto offer = DescribePageTranslationOffer(state, content)) result->SetDictionary("translationOffer", offer);
     else if (KeepTranslationGlobeWhileChecking(state, content)) result->SetBool("translationPending", true);
     const int zoom = static_cast<int>(std::lround(100 * std::pow(1.2, content->GetHost()->GetZoomLevel())));
@@ -477,7 +505,9 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     // A page loaded by a sidebar hover looks unloaded until it is opened (PreloadSaved).
     const auto live = preloading_.contains(node.id) ? sessions_.end() : sessions_.find(node.id);
     const bool failed = live != sessions_.end() && crashed_.contains(live->second->GetIdentifier());
-    const auto current = failed ? last_urls_.at(live->second->GetIdentifier()) :
+    const auto protected_tab = IsProtectedMedia(node.id) && live != sessions_.end()
+        ? session_->protected_media->Get(live->second->GetIdentifier()) : nullptr;
+    const auto current = IsProtectedMedia(node.id) ? node.url : failed ? last_urls_.at(live->second->GetIdentifier()) :
         live != sessions_.end() ? live->second->GetMainFrame()->GetURL().ToString() : node.url;
     row->SetBool("crashed", failed);
     bool camera = false, microphone = false;  // Live camera/microphone use.
@@ -485,11 +515,28 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
       if (const auto media = state->media_access.find(live->second->GetIdentifier()); media != state->media_access.end())
         std::tie(camera, microphone) = media->second;
     row->SetBool("mediaCamera", camera); row->SetBool("mediaMicrophone", microphone);
-    row->SetBool("muted", live != sessions_.end() && live->second->GetHost()->IsAudioMuted());
-    row->SetBool("audible", live != sessions_.end() && state && state->audible_frames.contains(live->second->GetIdentifier()));
+    row->SetBool("muted", protected_tab ? protected_tab->muted : live != sessions_.end() && live->second->GetHost()->IsAudioMuted());
+    // A protected tab is audible when the helper reports sound. Playback counts
+    // only while Sol muted the tab, so its muted icon stays to unmute it. Silent
+    // previews (Netflix's autoplaying trailers) no longer show a sound icon.
+    row->SetBool("audible", protected_tab ? protected_tab->audible ||
+        (protected_tab->muted && protected_tab->media && protected_tab->media->GetBool("playing")) :
+        live != sessions_.end() && state && state->audible_frames.contains(live->second->GetIdentifier()));
     row->SetBool("customTitle", node.custom_title);
     const auto title = page_titles_.find(node.id);
-    if (live != sessions_.end() && title != page_titles_.end() && title->second.url == current)
+    if (protected_tab) {
+      row->SetString("mediaService", protected_tab->service->id);
+      row->SetBool("mediaPlaying", protected_tab->media ? protected_tab->media->GetBool("playing") : protected_tab->audible);
+    }
+    const auto track = protected_tab && protected_tab->media ? protected_tab->media->GetString("title") : CefString{};
+    if (!track.empty()) {
+      if (std::string_view(protected_tab->service->id) == "spotify") {
+        row->SetString("pageTitle", CefString(ProtectedMediaTrackLabel(
+            track.ToString16(), protected_tab->media->GetString("artist").ToString16())));
+      } else {
+        row->SetString("pageTitle", track);
+      }
+    } else if (live != sessions_.end() && title != page_titles_.end() && title->second.url == current)
       row->SetString("pageTitle", title->second.text);
     else if (current.empty() || current == "about:blank" || SamePageUrl(current, node.url))
       row->SetString("pageTitle", node.page_title);
@@ -501,7 +548,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
       std::optional<std::string> icon;
       if (live != sessions_.end() && !failed) {
         icon = favicons->PageUrl(live->second->GetIdentifier());
-        if (!icon && (current.empty() || current == "about:blank")) icon = favicons->Url(IconHost(node.url));
+        if (!icon && (protected_tab || current.empty() || current == "about:blank")) icon = favicons->Url(IconHost(node.url));
       } else {
         icon = favicons->Url(IconHost(node.url));
       }
@@ -803,7 +850,8 @@ std::optional<TreeNode> WorkspaceController::DetachedSeed(const std::string& id)
   const auto found = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id && !n.folder && !n.archived; });
   if (found == tree_.nodes.end()) return std::nullopt;
   auto seed = *found;
-  if (auto browser = LiveBrowser(id)) {
+  if (IsProtectedMedia(id)) seed.url = ProtectedMediaUrl(id);
+  else if (auto browser = LiveBrowser(id)) {
     const auto url = browser->GetMainFrame()->GetURL().ToString();
     if (PageUrlAllowed(url)) seed.url = url;
   }
@@ -1101,6 +1149,7 @@ void WorkspaceController::EnsureActive() {
     if (was_split || state->embedded->HasPendingColdTab() || state->content != live->second ||
         !IsWindowVisible(live->second->GetHost()->GetWindowHandle())) {
       state->embedded->Activate(live->second, !loaded_.contains(live->second->GetIdentifier()));
+      ControlProtectedMedia("focus");
       std::erase(recent_, tree_.active_id); recent_.push_back(tree_.active_id);
     }
     ResumeLinkPeek();
@@ -1121,6 +1170,7 @@ void WorkspaceController::PreloadSaved(const std::string& id) {
   if (const auto closed = closed_at_.find(id); closed != closed_at_.end() && GetTickCount64() - closed->second < cooldown) return;
   const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
   if (node == tree_.nodes.end() || node->folder || node->archived || !(node->pinned || node->favorite) || !HasWebScheme(node->url)) return;
+  if (RoutesProtectedMedia(node->url)) return;
   preloading_.insert(id);
   EnsurePage(id);
   if (!creating_.contains(id) && !sessions_.contains(id)) { preloading_.erase(id); return; }
@@ -1189,7 +1239,8 @@ void WorkspaceController::EnsurePage(const std::string& id) {
 #if RED_CEF_NAVIGATION_STATE
     // A page unloaded for memory comes back with its history, unless something
     // else asked for another address or its saved address changed since.
-    if (auto saved = discarded_.extract(node.id); saved && saved.mapped().first == url && url == node.url && !state->adopt_page) {
+    if (auto saved = discarded_.extract(node.id); saved && saved.mapped().first == url && url == node.url && !state->adopt_page &&
+        !RoutesProtectedMedia(url)) {
       if (state->embedded->Create("", node.id)) { restoring_[node.id] = saved.mapped().second; return; }
       creating_.erase(node.id); error_ = "Cannot create page"; return;
     }
@@ -1205,8 +1256,74 @@ void WorkspaceController::EnsurePage(const std::string& id) {
     return;
   }
 }
+bool WorkspaceController::RoutesProtectedMedia(const std::string& url) const {
+  const auto state = state_.lock();
+  return state && !state->private_window && session_ && session_->protected_media &&
+      IsProtectedMediaPlayerUrl(url) && session_->protected_media->Available();
+}
+bool WorkspaceController::IsProtectedMediaBrowser(int browser_id) const {
+  const auto binding = browser_nodes_.find(browser_id);
+  return binding != browser_nodes_.end() && IsProtectedMedia(binding->second);
+}
+std::string WorkspaceController::ProtectedMediaUrl(const std::string& node) const {
+  const auto mount = protected_media_mounts_.find(node);
+  if (mount == protected_media_mounts_.end()) return {};
+  const auto browser = LiveBrowser(node);
+  const auto player = browser ? session_->protected_media->Get(browser->GetIdentifier()) : nullptr;
+  return player && IsProtectedMediaPlayerUrl(player->url) ? player->url : mount->second;
+}
+bool WorkspaceController::ControlProtectedMedia(const std::string& action) {
+  if (!ActiveProtectedMedia() || HasLinkPeek()) return false;
+  if (const auto browser = LiveBrowser(tree_.active_id)) session_->protected_media->Control(browser->GetIdentifier(), action);
+  Publish();
+  return true;
+}
+void WorkspaceController::OnProtectedMediaChanged(int browser_id) {
+  const auto binding = browser_nodes_.find(browser_id);
+  const auto player = session_->protected_media->Get(browser_id);
+  if (binding == browser_nodes_.end() || !player || shutting_down_) return;
+  const auto& id = binding->second;
+  if (!player->favicon.empty()) {
+    if (const auto browser = LiveBrowser(id)) RequestTabFavicon(browser, player->service->player_host, player->favicon);
+  }
+  if (const auto state = state_.lock(); state && state->probe) {
+    auto status = CefDictionaryValue::Create();
+    status->SetInt("browser_id", browser_id);
+    status->SetString("profile", player->profile);
+    status->SetBool("mounted", player->child && IsWindowVisible(player->child));
+    status->SetBool("loading", player->loading);
+    status->SetBool("failed", player->failed);
+    status->SetBool("committed", player->committed);
+    status->SetBool("playing", player->media && player->media->GetBool("playing"));
+    state->Record("protected_media_tab", status);
+  }
+  if (id == tree_.active_id && player->failed && !player->loading) {
+    Notify("Streaming DRM could not load this tab. Try reloading it.");
+  }
+  if (player->media && !player->media->GetBool("playing")) protected_media_paused_.insert(id);
+  if (player->media && player->media->GetBool("playing") && protected_media_paused_.erase(id)) media_dismissed_.erase(id);
+  Publish();
+  if (!IsProtectedMediaPlayerUrl(player->url) || saving_urls_.contains(id) || !closing_.empty() || closing_commits_) return;
+  const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
+  if (node == tree_.nodes.end() || node->pinned || node->favorite || node->archived || node->url == player->url) return;
+  TreeCommand command{TreeAction::SetUrl};
+  command.id = id;
+  command.url = player->url;
+  saving_urls_[id] = command.url;
+  Dispatch(command, [weak = weak_from_this(), id](int, const std::string&, CefRefPtr<CefDictionaryValue>) {
+    if (const auto self = weak.lock()) self->saving_urls_.erase(id);
+  }, true);
+}
 bool WorkspaceController::CreateLive(const std::string& url, const std::string& id) {
   const auto state = state_.lock(); if (!state || !state->embedded) return false;
+  if (RoutesProtectedMedia(url) && ProfileForNode(id)) {
+    link_initiators_.erase(id);
+    link_initiator_by_url_.erase(url);
+    protected_media_mounts_[id] = url;
+    if (state->embedded->Create("about:blank", id)) return true;
+    protected_media_mounts_.erase(id);
+    return false;
+  }
 #if CEF_API_ADDED(CEF_EXPERIMENTAL)
   if (auto by_url = link_initiator_by_url_.find(url); by_url != link_initiator_by_url_.end() && !link_initiators_.contains(id)) {
     link_initiators_[id] = {url, by_url->second}; link_initiator_by_url_.erase(by_url);
@@ -1220,8 +1337,24 @@ bool WorkspaceController::CreateLive(const std::string& url, const std::string& 
   return state->embedded->Create(url, id);
 }
 void WorkspaceController::OnCreated(CefRefPtr<CefBrowser> browser, const std::string& node_id) {
-  if (!creating_.erase(node_id)) { link_initiators_.erase(node_id); browser->GetHost()->CloseBrowser(false); return; }
+  if (!creating_.erase(node_id)) { link_initiators_.erase(node_id); protected_media_mounts_.erase(node_id); browser->GetHost()->CloseBrowser(false); return; }
   sessions_[node_id] = browser; browser_nodes_[browser->GetIdentifier()] = node_id;
+  if (const auto mount = protected_media_mounts_.find(node_id); mount != protected_media_mounts_.end()) {
+    const auto profile = ProfileForNode(node_id);
+    if (profile) session_->protected_media->Open(browser->GetIdentifier(), browser->GetHost()->GetWindowHandle(), profile->id, mount->second,
+      [weak = weak_from_this(), id = browser->GetIdentifier()] {
+        if (const auto owner = weak.lock(); owner && !owner->stopped_) owner->OnProtectedMediaChanged(id);
+      }, [weak = weak_from_this(), node_id](const std::string& action) {
+        if (const auto owner = weak.lock(); owner && owner->ActiveNode() == node_id) {
+          if (const auto state = owner->state_.lock())
+            if (const auto shortcut = ShortcutNamed(action)) ExecuteShortcut(state, *shortcut);
+        }
+      }, [weak = weak_from_this()](const std::string& url) {
+        // Help pages, other sites and popups of a protected service open as ordinary tabs.
+        if (const auto owner = weak.lock(); owner && !owner->stopped_) owner->OpenLink(url, true);
+      });
+    OnProtectedMediaChanged(browser->GetIdentifier());
+  }
   if (preloading_.contains(node_id)) {
     PausePageAnimations(browser, true);
     KeepPreloadHidden(node_id, 30);
@@ -1279,7 +1412,7 @@ void WorkspaceController::OnCreated(CefRefPtr<CefBrowser> browser, const std::st
     }
   }, weak_from_this()));
 }
-void WorkspaceController::OnClosed(int browser_id, const std::string& last_url) {
+void WorkspaceController::OnClosed(int browser_id, const std::string& cef_url) {
   if (const auto state = state_.lock()) {
     const auto profile = state->browser_profiles.find(browser_id);
     const auto icons = profile == state->browser_profiles.end() ? state->favicons : profile->second->favicons;
@@ -1290,6 +1423,15 @@ void WorkspaceController::OnClosed(int browser_id, const std::string& last_url) 
   const auto binding = browser_nodes_.find(browser_id);
   if (binding == browser_nodes_.end()) return;
   const auto id = binding->second;
+  auto last_url = cef_url;
+  if (auto mount = protected_media_mounts_.extract(id)) {
+    const auto player = session_->protected_media->Get(browser_id);
+    last_url = player && IsProtectedMediaPlayerUrl(player->url) ? player->url : mount.mapped();
+    session_->protected_media->Close(browser_id);
+    protected_media_paused_.erase(id);
+    media_dismissed_.erase(id);
+  }
+  provisional_web_tabs_.erase(id);
   crashed_.erase(browser_id);
   sessions_.erase(id); browser_nodes_.erase(binding); std::erase(recent_, id); thumbnails_.Forget(id);
   auto_archive_media_.erase(browser_id);
@@ -1402,6 +1544,7 @@ void WorkspaceController::FinishClose(const std::string& id, bool archive, Reply
   }, true);
 }
 void WorkspaceController::OnPageChanged(CefRefPtr<CefBrowser> browser) {
+  if (IsProtectedMediaBrowser(browser->GetIdentifier())) return;
   const auto url = browser->GetMainFrame()->GetURL().ToString();
   if (!crashed_.contains(browser->GetIdentifier()) && PageUrlAllowed(url)) last_urls_[browser->GetIdentifier()] = url;
   if (IsLinkPeekBrowser(browser->GetIdentifier())) { link_peek_url_=url; Publish(); return; }
@@ -1499,6 +1642,9 @@ void WorkspaceController::FlushPageTitle(const std::string& id) {
   }, weak_from_this(), id), 200);
 }
 void WorkspaceController::OnDocumentStarted(int browser, const CefString& url) {
+  if (url != "about:blank") {
+    if (const auto node = browser_nodes_.find(browser); node != browser_nodes_.end()) provisional_web_tabs_.erase(node->second);
+  }
   // A hover-loaded page's new document gets the paused animation clock again:
   // a navigation to another process starts with fresh DevTools state, so the
   // pause sent when the browser was created no longer applies there.
@@ -1510,15 +1656,45 @@ void WorkspaceController::OnDocumentStarted(int browser, const CefString& url) {
     if (icons) icons->StartDocument(browser, IconHost(url));
   }
 }
+void WorkspaceController::OnTopLevelNavigation(int browser, const CefString& url, bool redirect) {
+  if (redirect || url == "about:blank") return;
+  const auto node = browser_nodes_.find(browser);
+  if (node == browser_nodes_.end() || !provisional_web_tabs_.contains(node->second)) return;
+  const auto initial = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == node->second; });
+  if (initial == tree_.nodes.end() || !SamePageUrl(url.ToString(), initial->url)) provisional_web_tabs_.erase(node->second);
+}
+void WorkspaceController::OnDownloadCompleted(CefRefPtr<CefBrowser> browser, const std::string& original_url) {
+  const auto state = state_.lock();
+  if (!state || !state->window || shutting_down_ || !browser || !browser->IsValid()) return;
+  const auto binding = browser_nodes_.find(browser->GetIdentifier());
+  if (binding == browser_nodes_.end() || !provisional_web_tabs_.contains(binding->second)) return;
+  const auto id = binding->second;
+  if (closing_.contains(id) || moving_unloads_.contains(id) || auto_closing_.contains(id) || profile_closing_.contains(id)) return;
+  const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
+  const auto frame = browser->GetMainFrame();
+  // Only a new, still-empty Today entry that was opened for this exact request.
+  if (node == tree_.nodes.end() || node->folder || node->archived || node->pinned || node->favorite ||
+      !node->parent.empty() || !SamePageUrl(original_url, node->url) || !frame ||
+      (!frame->GetURL().empty() && frame->GetURL() != "about:blank")) return;
+  provisional_web_tabs_.erase(id);
+  if (state->little_window) {
+    state->Record("download_only_little_close_requested");
+    state->window->Close();
+  } else {
+    state->Record("download_only_tab_close_requested");
+    DetachedReady(id);  // Close and discard the temporary Today entry without archiving it.
+  }
+}
 void WorkspaceController::OnFaviconChanged(CefRefPtr<CefBrowser> browser, const std::vector<CefString>& urls) {
+  if (!urls.empty()) RequestTabFavicon(browser, IconHost(browser->GetMainFrame()->GetURL()), urls.front());
+}
+void WorkspaceController::RequestTabFavicon(CefRefPtr<CefBrowser> browser, const std::string& host, const CefString& url) {
   const auto state = state_.lock();
   const int id = browser->GetIdentifier();
   const auto profile = ProfileForBrowser(state,browser);
   const auto icons = profile ? profile->favicons : state ? state->favicons : nullptr;
-  if (!state || !icons || !browser_nodes_.contains(id) || urls.empty()) return;
-  const auto host = IconHost(browser->GetMainFrame()->GetURL());
-  if (host.empty()) return;
-  const auto token = icons->Begin(id, urls.front().ToString());
+  if (!state || !icons || !browser_nodes_.contains(id) || host.empty()) return;
+  const auto token = icons->Begin(id, url.ToString());
   if (!token) return;
   class Done final : public CefDownloadImageCallback {
    public:
@@ -1543,6 +1719,7 @@ void WorkspaceController::OnFaviconChanged(CefRefPtr<CefBrowser> browser, const 
       // A live page can move to another window while the image is in flight.
       if (const auto session = session_.lock()) for (const auto& window : session->Windows()) {
         if (!window->workspace || !window->workspace->browser_nodes_.contains(browser_)) continue;
+        if (window->probe && window->workspace->IsProtectedMediaBrowser(browser_)) window->Record("protected_media_favicon");
         window->workspace->Publish();
         break;
       }
@@ -1556,7 +1733,7 @@ void WorkspaceController::OnFaviconChanged(CefRefPtr<CefBrowser> browser, const 
     IMPLEMENT_REFCOUNTING(Done);
   };
   // The browser downloads with the page's own context; nothing reaches the shell's network.
-  browser->GetHost()->DownloadImage(urls.front(), true, 32, false,
+  browser->GetHost()->DownloadImage(url, true, 32, false,
       new Done(icons, session_, state->private_window ? nullptr : profile ? profile->history : state->history, host, id, *token));
 }
 bool WorkspaceController::PrepareShutdown(std::function<void(bool)> done) {
@@ -1601,6 +1778,7 @@ bool WorkspaceController::OnCrashed(CefRefPtr<CefBrowser> browser) {
 }
 void WorkspaceController::Reload(bool bypass) {
   if (shutting_down_ || !closing_.empty()) return;
+  if (ControlProtectedMedia("reload")) return;
   auto state = state_.lock();
   if (!state || !state->content) return;
   auto page = state->content;
@@ -1618,6 +1796,7 @@ void WorkspaceController::Reload(bool bypass) {
 }
 void WorkspaceController::NavigateHistory(bool forward) {
   if (shutting_down_ || !closing_.empty()) return;
+  if (ControlProtectedMedia(forward ? "forward" : "back")) return;
   auto state = state_.lock();
   if (!state || !state->content) return;
   auto page = state->content;
@@ -1655,6 +1834,14 @@ void WorkspaceController::CloseActive() {
   if (auto state = state_.lock(); state && state->little_window && state->window) { state->window->Close(); return; }
   if (HasLinkPeek()) { DismissLinkPeek(); return; }
   if (!tree_.active_id.empty()) Close(tree_.active_id, false);
+}
+void WorkspaceController::ReopenProtected(const std::string& url) {
+  if (!RoutesProtectedMedia(url)) return;
+  // Opening first: no page opens while a close is still in progress.
+  OpenLink(url, true, [weak = weak_from_this(), old = tree_.active_id](int code, const std::string&, CefRefPtr<CefDictionaryValue>) {
+    const auto self = weak.lock();
+    if (self && !code && !old.empty() && !self->IsProtectedMedia(old)) self->Close(old, false);
+  });
 }
 void WorkspaceController::CycleTab(bool reverse) {
   if (!ready_ || shutting_down_ || !closing_.empty() || closing_commits_) return;
@@ -1871,13 +2058,29 @@ void WorkspaceController::OpenLink(const std::string& url, bool foreground, Repl
   else if (after != link_opener_) { link_opener_ = after; link_last_.clear(); }
   else if (std::any_of(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == link_last_ && !n.archived && !n.pinned && n.parent.empty(); }))
     after = link_last_;  // The next link from the same tab goes below the previous one.
-  OpenPage(url, CefString(&parts.host).ToString().substr(0, 240), foreground, std::move(done), initiator, after);
+  const auto* service = RoutesProtectedMedia(url) ? ProtectedMediaForUrl(url) : nullptr;
+  OpenPage(url, service ? service->title : CefString(&parts.host).ToString().substr(0, 240),
+      foreground, std::move(done), initiator, after);
 }
 void WorkspaceController::OpenFile(const std::string& url, bool foreground) {
   if (!IsLocalFileUrl(url) || !CanOpen()) return;
   OpenPage(url, FileTitle(url), foreground, {});
 }
 void WorkspaceController::OpenTyped(const std::string& url, Reply done) {
+  if (const auto state = state_.lock(); state && !state->spotify_probe_slot.empty() &&
+      (url == "https://open.spotify.com/" || url == "https://open.spotify.com")) {
+    const auto existing = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& node) {
+      return !node.archived && node.space == tree_.active_space && node.url == state->spotify_probe_slot;
+    });
+    if (existing != tree_.nodes.end()) {
+      TreeCommand activate{TreeAction::Activate};
+      activate.id = existing->id;
+      Dispatch(activate, std::move(done), true);
+      return;
+    }
+    OpenPage(state->spotify_probe_slot, "Spotify", true, std::move(done));
+    return;
+  }
   if (IsLocalFileUrl(url)) OpenPage(url, FileTitle(url), true, std::move(done)); else OpenLink(url, true, std::move(done));
 }
 bool WorkspaceController::AdoptExtensionPage(const std::string& url, const std::string& profile) {
@@ -1930,7 +2133,11 @@ int WorkspaceController::Duplicate(const std::string& id, std::string& error) {
 int WorkspaceController::SetMuted(const std::string& id, bool muted, std::string& error) {
   const auto live = sessions_.find(id);
   if (live == sessions_.end()) { error = "Tab is not open"; return 409; }
-  live->second->GetHost()->SetAudioMuted(muted);
+  if (IsProtectedMedia(id)) {
+    if (!session_->protected_media->Control(live->second->GetIdentifier(), "set-muted", muted ? 1 : 0)) {
+      error = "Protected Media is unavailable"; return 409;
+    }
+  } else live->second->GetHost()->SetAudioMuted(muted);
   Publish();
   return 0;
 }
@@ -2010,9 +2217,13 @@ void WorkspaceController::OpenPage(const std::string& url, const std::string& ti
         const auto id = snapshot->GetString("createdId").ToString();
         if (!self->link_opener_.empty() && !id.empty()) self->link_last_ = id;
         const auto node = std::find_if(self->tree_.nodes.begin(), self->tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
+        if (node != self->tree_.nodes.end() && HasWebScheme(url)) self->provisional_web_tabs_.insert(id);
         if (!foreground && node != self->tree_.nodes.end() && !self->creating_.contains(id)) {
           self->creating_.insert(id);
-          if (!self->CreateLive(node->url, id)) { self->creating_.erase(id); self->error_ = "Cannot create page"; self->Publish(); }
+          if (!self->CreateLive(node->url, id)) {
+            self->creating_.erase(id); self->provisional_web_tabs_.erase(id);
+            self->error_ = "Cannot create page"; self->Publish();
+          }
         }
       } else if (code && !done) { self->error_ = error; self->Publish(); }
     }
@@ -2338,6 +2549,12 @@ void WorkspaceController::NavigatePinned(const std::string& id, const std::strin
 void WorkspaceController::Navigate(const std::string& url, Reply done) {
   if (done) done = Ordered(std::move(done));
   if (!ready_ || shutting_down_ || folder_removal_ || !closing_.empty() || closing_commits_ || !UserUrlAllowed(url)) { done(400, "Invalid active tab or URL", nullptr); return; }
+  if (RoutesProtectedMedia(url) || ActiveProtectedMedia()) { OpenTyped(url, std::move(done)); return; }
+  if (const auto state = state_.lock(); state && !state->spotify_probe_slot.empty() &&
+      (url == "https://open.spotify.com/" || url == "https://open.spotify.com")) {
+    OpenTyped(url, std::move(done));
+    return;
+  }
   if (HasLinkPeek()) {
     const auto browser=LiveBrowser(link_peek_id_); if (!browser || link_peek_closing_) { done(409,"Link preview is opening",nullptr); return; }
     browser->GetMainFrame()->LoadURL(url); FocusBrowser(browser); Publish(); done(0,"",Snapshot()); return;
@@ -2347,6 +2564,8 @@ void WorkspaceController::Navigate(const std::string& url, Reply done) {
   const auto active = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == tree_.active_id; });
   // The history page never navigates away; an address typed there opens a tab.
   if (active != tree_.nodes.end() && IsInternalPageUrl(active->url)) { open(); return; }
+  if (const auto state = state_.lock(); state && !state->spotify_probe_slot.empty() &&
+      active != tree_.nodes.end() && active->url == state->spotify_probe_slot) { open(); return; }
   if (active != tree_.nodes.end() && active->pinned) {
     NavigatePinned(active->id,url,std::move(done)); return;
   }

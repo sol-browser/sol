@@ -17,9 +17,47 @@ One short line that sums up the release. Optional; the website shows it as the h
 New things first, smaller fixes under "### Fixes". Describe the result for the user, not the code.
 -->
 
+## 0.11.0 — 2026-11-23
+
+Netflix, Spotify and other streaming services in Sol tabs.
+
+- **Streaming DRM (Experimental):** Netflix, Spotify, Disney+, HBO Max,
+  Prime Video, Apple TV, Apple Music, Paramount+, Crunchyroll, Deezer and
+  TIDAL now play in Sol tabs. It is off by default: turn it on in
+  Settings > Streaming DRM, or when Sol offers it on one of these sites.
+  Sol then downloads a separate component (about 160 MB) used only for
+  these services. Saved passwords, passkeys, autofill and extensions are
+  not available in those tabs.
+- **Open files with Sol:** Sol can be the default app for the same files as
+  other Chromium browsers: HTML, MHTML, SVG, WebP and PDF.
+
+### Fixes
+
+- Bitwarden and other extension popups no longer shrink to a narrow strip
+  at 125% and 150% display scaling.
+- Links that only download a file no longer leave an empty tab, and
+  "Ask where to save each file" shows Save As for them. Little Sol closes
+  when such a file finishes.
+- Extensions that sign in to a proxy from their background worker can
+  authenticate.
+- Sol no longer adds a separate "Chromium" entry to Windows default apps,
+  and removes one left by earlier versions.
+- A recurring startup warning about extensions in Sol's own interface
+  profile no longer appears.
+- The floating sidebar's background lines up with Acrylic and Mica themes.
+- Sidebar tooltips no longer stay on screen when the pointer moves into
+  the page.
+- While you create a Space, the mini-player steps aside; Favorites keep the
+  right number of columns afterwards.
+- A tab's speaker icon no longer shows through Library.
+- The mini-player opens on hover or keyboard focus and closes again after
+  a click.
+
 ## 0.10.1 — 2026-11-19
 
-- Library now lets you move tabs and folders within and between Spaces.
+Library improvement
+
+- **Library:** Move tabs and folders within and between Spaces.
 
 ### Fixes
 

@@ -303,7 +303,7 @@ function Shell() {
             onBlur={() => setUrl(latest.current?.url ?? url)}
             onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setUrl(latest.current?.url ?? ''); void send({ method: 'browser.shortcut', action: 'focusPage' }); } }} /></label>}
           {/* Arc: site controls instead of a Go arrow; live camera/microphone use shows here too. */}
-          {workspace && (!little || activeNode?.mediaCamera || activeNode?.mediaMicrophone) && <button className="icon-button site-button" type="button" data-action="site" disabled={!ready}
+          {workspace && !snapshot.protectedMedia && (!little || activeNode?.mediaCamera || activeNode?.mediaMicrophone) && <button className="icon-button site-button" type="button" data-action="site" disabled={!ready}
             data-live={activeNode?.mediaCamera || activeNode?.mediaMicrophone ? 'true' : undefined}
             aria-label={siteLabel(t, activeNode)} onClick={e => openPanel('site', e.currentTarget)}>
             {/* Square button: a live camera/microphone replaces the sliders glyph. */}

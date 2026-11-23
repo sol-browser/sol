@@ -17,6 +17,20 @@ export async function browsingProbe() {
   let s = await request({ method: 'browser.getSnapshot' });
   const source = s.activeId!, sourceUrl = s.url!, origin = new URL(sourceUrl).origin;
   console.info('RED_BROWSING:mark'); await delay(80);
+  if (new URL(sourceUrl).searchParams.has('download-links-only')) {
+    for (const kind of ['middle', 'ctrl']) {
+      console.info(`RED_BROWSING:${kind}`);
+      await waitFor(s => s.downloads?.some(item => item.name === `${kind}.bin` && item.state === 'complete') === true &&
+        !s.nodes?.some(node => node.url === `${origin}/${kind}`));
+      console.info('RED_BROWSING:background');
+    }
+    await request({ method: 'navigation.load', url: `${origin}/retained-page.bin` });
+    await waitFor(s => s.activeId === source && s.url === sourceUrl &&
+      s.downloads?.some(item => item.name === 'retained-page.bin' && item.state === 'complete') === true);
+    console.info('RED_BROWSING:inspect'); await waitFor(s => s.browsingPreserved === true);
+    console.info('RED_BROWSING_CHECKS:pass');
+    return;
+  }
   for (const kind of ['middle', 'ctrl']) {
     console.info(`RED_BROWSING:${kind}`);
     s = await waitFor(s => s.nodes!.some(n => n.currentUrl === `${origin}/${kind}` && n.live) && !s.isLoading);

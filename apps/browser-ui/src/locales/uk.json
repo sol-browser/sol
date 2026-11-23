@@ -2694,6 +2694,18 @@
   "media.next": {
     "defaultMessage": "Наступна композиція"
   },
+  "media.shuffle": {
+    "defaultMessage": "Перемішати"
+  },
+  "media.repeatOff": {
+    "defaultMessage": "Повтор вимкнено"
+  },
+  "media.repeatAll": {
+    "defaultMessage": "Повторювати все"
+  },
+  "media.repeatOne": {
+    "defaultMessage": "Повторювати композицію"
+  },
   "media.pause": {
     "defaultMessage": "Призупинити"
   },
@@ -3255,6 +3267,9 @@
   "boost.reset": {
     "defaultMessage": "Скинути Boost"
   },
+  "native.window.ProtectedMediaOffer": {
+    "defaultMessage": "{name} відтворюється лише з DRM для стримінгу. Його можна встановити в Налаштуваннях."
+  },
   "native.window.Copied": {
     "defaultMessage": "Поточну адресу скопійовано"
   },
@@ -3539,5 +3554,140 @@
   "native.menu.AllowPrivate": {
     "defaultMessage": "Дозволити в приватних вікнах",
     "description": "Extension right-click menu: Chrome's Allow in Incognito for this extension."
+  },
+  "settings.category.protected": {
+    "defaultMessage": "DRM для стримінгу"
+  },
+  "panel.protected.title": {
+    "defaultMessage": "{service} потребує DRM для стримінгу"
+  },
+  "panel.protected.detail": {
+    "defaultMessage": "{service} відтворюється лише в браузері, що проходить перевірку захищеного відтворення Widevine. Sol може додати для цього окремий компонент, який працює лише для таких сервісів."
+  },
+  "panel.protected.differs": {
+    "defaultMessage": "У захищених вкладках немає збережених паролів, ключів доступу, автозаповнення й розширень."
+  },
+  "panel.protected.ready": {
+    "defaultMessage": "DRM для стримінгу встановлено"
+  },
+  "panel.protected.readyDetail": {
+    "defaultMessage": "Відкрийте {service} знову, щоб відтворювати в захищеній вкладці."
+  },
+  "panel.protected.open": {
+    "defaultMessage": "Відкрити {service}"
+  },
+  "panel.protected.more": {
+    "defaultMessage": "Як це працює"
+  },
+  "panel.protected.later": {
+    "defaultMessage": "Не зараз"
+  },
+  "panel.protected.background": {
+    "defaultMessage": "Продовжити у фоні"
+  },
+  "settings.protected.category": {
+    "defaultMessage": "НЕОБОВʼЯЗКОВИЙ КОМПОНЕНТ"
+  },
+  "settings.protected.title": {
+    "defaultMessage": "Netflix, Spotify та інші захищені сервіси"
+  },
+  "settings.protected.experimental": {
+    "defaultMessage": "Експериментально"
+  },
+  "settings.protected.experimentalDetail": {
+    "defaultMessage": "Експериментальна функція: сервіс може не відтворюватися або перестати працювати після змін на своєму сайті."
+  },
+  "settings.protected.detail": {
+    "defaultMessage": "Деякі сервіси відтворюють вміст лише в браузері, що проходить перевірку захищеного відтворення Widevine. Sol робить це за допомогою додаткового компонента, який можна встановити тут. Поки ви його не встановите, нічого не завантажується."
+  },
+  "settings.protected.detailInstalled": {
+    "defaultMessage": "Деякі сервіси відтворюють вміст лише в браузері, що проходить перевірку захищеного відтворення Widevine. Для них Sol використовує додатковий компонент, який оновлюється разом із Sol."
+  },
+  "settings.protected.install": {
+    "defaultMessage": "Встановити ({size})"
+  },
+  "settings.protected.retry": {
+    "defaultMessage": "Спробувати ще раз ({size})"
+  },
+  "settings.protected.disk": {
+    "defaultMessage": "{size} на диску"
+  },
+  "settings.protected.downloading": {
+    "defaultMessage": "Завантаження… {percent}%"
+  },
+  "settings.protected.downloadingLabel": {
+    "defaultMessage": "Перебіг завантаження"
+  },
+  "settings.protected.installing": {
+    "defaultMessage": "Встановлення…"
+  },
+  "settings.protected.removing": {
+    "defaultMessage": "Видалення…"
+  },
+  "settings.protected.installed": {
+    "defaultMessage": "Встановлено"
+  },
+  "settings.protected.outdated": {
+    "defaultMessage": "Компонент оновлюється. Захищені вкладки тим часом працюють."
+  },
+  "settings.protected.remove": {
+    "defaultMessage": "Видалити"
+  },
+  "settings.protected.removeDetail": {
+    "defaultMessage": "Звільнить {size}. Відкриті захищені вкладки перестануть відтворювати."
+  },
+  "settings.protected.removeData": {
+    "defaultMessage": "Також вийти з акаунтів цих сервісів і видалити їхні дані"
+  },
+  "settings.protected.removeConfirm": {
+    "defaultMessage": "Видалити компонент"
+  },
+  "settings.protected.cancel": {
+    "defaultMessage": "Скасувати"
+  },
+  "settings.protected.manual": {
+    "defaultMessage": "Використовується копія компонента для розробки."
+  },
+  "settings.protected.about": {
+    "defaultMessage": "Як це працює"
+  },
+  "settings.protected.how": {
+    "defaultMessage": "Окремий рушій лише для цих сервісів"
+  },
+  "settings.protected.howDetail": {
+    "defaultMessage": "Компонент — це рушій на основі Chromium, який castLabs підписує для Widevine. Sol запускає його лише тоді, коли ви відкриваєте підтримуваний сервіс, і показує його всередині цієї вкладки. Усі інші сайти відкриваються в Sol як завжди."
+  },
+  "settings.protected.differs": {
+    "defaultMessage": "Без збережених паролів, ключів доступу й розширень"
+  },
+  "settings.protected.differsDetail": {
+    "defaultMessage": "У захищених вкладках немає збережених паролів, ключів доступу, автозаповнення й розширень, а вхід через Google, Apple або Facebook може не працювати. Увійдіть у кожен сервіс там один раз — вхід збережеться для цього профілю Sol."
+  },
+  "settings.protected.privacy": {
+    "defaultMessage": "Залишається на цьому ПК"
+  },
+  "settings.protected.privacyDetail": {
+    "defaultMessage": "Входи й дані цих сервісів зберігаються окремо від решти вашого перегляду, а файли cookie зашифровано для вашого облікового запису Windows. Ліцензії на відтворення видає сам сервіс через модуль Widevine від Google."
+  },
+  "settings.protected.error.network": {
+    "defaultMessage": "Не вдалося завантажити компонент. Перевірте зʼєднання й спробуйте ще раз."
+  },
+  "settings.protected.error.integrity": {
+    "defaultMessage": "Завантаження пошкоджене або змінене, тому його не встановлено. Спробуйте ще раз."
+  },
+  "settings.protected.error.disk": {
+    "defaultMessage": "Недостатньо місця на диску або Sol не може записати у свою папку."
+  },
+  "settings.protected.error.unpack": {
+    "defaultMessage": "Не вдалося розпакувати компонент. Спробуйте ще раз."
+  },
+  "settings.protected.error.inUse": {
+    "defaultMessage": "Деякі файли ще використовуються. Закрийте захищені вкладки й спробуйте ще раз."
+  },
+  "settings.protected.error.busy": {
+    "defaultMessage": "Триває інша зміна. Спробуйте за мить."
+  },
+  "settings.protected.error.unavailable": {
+    "defaultMessage": "У цьому вікні DRM для стримінгу недоступно."
   }
 }

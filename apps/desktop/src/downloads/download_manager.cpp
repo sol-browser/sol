@@ -20,6 +20,24 @@ std::string Origin(const std::string& url) {
   if (host.starts_with("www.")) host.erase(0, 4);
   return host.substr(0, 120);
 }
+
+class SaveDownloadPath final : public CefRunFileDialogCallback {
+ public:
+  SaveDownloadPath(CefRefPtr<CefBrowser> browser, CefRefPtr<CefBeforeDownloadCallback> download)
+      : browser_(browser), download_(download) {}
+
+  void OnFileDialogDismissed(const std::vector<CefString>& paths) override {
+    auto download = std::move(download_);
+    if (download && browser_->IsValid() && paths.size() == 1 && std::filesystem::path(paths.front().ToWString()).is_absolute())
+      download->Continue(paths.front(), false);
+    // Releasing an uncontinued callback cancels the download.
+  }
+
+ private:
+  CefRefPtr<CefBrowser> browser_;
+  CefRefPtr<CefBeforeDownloadCallback> download_;
+  IMPLEMENT_REFCOUNTING(SaveDownloadPath);
+};
 }  // namespace
 
 DownloadManager::DownloadManager(std::weak_ptr<State> state, std::filesystem::path directory)
@@ -41,7 +59,8 @@ std::filesystem::path DownloadManager::DefaultDirectory() {
   return result;
 }
 
-bool DownloadManager::OnBeforeDownload(CefRefPtr<CefDownloadItem> item, const CefString& suggested_name,
+bool DownloadManager::OnBeforeDownload(CefRefPtr<CefBrowser> browser, CefRefPtr<CefBrowser> dialog_browser,
+                                       CefRefPtr<CefDownloadItem> item, const CefString& suggested_name,
                                        CefRefPtr<CefBeforeDownloadCallback> callback) {
   auto directory = directory_;
   bool ask = false;
@@ -69,7 +88,17 @@ bool DownloadManager::OnBeforeDownload(CefRefPtr<CefDownloadItem> item, const Ce
   entry.origin = Origin(item->GetURL().ToString());
   entry.total = item->GetTotalBytes();
   ++started_;
-  callback->Continue(path.wstring(), ask);
+  if (ask && dialog_browser && dialog_browser->IsValid()) {
+    // Chromium dismisses a picker attached to a hidden page. The window's
+    // shell stays visible when a middle-click opens a background tab.
+    const auto extension = path.extension().wstring();
+    std::vector<CefString> filters;
+    if (!extension.empty()) filters.emplace_back(extension);
+    dialog_browser->GetHost()->RunFileDialog(FILE_DIALOG_SAVE, {}, path.wstring(), filters,
+                                            new SaveDownloadPath(browser, callback));
+  } else {
+    callback->Continue(path.wstring(), ask);
+  }
   if (auto state = Owner()) {
     auto details = CefDictionaryValue::Create(); details->SetInt("id", static_cast<int>(entry.id));
     if (state->probe) details->SetString("file", entry.name);
@@ -79,10 +108,10 @@ bool DownloadManager::OnBeforeDownload(CefRefPtr<CefDownloadItem> item, const Ce
   return true;
 }
 
-void DownloadManager::OnUpdated(CefRefPtr<CefDownloadItem> item, CefRefPtr<CefDownloadItemCallback> callback) {
+bool DownloadManager::OnUpdated(CefRefPtr<CefDownloadItem> item, CefRefPtr<CefDownloadItemCallback> callback) {
   const auto found = entries_.find(item->GetId());
   // Updates can precede OnBeforeDownload; only accepted downloads are shown.
-  if (found == entries_.end()) return;
+  if (found == entries_.end()) return false;
   auto& entry = found->second;
   entry.received = item->GetReceivedBytes();
   entry.total = item->GetTotalBytes();
@@ -103,6 +132,7 @@ void DownloadManager::OnUpdated(CefRefPtr<CefDownloadItem> item, CefRefPtr<CefDo
   const bool finished = entry.state == "complete" || entry.state == "canceled" || entry.state == "interrupted";
   if (finished && entry.state != previous) Persist(entry);
   SchedulePublish();
+  return entry.state == "complete" && previous != entry.state;
 }
 
 CefRefPtr<CefListValue> DownloadManager::List() const {

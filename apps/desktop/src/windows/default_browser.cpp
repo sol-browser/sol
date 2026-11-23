@@ -5,6 +5,7 @@
 #include <wrl/client.h>
 #include "windows/default_browser.h"
 #include "windows/browser_identity.h"
+#include <vector>
 
 namespace red {
 namespace {
@@ -12,6 +13,7 @@ constexpr wchar_t kClient[] = L"Software\\Clients\\StartMenuInternet\\Sol";
 constexpr wchar_t kCapabilities[] = L"Software\\Clients\\StartMenuInternet\\Sol\\Capabilities";
 constexpr wchar_t kUrlId[] = L"SolBrowserURL";
 constexpr wchar_t kHtmlId[] = L"SolBrowserHTML";
+constexpr wchar_t kPdfId[] = L"SolBrowserPDF";
 std::wstring Read(const std::wstring& key, const wchar_t* name = nullptr) {
   DWORD bytes = 0;
   if (RegGetValueW(HKEY_CURRENT_USER, key.c_str(), name, RRF_RT_REG_SZ, nullptr, nullptr, &bytes) != ERROR_SUCCESS ||
@@ -41,7 +43,10 @@ bool Registered(const std::filesystem::path& path) {
   return !path.empty() && Read(L"Software\\RegisteredApplications", L"Sol") == kCapabilities &&
       Read(L"Software\\Classes\\SolBrowserURL\\shell\\open\\command") == OpenCommand(path) &&
       Read(std::wstring(kCapabilities) + L"\\URLAssociations", L"http") == kUrlId &&
-      Read(std::wstring(kCapabilities) + L"\\URLAssociations", L"https") == kUrlId;
+      Read(std::wstring(kCapabilities) + L"\\URLAssociations", L"https") == kUrlId &&
+      Read(std::wstring(kCapabilities) + L"\\FileAssociations", kSolPdfType) == kPdfId &&
+      Read(std::wstring(kCapabilities) + L"\\FileAssociations", L".webp") == kHtmlId &&
+      Read(L"Software\\Classes\\SolBrowserPDF\\shell\\open\\command") == OpenCommand(path);
 }
 bool Register(const std::filesystem::path& path) {
   const auto icon = L"\"" + path.wstring() + L"\",0";
@@ -52,7 +57,7 @@ bool Register(const std::filesystem::path& path) {
   bool ok = EnsureBrowserShortcut(path) && Write(app_paths, nullptr, path.wstring()) && Write(app_paths, L"Path", path.parent_path().wstring()) &&
       Write(application, L"FriendlyAppName", L"Sol") &&
       Write(application + L"\\shell\\open\\command", nullptr, OpenCommand(path)) &&
-      Write(application + L"\\SupportedTypes", L".htm", L"") && Write(application + L"\\SupportedTypes", L".html", L"") &&
+      Write(application + L"\\SupportedTypes", kSolPdfType, L"") &&
       Write(client, nullptr, L"Sol") && Write(client + L"\\DefaultIcon", nullptr, icon) &&
       Write(client + L"\\shell\\open\\command", nullptr, L"\"" + path.wstring() + L"\" --workspace") &&
       Write(client + L"\\InstallInfo", L"ReinstallCommand", L"\"" + path.wstring() + L"\" --make-default-browser") &&
@@ -63,11 +68,12 @@ bool Register(const std::filesystem::path& path) {
       Write(capabilities + L"\\Startmenu", L"StartMenuInternet", L"Sol") &&
       Write(capabilities + L"\\URLAssociations", L"http", kUrlId) &&
       Write(capabilities + L"\\URLAssociations", L"https", kUrlId) &&
-      Write(capabilities + L"\\FileAssociations", L".htm", kHtmlId) &&
-      Write(capabilities + L"\\FileAssociations", L".html", kHtmlId);
-  for (const auto* id : {kUrlId, kHtmlId}) {
+      Write(capabilities + L"\\FileAssociations", kSolPdfType, kPdfId);
+  for (const auto* type : kSolDocumentTypes)
+    ok = ok && Write(application + L"\\SupportedTypes", type, L"") && Write(capabilities + L"\\FileAssociations", type, kHtmlId);
+  for (const auto* id : {kUrlId, kHtmlId, kPdfId}) {
     const auto key = std::wstring(L"Software\\Classes\\") + id;
-    ok = ok && Write(key, nullptr, id == kUrlId ? L"Sol URL" : L"Sol HTML Document") &&
+    ok = ok && Write(key, nullptr, id == kUrlId ? L"Sol URL" : id == kPdfId ? L"Sol PDF Document" : L"Sol HTML Document") &&
         Write(key + L"\\DefaultIcon", nullptr, icon) && Write(key + L"\\shell\\open\\command", nullptr, OpenCommand(path)) &&
         Write(key + L"\\Application", L"ApplicationName", L"Sol") && Write(key + L"\\Application", L"ApplicationIcon", icon) &&
         Write(key + L"\\Application", L"ApplicationCompany", L"Sol") &&
@@ -75,8 +81,9 @@ bool Register(const std::filesystem::path& path) {
         Write(key, L"AppUserModelId", kBrowserAppId) && Write(key + L"\\Application", L"AppUserModelId", kBrowserAppId);
   }
   ok = ok && Write(L"Software\\Classes\\SolBrowserURL", L"URL Protocol", L"") &&
-      Write(L"Software\\Classes\\.htm\\OpenWithProgids", kHtmlId, L"") &&
-      Write(L"Software\\Classes\\.html\\OpenWithProgids", kHtmlId, L"");
+      Write(std::wstring(L"Software\\Classes\\") + kSolPdfType + L"\\OpenWithProgids", kPdfId, L"");
+  for (const auto* type : kSolDocumentTypes)
+    ok = ok && Write(std::wstring(L"Software\\Classes\\") + type + L"\\OpenWithProgids", kHtmlId, L"");
   // Publish last so a partial registration is not advertised as complete.
   // ApplicationName must match this value name (Microsoft's registration
   // contract); a differing name can omit the app from Windows Settings.
@@ -106,18 +113,67 @@ std::filesystem::path InstalledBrowserPath() {
 }
 bool EnsureRegistered() {
   const auto path = InstalledBrowserPath();
+  if (!path.empty()) RemoveChromiumRegistrations(path);
   return !path.empty() && (Registered(path) || Register(path));
+}
+
+int RemoveChromiumRegistrations(const std::filesystem::path& executable) {
+  // Collect first: deleting while enumerating would skip keys.
+  std::vector<std::wstring> suffixes;
+  HKEY clients = nullptr;
+  if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Clients\\StartMenuInternet", 0, KEY_READ, &clients) == ERROR_SUCCESS) {
+    wchar_t name[256];
+    for (DWORD index = 0;; ++index) {
+      DWORD length = 256;
+      if (RegEnumKeyExW(clients, index, name, &length, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS) break;
+      const auto suffix = ChromiumRegistrationSuffix(name);
+      if (!suffix) continue;
+      const auto client = std::wstring(L"Software\\Clients\\StartMenuInternet\\") + name;
+      if (StartsExecutable(Read(client + L"\\shell\\open\\command"), executable) ||
+          StartsExecutable(Read(client + L"\\Capabilities", L"ApplicationIcon"), executable))
+        suffixes.push_back(*suffix);
+    }
+    RegCloseKey(clients);
+  }
+  for (const auto& suffix : suffixes) {
+    const auto client = L"Chromium" + suffix;
+    for (const auto& tree : {L"Software\\Clients\\StartMenuInternet\\" + client, L"Software\\Classes\\ChromiumHTM" + suffix,
+                             L"Software\\Classes\\ChromiumPDF" + suffix})
+      RegDeleteTreeW(HKEY_CURRENT_USER, tree.c_str());
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\RegisteredApplications", 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
+      RegDeleteValueW(key, client.c_str()); RegCloseKey(key);
+    }
+    for (const auto* type : {L".htm", L".html", L".shtml", L".xht", L".xhtml", L".mhtml", L".svg", L".webp", L".pdf"}) {
+      const auto list = std::wstring(L"Software\\Classes\\") + type + L"\\OpenWithProgids";
+      if (RegOpenKeyExW(HKEY_CURRENT_USER, list.c_str(), 0, KEY_SET_VALUE, &key) != ERROR_SUCCESS) continue;
+      RegDeleteValueW(key, (L"ChromiumHTM" + suffix).c_str());
+      RegDeleteValueW(key, (L"ChromiumPDF" + suffix).c_str());
+      RegCloseKey(key);
+    }
+  }
+  // Its chromium: URL protocol, when that starts Sol.
+  const bool protocol = StartsExecutable(Read(L"Software\\Classes\\chromium\\shell\\open\\command"), executable);
+  if (protocol) RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\Classes\\chromium");
+  if (!suffixes.empty() || protocol) SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+  return static_cast<int>(suffixes.size()) + (protocol ? 1 : 0);
 }
 void Unregister() {
   // Offers only: Windows keeps the person's own choices (UserChoice) and drops
   // ours with the ProgIDs. The profile is never touched.
-  for (const auto* tree : {L"Software\\Classes\\SolBrowserURL", L"Software\\Classes\\SolBrowserHTML", L"Software\\Clients\\StartMenuInternet\\Sol",
+  for (const auto* tree : {L"Software\\Classes\\SolBrowserURL", L"Software\\Classes\\SolBrowserHTML", L"Software\\Classes\\SolBrowserPDF",
+                           L"Software\\Clients\\StartMenuInternet\\Sol",
                            L"Software\\Classes\\Applications\\sol.exe", L"Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\sol.exe"})
     RegDeleteTreeW(HKEY_CURRENT_USER, tree);
   HKEY key = nullptr;
   if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\RegisteredApplications", 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) { RegDeleteValueW(key, L"Sol"); RegCloseKey(key); }
-  for (const auto* list : {L"Software\\Classes\\.htm\\OpenWithProgids", L"Software\\Classes\\.html\\OpenWithProgids"})
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, list, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) { RegDeleteValueW(key, kHtmlId); RegCloseKey(key); }
+  for (const auto* type : kSolDocumentTypes)
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, (std::wstring(L"Software\\Classes\\") + type + L"\\OpenWithProgids").c_str(), 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
+      RegDeleteValueW(key, kHtmlId); RegCloseKey(key);
+    }
+  if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\.pdf\\OpenWithProgids", 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
+    RegDeleteValueW(key, kPdfId); RegCloseKey(key);
+  }
   RemoveBrowserShortcut();
   SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }

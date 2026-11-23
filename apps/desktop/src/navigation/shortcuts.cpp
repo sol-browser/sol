@@ -56,10 +56,11 @@ bool ExecuteShortcut(const std::shared_ptr<State>& state, Shortcut action) {
       if (state->sidebar_peek && state->sidebar_peek->is_resizing()) { state->sidebar_peek->EndResize(true); break; }
       if (state->embedded && state->embedded->ExitBrowserFullscreen()) break;
       if (state->embedded && page && state->embedded->IsFullscreenPage(page->GetIdentifier())) return false;
+      if (state->workspace->ControlProtectedMedia("stop")) break;
       if (!page || !page->IsLoading()) return false;
       page->StopLoad(); FocusBrowser(page); break;
     case Shortcut::Fullscreen: if (state->embedded) state->embedded->ToggleBrowserFullscreen(); break;
-    case Shortcut::FocusPage: FocusBrowser(page); break;
+    case Shortcut::FocusPage: if (!state->workspace->ControlProtectedMedia("focus")) FocusBrowser(page); break;
     case Shortcut::CloseWindow: if (state->window) state->window->Close(); break;
     case Shortcut::DevTools: ShowPageDevTools(state, page, CefPoint(), true); break;  // Never inspect Shell.
     case Shortcut::History: if (state->panel_popup) state->panel_popup->Toggle("history", kMainMenuAnchor); break;

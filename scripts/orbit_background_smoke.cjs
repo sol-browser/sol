@@ -26,7 +26,7 @@ const fs=require('fs'),path=require('path'),assert=require('assert/strict');
    samples.forEach(([x,y],i)=>{const expected=paletteFieldAt(p,(x+.5)/width,(y+.5)/height,dark);assert(actual[i].every((c,j)=>Math.abs(c-expected[j])<=2),JSON.stringify({name,dark,rotation,fill,x,y,actual:actual[i],expected}));checked++;});
   }
   const stylesheet=fs.readFileSync(path.resolve(__dirname,'../apps/browser-ui/src/style.css'),'utf8');
-  let crops=0;
+  let crops=0, materialCrops=0;
   for(const [width,height,panelWidth,y] of [[1100,820,256,31],[740,530,320,31],[1600,900,440,6]])for(const dark of [false,true]){
    const x=6, panelHeight=height-y-8;
    const palette={version:2,count:3,rotation:90,radius:380,lightness:66,harmony:0,kind:0,fill:100,
@@ -79,7 +79,19 @@ print(json.dumps({
    assert(pixels.edges.every(delta=>delta>0&&delta<85),`Expected a subtle outline: ${diff.stdout}`);
    assert(pixels.clipped===0&&pixels.corners.every(delta=>delta>2),`Expected the outline inside all four rounded corners: ${diff.stdout}`);
    crops++;
+   for(const [material,alpha] of [['acrylic',.6],['mica',.5]]){
+    const paint=await page.locator('.peek-root').evaluate((element,material)=>{
+     document.documentElement.dataset.backdropUnder=material;
+     const style=getComputedStyle(element);
+     return {size:style.backgroundSize.split(', '),position:style.backgroundPosition.split(', '),
+      palette:style.backgroundImage.includes('data:image/bmp'),alpha:Number(style.getPropertyValue('--theme-material-alpha'))};
+    },material);
+    assert.deepEqual(paint.size,['auto',`${width}px ${height}px`,`${width}px ${height}px`],`${material} must keep the workspace-sized field`);
+    assert(paint.position.every(position=>position===`-${x}px -${y}px`),`${material} must keep the crop origin`);
+    assert(paint.palette&&paint.alpha===alpha,`${material} must retain the material tint`);
+    materialCrops++;
+   }
   }
-  console.log(JSON.stringify({passed:true,samples:checked,crops,directory:output}));
+  console.log(JSON.stringify({passed:true,samples:checked,crops,materialCrops,directory:output}));
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

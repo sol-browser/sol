@@ -1,4 +1,5 @@
 #pragma once
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
@@ -13,6 +14,10 @@ namespace red {
 // LPAC SID read/execute, as Sol's build and the Inno setup do (SET_LPAC_ACLS),
 // or Chromium's sandboxed processes cannot start.
 void RunUpdateHooks();
+
+// Grants the sandbox's LPAC SID read/execute on |folder| and below (icacls,
+// waits up to 20 s). Also used for the Protected content helper folder.
+bool GrantSandboxAccess(const std::filesystem::path& folder);
 
 // When Sol runs from a Velopack install: on a background thread, checks the
 // release feed (GitHub Releases of sol-browser/sol, or SOL_UPDATE_FEED: a local

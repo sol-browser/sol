@@ -1,6 +1,7 @@
 #include "windows/embedded_content.h"
 #include "windows/workspace_layout.h"
 #include "app/session.h"
+#include "integrations/protected_media_host.h"
 #include "interface_strings.h"
 #include "windows/auto_pip.h"
 #include "windows/devtools_dock.h"
@@ -512,17 +513,19 @@ void EmbeddedContent::Shape(HWND handle) const {
   // Fullscreen pages remain square.
   const auto state = state_.lock();
   const bool fullscreen = IsFullscreen() && state && state->content && state->content->GetHost()->GetWindowHandle() == handle;
-#if defined(RED_CEF_CONTAINER_CORNERS)
   if (state && state->workspace_mode) {
     for (const auto& [id, browser] : browsers_) if (browser->GetHost()->GetWindowHandle() == handle) {
+      const int radius = fullscreen ? 0 : IsSplitPage(id) ? 7 : 6;
+      if (state->session && state->session->protected_media) state->session->protected_media->SetCornerRadius(id, radius);
+#if defined(RED_CEF_CONTAINER_CORNERS)
       // Clip the actual document subtree. Opaque corner mattes cannot match
       // an Acrylic/Mica background. Split cells are clipped too; their frame adds only the border.
       // Split panes: 7, inside the frame's 8 DIP corner and 1 DIP border.
-      browser->GetHost()->SetContentContainerCornerRadius(fullscreen ? 0 : IsSplitPage(id) ? 7 : 6);
+      browser->GetHost()->SetContentContainerCornerRadius(radius);
+#endif
       break;
     }
   }
-#endif
   RECT box{};
   if (corners_composited_ || fullscreen || !state || !state->workspace_mode || !state->window) {
     if (GetWindowRgnBox(handle, &box) != ERROR) SetWindowRgn(handle, nullptr, TRUE);

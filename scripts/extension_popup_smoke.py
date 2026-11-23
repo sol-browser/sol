@@ -63,7 +63,7 @@ def main():
         'popup_loaded_in_alloy_window': any(d['status'] == 200 and d['extension_origin'] and d['style'] == 2 for d in loaded),
         'popup_bound_to_visible_tab': len(queries) == 1 and queries[0].get('current') == [second] and queries[0].get('focused') == [second],
         'worker_bound_to_visible_tab': len(queries) == 1 and queries[0].get('worker', {}).get('focused') == [second],
-        'window_follows_document_size': bool(resized) and resized[-1] == {'width': 280, 'height': 150},
+        'window_follows_document_size': bool(resized) and resized[-1] == {'width': 360, 'height': 150},
         'window_close_closes_popup': len(details('ext_popup_closed')) == 1,
         # Engine patches 01/02 (cef-patches/): a click grants tab capture, pages
         # are normal windows, and a popup-less action gets action.onClicked.

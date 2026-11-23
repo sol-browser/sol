@@ -31,6 +31,8 @@
 #include "integrations/providers.h"
 #include "integrations/live_reader.h"
 #include "integrations/integration_previews.h"
+#include "integrations/protected_media_host.h"
+#include "integrations/protected_media_installer.h"
 #include <set>
 #include "include/base/cef_callback.h"
 #include "include/cef_app.h"
@@ -283,7 +285,7 @@ void PanelPopup::Reposition() {
   const bool compact_integration = hover_only_ && integration_ &&
       (integration_->HasKey("kind") || integration_->GetString("service") == "figma");
   const bool modal = this->modal();
-  const int desired=kind_=="translation" ? 292 : kind_=="selectionTranslation" || kind_=="moveToProfile" || kind_=="deleteSpace" ? 360 : kind_=="installExtension" ? 400 : kind_=="history" || modal ? kHistoryWidth : compact_integration ? 248 : kPanelWidth;
+  const int desired=kind_=="translation" ? 292 : kind_=="selectionTranslation" || kind_=="moveToProfile" || kind_=="deleteSpace" ? 360 : kind_=="installExtension" || kind_=="protectedMedia" ? 400 : kind_=="history" || modal ? kHistoryWidth : compact_integration ? 248 : kPanelWidth;
   // spaceTheme: the theme of a Space being created in the sidebar (preview only).
   const bool editor=kind_=="space" || kind_=="newSpace" || kind_=="theme" || kind_=="spaceTheme";
   const auto state=state_.lock();
@@ -371,6 +373,19 @@ bool PanelPopup::ConfirmSpaceDelete(const std::string& id) {
     Toggle("deleteSpace", {});
     return open_ && kind_ == "deleteSpace";
   }
+  return false;
+}
+bool PanelPopup::OfferProtectedMedia(const std::string& service, const std::string& url) {
+  const auto s = state_.lock();
+  if (!s || !s->window || !s->workspace || !s->session || !s->session->protected_media_installer || shutdown_ || modal() ||
+      menu_open_ || !PopupOwnerIsForeground(s->window) || !IsWindowEnabled(s->window->GetWindowHandle())) return false;
+  protected_offer_ = CefDictionaryValue::Create();
+  protected_offer_->SetString("service", service.substr(0, 40));
+  protected_url_ = url;
+  Toggle("protectedMedia", {});
+  if (open_ && kind_ == "protectedMedia") return true;
+  protected_offer_ = nullptr;
+  protected_url_.clear();
   return false;
 }
 bool PanelPopup::ConfirmProfileMove(const std::string& id, const std::string& space) {
@@ -967,6 +982,11 @@ std::string PanelPopup::Response(CefRefPtr<CefDictionaryValue> theme) const {
   if (open_ && kind_ == "moveToProfile" && profile_move_) d->SetDictionary("profileMove", profile_move_->Copy(false));
   if (open_ && kind_ == "deleteSpace" && space_delete_) d->SetDictionary("spaceDelete", space_delete_->Copy(false));
   if (open_ && kind_ == "installExtension" && install_prompt_) d->SetDictionary("extensionInstall", install_prompt_->Copy(false));
+  if (open_ && kind_ == "protectedMedia" && protected_offer_) {
+    auto offer = protected_offer_->Copy(false);
+    if (s && s->session && s->session->protected_media_installer) offer->SetDictionary("status", s->session->protected_media_installer->Status());
+    d->SetDictionary("protectedMedia", offer);
+  }
   if (s && kind_ == "site") {
     d->SetDictionary("site", SiteInfo(s));
     if (site_blocker_) d->SetDictionary("blocker", site_blocker_->Copy(false));
@@ -1202,6 +1222,31 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
       return true;
     } else { cb->Failure(400, "Invalid translation command"); return true; }
     cb->Success(Response()); return true;
+  }
+  // Settings → Protected content, offered in the window's modal (docs/codecs.md#protected-content-install).
+  if (kind_ == "protectedMedia") {
+    const auto installer = s->session ? s->session->protected_media_installer : nullptr;
+    if (d->GetSize() != 2 || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_ || !presented_ ||
+        !installer || !protected_offer_) { cb->Failure(409, "Protected content offer changed"); return true; }
+    if (method == "protected.install") {
+      if (!installer->Install()) { cb->Failure(409, "busy"); return true; }
+      s->Record("protected_media_install");
+    } else if (method == "protected.settings") {
+      cb->Success("{}"); Hide(false); ShowSettings(s);
+      if (s->settings_window) s->settings_window->ShowSection("protectedMedia");
+      return true;
+    } else if (method == "protected.open") {
+      const auto host = s->session->protected_media;
+      if (!host || !host->Available() || !s->workspace) { cb->Failure(409, "notInstalled"); return true; }
+      const auto url = protected_url_;
+      cb->Success("{}"); Hide(true);
+      // The ordinary tab that could not play gives way to the protected one.
+      s->workspace->ReopenProtected(url);
+      return true;
+    } else if (method != "protected.status") { cb->Failure(404, "Unknown Protected content command"); return true; }
+    auto reply = CefValue::Create(); reply->SetDictionary(installer->Status());
+    cb->Success(CefWriteJSON(reply, JSON_WRITER_DEFAULT));
+    return true;
   }
   if (kind_ == "installExtension") {
     if (method != "install.confirm") { cb->Failure(404, "Unknown install confirmation command"); return true; }

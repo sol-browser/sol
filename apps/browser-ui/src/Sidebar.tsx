@@ -4,6 +4,7 @@ import { message, useMessages } from './i18n';
 import { openSidebarMenu, type TreeNode, type TreeMutation } from './bridge';
 import type { BrowsingProfileInfo, Command, MediaInfo, SpaceInfo } from '../../../packages/browser-contracts/src';
 import { MediaStack } from './MediaPlayer';
+import { ProtectedMediaTint } from './ProtectedMediaTint';
 import { faviconColor } from './favicon-color';
 import { crossProfileLiveMove, descendant, inSpace, neighborSpace, ordered, placement, sectionOf, favoriteColumnLimit, favoriteColumns, displayTitle, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, withoutClosingTabs, sameRowNode, spaceDisplayName, preloadable, preloadHoverMs, type Section } from './sidebar-model';
 import { swatchColor } from './theme-model';
@@ -16,6 +17,7 @@ import { useSidebarMotion } from './useSidebarMotion';
 import { renderCounts } from './render-counters';
 import { SpaceTransition } from './SpaceTransition';
 import { SpaceHeader } from './SpaceHeader';
+import { SidebarTooltip } from './SidebarTooltip';
 import { useAudioIndicator } from './useAudioIndicator';
 import { pinnedIntegration, integrationUnread, xCountUnread, whatsAppCountUnread } from './integrations';
 import { integrationEnabled, isIntegrationId, type IntegrationSettings } from '../../../packages/browser-contracts/src/integration-settings';
@@ -121,6 +123,7 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
   const folder = node.kind === 'folder';
   const showAudio = !!node.live && !node.closing && (node.muted || node.audible || nodeAudio);
   const group = node.splitAnchor === node.id;
+  const mediaService = folder || group || node.favorite ? undefined : node.mediaService;
   const away = !node.favorite && pinnedAway(node);
   const members = group ? groupMembers ?? [node] : [];
   const title = group ? members.map(member => displayTitle(member)).join(' / ') : sidebarTitle(node);
@@ -155,13 +158,14 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
   };
   return <li className={`tree-node ${peek ? 'active-peek' : ''}`} data-node-id={node.id} data-drag-source={dragSource}>
     <div className="tree-row" role="presentation" data-tinted={tint !== undefined} style={tint ? { '--favorite-tint': tint } as CSSProperties : undefined} data-kind={node.kind} data-split={group} data-drop-inside={dropInside} data-motion-key={peek ? `peek-${node.id}` : node.id} data-favorite={node.favorite === true} data-live={node.live === true} data-peek={node.peek === true}
+      data-media-service={mediaService} data-media-playing={mediaService ? node.mediaPlaying : undefined}
       onPointerEnter={event => {
         api.current.cancelIntegration(); api.current.cancelPreload();
         if (event.pointerType === 'touch' || busy || hidden || !activeSurface || dragging || anyRenaming) return;
         if (preloadable(node)) api.current.hoverPreload(node.id);
         if (preview) api.current.hoverIntegration(node.id, event.currentTarget);
       }} onPointerLeave={() => { api.current.cancelIntegration(); api.current.cancelPreload(); }}
-      title={preview ? undefined : away ? `${node.title}\n${node.currentUrl}` : node.favorite ? displayTitle(node) : node.pageTitle && node.pageTitle !== node.title ? node.pageTitle : undefined} data-active={selected} data-pinned-away={away} data-expanded={folder ? node.expanded : undefined}
+      data-tip={preview ? undefined : away ? `${node.title}\n${node.currentUrl}` : node.favorite ? displayTitle(node) : node.pageTitle && node.pageTitle !== node.title ? node.pageTitle : undefined} data-active={selected} data-pinned-away={away} data-expanded={folder ? node.expanded : undefined}
       draggable={folder && !busy && !anyRenaming && !node.closing} onDragStart={e => { if (folder) api.current.drag(e, node.id); else e.preventDefault(); }} onDragEnd={event => {
         // Handle the drop before clearing the source: the window's bubbling
         // dragend listener runs after this row and used to see no drag ID.
@@ -201,13 +205,14 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
           void api.current.context(node.id, bounds.x + 20, bounds.bottom);
         }
       }}>
+      <ProtectedMediaTint service={mediaService} />
       {!folder && !group && (node.favorite ? <span className="node-icon" aria-hidden="true"><SiteMark node={node} /></span> : <button className="node-icon" aria-label={away ? t('sidebar.tab.back', { name: node.title }) : node.pinned ? t('sidebar.tab.reset', { name: node.title }) : t('sidebar.tab.open', { name: title })}
         disabled={busy || node.closing || renaming === node.id} onClick={() => void api.current.perform({ method: !group && node.pinned ? 'tree.reset' : 'tree.activate', id: node.id })}>
         <SiteMark node={node} />
       </button>)}
       {/* Arc: a speaker before the title while the tab plays sound; click to mute or unmute. */}
       {!folder && !group && !node.favorite && showAudio && <button className="row-action tab-audio" data-muted={node.muted === true}
-        aria-label={node.muted ? t('sidebar.tab.unmute', { name: node.title }) : t('sidebar.tab.mute', { name: node.title })} title={node.muted ? t('sidebar.tab.unmuteHint') : t('sidebar.tab.muteHint')}
+        aria-label={node.muted ? t('sidebar.tab.unmute', { name: node.title }) : t('sidebar.tab.mute', { name: node.title })} data-tip={node.muted ? t('sidebar.tab.unmuteHint') : t('sidebar.tab.muteHint')}
         onClick={() => api.current.tabCommand({ method: 'tab.mute', id: node.id, muted: !node.muted })}><Icon name={node.muted ? 'muted' : 'speaker'} /></button>}
       {renaming === node.id && !group ?
         // Renaming edits the title in place: same font and position, no box or
@@ -219,12 +224,14 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
             onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); api.current.cancelRename(); } }} />
         </form> : <>
         {group ? <div className="node-name split-row-content" role="group" aria-label={title} tabIndex={-1} data-panes={members.length}>
-          {members.map(member => <span className="split-row-part" key={member.id} data-tab-id={member.id} data-named={member.id === namedMember} data-leaving={member.id === leaving}>
+          {members.map(member => <span className="split-row-part" key={member.id} data-tab-id={member.id} data-named={member.id === namedMember} data-leaving={member.id === leaving}
+            data-media-service={member.mediaService} data-media-playing={member.mediaPlaying}>
+            <ProtectedMediaTint service={member.mediaService} />
             {renaming === member.id ? <form className="split-row-edit" onSubmit={event => { event.preventDefault(); void api.current.saveRename(member.id); }}>
               <SiteMark node={member} /><input ref={api.current.renameInput} aria-label={t('sidebar.renameNamed', { name: displayTitle(member) })} value={draft ?? ''} maxLength={80}
                 onChange={event => api.current.setDraft(event.target.value)} onBlur={() => void api.current.saveRename(member.id)} spellCheck={false} autoComplete="off"
                 onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); api.current.cancelRename(); } }} />
-            </form> : <button className="split-row-title" disabled={busy || member.closing} title={displayTitle(member)}
+            </form> : <button className="split-row-title" disabled={busy || member.closing} data-tip={displayTitle(member)}
               onPointerDown={e => {
                 api.current.pressActivated.current = null;
                 if (e.button !== 0 || busy || member.closing || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
@@ -239,25 +246,25 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
             </button>}
             {!member.favorite && <UnreadBadge node={member} settings={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} />}
             {member.live && (member.muted || member.audible || (membersAudio ?? '').split(',').includes(member.id)) && <button className="row-action tab-audio" data-muted={member.muted === true}
-              aria-label={t(member.muted ? 'sidebar.tab.unmute' : 'sidebar.tab.mute', { name: displayTitle(member) })} title={member.muted ? t('sidebar.tab.unmuteHint') : t('sidebar.tab.muteHint')}
+              aria-label={t(member.muted ? 'sidebar.tab.unmute' : 'sidebar.tab.mute', { name: displayTitle(member) })} data-tip={member.muted ? t('sidebar.tab.unmuteHint') : t('sidebar.tab.muteHint')}
               onClick={() => api.current.tabCommand({ method:'tab.mute',id:member.id,muted:!member.muted })}><Icon name={member.muted ? 'muted' : 'speaker'} /></button>}
             <button className="row-action split-tab-close" disabled={busy || member.closing}
-              aria-label={t('sidebar.tab.close', { name: displayTitle(member) })} title={member.pinned ? t('sidebar.tab.keepPin') : t('sidebar.tab.archive')}
+              aria-label={t('sidebar.tab.close', { name: displayTitle(member) })} data-tip={member.pinned ? t('sidebar.tab.keepPin') : t('sidebar.tab.archive')}
               onClick={() => void api.current.perform({ method:'tree.close',id:member.id })}><Icon name={tabCloseIcon(member) ?? 'close'} /></button>
           </span>)}
         </div> : <button className="node-name" disabled={busy || node.closing} aria-label={node.favorite ? displayTitle(node) : undefined} aria-expanded={folder ? node.expanded : undefined}
           onPointerDown={press} onDoubleClick={folder ? undefined : () => api.current.startRename(node)} onClick={open}>
           {folder && <FolderIcon expanded={node.expanded} />}
-          {away && <span className="pinned-away-prefix" title={t('sidebar.tab.away')} aria-hidden="true">/</span>}
+          {away && <span className="pinned-away-prefix" data-tip={t('sidebar.tab.away')} aria-hidden="true">/</span>}
           {away ? <span className="pinned-away-label">
             <span className="node-title">{title}</span>
             <span className="pinned-reset-hint" aria-hidden="true">{t('sidebar.tab.pinnedHint')}</span>
           </span> : <span className="node-title">{title}</span>}
           {!node.favorite && (node.mediaCamera || node.mediaMicrophone) && <span className="tab-media" role="img" aria-label={node.mediaCamera ? t('sidebar.camera') : t('sidebar.microphone')}
-            title={node.mediaCamera ? t('sidebar.cameraHint') : t('sidebar.microphoneHint')}><Icon name={node.mediaCamera ? 'camera' : 'mic'} /></span>}
+            data-tip={node.mediaCamera ? t('sidebar.cameraHint') : t('sidebar.microphoneHint')}><Icon name={node.mediaCamera ? 'camera' : 'mic'} /></span>}
         </button>}
         {!group && closeIcon && <button className="row-action close-page" aria-label={removePin ? t('sidebar.tab.removeNamedPin', { name: title }) : node.pinned ? t('sidebar.tab.closePage', { name: title }) : t('sidebar.tab.archiveNamed', { name: title })}
-          title={removePin ? t('sidebar.tab.removePin') : node.pinned ? t('sidebar.tab.keepPin') : t('sidebar.tab.archive')} disabled={busy || node.closing}
+          data-tip={removePin ? t('sidebar.tab.removePin') : node.pinned ? t('sidebar.tab.keepPin') : t('sidebar.tab.archive')} disabled={busy || node.closing}
           onClick={() => void api.current.perform({ method:tabCloseMethod(node), id: node.id })}><Icon name={closeIcon} /></button>}
       </>}
       {/* After the close button: the row ends with the preview's icon; on a tile it sits in the top-right corner. */}
@@ -269,7 +276,7 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
             {node.mediaCamera && <Icon name="camera" />}{node.mediaMicrophone && <Icon name="mic" />}</span>}
           {/* The speaker mutes or unmutes the tile's tab, like a row's audio button. */}
           {showAudio && <button type="button" className="favorite-audio" data-muted={node.muted === true}
-            aria-label={node.muted ? t('sidebar.tab.unmute', { name: displayTitle(node) }) : t('sidebar.tab.mute', { name: displayTitle(node) })} title={node.muted ? t('sidebar.tab.unmuteHint') : t('sidebar.tab.muteHint')}
+            aria-label={node.muted ? t('sidebar.tab.unmute', { name: displayTitle(node) }) : t('sidebar.tab.mute', { name: displayTitle(node) })} data-tip={node.muted ? t('sidebar.tab.unmuteHint') : t('sidebar.tab.muteHint')}
             onClick={() => api.current.tabCommand({ method: 'tab.mute', id: node.id, muted: !node.muted })}><Icon name={node.muted ? 'muted' : 'speaker'} /></button>}
         </span>}
     </div>
@@ -322,6 +329,8 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   useEffect(() => { if (!removalPending.current) setRemoval(undefined); }, [activeSpace, hidden]);
   const [renaming, setRenaming] = useState<string>();
   const [draft, setDraft] = useState('');
+  const [creatingSpace, setCreatingSpace] = useState<false | 'sidebar' | 'library'>(false);
+  const showFavorites = !standalone && !creatingSpace;
   const archiveButton = useRef<HTMLButtonElement>(null);
   const [dragId, setDragId] = useState<string>();
   const integrationTimer = useRef<number | undefined>(undefined);
@@ -340,15 +349,19 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   // (favoriteColumnLimit; sidebar-drop.ts uses the same limit).
   const [favoriteLimit, setFavoriteLimit] = useState(4);
   useLayoutEffect(() => {
+    if (!showFavorites) return;
     const element = favoriteMotion.scrollRef.current;
     if (!element) return;
     // The grid is the Favorites container minus the zone's 4 px side margins.
-    const measure = () => setFavoriteLimit(favoriteColumnLimit(element.clientWidth - 8));
+    // Reconnect when the container remounts after the Create Space form.
+    const measure = () => {
+      if (element.clientWidth > 0) setFavoriteLimit(favoriteColumnLimit(element.clientWidth - 8));
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [favoriteMotion.scrollRef, standalone]);
+  }, [favoriteMotion.scrollRef, showFavorites]);
   // A collapsed folder shows its active tab as an extra row: that row comes and goes with the selection.
   const collapsedActive = useMemo(() => {
     const anchor = tree.find(n => n.id === activeId)?.splitAnchor ?? activeId;
@@ -366,7 +379,6 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   // A new space is set up first (name, icon, profile, theme) in the sidebar's
   // Create Space form and made only when confirmed.
   // 'library': started from Library's +; Create and Cancel go back there.
-  const [creatingSpace, setCreatingSpace] = useState<false | 'sidebar' | 'library'>(false);
   function createSpace(from: 'sidebar' | 'library' = 'sidebar') {
     if (busy || spaces.length >= 24 || standalone) return;
     setCreatingSpace(from);
@@ -780,7 +792,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     </section>}
     {creatingSpace && <SpaceCreator profiles={profiles} activeProfile={activeProfile} full={spaces.length >= 24}
       fromLibrary={creatingSpace === 'library'} editTheme={spaceTheme} done={() => setCreatingSpace(false)} />}
-    {!standalone && !creatingSpace && <div className="sidebar-fixed">
+    {showFavorites && <div className="sidebar-fixed">
     <div className="sidebar-favorites" ref={favoriteMotion.scrollRef}>
       {zone('favorites', message(intl, 'sidebar.favorites'))}
       <div className="sidebar-motion-layer" ref={favoriteMotion.layerRef} aria-hidden="true" />
@@ -796,27 +808,28 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     {zone('today', message(intl, 'sidebar.today'))}
     </SpaceTransition>}
     {!standalone && <div className="sidebar-footer">
-    {!!media?.length && <MediaStack media={media} nodes={tree} command={tabCommand} />}
+    {!creatingSpace && !!media?.length && <MediaStack media={media} nodes={tree} command={tabCommand} />}
     {updateReady && restartToUpdate && <button type="button" className="update-pill" data-action="restart-to-update"
-      title={message(intl, 'sidebar.update.ready', { version: updateReady })} onClick={restartToUpdate}><Icon name="logo" /><span>{message(intl, 'sidebar.update.restart')}</span></button>}
+      data-tip={message(intl, 'sidebar.update.ready', { version: updateReady })} onClick={restartToUpdate}><Icon name="logo" /><span>{message(intl, 'sidebar.update.restart')}</span></button>}
     <div className="sidebar-bottom">
       <button ref={archiveButton} className="sidebar-library-button" data-action={openLibrary ? 'library' : 'archive'}
-        title={message(intl, openLibrary ? 'library.title' : 'sidebar.archive.title')} aria-label={message(intl, openLibrary ? 'library.title' : 'sidebar.archive')}
+        data-tip={message(intl, openLibrary ? 'library.title' : 'sidebar.archive.title')} aria-label={message(intl, openLibrary ? 'library.title' : 'sidebar.archive')}
         onClick={e => openLibrary ? openLibrary() : openArchive(e.currentTarget)}><Icon name="archive" /></button>
       {/* Arc: the space switcher along the bottom; Ctrl+1…9 or a horizontal swipe also switch. */}
       <nav className="space-switcher" aria-label={message(intl, 'sidebar.spaces')}>
         {[...spaces].sort((a, b) => a.position - b.position).map((s, index) => {
           const name = spaceDisplayName(s, t);
           return <button key={s.id} type="button" className="space-dot" aria-current={s.id === activeSpace ? 'true' : undefined}
-            title={index < 9 ? `${name} (Ctrl+${index + 1})` : name} aria-label={name} disabled={busy}
+            data-tip={index < 9 ? `${name} (Ctrl+${index + 1})` : name} aria-label={name} disabled={busy}
             style={{ '--space-color': swatchColor(s.hue, s.intensity) } as React.CSSProperties}
             onClick={() => switchSpace(s.id)}>{s.icon ? <span className="space-dot-icon">{s.icon}</span> : <span className="space-dot-mark" />}</button>;
         })}
       </nav>
-      <button type="button" className="space-add" aria-label={message(intl, 'sidebar.space.new')} title={message(intl, 'sidebar.space.new')} disabled={busy || spaces.length >= 24}
+      <button type="button" className="space-add" aria-label={message(intl, 'sidebar.space.new')} data-tip={message(intl, 'sidebar.space.new')} disabled={busy || spaces.length >= 24}
         onClick={() => createSpace('sidebar')}><Icon name="plus" /></button>
     </div>
     </div>}
+    <SidebarTooltip root={aside} enabled={!hidden && activeSurface && !dragId} />
   </aside>;
 }
 /** Arc: the line above Today; hovering it shows Clear, which archives every Today tab after a confirmation. */
@@ -835,14 +848,14 @@ function TodayDivider({ tabs, busy, confirming, setConfirming, clear }: {
     </> : <>
       <div className="section-divider" />
       {!!tabs.length && <button type="button" className="today-clear" data-action="clear-today" disabled={busy}
-        title={message(intl, 'sidebar.clear.title')} onClick={() => setConfirming(true)}><Icon name="arrowDown" />{message(intl, 'sidebar.clear.action')}</button>}
+        data-tip={message(intl, 'sidebar.clear.title')} onClick={() => setConfirming(true)}><Icon name="arrowDown" />{message(intl, 'sidebar.clear.action')}</button>}
     </>}
   </div>;
 }
 /** Arc: the site open in this tab's Link Peek (shown or parked with the tab). */
 function PeekMark({ node }: { node: TreeNode }) {
   const t = useMessages();
-  return <span className="peek-mark" role="img" aria-label={t('sidebar.preview', { name: node.peekTitle || t('sidebar.previewLink') })} title={node.peekTitle || undefined}>
+  return <span className="peek-mark" role="img" aria-label={t('sidebar.preview', { name: node.peekTitle || t('sidebar.previewLink') })} data-tip={node.peekTitle || undefined}>
     {node.peekFavicon ? <img src={node.peekFavicon} alt="" draggable={false} /> : <Icon name="globe" />}</span>;
 }
 export function SiteMark({ node }: { node: TreeNode }) {

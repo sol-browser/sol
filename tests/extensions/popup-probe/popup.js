@@ -14,7 +14,7 @@ Promise.all([
 }).finally(() => {
   setTimeout(() => {
     const box = document.getElementById('box');
-    box.style.width = '280px'; box.style.height = '150px';
+    box.style.width = '360px'; box.style.height = '150px';
     setTimeout(() => window.close(), 1500);
   }, 600);
 });

@@ -36,9 +36,13 @@ int wmain() {
   std::ofstream(profile / L"Shell" / L"Preferences") << "{}";
   std::ofstream(profile / L"Shell" / L"Login Data") << "legacy-logins";
 
-  Check(red::ShellResetAllowed(profile, fs::file_time_type::clock::now()), "first reset is allowed");
-  Check(red::ResetShellProfile(L"relative") == red::ShellReset::Failed, "a relative profile is refused");
-  Check(red::ResetShellProfile(profile) == red::ShellReset::Done, "reset");
+  Check(!red::ShellResetScheduled() && !red::ShellResetPending(profile), "no recovery on a normal start");
+  Check(!red::ScheduleShellReset(L"relative") && !red::ShellResetScheduled(), "a relative recovery root is refused");
+  Check(red::ScheduleShellReset(profile) && red::ShellResetScheduled(), "reserve a recovery restart");
+  Check(red::ShellResetPending(profile), "the next instance sees that Shell needs to be rebuilt");
+  Check(!red::ScheduleShellReset(profile), "a second restart for this root is refused");
+  Check(red::QuarantineShellProfile(L"relative") == red::ShellQuarantine::Failed, "a relative profile is refused");
+  Check(red::QuarantineShellProfile(profile) == red::ShellQuarantine::Moved, "quarantine");
   Check(!fs::exists(profile / L"Shell"), "the Shell path is available for a clean profile");
   Check(Count(profile, L"Shell (reset") == 1, "Shell without History is quarantined");
   for (const auto& entry : fs::directory_iterator(profile)) {
@@ -48,13 +52,9 @@ int wmain() {
     Check(logins == "legacy-logins", "quarantine keeps logins without relying on History");
   }
   Check(fs::exists(profile / L"Default" / L"Bookmarks"), "the web profile is untouched");
-  const auto now = fs::file_time_type::clock::now();
-  Check(!red::ShellResetAllowed(profile, now), "a violation right after a reset closes instead");
-  Check(red::ShellResetAllowed(profile, now + std::chrono::minutes(11)), "a later violation may reset again");
-  Check(red::ResetShellProfile(profile) == red::ShellReset::Done, "reset works when Shell is already gone");
-  Check(!red::ShellResetScheduled(), "nothing is scheduled unless the guard asks");
-  red::ScheduleShellReset();
-  Check(red::ShellResetScheduled(), "the request is remembered");
+  Check(!red::ShellResetPending(profile), "quarantine consumes the pending rebuild");
+  Check(!red::ScheduleShellReset(profile), "rebuilding Shell does not grant another restart");
+  Check(red::QuarantineShellProfile(profile) == red::ShellQuarantine::Missing, "already quarantined");
   fs::remove_all(profile, ignored);
 
   // A locked source cannot be renamed. Recovery must leave every file in place.
@@ -65,11 +65,11 @@ int wmain() {
       nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
   Check(lock != INVALID_HANDLE_VALUE, "lock Shell without delete sharing");
   if (lock != INVALID_HANDLE_VALUE) {
-    Check(red::ResetShellProfile(profile) == red::ShellReset::Failed, "a failed quarantine aborts reset");
+    Check(red::QuarantineShellProfile(profile) == red::ShellQuarantine::Failed, "a locked profile aborts quarantine");
     std::string logins;
     std::ifstream(locked / L"Login Data") >> logins;
     Check(logins == "locked-profile-logins", "failed reset keeps the original files");
-    Check(!fs::exists(profile / L"shell-reset-done"), "a failed reset leaves no completion marker");
+    Check(Count(profile, L"Shell (reset") == 0, "a failed quarantine leaves no backup");
     CloseHandle(lock);
   }
   fs::remove_all(profile, ignored);
@@ -89,7 +89,7 @@ int wmain() {
   Check(red::RepairWebProfile(web) == red::WebProfileRepair::None, "repair runs once");
   History(web / L"Shell" / L"History", {{"https://later.test/", 50}});
   Check(red::RepairWebProfile(web) == red::WebProfileRepair::None, "older website visits in Shell do not move Default");
-  Check(red::ResetShellProfile(web) == red::ShellReset::Done && !fs::exists(web / L"Shell") && Count(web, L"Shell (reset") == 1,
+  Check(red::QuarantineShellProfile(web) == red::ShellQuarantine::Moved && !fs::exists(web / L"Shell") && Count(web, L"Shell (reset") == 1,
         "a reset keeps a Shell with website history aside");
   fs::remove_all(web, ignored);
   if (failures) return 1;

@@ -145,6 +145,7 @@ struct State {
   bool native_tabs_reference = false;
   bool embedded_tabs_probe = false;
   bool workspace_mode = false;
+  std::string spotify_probe_slot;  // Launcher-owned loopback mount for the signed ECS experiment.
   bool sidebar_visible = true;
   bool library_open = false;
   std::string library_section = "archive";

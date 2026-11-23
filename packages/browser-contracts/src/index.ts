@@ -2,11 +2,19 @@ import { validSiteSearches, type SiteSearch, type SiteSearchActivation } from '.
 import { isIntegrationId, validIntegrationSettings, type IntegrationId, type IntegrationSettings } from './integration-settings.ts';
 export { integrationSettingsCatalog, integrationEnabled, unlistedIntegrations, type IntegrationId, type IntegrationSettings } from './integration-settings.ts';
 export { defaultSiteSearches, defaultWikipediaUrl, validSiteSearch, validSiteSearches, type SiteSearch, type SiteSearchActivation } from './site-search.ts';
+/** Services the Protected content helper plays (docs/codecs.md#protected-content-install). */
+export const protectedMediaServices = ['spotify', 'netflix', 'disneyplus', 'hbomax', 'primevideo', 'appletv', 'applemusic',
+  'paramountplus', 'crunchyroll', 'deezer', 'tidal'] as const;
+export type ProtectedMediaService = typeof protectedMediaServices[number];
+export const isProtectedMediaService = (value: unknown): value is ProtectedMediaService =>
+  typeof value === 'string' && (protectedMediaServices as readonly string[]).includes(value);
 export type TreeNode = { id: string; parentId: string; kind: 'folder' | 'tab'; title: string;
   url: string; position: number; pinned: boolean; expanded: boolean; live: boolean;
   favorite: boolean; archived: boolean; currentUrl: string; closing: boolean; crashed?: boolean;
   pageTitle?: string; customTitle?: boolean; favicon?: string; archivedAt?: number;
   mediaCamera?: boolean; mediaMicrophone?: boolean; muted?: boolean; audible?: boolean;
+  /** A protected tab's service (integrations/protected_media_host.cpp kServices). */
+  mediaService?: ProtectedMediaService; mediaPlaying?: boolean;
   xBadgeHidden?: boolean;
   /** Split View membership: the group's row (anchor), its 2-4 pages in on-screen reading order, its name. */
   splitAnchor?: string; splitPanes?: string[]; splitTitle?: string; splitHidden?: boolean;
@@ -40,7 +48,9 @@ export function validSpaceIcon(value:unknown):value is string {
 export type DockBounds = { x: number; y: number; width: number; height: number };
 export type MediaInfo = { id: string; title: string; artist: string; playing: boolean; video: boolean; muted: boolean; time: number; duration: number;
   pipAvailable?: boolean;
-  /** The page handles previous/next track (its Media Session). */ previous?: boolean; next?: boolean;
+  seekable?: boolean;
+  previous?: boolean; next?: boolean;
+  shuffle?: boolean; repeat?: 'off' | 'all' | 'one';
   /** The session's artwork as a PNG data URL. */ artwork?: string };
 export type LinkPeekInfo = { id: string; url: string; title: string; bounds: DockBounds; area: DockBounds;
   loading: boolean; closing: boolean; crashed: boolean; canGoBack: boolean; canGoForward: boolean;
@@ -77,6 +87,7 @@ export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boo
   linkPeek?: LinkPeekInfo;
   /** Sidebar players (newest first, at most 3): tabs that played sound and are not on screen. */
   media?: MediaInfo[];
+  protectedMedia?: boolean;
   sidebarVisible?: boolean; sidebarWidth?: number; sidebarResizing?: boolean; libraryOpen?: boolean; librarySection?: LibrarySection;
   contentBounds?: { x: number; y: number; width: number; height: number };
   /** Floating sidebar origin at rest and full workspace dimensions, in DIP. */
@@ -339,7 +350,7 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
       'settings' | 'shown' | 'hidden' | 'known' | 'selectText' | 'selectionMenu' | 'selectionPick' | 'activate' | 'start' }
   | { method: 'navigation.openEntry'; offset: -1 | 1 }
   | { method: 'navigation.historyMenu'; x: number; y: number; width: number; height: number }
-  | { method: 'media.control'; id: string; action: 'toggle' | 'mute' | 'dismiss' | 'open' | 'pip' | 'previous' | 'next' }
+  | { method: 'media.control'; id: string; action: 'toggle' | 'mute' | 'dismiss' | 'open' | 'pip' | 'previous' | 'next' | 'shuffle' | 'repeat' }
   | { method: 'media.control'; id: string; action: 'seek'; value: number }
   | { method: 'linkPeek.control'; id: string; action: 'close' | 'promote' | 'split' | 'back' | 'forward' | 'reload' | 'stop' | 'hoverClose' | 'hoverSplit' | 'hoverPromote' | 'hoverNone' }
   | { method: 'split.focus' | 'split.expand' | 'split.beginMove'; id: string }
@@ -480,6 +491,7 @@ export function parseSnapshot(raw: string): Snapshot {
     if (s.siteSearchActivation !== undefined && (typeof s.siteSearchActivation !== 'string' || !['spaceOrTab','tab'].includes(s.siteSearchActivation))) throw new Error('Invalid site search activation');
     if (s.updateReady !== undefined && (typeof s.updateReady !== 'string' || s.updateReady.length > 40 || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(s.updateReady))) throw new Error('Invalid update version');
     if (s.browserFullscreen !== undefined && typeof s.browserFullscreen!=='boolean') throw new Error('Invalid fullscreen state');
+    if (s.protectedMedia !== undefined && typeof s.protectedMedia !== 'boolean') throw new Error('Invalid Protected Media state');
     if (s.zoom !== undefined && (!integer(s.zoom) || (s.zoom as number) < 1 || (s.zoom as number) > 1000)) throw new Error('Invalid zoom');
     if (s.linkPeek !== undefined) {
       const p = s.linkPeek;
@@ -495,7 +507,8 @@ export function parseSnapshot(raw: string): Snapshot {
           typeof m.artist !== 'string' || m.artist.length > 240 || !['playing','video','muted'].every(k => typeof m[k] === 'boolean') ||
           !['time','duration'].every(k => typeof m[k] === 'number' && Number.isFinite(m[k]) && (m[k] as number) >= 0 && (m[k] as number) <= 1e7))
         throw new Error('Invalid media player state');
-      if (['previous', 'next', 'pipAvailable'].some(k => m[k] !== undefined && typeof m[k] !== 'boolean') ||
+      if (['previous', 'next', 'pipAvailable', 'seekable', 'shuffle'].some(k => m[k] !== undefined && typeof m[k] !== 'boolean') ||
+          (m.repeat !== undefined && m.repeat !== 'off' && m.repeat !== 'all' && m.repeat !== 'one') ||
           (m.artwork !== undefined && (typeof m.artwork !== 'string' || !m.artwork.startsWith('data:image/png;base64,') || m.artwork.length > 140000)))
         throw new Error('Invalid media session');
     }
@@ -585,7 +598,8 @@ export function parseSnapshot(raw: string): Snapshot {
     const ids = new Map<string, Record<string, unknown>>();
     for (const n of s.nodes as unknown[]) {
       if (object(n) && n.crashed !== undefined && typeof n.crashed !== 'boolean') throw new Error('Invalid crashed page state');
-      if (object(n) && ((n.mediaCamera !== undefined && typeof n.mediaCamera !== 'boolean') || (n.mediaMicrophone !== undefined && typeof n.mediaMicrophone !== 'boolean') || (n.muted !== undefined && typeof n.muted !== 'boolean') || (n.audible !== undefined && typeof n.audible !== 'boolean'))) throw new Error('Invalid media state');
+      if (object(n) && (['mediaCamera', 'mediaMicrophone', 'muted', 'audible', 'mediaPlaying'].some(k => n[k] !== undefined && typeof n[k] !== 'boolean') ||
+          (n.mediaService !== undefined && !isProtectedMediaService(n.mediaService)))) throw new Error('Invalid media state');
       if (object(n) && !validSplitMembership(n)) throw new Error('Invalid split membership');
       if (object(n) && n.archivedAt !== undefined && !(typeof n.archivedAt === 'number' && Number.isSafeInteger(n.archivedAt) && n.archivedAt >= 0)) throw new Error('Invalid archive time');
       if (object(n) && n.pageTitle !== undefined && (typeof n.pageTitle !== 'string' || n.pageTitle.length > 240)) throw new Error('Invalid page title');

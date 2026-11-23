@@ -1,4 +1,5 @@
 #include "windows/sidebar_actions.h"
+#include <cmath>
 #include "app/updates.h"
 #include "app/session.h"
 #include "navigation/shortcuts.h"
@@ -6,6 +7,7 @@
 #include "windows/sidebar_peek.h"
 #include "windows/panel_popup.h"
 #include "windows/focus.h"
+#include "windows/workspace_layout.h"
 #include "workspace/controller.h"
 #include "include/cef_parser.h"
 namespace red {
@@ -13,9 +15,32 @@ namespace {
 void Reply(CefRefPtr<CefMessageRouterBrowserSide::Callback> callback,CefRefPtr<CefDictionaryValue> snapshot) {
   auto value=CefValue::Create();value->SetDictionary(snapshot);callback->Success(CefWriteJSON(value,JSON_WRITER_DEFAULT));
 }
+bool PointerOverSidebar(const State& state, CefRefPtr<CefBrowser> source) {
+  if (!source || !state.window || state.window->IsMinimized()) return false;
+  const auto widget = source->GetHost()->GetWindowHandle();
+  POINT cursor{};
+  if (!widget || !GetCursorPos(&cursor)) return false;
+  const HWND hit = WindowFromPoint(cursor);
+  if (hit != widget && !IsChild(widget, hit)) return false;
+  if (source->GetIdentifier() == state.peek_id) {
+    return state.sidebar_peek && state.sidebar_peek->is_open() && state.sidebar_peek->window_visible();
+  }
+  if (!state.sidebar_visible) return false;
+  const HWND root = state.window->GetWindowHandle();
+  RECT client{};
+  if (!ScreenToClient(root, &cursor) || !GetClientRect(root, &client) || !PtInRect(&client, cursor)) return false;
+  const double scale = GetDpiForWindow(root) / 96.0;
+  const int width = SidebarWidth(state.sidebar_width, state.window->GetClientAreaBoundsInScreen().width);
+  return cursor.x < std::lround(width * scale) && cursor.y >= std::lround(kToolbarHeight * scale);
+}
 }
 bool HandleSidebarAction(const std::shared_ptr<State>& s,CefRefPtr<CefBrowser> source,const std::string& method,
     CefRefPtr<CefDictionaryValue> d,bool persistent,CefRefPtr<CefMessageRouterBrowserSide::Callback> cb) {
+  if (method == "workspace.sidebarHovered") {
+    if (!s || !s->workspace || persistent || d->GetSize() != 1) cb->Failure(400, "Invalid sidebar hover request");
+    else cb->Success(!s->workspace->WindowClosing() && PointerOverSidebar(*s, source) ? "true" : "false");
+    return true;
+  }
   const bool new_tab=method=="browser.shortcut" && d->GetType("action")==VTYPE_STRING && d->GetString("action")=="newTab";
   const bool drag=method=="tab.detach" || method=="tab.dragStarted" || method=="tab.dragCancel" || method=="tab.dragEnded";
   const bool home=method=="tab.setHome";

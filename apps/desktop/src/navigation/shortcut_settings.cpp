@@ -1,6 +1,7 @@
 #include "navigation/shortcut_settings.h"
 #include "app/session.h"
 #include "interface_strings.h"
+#include "integrations/protected_media_host.h"
 #include <algorithm>
 #include <vector>
 namespace red {
@@ -162,6 +163,12 @@ void RefreshShortcuts(const std::shared_ptr<State>& state) {
   if (!state || !state->window) return;
   state->window->RemoveAllAccelerators();
   const auto entries = Effective(Current(state));
+  if (state->session && state->session->protected_media) {
+    std::vector<ProtectedMediaHost::Key> keys;
+    for (const auto& entry : entries)
+      keys.push_back({std::string(kShortcutNames[static_cast<int>(entry.action)]), entry.key.key, entry.key.ctrl, entry.key.shift, entry.key.alt});
+    state->session->protected_media->SetShortcuts(std::move(keys));
+  }
   for (size_t i = 0; i < entries.size(); ++i) {
     const auto& key = entries[i].key;
     state->window->SetAccelerator(60000+static_cast<int>(i),key.key,key.shift,key.ctrl,key.alt,true);

@@ -207,7 +207,7 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
     if (!s->extensions_window) s->extensions_window = std::make_shared<ExtensionsWindow>(s);
     s->extensions_window->Show();
   }));
-  if (state->extensions && !state->private_window) {
+  if (state->extensions && !state->private_window && !state->workspace->ActiveProtectedMedia()) {
     const auto installed = state->extensions->List(state->WebContext());
     const auto pins = ActiveProfilePins(state);
     bool first = true;
@@ -232,7 +232,8 @@ void ShowMainMenu(const std::shared_ptr<State>& state, const CefRect& anchor) {
   }
 
   auto& developer = menu.Submenu(label(InterfaceMessage::MenuDeveloper), "code");
-  developer.Add(label(InterfaceMessage::MenuDeveloperTools), "code", shortcut(Shortcut::DevTools), Chord(labels, "devTools"), state->content != nullptr);
+  developer.Add(label(InterfaceMessage::MenuDeveloperTools), "code", shortcut(Shortcut::DevTools), Chord(labels, "devTools"),
+      state->content != nullptr && !state->workspace->ActiveProtectedMedia());
   developer.Add(label(InterfaceMessage::MenuReloadBypass), "reload", shortcut(Shortcut::ReloadBypass), Chord(labels, "reloadBypass"), state->content != nullptr);
   menu.Separator();
 
