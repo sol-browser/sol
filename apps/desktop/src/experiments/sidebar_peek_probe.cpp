@@ -319,6 +319,50 @@ void CheckPinEditor(const std::shared_ptr<State>& s, bool floating) {
     }
   }, std::weak_ptr<State>(s), floating), 1250);
 }
+// Folder glyphs (docs/folder-icons.md) through this host's own tree route: a temporary
+// folder gets a glyph, the row draws it on a Space-coloured back, then it is cleared and removed.
+void CheckFolderIcon(CefRefPtr<CefBrowser> browser, bool floating) {
+  if (!browser) return;
+  const auto frame = browser->GetMainFrame();
+  const std::string script = std::string("(async(floating)=>{") + R"JS(
+    const q = request => new Promise((resolve, reject) => window.cefQuery({request:JSON.stringify(request),
+      persistent:false, onSuccess:raw=>resolve(JSON.parse(raw)), onFailure:(code,message)=>reject({code,message})}));
+    // Other checks may change the tree meanwhile: retry a stale revision.
+    const mutate = async command => {
+      for (let i = 0; ; i++) {
+        try { return await q({...command, expectedRevision:(await q({method:'browser.getSnapshot'})).treeRevision}); }
+        catch (error) { if (error.code !== 409 || i >= 5) throw error; await new Promise(r=>setTimeout(r,120)); }
+      }
+    };
+    const wait = async predicate => { for (let i=0;i<40;i++) { if (predicate()) return true; await new Promise(r=>setTimeout(r,60)); } return false; };
+    const host = floating ? 'floating' : 'docked', title = 'Folder icon fixture ' + host;
+    const result = {folderIconHost:host};
+    try {
+      const before = new Set((await q({method:'browser.getSnapshot'})).nodes.map(n=>n.id));
+      const created = await mutate({method:'tree.createFolder',parentId:'',title});
+      const folder = created.nodes.find(n=>n.kind==='folder' && !before.has(n.id));
+      const glyph = () => document.querySelector(`[data-node-id="${folder.id}"] .folder-icon[data-glyph="rocket"]`);
+      await wait(()=>document.querySelector(`[data-node-id="${folder.id}"] .folder-icon`));
+      // The menu's "Change icon…" route: the popover hangs from the folder's icon; native
+      // clicks the rocket in it (ProbeClickSelector), which saves through the panel.
+      const r = document.querySelector(`[data-node-id="${folder.id}"] .folder-icon`).getBoundingClientRect();
+      result.pickerOpened = await q({method:'folder.chooseIcon',id:folder.id,x:Math.round(r.x),y:Math.round(r.y),
+        width:Math.round(r.width),height:Math.round(r.height)}).then(()=>true,()=>false);
+      result.drawn = await wait(glyph);
+      result.saved = (await q({method:'browser.getSnapshot'})).nodes.find(n=>n.id===folder.id)?.folderIcon === 'rocket';
+      const fill = document.querySelector(`[data-node-id="${folder.id}"] .folder-back-fill`);
+      result.coloured = !!fill && getComputedStyle(fill).fill !== 'none' && getComputedStyle(fill).fill !== 'rgb(0, 0, 0)';
+      try { await mutate({method:'tree.setFolderIcon',id:folder.id,icon:'Bad Name'}); result.badRefused = false; }
+      catch (error) { result.badRefused = error.code === 400; }
+      const cleared = await mutate({method:'tree.setFolderIcon',id:folder.id,icon:''});
+      result.cleared = cleared.nodes.find(n=>n.id===folder.id)?.folderIcon === undefined && await wait(()=>!glyph());
+      await mutate({method:'tree.removeFolder',id:folder.id});
+      result.removed = !(await q({method:'browser.getSnapshot'})).nodes.some(n=>n.id===folder.id);
+    } catch (error) { result.error = String(error?.message ?? error); }
+    console.info('RED_PEEK:'+JSON.stringify(result));
+  )JS" + std::string("})(") + (floating ? "true" : "false") + ")";
+  frame->ExecuteJavaScript(script, frame->GetURL(), 0);
+}
 void CheckXBadge(CefRefPtr<CefBrowser> browser, bool floating) {
   if (!browser) return;
   const auto frame = browser->GetMainFrame();
@@ -1090,19 +1134,29 @@ static void Start(const std::shared_ptr<State>& state) {
       if(shell!=s->browsers.end())CheckXBadge(shell->second,false);
     });
     Later(state,9300,[](const std::shared_ptr<State>& s){ CheckPinEditor(s, false); });
-    Later(state,11000,[](const std::shared_ptr<State>& s){s->workspace->SetSidebarVisible(false);s->sidebar_peek->Show();});
-    Later(state,11600,[](const std::shared_ptr<State>& s){CheckXBadge(s->sidebar_peek->browser(),true);});
-    Later(state,12400,[](const std::shared_ptr<State>& s){
+    // Folder glyphs: the picker popover opens from each host and a real click in it saves.
+    Later(state,10800,[](const std::shared_ptr<State>& s){
+      const auto shell=s->browsers.find(s->shell_id);
+      if(shell!=s->browsers.end())CheckFolderIcon(shell->second,false);
+      if(s->panel_popup)s->panel_popup->ProbeClickSelector("[data-icon=\"rocket\"]");
+    });
+    Later(state,12500,[](const std::shared_ptr<State>& s){s->workspace->SetSidebarVisible(false);s->sidebar_peek->Show();});
+    Later(state,13100,[](const std::shared_ptr<State>& s){CheckXBadge(s->sidebar_peek->browser(),true);});
+    Later(state,13900,[](const std::shared_ptr<State>& s){
       // X's counter reports nothing unread: the dot clears even though the X tab may be loaded
       // (activated earlier) with "(4)" still in its title.
       s->x_unread_fixture=0;
       if(const auto counter=s->workspace->x_unread())counter->RefreshSoon();
     });
-    Later(state,13100,[](const std::shared_ptr<State>& s){ CheckPinEditor(s, true); });
-    Later(state,14500,[](const std::shared_ptr<State>& s){s->sidebar_peek->Hide();s->workspace->SetSidebarVisible(true);});
-    Later(state,15300,&CheckWhatsAppPin);
+    Later(state,15000,[](const std::shared_ptr<State>& s){
+      CheckFolderIcon(s->sidebar_peek->browser(),true);
+      if(s->panel_popup)s->panel_popup->ProbeClickSelector("[data-icon=\"rocket\"]");
+    });
+    Later(state,16600,[](const std::shared_ptr<State>& s){ CheckPinEditor(s, true); });
+    Later(state,18000,[](const std::shared_ptr<State>& s){s->sidebar_peek->Hide();s->workspace->SetSidebarVisible(true);});
+    Later(state,18800,&CheckWhatsAppPin);
     // Leave time for an interactive runner to foreground this owned test window.
-    Later(state,18000,&IntegrationProbe);
+    Later(state,21500,&IntegrationProbe);
     // The Library checks follow the integration and pinned-hint chain (CheckFigmaCreate).
   }
 }

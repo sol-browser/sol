@@ -12,6 +12,7 @@
 #include <dwmapi.h>
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <optional>
 #include "downloads/download_manager.h"
 #include "extensions/extension_catalog.h"
@@ -285,7 +286,7 @@ void PanelPopup::Reposition() {
   const bool compact_integration = hover_only_ && integration_ &&
       (integration_->HasKey("kind") || integration_->GetString("service") == "figma");
   const bool modal = this->modal();
-  const int desired=kind_=="translation" ? 292 : kind_=="selectionTranslation" || kind_=="moveToProfile" || kind_=="deleteSpace" ? 360 : kind_=="installExtension" || kind_=="protectedMedia" ? 400 : kind_=="history" || modal ? kHistoryWidth : compact_integration ? 248 : kPanelWidth;
+  const int desired=kind_=="folderIcon" ? 288 : kind_=="translation" ? 292 : kind_=="selectionTranslation" || kind_=="moveToProfile" || kind_=="deleteSpace" || kind_=="deleteFolder" ? 360 : kind_=="installExtension" || kind_=="protectedMedia" ? 400 : kind_=="history" || modal ? kHistoryWidth : compact_integration ? 248 : kPanelWidth;
   // spaceTheme: the theme of a Space being created in the sidebar (preview only).
   const bool editor=kind_=="space" || kind_=="newSpace" || kind_=="theme" || kind_=="spaceTheme";
   const auto state=state_.lock();
@@ -374,6 +375,78 @@ bool PanelPopup::ConfirmSpaceDelete(const std::string& id) {
     return open_ && kind_ == "deleteSpace";
   }
   return false;
+}
+bool PanelPopup::ChooseFolderIcon(const std::string& id, const CefRect& anchor) {
+  const auto s = state_.lock();
+  if (!s || !s->workspace || shutdown_ || modal() || menu_open_) return false;
+  const auto snapshot = s->workspace->Snapshot();
+  const auto nodes = snapshot->GetList("nodes");
+  std::map<std::string, CefRefPtr<CefDictionaryValue>> by_id;
+  for (size_t i = 0; nodes && i < nodes->GetSize(); ++i) by_id[nodes->GetDictionary(i)->GetString("id")] = nodes->GetDictionary(i);
+  const auto found = by_id.find(id);
+  if (found == by_id.end() || found->second->GetString("kind") != "folder" || found->second->GetBool("archived")) return false;
+  // A folder of the Space on screen: its top-level ancestor's Space.
+  auto root = found->second;
+  for (int depth = 0; depth < 64 && !root->GetString("parentId").empty(); ++depth) {
+    const auto parent = by_id.find(root->GetString("parentId"));
+    if (parent == by_id.end()) return false;
+    root = parent->second;
+  }
+  if (root->GetString("space") != snapshot->GetString("activeSpace")) return false;
+  folder_icon_ = CefDictionaryValue::Create();
+  folder_icon_->SetString("id", id);
+  folder_icon_->SetString("icon", found->second->GetString("folderIcon"));
+  if (open_ && kind_ == "folderIcon") Hide(false);
+  Toggle("folderIcon", anchor);
+  return open_ && kind_ == "folderIcon";
+}
+// folder_delete_ = {id, title, tabs, folders, revision} for a live folder of the Space on screen.
+bool PanelPopup::DescribeFolderDelete(const std::string& id) {
+  const auto s = state_.lock();
+  if (!s || !s->workspace) return false;
+  const auto snapshot = s->workspace->Snapshot();
+  const auto nodes = snapshot->GetList("nodes");
+  std::map<std::string, CefRefPtr<CefDictionaryValue>> by_id;
+  for (size_t i = 0; nodes && i < nodes->GetSize(); ++i) by_id[nodes->GetDictionary(i)->GetString("id")] = nodes->GetDictionary(i);
+  const auto found = by_id.find(id);
+  if (found == by_id.end() || found->second->GetString("kind") != "folder" || found->second->GetBool("archived") || found->second->GetBool("closing")) return false;
+  auto root = found->second;
+  for (int depth = 0; depth < 64 && !root->GetString("parentId").empty(); ++depth) {
+    const auto parent = by_id.find(root->GetString("parentId"));
+    if (parent == by_id.end()) return false;
+    root = parent->second;
+  }
+  if (root->GetString("space") != snapshot->GetString("activeSpace")) return false;
+  // Everything inside, at any depth (the snapshot leaves archived tabs out; folders hold none).
+  int tabs = 0, folders = 0;
+  std::set<std::string> inside{id};
+  for (bool grew = true; grew;) {
+    grew = false;
+    for (const auto& [child, row] : by_id)
+      if (!inside.contains(child) && inside.contains(row->GetString("parentId").ToString())) {
+        inside.insert(child); grew = true;
+        if (row->GetString("kind") == "folder") ++folders; else ++tabs;
+      }
+  }
+  folder_delete_ = CefDictionaryValue::Create();
+  folder_delete_->SetString("id", id);
+  folder_delete_->SetString("title", found->second->GetString("title").ToString().substr(0, 240));
+  folder_delete_->SetInt("tabs", tabs);
+  folder_delete_->SetInt("folders", folders);
+  folder_delete_->SetDouble("revision", snapshot->GetDouble("treeRevision"));
+  if (s->probe) {
+    auto details = CefDictionaryValue::Create(); details->SetInt("tabs", tabs); details->SetInt("folders", folders);
+    s->Record("folder_delete_prompt", details);
+  }
+  return true;
+}
+bool PanelPopup::ConfirmFolderDelete(const std::string& id) {
+  const auto s = state_.lock();
+  if (!s || !s->window || shutdown_ || modal() || menu_open_ || !PopupOwnerIsForeground(s->window) ||
+      !IsWindowEnabled(s->window->GetWindowHandle()) || !DescribeFolderDelete(id)) return false;
+  deleting_folder_ = false;
+  Toggle("deleteFolder", {});
+  return open_ && kind_ == "deleteFolder";
 }
 bool PanelPopup::OfferProtectedMedia(const std::string& service, const std::string& url) {
   const auto s = state_.lock();
@@ -981,6 +1054,8 @@ std::string PanelPopup::Response(CefRefPtr<CefDictionaryValue> theme) const {
   if (editing_pin() && pinned_page_) d->SetDictionary("pinnedPage", pinned_page_->Copy(false));
   if (open_ && kind_ == "moveToProfile" && profile_move_) d->SetDictionary("profileMove", profile_move_->Copy(false));
   if (open_ && kind_ == "deleteSpace" && space_delete_) d->SetDictionary("spaceDelete", space_delete_->Copy(false));
+  if (open_ && kind_ == "folderIcon" && folder_icon_) d->SetDictionary("folderIcon", folder_icon_->Copy(false));
+  if (open_ && kind_ == "deleteFolder" && folder_delete_) d->SetDictionary("folderDelete", folder_delete_->Copy(false));
   if (open_ && kind_ == "installExtension" && install_prompt_) d->SetDictionary("extensionInstall", install_prompt_->Copy(false));
   if (open_ && kind_ == "protectedMedia" && protected_offer_) {
     auto offer = protected_offer_->Copy(false);
@@ -1059,8 +1134,10 @@ void PanelPopup::ProbeClickSelector(const std::string& selector) {
   ProbeClickButton(selector, true, 100);
 }
 void PanelPopup::ProbeClickButton(const std::string& target, bool selector, int attempts) {
-  auto s = state_.lock(); if (!s || !s->probe || (!s->organization_probe && !s->downloads_probe && !s->site_probe && !s->extension_popup_probe && !s->capture_mute_probe && !s->spaces_probe && !s->menu_translate_offer && s->history_probe.empty())) return;
-  if (!open_ || !ready_ || !observer_ || !browser_ || (selector && s->menu_translate_offer && !presented_)) {
+  auto s = state_.lock(); if (!s || !s->probe || (!s->organization_probe && !s->downloads_probe && !s->site_probe && !s->extension_popup_probe && !s->capture_mute_probe && !s->spaces_probe && !s->sidebar_peek_probe && !s->menu_translate_offer && s->history_probe.empty())) return;
+  // Commands that need a presented popover (translation, folder glyphs) wait until it is shown.
+  if (!open_ || !ready_ || !observer_ || !browser_ ||
+      (((selector && (s->menu_translate_offer || s->sidebar_peek_probe)) || s->organization_probe) && !presented_)) {
     if (attempts > 0) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<PanelPopup> weak, std::string value, bool css, int tries) {
       if (auto o = weak.lock()) o->ProbeClickButton(value, css, tries);
     }, weak_from_this(), target, selector, attempts - 1), 30);
@@ -1279,6 +1356,34 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     });
     return true;
   }
+  if (kind_ == "deleteFolder") {
+    if (method != "folder.deleteConfirm") { cb->Failure(404, "Unknown delete confirmation command"); return true; }
+    if (d->GetSize() != 2 || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_ ||
+        !presented_ || deleting_folder_ || !folder_delete_) { cb->Failure(409, "Delete confirmation changed"); return true; }
+    // The sidebar's confirmed removal: native checks the revision and tab count shown here.
+    auto command = CefDictionaryValue::Create();
+    command->SetString("method", "tree.removeFolder");
+    command->SetString("id", folder_delete_->GetString("id"));
+    command->SetDouble("expectedRevision", folder_delete_->GetDouble("revision"));
+    auto confirmation = CefDictionaryValue::Create();
+    confirmation->SetDouble("revision", folder_delete_->GetDouble("revision"));
+    confirmation->SetInt("tabs", folder_delete_->GetInt("tabs"));
+    command->SetDictionary("confirmation", confirmation);
+    deleting_folder_ = true;
+    s->workspace->Handle(command, [weak = weak_from_this(), cb, opening = request_](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
+      const auto self = weak.lock();
+      const bool current = self && self->request_ == opening && self->open_ && self->kind_ == "deleteFolder";
+      if (current) self->deleting_folder_ = false;
+      if (!code) { cb->Success("{}"); if (current) self->Hide(true); return; }
+      // The folder changed meanwhile: show the new counts to confirm again, or close if it is gone.
+      if (current && code == 409 && self->folder_delete_ && self->DescribeFolderDelete(self->folder_delete_->GetString("id"))) {
+        self->Publish(); cb->Failure(409, "changed"); return;
+      }
+      cb->Failure(code, error);
+      if (current && code == 409) self->Hide(true);
+    });
+    return true;
+  }
   if (kind_ == "moveToProfile") {
     if (method != "move.confirm") { cb->Failure(404, "Unknown move confirmation command"); return true; }
     if (d->GetSize() != 2 || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_ ||
@@ -1386,6 +1491,22 @@ bool PanelPopup::Query(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f, int64_t q
     cb->Failure(400,"Invalid integration control");return true;
   }
   if (hover_only_) { cb->Failure(404,"Unknown integration command"); return true; }
+  if (kind_ == "folderIcon" && method == "folder.setIcon") {
+    // Only the folder this opening was for; native validates the name and the folder again.
+    if (d->GetSize() != 3 || d->GetType("request") != VTYPE_INT || d->GetInt("request") != request_ || !open_ || !presented_ ||
+        !folder_icon_ || d->GetType("icon") != VTYPE_STRING) { cb->Failure(409, "Folder icon opening changed"); return true; }
+    auto command = CefDictionaryValue::Create();
+    command->SetString("method", "tree.setFolderIcon");
+    command->SetString("id", folder_icon_->GetString("id"));
+    command->SetString("icon", d->GetString("icon"));
+    command->SetDouble("expectedRevision", s->workspace->Snapshot()->GetDouble("treeRevision"));
+    s->workspace->Handle(command, [weak = weak_from_this(), cb, opening = request_](int code, const std::string& error, CefRefPtr<CefDictionaryValue>) {
+      if (code) cb->Failure(code, error); else cb->Success("{}");
+      const auto self = weak.lock();
+      if (!code && self && self->request_ == opening && self->open_ && self->kind_ == "folderIcon") self->Hide(true);
+    });
+    return true;
+  }
   if (kind_ == "space" && method == "space.edit") {
     // The space editor names the space; the revision check happens natively.
     auto command = d->Copy(false);

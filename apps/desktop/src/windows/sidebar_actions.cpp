@@ -33,6 +33,19 @@ bool PointerOverSidebar(const State& state, CefRefPtr<CefBrowser> source) {
   const int width = SidebarWidth(state.sidebar_width, state.window->GetClientAreaBoundsInScreen().width);
   return cursor.x < std::lround(width * scale) && cursor.y >= std::lround(kToolbarHeight * scale);
 }
+// x/y/width/height (DIP in |source|, the docked or floating sidebar) as root client DIP.
+// False when they are not numbers inside that sidebar document.
+bool SidebarAnchor(const State& s, CefRefPtr<CefBrowser> source, CefRefPtr<CefDictionaryValue> d, int max_width, int max_height, CefRect& out) {
+  for (const auto* key : {"x", "y", "width", "height"}) if (d->GetType(key) != VTYPE_INT || d->GetInt(key) < 0 || d->GetInt(key) > 16384) return false;
+  if (!source || !s.window) return false;
+  const auto handle = source->GetHost()->GetWindowHandle(); const auto root = s.window->GetWindowHandle();
+  POINT origin{}, parent{}; RECT client{}; const float scale = GetDpiForWindow(root) / 96.f;
+  const int x = d->GetInt("x"), y = d->GetInt("y"), w = d->GetInt("width"), h = d->GetInt("height");
+  if (!handle || !GetClientRect(handle, &client) || !ClientToScreen(handle, &origin) || !ClientToScreen(root, &parent) ||
+      w < 1 || h < 1 || w > max_width || h > max_height || (x + w) * scale > client.right + 2 || (y + h) * scale > client.bottom + 2) return false;
+  out = CefRect(x + static_cast<int>((origin.x - parent.x) / scale), y + static_cast<int>((origin.y - parent.y) / scale), w, h);
+  return true;
+}
 }
 bool HandleSidebarAction(const std::shared_ptr<State>& s,CefRefPtr<CefBrowser> source,const std::string& method,
     CefRefPtr<CefDictionaryValue> d,bool persistent,CefRefPtr<CefMessageRouterBrowserSide::Callback> cb) {
@@ -55,7 +68,9 @@ bool HandleSidebarAction(const std::shared_ptr<State>& s,CefRefPtr<CefBrowser> s
   const bool library=method=="library.setOpen" || method=="library.setSection";
   const bool creating=method=="space.startCreate" || method=="space.createDraft" || method=="space.cancelDraft";
   const bool confirm_delete=method=="space.confirmDelete";
-  if(!library && !creating && !confirm_delete && !new_tab && !drag && !batch && !edit_pinned && !confirm_move && !mute && !duplicate && !integration && !x_badge && !toggle_integration && !preload && method!="browser.restartToUpdate" && method!="settings.openProfiles")return false;
+  const bool folder_icon=method=="folder.chooseIcon";
+  const bool folder_delete=method=="folder.confirmDelete";
+  if(!library && !creating && !confirm_delete && !folder_icon && !folder_delete && !new_tab && !drag && !batch && !edit_pinned && !confirm_move && !mute && !duplicate && !integration && !x_badge && !toggle_integration && !preload && method!="browser.restartToUpdate" && method!="settings.openProfiles")return false;
   if(!s || !s->workspace || persistent){cb->Failure(400,"Invalid sidebar action");return true;}
   if(s->workspace->WindowClosing()){cb->Failure(409,"Window is closing");return true;}
   if(s->probe) {
@@ -77,6 +92,26 @@ bool HandleSidebarAction(const std::shared_ptr<State>& s,CefRefPtr<CefBrowser> s
   if (confirm_delete) {
     if (d->GetSize() != 2 || d->GetType("id") != VTYPE_STRING || d->GetString("id").length() != 36) { cb->Failure(400, "Invalid Space command"); return true; }
     if (!s->panel_popup || !s->panel_popup->ConfirmSpaceDelete(d->GetString("id").ToString())) cb->Failure(409, "Delete confirmation is unavailable");
+    else respond();
+    return true;
+  }
+  if (folder_delete) {
+    // A folder with contents: the window's modal asks first (an empty one is removed directly).
+    const bool floating = source && source->GetIdentifier() == s->peek_id;
+    if (d->GetSize() != 2 || d->GetType("id") != VTYPE_STRING || d->GetString("id").length() != 36) { cb->Failure(400, "Invalid folder command"); return true; }
+    if (!s->panel_popup || (floating ? !s->sidebar_peek || !s->sidebar_peek->is_open() : !s->sidebar_visible) ||
+        !s->panel_popup->ConfirmFolderDelete(d->GetString("id").ToString())) cb->Failure(409, "Delete confirmation is unavailable");
+    else respond();
+    return true;
+  }
+  if (folder_icon) {
+    // The folder's glyph picker (docs/folder-icons.md), hanging from its row in this host.
+    CefRect anchor;
+    const bool floating = source && source->GetIdentifier() == s->peek_id;
+    if (d->GetSize() != 6 || d->GetType("id") != VTYPE_STRING || d->GetString("id").length() != 36 ||
+        !SidebarAnchor(*s, source, d, 480, 120, anchor)) { cb->Failure(400, "Invalid folder icon command"); return true; }
+    if (!s->panel_popup || (floating ? !s->sidebar_peek || !s->sidebar_peek->is_open() : !s->sidebar_visible) ||
+        !s->panel_popup->ChooseFolderIcon(d->GetString("id").ToString(), anchor)) cb->Failure(409, "Folder icon picker is unavailable");
     else respond();
     return true;
   }

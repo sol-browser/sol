@@ -1,115 +1,76 @@
 # README media
 
-Real Sol windows, captured on Windows 11 x64 on 2026-11-08. Application version:
-**0.2.0 development build**. Engine:
-`156.0.31-sol-156.3676+g06f3c4d+chromium-156.0.8078.48`.
-The app and engine source were not changed to produce these captures.
+Every screenshot and animation in the README is a real Sol window, recorded on
+Windows 11 x64 on 2026-11-25 from the 0.11 development build with engine
+158.1.43, on public websites. The app and engine source were not changed to
+produce them, and no personal profile, account, history or credential is used.
+
+## Recording
+
+[scripts/readme_record.py](../../scripts/readme_record.py) records everything:
+
+```powershell
+python scripts/readme_record.py --prepare
+python scripts/readme_record.py spaces split peek theme library cover
+```
+
+`--prepare` builds a disposable profile in `artifacts/readme-record/` with
+three dark Spaces (Work, Studio, Travel), real public sites (apple.com/uk,
+Wikipedia, GitHub, Figma, Dribbble), English UI, translation offers off and
+`Accept-Language: en`. It visits every tab once so favicons are cached. Each
+scene then starts Sol on its own copy of that profile, so scenes do not affect
+each other or the daily profile. An alternate build can be selected with
+`--exe <path-to-sol.exe>`.
+
+The recorder drives the real application with the real mouse (`SendInput`),
+finds controls through UI Automation (`scripts/readme_uia.ps1`), and captures
+the screen at 30 fps with `BitBlt`, drawing the cursor in. It moves physical
+input, so run it only when nobody is using the PC. Every click, drag and key
+first checks that the point lies over the Sol window this run started and that
+Sol is in the foreground; otherwise the run stops.
+
+Sites change over time: rerun when they drift, and check the frames for
+banners, consent prompts or translation offers. Wikipedia's donation banner,
+for example, rules it out for the cover.
+
+| File | Scene | What it shows |
+| :--- | :--- | :--- |
+| `spaces.webp` | `spaces` | Switching Work → Studio → Travel → Work |
+| `split-view.webp` | `split` | Two tabs dragged onto a page to build a three-page split |
+| `link-peek.webp` | `peek` | A link from a pinned GitHub tab in Link Peek, then into a split |
+| `library.webp` | `library` | Archive, then every Space; tabs dragged between Spaces and into a folder |
+| `space-setup.webp` | `theme` | The Space theme editor: colors, palettes, a dragged color, brightness, light and dark |
+| `overview.webp` | `cover` | Light cover: Work in light mode on apple.com |
+| `cover-dark.webp` | `cover` | Dark cover: Studio on Apple Music |
+
+Animations are 1120 px wide animated WebP (quality 82). The cover scene opens a
+1440 × 940 window and frames each still at 1600 × 1100 (WebP quality 94) with
+`framed()` from `build_readme_media.py`: a gradient background, a soft shadow and
+rounded corners, without changing application pixels. A standard HTML `picture`
+shows `cover-dark.webp` to dark-mode readers and `overview.webp` otherwise.
+
+## Mark, icons and download button
 
 The large README mark uses the original thin-outline geometry from
-[icons/sol-logo.svg](../../icons/sol-logo.svg), on a sage tile that keeps it
-legible in both GitHub themes. Prefer this original logo for large brand
-placements; the compact toolbar mark is designed for small interface sizes.
+[icons/sol-logo.svg](../../icons/sol-logo.svg) in the app icon's colours: a
+yellow `#f9ca30` ring on a near-black `#161619` tile, legible in both GitHub
+themes. Prefer this original logo for large brand placements; the compact
+toolbar mark is designed for small interface sizes.
 
-The Fieldnotes pages, landscape illustration and synthetic workspace are owned
-demo fixtures in [scripts/readme_demo.py](../../scripts/readme_demo.py). They are
-served on loopback. Website content is deliberately sample content; the browser
-interface, tabs, Split View, Link Peek and themes are the real application.
-No personal profiles, accounts, browsing history or credentials are used.
+[build_readme_branding.py](../../scripts/build_readme_branding.py) generates the
+thin-line feature icons and the download graphic, which links to the web
+installer at both calls to action.
 
-## Reproduce
+## Earlier fixture pipeline
 
-Build Sol first. Use Windows, Python and Pillow (`python -m pip install Pillow`).
-Close any previous **README demo** window before running the capture command:
+Before 0.11 the README used owned demo pages (Fieldnotes) served on loopback by
+[scripts/readme_demo.py](../../scripts/readme_demo.py) and
+`scripts/readme_space_demo.py`, framed by `scripts/build_readme_media.py` into
+stills, a Space editor GIF and a tour GIF. That pipeline still works but writes
+to `artifacts/readme-demo/media`, so it cannot overwrite the published files.
 
-```powershell
-python scripts/readme_demo.py --capture
-python scripts/build_readme_media.py
-python scripts/build_readme_branding.py
-```
-
-An alternate build can be selected with `--exe <path-to-sol.exe>`.
-To recapture specific scenes, use `--scenes overview split-view dark-space`,
-for example. With no arguments the fixture server opens an ordinary Sol window
-for manual composition; close that demo window to end the server.
-
-### Space configuration recording
-
-```powershell
-python scripts/readme_space_demo.py
-python scripts/build_readme_media.py --space-only
-```
-
-Activate the newly opened demo Sol window and keep it active for about 15
-seconds. The driver waits for native foreground ownership, then uses the real
-Space editor to rename the Space, choose its emoji, adjust a three-color
-palette, switch appearance and save. It closes the window when the native
-snapshot confirms the expected result. A run times out after ten minutes if
-the window cannot be activated. The existing Computer Use window-binding
-limitation may require clicking this demo window manually.
-
-The recording stages a disposable runtime: immutable binaries are hardlinked,
-the UI is copied, and only that copied HTML loads
-[readme-space-driver.js](../../scripts/readme-space-driver.js). The driver
-operates React controls and the existing authenticated IPC. Original UI files
-and product sources stay unchanged. Actual root/popup captures are assembled
-at their reported native screen coordinates. Detailed native reports and
-saved-workspace checks stay in `artifacts/readme-demo/captures/space-setup-*`.
-GIF assembly refuses a recording unless its foreground, persisted settings,
-sandbox/IPC and clean-shutdown checks passed.
-
-The published `space-setup.gif` is 1120 × 860, approximately 12.4 seconds and
-744 KB. Its successful source capture is `space-setup-3df6a0` (2026-11-08).
-All nine editor milestones passed with native foreground/keyboard ownership;
-the saved Space is Weekend / compass, light appearance, grain 8, three colors,
-brightness 68 and palette rotation 90°. Native renderer restriction, website
-bridge absence, IPC rejection, source-UI hash and clean shutdown checks passed.
-The source UI and product binaries were unchanged. For this recording the
-Python capture helper was launched independently with `Start-Process` so the
-window stayed available on the visible desktop; direct tool-session launches
-had failed foreground activation. An earlier recording closed before its final
-milestone; the driver now requires observing dark and then light before closing.
-Its local provenance is `captures/space-media-receipt.json`.
-
-The capture command initializes an isolated profile when needed, then seeds
-only its browser-owned workspace database. Each scene uses a separate profile
-under the ignored `artifacts/readme-demo/` directory. It never edits Chromium
-databases or the daily profile. The fixture server binds to `127.0.0.1:47631`.
-No public debugging port or sandbox bypass is used.
-
-## Capture and editing
-
-README branding is generated by
-[build_readme_branding.py](../../scripts/build_readme_branding.py): six original
-thin-line feature icons, a linked download graphic and `cover-dark.webp`.
-The dark cover frames the existing real Studio capture against a darker
-background; it does not recolor the app. A standard HTML `picture` selects it
-for dark-mode readers, with `overview.webp` as the light/default cover.
-The same download graphic is linked to the web installer at both calls to
-action. Local branding provenance is `captures/branding-receipt.json`.
-
-- Static application captures: 1440 × 940 pixels; Link Peek: 1200 × 820.
-- Published stills: 1600 × 1100 WebP, quality 94, with an added background and
-  shadow. Application pixels are scaled and framed, with no invented UI.
-- Tour: 960 × 720 GIF, approximately 14.5 seconds, with chapter titles, cuts
-  between scenes, an actual theme-transition sequence, and an infinite loop.
-- Link Peek uses a before/after cut: `PrintWindow` produces incomplete child
-  surfaces during its native entry transform. These capture artifacts are not
-  used in the tour. The native probe still exercises the real link opening.
-- Raw PNGs, native reports and `captures/media-receipt.json` stay in `artifacts/`.
-  The receipt records source paths, checks, output sizes and SHA-256 hashes.
-
-Capture uses the existing native smoke-test `PrintWindow` helper and only the
-newly launched process's windows. Computer Use window binding failed with
-`window id ... no longer belongs to Sol.Browser; current owner is Sol.Browser`;
-the repository capture harness avoids that helper limitation.
-
-The theme and Link Peek runs passed their native probes with the sandbox on,
-website IPC unavailable and clean shutdown. The three ordinary static scenes
-are capture-only sessions, intentionally terminated after capture; they are
-not clean-shutdown regression evidence. No claim is made here about physical
-input, performance, extensions, passwords or other features not exercised by
-this media workflow. Those features have separate project tests.
+## Publishing
 
 Media lives in `assets/`, which is included by the public export; `docs/` and
-raw artifacts are excluded. Keep the logo, screenshots and GIF in this directory
-alongside the README when publishing the repository.
+raw artifacts are excluded. Keep these files alongside the README when
+publishing the repository.

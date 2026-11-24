@@ -1,8 +1,7 @@
-"""Build code-native README icons, download artwork and a real dark cover."""
+"""Build code-native README icons and download artwork (covers: scripts/readme_record.py cover)."""
 import hashlib
 import json
-from PIL import Image
-from build_readme_media import ROOT, OUTPUT, CAPTURES, framed, latest
+from build_readme_media import OUTPUT, CAPTURES
 
 ICONS = {
     'spaces': '<rect x="4" y="4" width="19" height="21" rx="4"/><rect x="10" y="10" width="18" height="18" rx="4" fill="#dfe8d8"/>',
@@ -11,6 +10,9 @@ ICONS = {
     'profiles': '<circle cx="12" cy="11" r="4"/><path d="M4 27v-3a8 8 0 0 1 16 0v3m1-19a4 4 0 0 1 0 8m4 11v-3a8 8 0 0 0-3-6"/>',
     'palette': '<circle cx="10" cy="12" r="6"/><circle cx="22" cy="12" r="6"/><circle cx="16" cy="23" r="6"/>',
     'import': '<path d="M16 3v17m-6-6 6 6 6-6M5 21v5a3 3 0 0 0 3 3h16a3 3 0 0 0 3-3v-5"/>',
+    'library': '<rect x="3" y="5" width="7" height="22" rx="3"/><rect x="12.5" y="5" width="7" height="22" rx="3" fill="#dfe8d8"/><rect x="22" y="5" width="7" height="22" rx="3"/>',
+    'links': '<rect x="3" y="4" width="20" height="17" rx="4"/><rect x="15" y="15" width="14" height="13" rx="3.5" fill="#dfe8d8"/><path d="M8 13l5-5m0 0h-4m4 0v4"/>',
+    'essentials': '<rect x="4" y="4" width="11" height="11" rx="3"/><rect x="17" y="4" width="11" height="11" rx="3" fill="#dfe8d8"/><rect x="4" y="17" width="11" height="11" rx="3" fill="#dfe8d8"/><rect x="17" y="17" width="11" height="11" rx="3"/>',
 }
 
 
@@ -27,13 +29,12 @@ def main():
   </g>
   <text x="52" y="35.5" fill="#f8f6ef" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600">Download Sol for Windows</text>
 </svg>\n''',encoding='utf-8')
-    source,_=latest('dark-space')
-    framed(Image.open(source/'screen.png'),dark=True).save(OUTPUT/'cover-dark.webp',quality=94,method=6)
-    names=['cover-dark.webp','download.svg']+[f'feature-{name}.svg' for name in ICONS]
-    receipt=dict(dark_cover_source=str(source.relative_to(ROOT)).replace('\\','/'),assets={
+    names=['download.svg']+[f'feature-{name}.svg' for name in ICONS]
+    receipt=dict(assets={
         name:dict(bytes=(OUTPUT/name).stat().st_size,sha256=hashlib.sha256((OUTPUT/name).read_bytes()).hexdigest()) for name in names})
+    CAPTURES.mkdir(parents=True,exist_ok=True)
     (CAPTURES/'branding-receipt.json').write_text(json.dumps(receipt,indent=2))
-    print('Built dark cover, download artwork and six feature icons.')
+    print(f'Built download artwork and {len(ICONS)} feature icons.')
 
 
 if __name__=='__main__':

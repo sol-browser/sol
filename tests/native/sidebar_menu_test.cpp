@@ -32,6 +32,9 @@ int main() {
   check(Find(red::SidebarMenuItems(nodes, "today"), "unmute") && !Find(red::SidebarMenuItems(nodes, "today"), "mute"), "muted tab offers unmute");
   nodes[0].muted = false;
   check(!Find(red::SidebarMenuItems(nodes, "folder"), "duplicate") && !Find(red::SidebarMenuItems(nodes, "folder"), "mute"), "folders have no tab actions");
+  check(Find(red::SidebarMenuItems(nodes, "folder"), "folderIcon") && Find(red::SidebarMenuItems(nodes, "nested"), "folderIcon") &&
+        Find(red::SidebarMenuItems(nodes, "folder"), "folderIcon")->label == "Change icon…" &&
+        !Find(red::SidebarMenuItems(nodes, "today"), "folderIcon"), "folders, nested ones too, offer their icon; tabs do not");
   nodes[0].custom_title = true;
   check(Find(red::SidebarMenuItems(nodes, "today"), "automaticTitle") != nullptr, "manual name can return to the website title");
   // Pinned: edit pinned page (replace with current only when it differs), remove pin.
@@ -55,7 +58,9 @@ int main() {
   with_favorite.back().x_badge_hidden = true;
   check(Find(red::SidebarMenuItems(with_favorite, "fav"), "showXBadge"), "Muted X badge can be shown again");
   menu = red::SidebarMenuItems(nodes, "folder");
-  check(Find(menu, "newFolder") && Find(menu, "expand") && !Find(menu, "close"), "folder actions");
+  check(Find(menu, "newFolder") && !Find(menu, "close"), "folder actions");
+  check(!Find(menu, "expand") && !Find(menu, "up") && !Find(menu, "down") && menu.front().action == "rename",
+        "folders: no expand or move up/down (click and drag do those); the menu starts with Rename");
   check(!Find(menu, "folder", "folder") && !Find(menu, "folder", "nested"), "cannot nest folder inside self or descendant");
   check(Find(menu, "removeFolder") && Find(menu, "removeFolder")->enabled && Find(menu,"removeFolder")->label=="Delete folder…", "nonempty folder offers confirmed deletion");
   check(Find(red::SidebarMenuItems(nodes, "empty"), "removeFolder")->enabled, "empty folder removal enabled");

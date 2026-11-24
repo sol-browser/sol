@@ -159,7 +159,7 @@ inline bool IsTreeMethod(std::string_view method) {
   if (method == "split.create" || method == "split.remove" || method == "split.removePane" || method == "split.rename" || method == "split.swap" ||
       method == "split.focus" || method == "split.expand" || method == "split.beginResize" || method == "split.navigate" || method == "split.site" ||
       method == "split.add" || method == "split.preset" || method == "split.nudge" || method == "split.menu" || method == "split.beginMove") return true;
-  return method == "tree.createFolder" || method == "tree.createTab" || method == "tree.rename" ||
+  return method == "tree.createFolder" || method == "tree.createTab" || method == "tree.rename" || method == "tree.setFolderIcon" ||
       method == "tree.move" || method == "tree.pin" || method == "tree.expand" || method == "tree.activate" ||
       method == "tree.place" || method == "tree.close" || method == "tree.archive" || method == "tree.restore" || method == "tree.reset" || method == "tree.removeFolder" || method == "tree.usePageTitle" ||
       method == "tree.moveToSpace" || method == "space.create" || method == "space.edit" || method == "space.delete" ||

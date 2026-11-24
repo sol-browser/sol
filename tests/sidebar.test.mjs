@@ -93,6 +93,7 @@ test('only id-addressed tree commands are retried after a revision race', async 
   const { retryable, isStaleRevision } = await import('../apps/browser-ui/src/sidebar-model.ts');
   assert.equal(retryable({ method: 'tree.close', id: 'a' }), true);
   assert.equal(retryable({ method: 'tree.rename', id: 'a', title: 'x' }), true);
+  assert.equal(retryable({ method: 'tree.setFolderIcon', id: 'a', icon: 'star' }), true);
   assert.equal(retryable({ method: 'tree.removeFolder', id: 'a' }), true);
   assert.equal(retryable({ method: 'tree.removeFolder', id: 'a', confirmation: { revision: 1, tabs: 3 } }), false,
     'a changed workspace must never silently reuse destructive confirmation');
@@ -246,7 +247,7 @@ test('a row is the same when only fields it does not show changed', () => {
   assert.equal(sameRowNode(node, { ...node, position: 5 }), true);
   assert.equal(sameRowNode(node, { ...node, space: 's2', archivedAt: 7 }), true);
   for (const extra of [{ title: 'B' }, { pageTitle: 'T' }, { favicon: 'sol://ui/favicon/a/v2' }, { live: false }, { closing: true }, { pinned: true },
-    { currentUrl: 'https://a/x' }, { audible: true }, { muted: true }, { peek: true }, { expanded: false }, { parentId: 'f' }, { xBadgeHidden: true }])
+    { currentUrl: 'https://a/x' }, { audible: true }, { muted: true }, { peek: true }, { expanded: false }, { parentId: 'f' }, { xBadgeHidden: true }, { folderIcon: 'star' }])
     assert.equal(sameRowNode(node, { ...node, ...extra }), false, JSON.stringify(extra));
   // A field that disappears or appears is a change, also when the count stays equal.
   const { favicon, ...without } = node;

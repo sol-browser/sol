@@ -95,7 +95,7 @@ int wmain(int argc, wchar_t** argv) {
         "DROP TABLE split_members; DROP TABLE split_groups;"
         "CREATE TABLE splits(anchor TEXT PRIMARY KEY,other TEXT NOT NULL UNIQUE,title TEXT NOT NULL DEFAULT '',ratio INTEGER NOT NULL,vertical INTEGER NOT NULL,reversed INTEGER NOT NULL);"
         "CREATE TABLE archived_splits(anchor TEXT PRIMARY KEY,other TEXT NOT NULL UNIQUE,title TEXT NOT NULL,ratio INTEGER NOT NULL,vertical INTEGER NOT NULL,reversed INTEGER NOT NULL);"
-        "ALTER TABLE nodes DROP COLUMN closed_at; PRAGMA user_version=13; COMMIT;",
+        "ALTER TABLE nodes DROP COLUMN closed_at; ALTER TABLE nodes DROP COLUMN icon; PRAGMA user_version=13; COMMIT;",
         nullptr, nullptr, nullptr) == SQLITE_OK, "downgrade fixture to the v13 state table");
     Check(sqlite3_exec(db, "UPDATE state SET sidebar_width=150", nullptr, nullptr, nullptr) != SQLITE_OK, "v13 fixture rejects 150");
     sqlite3_close(db);
@@ -107,7 +107,7 @@ int wmain(int argc, wchar_t** argv) {
     }
     sqlite3_open16(v13_path.c_str(), &db);
     sqlite3_stmt* version = nullptr; sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &version, nullptr);
-    Check(sqlite3_step(version) == SQLITE_ROW && sqlite3_column_int(version, 0) == 16, "migrated to the current schema (16)");
+    Check(sqlite3_step(version) == SQLITE_ROW && sqlite3_column_int(version, 0) == 17, "migrated to the current schema (17)");
     sqlite3_finalize(version); sqlite3_close(db);
     std::error_code error;
     for (const auto* suffix : {L"", L"-wal", L"-shm"}) std::filesystem::remove(v13_path + suffix, error);
@@ -139,7 +139,7 @@ int wmain(int argc, wchar_t** argv) {
         "DROP TABLE split_members; DROP TABLE split_groups;"
         "CREATE TABLE splits(anchor TEXT PRIMARY KEY,other TEXT NOT NULL UNIQUE,title TEXT NOT NULL DEFAULT '',ratio INTEGER NOT NULL,vertical INTEGER NOT NULL,reversed INTEGER NOT NULL);"
         "CREATE TABLE archived_splits(anchor TEXT PRIMARY KEY,other TEXT NOT NULL UNIQUE,title TEXT NOT NULL,ratio INTEGER NOT NULL,vertical INTEGER NOT NULL,reversed INTEGER NOT NULL);"
-        "ALTER TABLE nodes DROP COLUMN x_badge_hidden; ALTER TABLE nodes DROP COLUMN closed_at; PRAGMA user_version=10;",
+        "ALTER TABLE nodes DROP COLUMN x_badge_hidden; ALTER TABLE nodes DROP COLUMN closed_at; ALTER TABLE nodes DROP COLUMN icon; PRAGMA user_version=10;",
         nullptr, nullptr, nullptr) == SQLITE_OK, "seed legacy titles before v11 migration");
     sqlite3_close(db);
     {
@@ -189,6 +189,43 @@ int wmain(int argc, wchar_t** argv) {
           Find(edited.snapshot, id).custom_title, "Pinned title and URL are saved together");
     }
     for (const auto* suffix : {L"", L"-wal", L"-shm"}) { std::error_code error; std::filesystem::remove(badge_path + suffix, error); }
+  }
+  {
+    // Folder glyphs (schema v17): folders only, catalog-shaped names, kept across reopening.
+    const auto icon_path = path.wstring() + L"-folder-icon";
+    std::string glyph_folder, glyph_tab;
+    {
+      red::TreeStore store;
+      Check(static_cast<bool>(store.Open(icon_path)), "folder icon store opens");
+      auto apply = [&](red::TreeCommand c) { c.expected_revision = store.Read().snapshot.revision; return store.Apply(c); };
+      red::TreeCommand make{red::TreeAction::CreateFolder}; make.title = "Work";
+      glyph_folder = apply(make).created_id;
+      red::TreeCommand page{red::TreeAction::CreateTab}; page.title = "Page"; page.url = "https://example.com/";
+      glyph_tab = apply(page).created_id;
+      Check(Find(store.Read().snapshot, glyph_folder).icon.empty(), "a new folder has no glyph");
+      red::TreeCommand set{red::TreeAction::SetFolderIcon}; set.id = glyph_folder; set.icon = "gamepad-2";
+      const auto saved = apply(set);
+      Check(saved && Find(saved.snapshot, glyph_folder).icon == "gamepad-2", "a folder takes a glyph");
+      for (const auto* bad : {"Gamepad", "game--pad", "-pad", "pad-", "2pad", "pad_2", "a-very-long-folder-icon-name-x-yz1"}) {
+        set.icon = bad;
+        Check(apply(set).code == 400, (std::string("invalid glyph name is refused: ") + bad).c_str());
+      }
+      Check(Find(store.Read().snapshot, glyph_folder).icon == "gamepad-2", "a refused name keeps the saved glyph");
+      red::TreeCommand on_tab{red::TreeAction::SetFolderIcon}; on_tab.id = glyph_tab; on_tab.icon = "star";
+      Check(apply(on_tab).code == 400 && Find(store.Read().snapshot, glyph_tab).icon.empty(), "pages have no folder glyph");
+      auto with_page_glyph = store.Read().snapshot;
+      for (auto& n : with_page_glyph.nodes) if (n.id == glyph_tab) n.icon = "star";
+      Check(!red::TreeStore::ValidateSnapshot(with_page_glyph), "a snapshot with a glyph on a page is invalid");
+      Check(red::ValidFolderIcon("") && red::ValidFolderIcon("book-open") && !red::ValidFolderIcon("book open"), "glyph name shape");
+    }
+    {
+      red::TreeStore store; const auto reopened = store.Open(icon_path);
+      Check(reopened && Find(reopened.snapshot, glyph_folder).icon == "gamepad-2", "the glyph survives reopening the workspace");
+      red::TreeCommand clear{red::TreeAction::SetFolderIcon}; clear.id = glyph_folder; clear.expected_revision = reopened.snapshot.revision;
+      const auto cleared = store.Apply(clear);
+      Check(cleared && Find(cleared.snapshot, glyph_folder).icon.empty(), "an empty name removes the glyph");
+    }
+    for (const auto* suffix : {L"", L"-wal", L"-shm"}) { std::error_code error; std::filesystem::remove(icon_path + suffix, error); }
   }
   red::TreeSnapshot expected;
   {
@@ -653,7 +690,7 @@ int wmain(int argc, wchar_t** argv) {
       "INSERT INTO splits VALUES('" + t[0] + "','" + t[1] + "','Pair',6200,0,1);"
       "UPDATE nodes SET archived=1,archived_at=1 WHERE id IN('" + t[2] + "','" + t[3] + "');"
       "INSERT INTO archived_splits VALUES('" + t[2] + "','" + t[3] + "','',3000,1,0);"
-      "PRAGMA user_version=15; COMMIT;";
+      "ALTER TABLE nodes DROP COLUMN icon; PRAGMA user_version=15; COMMIT;";
     Check(sqlite3_exec(db, downgrade.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK, "schema 15 split fixture");
     sqlite3_close(db);
     red::TreeStore store; auto r = store.Open(legacy_path);
@@ -664,7 +701,7 @@ int wmain(int argc, wchar_t** argv) {
           red::FormatSplitLayout(r.snapshot.archived_splits[0].layout) == "v(3000*0,7000*1)", "schema 15 archived split converts");
     sqlite3_open16(legacy_path.c_str(), &db); sqlite3_stmt* query = nullptr;
     sqlite3_prepare_v2(db, "SELECT (SELECT user_version FROM pragma_user_version),(SELECT count(*) FROM sqlite_schema WHERE name IN('splits','archived_splits'))", -1, &query, nullptr);
-    Check(sqlite3_step(query) == SQLITE_ROW && sqlite3_column_int(query, 0) == 16 && sqlite3_column_int(query, 1) == 0, "schema 16 replaces the two-pane tables");
+    Check(sqlite3_step(query) == SQLITE_ROW && sqlite3_column_int(query, 0) == 17 && sqlite3_column_int(query, 1) == 0, "schema 16 replaces the two-pane tables");
     sqlite3_finalize(query); sqlite3_close(db);
   }
   for (const auto& suffix : {L"",L"-wal",L"-shm"}) { std::error_code error; std::filesystem::remove(legacy_path + suffix,error); }

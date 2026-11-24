@@ -16,7 +16,7 @@ constexpr std::string_view kProfile = "profile/", kSpace = "space/", kNode = "no
 constexpr int kMaxFavorites = 12, kMaxProfiles = 24, kMaxNodes = 10000;
 
 struct NodeRecord {
-  TreeNode node;     // id, parent, title, url, folder, custom_title; favorite/profile for a Favorite.
+  TreeNode node;     // id, parent, title, url, folder, custom_title, icon; favorite/profile for a Favorite.
   std::string space;  // Space of the entry's top-level Pinned ancestor; empty for Favorites.
   bool favorite = false;
   int64_t order = 0;
@@ -86,6 +86,8 @@ bool ParseNode(const std::string& id, std::string_view value, NodeRecord& out) {
       !Text(*json, "profile", r.node.profile) || !Flag(*json, "folder", r.node.folder) || !Text(*json, "title", r.node.title) ||
       !Flag(*json, "custom_title", r.node.custom_title) || !Text(*json, "url", r.node.url) || !Number(*json, "order", 0, kMaxNodes, r.order))
     return false;
+  // Optional (0.12+): a folder's glyph. Records from older builds have none.
+  if (json->Get("icon") && !Text(*json, "icon", r.node.icon)) return false;
   if (section != "pinned" && section != "favorite") return false;
   r.favorite = section == "favorite";
   // A Favorite is a top-level page owned by a profile; a Pinned entry names its Space.
@@ -224,6 +226,8 @@ Values TreeValues(const TreeSnapshot& tree) {
       Field(v, "space", favorite || !root ? "" : root->space); Field(v, "profile", favorite ? n.profile : "");
       FlagField(v, "folder", n.folder); Field(v, "title", n.title); FlagField(v, "custom_title", n.custom_title);
       Field(v, "url", n.url); NumberField(v, "order", static_cast<int64_t>(i));
+      // Only when set, so records of plain folders stay byte-identical to older builds'.
+      if (!n.icon.empty()) Field(v, "icon", n.icon);
       v += "}";
       values.emplace(std::string(kNode) + n.id, std::move(v));
     }

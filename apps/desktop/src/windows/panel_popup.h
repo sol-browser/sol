@@ -22,7 +22,7 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   bool EditPinnedPage(const std::string& id);
   bool editing_pin() const { return open_ && kind_ == "editPinned"; }
   // Centered over the window with the page shaded and the window disabled.
-  bool modal() const { return open_ && (kind_ == "editPinned" || kind_ == "moveToProfile" || kind_ == "installExtension" || kind_ == "deleteSpace" || kind_ == "protectedMedia"); }
+  bool modal() const { return open_ && (kind_ == "editPinned" || kind_ == "moveToProfile" || kind_ == "installExtension" || kind_ == "deleteSpace" || kind_ == "deleteFolder" || kind_ == "protectedMedia"); }
   // Chrome's "Add extension?" prompt for a page of this window (engine patch
   // red_16, CefDialogHandler::OnExtensionInstallPrompt). Returns false when it
   // cannot be shown here, so Chrome shows its own dialog. Closing the modal, the
@@ -31,8 +31,14 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   void PageClosed(int page);
   // Confirms moving a loaded tab to a Space that uses another browsing profile.
   bool ConfirmProfileMove(const std::string& id, const std::string& space);
-  // Library: the window's modal asks before a Space is deleted.
+  // Library and sidebar: the window's modal asks before a Space is deleted.
   bool ConfirmSpaceDelete(const std::string& id);
+  // A folder's glyph picker (docs/folder-icons.md), hanging from |anchor| (the folder's row,
+  // root client DIP). Only this opening's folder can be changed from it.
+  bool ChooseFolderIcon(const std::string& id, const CefRect& anchor);
+  // The window's modal asks before a folder with contents is deleted: its tabs go to the
+  // Archive. The counts shown are the ones confirmed (tree.removeFolder's confirmation).
+  bool ConfirmFolderDelete(const std::string& id);
   // A supported service (|service| is its name) opened in an ordinary tab
   // because Protected content is not installed: the window's modal explains
   // the component, installs it on request and then reopens |url| protected.
@@ -98,7 +104,9 @@ class PanelPopup : public std::enable_shared_from_this<PanelPopup> {
   CefRefPtr<CefDictionaryValue> pinned_page_;
   HWND modal_owner_ = nullptr;
   bool saving_pin_ = false;
-  CefRefPtr<CefDictionaryValue> profile_move_, space_delete_, protected_offer_;
+  CefRefPtr<CefDictionaryValue> profile_move_, space_delete_, protected_offer_, folder_icon_, folder_delete_;
+  bool DescribeFolderDelete(const std::string& id);
+  bool deleting_folder_ = false;
   std::string protected_url_;
   // Site popover: the built-in ad blocker on this page ({available, enabled, blocked}),
   // read from uBlock Origin after the popover opens (app/content_blocker_settings.h).

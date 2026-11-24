@@ -62,6 +62,17 @@ const fixture = () => ({ revision: 4, canGoBack: false, canGoForward: false, pro
     { id: tab, parentId: folder, kind: 'tab', title: 'Tab', url: 'https://example.com/', position: 0, pinned: true, expanded: true, live: true, favorite: false, archived: false, currentUrl: 'https://example.com/current', closing: false },
   ] });
 
+test('a folder glyph is a catalog-shaped name on a folder only', () => {
+  const withIcon = icon => { const state = fixture(); state.nodes[0].folderIcon = icon; return state; };
+  assert.equal(parseSnapshot(JSON.stringify(withIcon('gamepad-2'))).nodes[0].folderIcon, 'gamepad-2');
+  for (const bad of ['', 'Gamepad', 'a--b', 'x-', '<svg>', 'a'.repeat(33), 7])
+    assert.throws(() => parseSnapshot(JSON.stringify(withIcon(bad))), String(bad));
+  const onTab = fixture(); onTab.nodes[1].folderIcon = 'star';
+  assert.throws(() => parseSnapshot(JSON.stringify(onTab)));
+  assert.deepEqual(parseSidebarMenuChoice(JSON.stringify({ action: 'folderIcon', targetId: '' })), { action: 'folderIcon', targetId: '' });
+  assert.throws(() => parseSidebarMenuChoice(JSON.stringify({ action: 'folderIcon', targetId: folder })));
+});
+
 test('only a non-private standalone window can expose Little Sol destinations', () => {
   const littleWindow = { preferredSpace: folder, destinations: [{ id: folder, name: 'Work', sameProfile: true }] };
   const state = { ...fixture(), windowKind: 'standalone', sidebarVisible: false, littleWindow };
@@ -175,6 +186,14 @@ test('split view describes two to four distinct panes and dividers addressed by 
 test('accepts live page title and cached favicon address', () => {
   const value = fixture(); value.nodes[1].pageTitle = 'Example Domain'; value.nodes[1].favicon = 'sol://ui/favicon/example.com/v3';
   assert.equal(parseSnapshot(JSON.stringify(value)).nodes[1].pageTitle, 'Example Domain');
+});
+test('the address bar zoom badge: native percent reaches the UI, absent at 100%, bounded', () => {
+  // Native sends zoom only when the active page is not at 100% (PageZoomBadge, page_zoom_test).
+  assert.equal(parseSnapshot(JSON.stringify({ ...fixture(), zoom: 125 })).zoom, 125);
+  assert.equal(parseSnapshot(JSON.stringify({ ...fixture(), zoom: 25 })).zoom, 25);
+  assert.equal('zoom' in parseSnapshot(JSON.stringify(fixture())), false);
+  for (const zoom of [0, 1001, 110.5, '125'])
+    assert.throws(() => parseSnapshot(JSON.stringify({ ...fixture(), zoom })), /Invalid zoom/);
 });
 test('accepts native notice and unavailable shell extension check', () => {
   const value = { ...fixture(), notice: 'An extension tried to open a page Sol does not support, so it was blocked.', noticeId: 2, shellExtensions: -1 };

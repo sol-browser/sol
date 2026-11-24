@@ -60,6 +60,7 @@ export type TabCommand = { method: 'split.focus'; id: string }
   | { method:'settings.openProfiles' }
   | { method: 'tab.duplicate' | 'tab.detach' | 'tab.dragEnded' | 'tab.copyLink' | 'tab.setHome' | 'tab.archiveOthers' | 'tab.archiveBelow' | 'tab.clearToday' | 'tab.moveToNewSpace'; id: string }
   | { method: 'tab.editPinned'; id: string } | { method: 'tab.mute'; id: string; muted: boolean }
+  | { method: 'space.confirmDelete' | 'folder.confirmDelete'; id: string } | { method: 'folder.chooseIcon'; id: string; x: number; y: number; width: number; height: number }
   | { method: 'tab.confirmMoveToSpace'; id: string; space: string }
   | Extract<Command, { method: 'media.control' | 'tab.setXBadgeHidden' | 'tab.setIntegration' | 'split.add' }>;
 function UnreadBadge({ node, settings, xUnread, whatsappUnread }: { node: TreeNode; settings?: IntegrationSettings; xUnread?: number; whatsappUnread?: number }) {
@@ -83,10 +84,8 @@ type RowApi = {
   drag: (event: DragEvent, id: string) => void; finishDrag: () => void;
   hoverIntegration: (id: string, element: HTMLElement) => void; cancelIntegration: () => void;
   hoverPreload: (id: string) => void; cancelPreload: () => void;
-  cancelRemoval: () => void; confirmFolderRemoval: () => Promise<void>;
   pressActivated: React.RefObject<string | null>; dragRef: React.RefObject<string | undefined>;
-  renameInput: React.RefObject<HTMLInputElement | null>; cancelRemovalButton: React.RefObject<HTMLButtonElement | null> };
-type FolderRemovalState = NonNullable<ReturnType<typeof folderRemovalSummary>> & { revision: number; error?: string };
+  renameInput: React.RefObject<HTMLInputElement | null> };
 type RowProps = {
   /** The Sidebar's current actions and refs. The object is stable and always holds the
    *  latest render's functions, so a row that skipped a render never calls a stale one. */
@@ -108,8 +107,6 @@ type RowProps = {
   membersAudio?: string;
   tint?: string;
   integrations?: IntegrationSettings; xUnread?: number; whatsappUnread?: number;
-  /** This folder's removal confirmation, when open. */
-  removal?: FolderRemovalState; removing: boolean; treeRevision: number;
   /** A folder's child list, drop preview and collapsed active row. */
   nested?: React.ReactNode };
 /** One sidebar row (tab, split, folder or Favorite tile). Memoized: with snapshots
@@ -117,7 +114,7 @@ type RowProps = {
  *  renders one row, not the whole list (docs/performance-audit.md). Every value
  *  it shows is a prop; every action goes through |api|. */
 const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMembers, namedMember, leaving, selected, busy, hidden, activeSurface, dragging, dragSource, dropInside,
-  anyRenaming, renaming, draft, nodeAudio, membersAudio, tint, integrations, xUnread, whatsappUnread, removal, removing, treeRevision, nested }: RowProps) {
+  anyRenaming, renaming, draft, nodeAudio, membersAudio, tint, integrations, xUnread, whatsappUnread, nested }: RowProps) {
   const t = useMessages();
   ++renderCounts.rows;
   const folder = node.kind === 'folder';
@@ -218,7 +215,7 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
         // Renaming edits the title in place: same font and position, no box or
         // confirm button. Enter or leaving the field saves; Escape cancels.
         <form className="inline-rename" onSubmit={e => { e.preventDefault(); void api.current.saveRename(node.id); }}>
-          {folder && <FolderIcon expanded={node.expanded} />}
+          {folder && <FolderIcon expanded={node.expanded} icon={node.folderIcon} />}
           <input ref={api.current.renameInput} data-action="rename-entry" aria-label={t('sidebar.rename')} maxLength={80} value={draft ?? ''} onChange={e => api.current.setDraft(e.target.value)}
             spellCheck={false} autoComplete="off" onBlur={() => void api.current.saveRename(node.id)}
             onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); api.current.cancelRename(); } }} />
@@ -254,7 +251,7 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
           </span>)}
         </div> : <button className="node-name" disabled={busy || node.closing} aria-label={node.favorite ? displayTitle(node) : undefined} aria-expanded={folder ? node.expanded : undefined}
           onPointerDown={press} onDoubleClick={folder ? undefined : () => api.current.startRename(node)} onClick={open}>
-          {folder && <FolderIcon expanded={node.expanded} />}
+          {folder && <FolderIcon expanded={node.expanded} icon={node.folderIcon} />}
           {away && <span className="pinned-away-prefix" data-tip={t('sidebar.tab.away')} aria-hidden="true">/</span>}
           {away ? <span className="pinned-away-label">
             <span className="node-title">{title}</span>
@@ -280,19 +277,6 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
             onClick={() => api.current.tabCommand({ method: 'tab.mute', id: node.id, muted: !node.muted })}><Icon name={node.muted ? 'muted' : 'speaker'} /></button>}
         </span>}
     </div>
-    {folder && removal && <div className="folder-remove-confirm" role="alertdialog" data-folder-removal={node.id}
-      aria-labelledby={`remove-folder-title-${node.id}`} aria-describedby={`remove-folder-description-${node.id}`}
-      onContextMenu={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); api.current.cancelRemoval(); } }}>
-      <strong id={`remove-folder-title-${node.id}`}>{t('sidebar.folder.deletePrompt', { name: removal.title })}</strong>
-      <p id={`remove-folder-description-${node.id}`}>{t(removal.folders ? 'sidebar.folder.archiveNested' : 'sidebar.folder.archiveTabs', { count: removal.tabs })}</p>
-      {treeRevision !== removal.revision && <p role="status">{t('sidebar.folder.changed')}</p>}
-      {removal.error && <p role="alert">{removal.error}</p>}
-      <div className="folder-remove-actions">
-        <button ref={api.current.cancelRemovalButton} type="button" className="popover-text-button" data-action="cancel-folder-removal" disabled={removing} onClick={() => api.current.cancelRemoval()}>{t('common.cancel')}</button>
-        <button type="button" className="popover-text-button danger" data-action="confirm-folder-removal" disabled={busy || removing}
-          onClick={() => void api.current.confirmFolderRemoval()}>{removing ? t('sidebar.folder.removing') : treeRevision !== removal.revision ? t('sidebar.folder.review') : t('sidebar.folder.delete')}</button>
-      </div>
-    </div>}
     {nested}
   </li>;
 }, (previous, next) => {
@@ -316,17 +300,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   const carriesFiles = (e: DragEvent) => e.dataTransfer.types.includes('Files');
   const [menuError, setMenuError] = useState('');
   const current = useRef({ nodes, tree, treeRevision, busy }); current.current = { nodes, tree, treeRevision, busy };
-  const [removal, setRemoval] = useState<(NonNullable<ReturnType<typeof folderRemovalSummary>> & { revision: number; error?: string })>();
-  const [removing, setRemoving] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [deletingSpace,setDeletingSpace]=useState<SpaceInfo>();
-  const removalPending = useRef(false);
-  const cancelRemovalButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    cancelRemovalButton.current?.focus({ preventScroll: true });
-    cancelRemovalButton.current?.closest('.folder-remove-confirm')?.scrollIntoView({ block: 'nearest' });
-  }, [removal?.id, removal?.revision]);
-  useEffect(() => { if (!removalPending.current) setRemoval(undefined); }, [activeSpace, hidden]);
   const [renaming, setRenaming] = useState<string>();
   const [draft, setDraft] = useState('');
   const [creatingSpace, setCreatingSpace] = useState<false | 'sidebar' | 'library'>(false);
@@ -441,29 +415,24 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
   }, [nodes]);
   useEffect(() => { if (renaming) { renameInput.current?.focus(); renameInput.current?.select(); } }, [renaming]);
   async function perform(command: TreeMutation) { return action(command); }
-  function cancelRemoval() {
-    if (removalPending.current) return;
-    const id = removal?.id; setRemoval(undefined);
-    if (id) aside.current?.querySelector<HTMLButtonElement>(`[data-node-id="${CSS.escape(id)}"] .node-name`)?.focus({ preventScroll: true });
-  }
-  async function requestFolderRemoval(id: string, review = false) {
+  // An empty folder goes at once; one with contents asks in the window's modal (PanelPopup "deleteFolder").
+  async function requestFolderRemoval(id: string) {
     const latest = current.current;
-    if (latest.busy || removalPending.current) return;
+    if (latest.busy) return;
     const summary = folderRemovalSummary(latest.tree, id);
-    if (!summary) { setRemoval(undefined); return; }
-    if (!review && !summary.tabs && !summary.folders) { await perform({ method: 'tree.removeFolder', id }); return; }
-    setRemoval({ ...summary, revision: latest.treeRevision });
-  }
-  async function confirmFolderRemoval() {
-    if (!removal || current.current.busy || removalPending.current) return;
-    if (current.current.treeRevision !== removal.revision) { await requestFolderRemoval(removal.id, true); return; }
-    removalPending.current = true; setRemoving(true);
-    try {
-      if (await perform({ method: 'tree.removeFolder', id: removal.id, confirmation: { revision: removal.revision, tabs: removal.tabs } })) setRemoval(undefined);
-      else setRemoval(value => value && { ...value, error: 'The folder was kept. Review the contents and try again.' });
-    } finally { removalPending.current = false; setRemoving(false); }
+    if (!summary) return;
+    if (!summary.tabs && !summary.folders) { await perform({ method: 'tree.removeFolder', id }); return; }
+    tabCommand({ method: 'folder.confirmDelete', id });
   }
   function startRename(node: TreeNode) { setDraft(displayTitle(node)); setRenaming(node.id); }
+  // The glyph picker popover (PanelPopup "folderIcon") hangs from the folder's icon.
+  function chooseFolderIcon(id: string) {
+    const mark = aside.current?.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(id)}"] .folder-icon`);
+    if (!mark) return;
+    const r = mark.getBoundingClientRect();
+    tabCommand({ method: 'folder.chooseIcon', id, x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)),
+      width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
+  }
   // Enter and blur both save; a save in flight or an unchanged/empty name
   // simply ends editing.
   const saving = useRef(false);
@@ -607,7 +576,8 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
         else if (choice.action === 'setProfile') await perform({method:'space.profile',id:ownerSpace,profileId:choice.targetId});
         else if (choice.action === 'newProfile') tabCommand({method:'settings.openProfiles'});
         else if (choice.action === 'exportSpace') await perform({method:'space.export',id:ownerSpace,space:choice.targetId});
-        else if (choice.action === 'deleteSpace') setDeletingSpace(spaces.find(space=>space.id===ownerSpace));
+        // The window's modal asks first (PanelPopup "deleteSpace"), as from the Library.
+        else if (choice.action === 'deleteSpace') tabCommand({method:'space.confirmDelete',id:ownerSpace});
         return;
       }
       const node = data.find(n => n.id === id && !n.closing);
@@ -626,6 +596,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
         case 'unsplit': await perform({ method: 'split.remove', id }); break;
         case 'swapSplit': await perform({ method: 'split.swap', id }); break;
         case 'rename': startRename(node); break;
+        case 'folderIcon': if (node.kind === 'folder') chooseFolderIcon(id); break;
         case 'renamePane': { const member = tree.find(n => n.id === choice.targetId); if (member) startRename(member); break; }
         case 'automaticTitle': await perform({ method: 'tree.usePageTitle', id: node.id }); break;
         case 'newFolder': await createFolder(id); break;
@@ -675,7 +646,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       preloadTimer.current = undefined;
       window.cefQuery?.({ request: JSON.stringify({ method: 'tab.preload', id } satisfies Command), persistent: false, onSuccess: () => {}, onFailure: () => {} });
     }, preloadHoverMs); },
-    cancelIntegration, cancelPreload, cancelRemoval, confirmFolderRemoval, pressActivated, dragRef, renameInput, cancelRemovalButton };
+    cancelIntegration, cancelPreload, pressActivated, dragRef, renameInput };
   // A split row's member list keeps its identity while its members do, so the memoized row skips renders.
   const memberCache = useRef(new Map<string, TreeNode[]>());
   function stableMembers(anchor: string, members: TreeNode[]) {
@@ -688,7 +659,6 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
     const group = node.splitAnchor === node.id;
     const members = group ? stableMembers(node.id, splitMembers(node, tree)) : undefined;
     const editing = renaming !== undefined && (renaming === node.id || !!members?.some(member => member.id === renaming));
-    const confirming = folder && removal?.id === node.id ? removal : undefined;
     // Only folders have nested content; other rows keep identical props between renders.
     const nested = folder ? <>
       {folder && node.expanded && <ul className="tree-children" data-folder-children={node.id}>{renderRows(ordered(nodes.filter(n => n.parentId === node.id && !n.archived)), node.id, 'pinned')}</ul>}
@@ -703,8 +673,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       anyRenaming={!!renaming} renaming={editing ? renaming : undefined} draft={editing ? draft : undefined}
       nodeAudio={audioIndicators.has(node.id)} membersAudio={members ? members.filter(member => audioIndicators.has(member.id)).map(member => member.id).join(',') : undefined}
       tint={node.favorite ? faviconColor(node.favicon, retint) : undefined}
-      integrations={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread}
-      removal={confirming} removing={confirming ? removing : false} treeRevision={confirming ? treeRevision : 0} nested={nested} />;
+      integrations={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} nested={nested} />;
   }
   const newTab = <button className="new-tab" data-motion-key="new-tab" data-action="new-tab" disabled={busy} onClick={openNewTab}><Icon name="plus" /><span>{message(intl, 'sidebar.tab.new')}</span><kbd>{newTabShortcut}</kbd></button>;
   function dropSlot(section: Section) {
@@ -784,12 +753,6 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       e.preventDefault(); void context('', e.clientX || 20, e.clientY || 60);
     }} onWheel={onWheel}>
     {menuError && <p className="sidebar-menu-error" role="alert">{menuError}</p>}
-    {deletingSpace && <section className="space-delete-confirm" role="alertdialog" aria-labelledby="delete-space-question"
-      onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();setDeletingSpace(undefined);}}}>
-      <p id="delete-space-question">{message(intl, 'sidebar.space.confirmDelete', { name: spaceDisplayName(deletingSpace, t) })}</p>
-      <div><button type="button" autoFocus onClick={()=>setDeletingSpace(undefined)}>{message(intl, 'common.cancel')}</button>
-        <button type="button" disabled={busy} onClick={()=>void perform({method:'space.delete',id:deletingSpace.id}).then(ok=>{if(ok)setDeletingSpace(undefined);})}>{message(intl, 'sidebar.space.delete')}</button></div>
-    </section>}
     {creatingSpace && <SpaceCreator profiles={profiles} activeProfile={activeProfile} full={spaces.length >= 24}
       fromLibrary={creatingSpace === 'library'} editTheme={spaceTheme} done={() => setCreatingSpace(false)} />}
     {showFavorites && <div className="sidebar-fixed">

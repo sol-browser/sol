@@ -38,8 +38,22 @@ struct TreeNode {
   std::string space;
   std::string profile = "default";  // Owner of Favorites, which have no Space.
   bool x_badge_hidden = false;
+  // Folders only (schema v17): a glyph from the UI's folder icon catalog, by
+  // name (ValidFolderIcon); empty = a plain folder. Pages keep it empty.
+  std::string icon;
   bool operator==(const TreeNode&) const = default;
 };
+// "" or a catalog name: lowercase ASCII words joined by '-', at most 32 bytes.
+// Native checks the shape only; the UI draws names it knows (folder-icons.ts).
+inline bool ValidFolderIcon(const std::string& icon) {
+  if (icon.empty()) return true;
+  if (icon.size() > 32 || icon.front() == '-' || icon.back() == '-' || !(icon.front() >= 'a' && icon.front() <= 'z')) return false;
+  for (size_t i = 0; i < icon.size(); ++i) {
+    const char c = icon[i];
+    if (c == '-' ? icon[i - 1] == '-' : !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) return false;
+  }
+  return true;
+}
 // An Arc-style Space: its own Pinned, Today and theme; Favorites are shared.
 struct Space {
   std::string id, name, icon;  // icon: one emoji/letter, or empty (first letter of the name)
@@ -97,7 +111,7 @@ std::vector<std::string> FolderNodeIds(const TreeSnapshot& tree, const std::stri
 
 enum class TreeAction { CreateFolder, CreateTab, Rename, AutomaticTitle, Move, Place, Pin, Expand, Activate, RemoveLeaf, RemoveFolder, SetUrl, Unload, Archive, Restore,
   CreateSpace, EditSpace, DeleteSpace, SwitchSpace, MoveSpace, MoveToSpace,
-  CreateSplit, RemoveSplit, RenameSplit, LayoutSplit, AddSplitPane, RemoveSplitPane, SwapSplit, AutoArchive, CreateProfile, RenameProfile, SetSpaceProfile, ExportSpace, SetXBadgeHidden };
+  CreateSplit, RemoveSplit, RenameSplit, LayoutSplit, AddSplitPane, RemoveSplitPane, SwapSplit, AutoArchive, CreateProfile, RenameProfile, SetSpaceProfile, ExportSpace, SetXBadgeHidden, SetFolderIcon };
 enum class SpaceDropMode { Before, After, Inside };
 struct SpacePlacement {
   std::string target;
@@ -109,7 +123,7 @@ struct TreeCommand {
   std::int64_t expected_revision = 0;
   std::string id, parent, title, url, section, next_active;
   std::optional<std::string> page_title;  // Native metadata for the new URL.
-  std::string space, icon;  // Space commands; MoveToSpace target; native Activate of a Favorite in its profile.
+  std::string space, icon;  // Space commands; MoveToSpace target; native Activate of a Favorite in its profile. icon: also SetFolderIcon.
   std::string profile;
   std::vector<std::string> spaces;  // Atomic initial assignment on CreateProfile.
   std::string after;  // CreateTab: a Today tab to open directly below (a link's opener); else first.

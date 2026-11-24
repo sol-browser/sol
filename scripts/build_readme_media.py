@@ -12,6 +12,9 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 ROOT = Path(__file__).resolve().parents[1]
 CAPTURES = ROOT/'artifacts/readme-demo/captures'
 OUTPUT = ROOT/'assets/readme'
+# Legacy fixture media. The README now uses scripts/readme_record.py, so this
+# pipeline writes to artifacts/ and can no longer overwrite the published files.
+LEGACY = ROOT/'artifacts/readme-demo/media'
 TITLES = {
     'overview': ('01 / SPACES', 'A place for every part of your day.'),
     'split-view': ('02 / SPLIT VIEW', 'Keep both in view.'),
@@ -93,7 +96,7 @@ def build_space():
         swatches.paste(image.resize((280,215)),(0,index*215))
     palette=swatches.quantize(colors=256,method=Image.Quantize.MEDIANCUT)
     quantized=[image.quantize(palette=palette,dither=Image.Dither.NONE) for image in images]
-    target=OUTPUT/'space-setup.gif'
+    target=LEGACY/'space-setup.gif'
     quantized[0].save(target,save_all=True,append_images=quantized[1:],duration=durations,loop=0,optimize=True,disposal=1)
     with Image.open(target) as gif:
         duration=0
@@ -111,7 +114,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--space-only',action='store_true',help='Build only the separately recorded native Space configuration GIF.')
     args=parser.parse_args()
-    OUTPUT.mkdir(parents=True,exist_ok=True)
+    LEGACY.mkdir(parents=True,exist_ok=True)
     if args.space_only:
         build_space()
         return
@@ -120,7 +123,7 @@ def main():
     for name,(path,report) in scenes.items():
         provenance[name]=dict(source=str(path.relative_to(ROOT)).replace('\\','/'),native=report)
         if name!='themes':
-            framed(Image.open(path/'screen.png')).save(OUTPUT/f'{name}.webp',quality=94,method=6)
+            framed(Image.open(path/'screen.png')).save(LEGACY/f'{name}.webp',quality=94,method=6)
     frames=[]
     durations=[]
     def add(image,name,duration):
@@ -149,11 +152,11 @@ def main():
         swatches.paste(frame.resize((320,220)),(0,index*220))
     palette=swatches.quantize(colors=256,method=Image.Quantize.MEDIANCUT)
     quantized=[frame.quantize(palette=palette,dither=Image.Dither.NONE) for frame in frames]
-    quantized[0].save(OUTPUT/'demo.gif',save_all=True,append_images=quantized[1:],duration=durations,loop=0,optimize=True,disposal=1)
+    quantized[0].save(LEGACY/'demo.gif',save_all=True,append_images=quantized[1:],duration=durations,loop=0,optimize=True,disposal=1)
     # Keep detailed local provenance out of the public media directory.
     receipt=dict(captures=provenance,frames=len(frames),duration_ms=sum(durations),assets={
         p.name:dict(bytes=p.stat().st_size,sha256=hashlib.sha256(p.read_bytes()).hexdigest())
-        for p in OUTPUT.iterdir() if p.suffix in ('.webp','.gif')})
+        for p in LEGACY.iterdir() if p.suffix in ('.webp','.gif')})
     (CAPTURES/'media-receipt.json').write_text(json.dumps(receipt,indent=2))
     print(json.dumps({k:v for k,v in receipt.items() if k!='captures'},indent=2))
 

@@ -8,6 +8,7 @@ It builds on and ships the following, each under its own license:
 | [Chromium Embedded Framework](https://bitbucket.org/chromiumembedded/cef) (Sol's fork, pinned in `cmake/cef.lock.json`) | browser engine | BSD-3-Clause; Sol ships `licenses/CEF-LICENSE.txt` |
 | [Chromium](https://www.chromium.org/) (inside CEF) | browser engine | BSD-3-Clause and the licenses listed in `licenses/Chromium-CREDITS.html` |
 | [React](https://react.dev/), [Vite](https://vite.dev/), [lucide-react](https://lucide.dev/) and the other npm packages in `apps/browser-ui/package.json` | browser interface | MIT / ISC (see each package) |
+| [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) (filled path data from `@fluentui/svg-icons`, generated into `apps/browser-ui/src/folder-icon-paths.ts`) | folder glyphs | MIT; Sol ships `ui/licenses/fluentui-system-icons.txt` |
 | [React Intl and FormatJS](https://formatjs.github.io/) (pinned in `apps/browser-ui/package-lock.json`) | interface localization and ICU message formatting | BSD-3-Clause and MIT (see `ui/LICENSES.md`) |
 | [Velopack](https://velopack.io/) (pinned in `cmake/velopack.lock.json`) | Windows setup and updates (`Update.exe`, `velopack_libc.dll`) | MIT; Sol ships `licenses/Velopack-LICENSE.txt` |
 | [Monocypher](https://monocypher.org/) 4.0.2 (pinned in `cmake/monocypher.lock.json`) | sync encryption: Argon2id key derivation and XChaCha20-Poly1305 | BSD-2-Clause or CC0-1.0 (Sol uses it under CC0-1.0) |

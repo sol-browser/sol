@@ -5,21 +5,32 @@
 <h1 align="center">Sol</h1>
 
 <p align="center"><strong>A browser for life after Arc.</strong></p>
-<p align="center">Your spaces. Your tabs. A little more room to breathe.<br>A browser for Windows, built around Spaces and a sidebar.</p>
+<p align="center">Your spaces. Your tabs. A little more room to breathe.<br>Made for Windows, built around Spaces and a sidebar.</p>
 
 <p align="center">
   <a href="https://github.com/sol-browser/sol/releases/latest/download/Sol-Web-Installer.exe"><img src="assets/readme/download.svg" width="350" height="60" alt="Download Sol for Windows"></a>
 </p>
 
-<p align="center"><sub>Windows 11 · x64 · Open source</sub></p>
+<p align="center"><sub>Windows 11 · x64 · Open source · Beta</sub></p>
+
+<p align="center"><sub>Available in English and Ukrainian. <a href="https://translate.sol-browser.app/engage/sol-browser/">Help translate Sol into your language</a> on Weblate.</sub></p>
+
+<p align="center">
+  <a href="https://sonarcloud.io/summary/new_code?id=sol-browser_sol"><img src="https://sonarcloud.io/api/project_badges/measure?project=sol-browser_sol&metric=alert_status" alt="Quality Gate"></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=sol-browser_sol"><img src="https://sonarcloud.io/api/project_badges/measure?project=sol-browser_sol&metric=reliability_rating" alt="Reliability"></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=sol-browser_sol"><img src="https://sonarcloud.io/api/project_badges/measure?project=sol-browser_sol&metric=security_rating" alt="Security"></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=sol-browser_sol"><img src="https://sonarcloud.io/api/project_badges/measure?project=sol-browser_sol&metric=sqale_rating" alt="Maintainability"></a>
+  <a href="https://translate.sol-browser.app/engage/sol-browser/"><img src="https://translate.sol-browser.app/widget/sol-browser/svg-badge.svg" alt="Translation status"></a>
+</p>
 
 <p align="center">
   <a href="#a-place-for-every-part-of-your-day">Spaces</a>
-  &nbsp; · &nbsp; <a href="#two-pages-one-train-of-thought">Split View</a>
+  &nbsp; · &nbsp; <a href="#up-to-four-pages-one-train-of-thought">Split View</a>
   &nbsp; · &nbsp; <a href="#follow-the-link-keep-your-place">Link Peek</a>
+  &nbsp; · &nbsp; <a href="#everything-in-one-place">Library</a>
   &nbsp; · &nbsp; <a href="#from-arc-to-sol">Compare with Arc</a>
-  &nbsp; · &nbsp; <a href="#see-it-in-motion">Watch the tour</a>
   &nbsp; · &nbsp; <a href="CHANGELOG.md">Changelog</a>
+  &nbsp; · &nbsp; <a href="https://sol-browser.app">Website</a>
 </p>
 
 <picture>
@@ -32,38 +43,72 @@
 Work, a side project, a rabbit hole. Each Space keeps its own tabs, icon and
 theme, so you can pick up where you left off.
 
-Favorites keep the everyday close. Folders and Pinned tabs hold what stays.
+Favorites keep the everyday close. Folders and Pinned tabs hold what stays,
+and each folder takes on its Space's color, with an icon if you like.
 Today gives everything else a place, with automatic archiving.
 
-## <img src="assets/readme/feature-split.svg" width="26" height="26" alt=""> Two pages. One train of thought.
+![Switching between the Work, Studio and Travel Spaces in Sol, each with its own color and tabs](assets/readme/spaces.webp)
 
-Keep your notes beside a reference, compare two pages or follow along while
-you work. Split View gives both pages room in the same window.
+## <img src="assets/readme/feature-split.svg" width="26" height="26" alt=""> Up to four pages. One train of thought.
 
-![Sol Split View with a travel journal and a notebook side by side](assets/readme/split-view.webp)
+Keep your notes beside a reference, compare pages or follow along while you
+work. Split View puts two, three or four tabs side by side in any arrangement.
+Drag a tab to the edge of a page to add it, drag the dividers to resize, and
+move a pane by its header or drop it on the sidebar to take it out.
+
+![Dragging two tabs onto a page in Sol to build a Split View of three pages](assets/readme/split-view.webp)
 
 ## <img src="assets/readme/feature-peek.svg" width="26" height="26" alt=""> Follow the link. Keep your place.
 
-Link Peek opens links from pinned tabs in a preview above the page. A quick
-detour can stay a preview, become a full tab or join your page in a split.
+Links from Pinned tabs and Favorites to another site open in a preview above
+the page. A quick detour can stay a preview, become a full tab or join your
+page in a split.
 
-![Link Peek with close, open as tab and split controls](assets/readme/link-peek.webp)
+![A link from a pinned GitHub tab opening in Link Peek, then joining the page in a split](assets/readme/link-peek.webp)
+
+## <img src="assets/readme/feature-library.svg" width="26" height="26" alt=""> Everything in one place
+
+Library lays out every Space side by side, each in its own color. Rename,
+re-theme or reorder Spaces, and drag tabs and folders between them. The
+Archive keeps closed tabs from every Space by day, ready to search and restore.
+
+![Sol Library: the Archive, then every Space side by side as tabs are dragged between them and into a folder](assets/readme/library.webp)
+
+## <img src="assets/readme/feature-links.svg" width="26" height="26" alt=""> Links that land in the right place
+
+Little Sol opens a single page in a compact window of its own, from Sol or
+from any app, for a quick look without leaving what you were doing.
+
+Air Traffic Control decides where links from other apps open. Send a meeting
+link to Little Sol, a work tool to your Work Space and everything else to the
+Space you used last, with rules you can edit in Settings or Library.
 
 ## <img src="assets/readme/feature-palette.svg" width="26" height="26" alt=""> Make it your space
 
 A name, an icon and a palette for each Space. Shape the colors, brightness
 and grain, with light and dark themes and Windows Acrylic and Mica materials.
 
-![Space customization in Sol: name, emoji, color palette, brightness and light or dark appearance](assets/readme/space-setup.gif)
+![Editing a Space theme in Sol: color palettes, a dragged color, brightness, and light or dark appearance](assets/readme/space-setup.webp)
 
 ## <img src="assets/readme/feature-profiles.svg" width="26" height="26" alt=""> Work and personal, on your terms
 
 Profiles keep logins, history, passwords and extensions separate. A profile can
 belong to several Spaces, so your browsing stays connected where you want it.
 
-The everyday essentials are here too: a command bar for the web, open tabs
-and history; Picture-in-Picture and sidebar media controls; Chrome extensions;
-downloads; password saving and autofill; and Chrome's print preview.
+## <img src="assets/readme/feature-essentials.svg" width="26" height="26" alt=""> Everything else you need
+
+- **Command bar:** search the web, your open tabs and history, or a site directly.
+- **Integrations:** hover a pinned Gmail, Outlook, Google Calendar or Figma tab
+  for unread mail, today's agenda or recent files; WhatsApp and X show unread badges.
+- **Page translation:** translate pages on your device, with no text sent to a server.
+- **Media:** Picture-in-Picture and media controls in the sidebar; Netflix,
+  Spotify and other streaming services with the optional Streaming DRM module.
+- **Screenshots:** capture a region, the visible page or the whole page.
+- **Passwords:** saving, autofill and passkeys.
+- **Extensions and blocking:** Chrome extensions, and uBlock Origin built in.
+- **Boosts:** restyle any site with your own CSS.
+- **Sync:** your Spaces, pins and passwords on every PC, through your own cloud folder.
+- And the basics: downloads, Chrome's print preview and keyboard shortcuts you can change.
 
 ## From Arc to Sol
 
@@ -89,24 +134,26 @@ Arc for macOS, including its signature features.
 | Air Traffic Control | ✓ | ✓ |
 | AI tools / Arc Max | No | ✓ |
 | Browser account required | No | Yes |
-| Sync across devices | Beta³ | Arc Sync |
-| Built-in ad blocker | Beta⁴ | Via extensions |
-| Protected streaming (Spotify, Netflix)² | No | ✓ |
+| Sync across devices | Beta² | Arc Sync |
+| Built-in ad blocker | Beta³ | Via extensions |
+| Protected streaming (Netflix, Spotify) | Experimental⁴ | ✓ |
 
 **Not polished**: available, with rough edges.
 
 ¹ Chrome extension support is nearly complete, with work planned on the remaining
 compatibility gaps.
 
-² Sol includes Google's Widevine module, but these services also require the browser itself
-to be certified by Google (VMP signing), which Sol does not have yet.
-
-³ Spaces, Pinned tabs, Favorites and saved passwords sync between your PCs through your own
+² Spaces, Pinned tabs, Favorites and saved passwords sync between your PCs through your own
 OneDrive, Dropbox or Google Drive folder, encrypted with your passphrase; no account. Today tabs
 stay on each PC.
 
-⁴ uBlock Origin is built in and managed in Settings > Ad blocker, with per-site control in the
+³ uBlock Origin is built in and managed in Settings > Ad blocker, with per-site control in the
 site panel.
+
+⁴ Streaming DRM is off by default. When you turn it on in Settings, Sol downloads a separate
+component, [castLabs ECS](https://github.com/sol-browser/streaming-drm) signed for Widevine, and plays
+Netflix, Spotify and other protected services in their tabs through it. Saved passwords, passkeys,
+autofill and extensions are not available in those tabs.
 
 <details>
 <summary>Comparison scope and Arc sources</summary>
@@ -129,17 +176,6 @@ Chrome, Edge, Arc and Zen, along with bookmark files and password CSVs.
 
 <p align="center"><strong>Chrome &nbsp; · &nbsp; Edge &nbsp; · &nbsp; Arc &nbsp; · &nbsp; Zen</strong></p>
 
-## See it in motion
-
-<details>
-<summary><strong>Watch the 15-second tour</strong></summary>
-
-![A short Sol tour: Spaces, Split View, Link Peek and themes](assets/readme/demo.gif)
-
-</details>
-
-<p align="center"><sub>Preview of the current development build.</sub></p>
-
 ## Try Sol
 
 <p align="center">
@@ -153,7 +189,7 @@ show **Restart to update** when a new version is ready.
 A full offline installer, `Sol-Setup-<version>.exe`, is also available on the
 [Releases page](https://github.com/sol-browser/sol/releases/latest).
 
-Sol is early software for **Windows 11 x64**. Windows builds are currently unsigned.
+Sol is in beta for **Windows 11 x64**. Windows builds are currently unsigned.
 
 <details>
 <summary>Platform and extension compatibility</summary>
@@ -213,9 +249,9 @@ the CTest, Node and Python unit checks. Allow several GB of disk space.
 ```
 
 Sol uses a [maintained CEF fork](https://github.com/sol-browser/cef/tree/sol-158).
-The exact binary is pinned in [cmake/cef.lock.json](cmake/cef.lock.json);
-the [prebuilt engine release](https://github.com/sol-browser/cef/releases/tag/engine-158.1.39)
-is available separately. Building the app does not require a Chromium checkout.
+The exact binary is pinned in [cmake/cef.lock.json](cmake/cef.lock.json), and
+[prebuilt engine releases](https://github.com/sol-browser/cef/releases) are
+available separately. Building the app does not require a Chromium checkout.
 Engine development uses `scripts/build_cef.ps1` and a full checkout.
 
 Browser data lives in `%LOCALAPPDATA%\Sol\User Data`.
@@ -225,9 +261,16 @@ The Chromium sandbox remains enabled; Sol refuses `--no-sandbox` and
 
 ### Tests and repository layout
 
-Unit checks run as part of the build. Native integration checks open real
-windows against local fixtures and write reports to the ignored `artifacts/`
-directory:
+Unit checks run as part of the build. To run the interface and protocol tests
+on their own:
+
+```powershell
+node --experimental-strip-types --test tests/*.test.mjs
+```
+
+Native integration checks open real windows against local fixtures and write
+reports to the ignored `artifacts/` directory. They take the foreground while
+they run, so start them when you are not using the PC:
 
 ```powershell
 python scripts/smoke.py
@@ -241,8 +284,10 @@ python scripts/spaces_smoke.py
 | `apps/browser-ui` | React, strict TypeScript and Vite browser interface |
 | `apps/installer` | Native Windows web installer |
 | `packages/browser-contracts` | Typed messages between the interface and host |
-| `cmake`, `cef-patches` | Pinned dependencies and engine patch history |
-| `scripts`, `tests` | Build, packaging and verification |
+| `cmake` | Pinned dependencies, including the engine |
+| `scripts` | Build, packaging and integration checks |
+| `tests` | Unit tests: `tests/*.test.mjs` for the interface, `tests/native` for the host |
+| `cef-patches` | History of the engine patches, now kept in the CEF fork |
 | `assets/readme` | Screenshots, the feature tour and capture notes |
 
 For media reproduction, see [the capture notes](assets/readme/README.md).

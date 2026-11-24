@@ -485,12 +485,25 @@ void Inspect(std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
     InspectStep(weak, page, "closed");
     if (auto s = weak.lock()) s->link_headers_done = true; });
 }
-// Zoom mode: Ctrl+wheel (native CEF wheel injection with Ctrl) on the page
-// zooms it through Red's handler; on the sidebar it must not zoom Red's UI.
+// Zoom mode: Ctrl+wheel on the page zooms it and shows the level (toast and
+// the address bar's badge); on the sidebar it must not zoom Red's UI. Chrome's
+// zoom keys go through Sol's keyboard handler. Engine 158 no longer asks Sol
+// before Chrome zooms (cef-patches.md #18): Sol watches Ctrl+wheel messages on
+// its UI thread, so each wheel step first posts a Ctrl WM_MOUSEWHEEL without
+// movement to the page's window (the hook's input), then the CEF wheel event.
 void CtrlWheel(CefRefPtr<CefBrowser> browser, int x, int y) {
   CefMouseEvent event; event.x = x; event.y = y; event.modifiers = EVENTFLAG_CONTROL_DOWN;
   browser->GetHost()->SendMouseMoveEvent(event, false);
   browser->GetHost()->SendMouseWheelEvent(event, 0, 120);
+}
+void CtrlWheelMessage(CefRefPtr<CefBrowser> browser) {
+  const HWND window = browser->GetHost()->GetWindowHandle();
+  RECT r{}; GetWindowRect(window, &r);
+  PostMessageW(window, WM_MOUSEWHEEL, MAKEWPARAM(MK_CONTROL, 0), MAKELPARAM((r.left + r.right) / 2, (r.top + r.bottom) / 2));
+}
+void PageWheelStep(std::weak_ptr<State>, CefRefPtr<CefBrowser> page) {
+  CtrlWheelMessage(page);
+  CefPostDelayedTask(TID_UI, base::BindOnce([](CefRefPtr<CefBrowser> page) { CtrlWheel(page, 300, 300); }, page), 40);
 }
 void CtrlKey(CefRefPtr<CefBrowser> browser, int key) {
   CefKeyEvent event; event.windows_key_code = key; event.modifiers = EVENTFLAG_CONTROL_DOWN;
@@ -502,14 +515,17 @@ void ZoomStep(std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page, std::string
   auto data = CefDictionaryValue::Create(); data->SetString("step", step);
   data->SetDouble("page", page->GetHost()->GetZoomLevel());
   if (auto shell = s->browsers.find(s->shell_id); shell != s->browsers.end()) data->SetDouble("shell", shell->second->GetHost()->GetZoomLevel());
+  // The address bar's badge as the top bar receives it (0: none).
+  if (s->workspace) if (const auto snapshot = s->workspace->Snapshot())
+    data->SetInt("badge", snapshot->GetType("zoom") == VTYPE_INT ? snapshot->GetInt("zoom") : 0);
   s->Record("zoom_step", data);
 }
 void Zoom(std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
   auto at = [&](int ms, void (*step)(std::weak_ptr<State>, CefRefPtr<CefBrowser>)) {
     CefPostDelayedTask(TID_UI, base::BindOnce(step, weak, page), ms);
   };
-  at(2000, [](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) { ZoomStep(weak, page, "start"); CtrlWheel(page, 300, 300); });
-  at(2600, [](std::weak_ptr<State>, CefRefPtr<CefBrowser> page) { CtrlWheel(page, 300, 300); });
+  at(2000, [](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) { ZoomStep(weak, page, "start"); PageWheelStep(weak, page); });
+  at(2900, PageWheelStep);
   at(4000, [](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
     ZoomStep(weak, page, "page_wheel");
     if (auto s = weak.lock()) if (auto shell = s->browsers.find(s->shell_id); shell != s->browsers.end()) {
@@ -517,8 +533,14 @@ void Zoom(std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
     } });
   at(6000, [](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
     ZoomStep(weak, page, "shell_wheel");
-    CtrlKey(page, '0'); });
+    CtrlKey(page, 0xBB); });  // Ctrl+=
+  at(7000, [](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
+    ZoomStep(weak, page, "key_in");
+    CtrlKey(page, 0xBD); });  // Ctrl+-
   at(8000, [](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
+    ZoomStep(weak, page, "key_out");
+    CtrlKey(page, '0'); });
+  at(9000, [](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
     ZoomStep(weak, page, "reset");
     if (auto s = weak.lock()) s->link_headers_done = true; });
 }

@@ -1138,6 +1138,18 @@
   "sidebar.folder.delete": {
     "defaultMessage": "Delete folder"
   },
+  "sidebar.folderIcon.title": {
+    "defaultMessage": "Folder icon"
+  },
+  "sidebar.folderIcon.search": {
+    "defaultMessage": "Search icons"
+  },
+  "sidebar.folderIcon.empty": {
+    "defaultMessage": "No matching icons"
+  },
+  "sidebar.folderIcon.none": {
+    "defaultMessage": "No icon"
+  },
   "sidebar.split.out": {
     "defaultMessage": "Out of split"
   },
@@ -1691,6 +1703,9 @@
   },
   "native.sidebar.NestedFolder": {
     "defaultMessage": "New folder inside"
+  },
+  "native.sidebar.FolderIcon": {
+    "defaultMessage": "Change icon…"
   },
   "native.sidebar.ResetAddress": {
     "defaultMessage": "Reset to saved address"

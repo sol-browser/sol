@@ -7,6 +7,7 @@ import { Icon } from './Icon';
 import { LibraryRoutes } from './LibraryRoutes';
 import { LibrarySelect, LibraryTooltip } from './LibrarySelect';
 import { dayKey, dayLabel } from './history-model';
+import { FolderGlyph, hasFolderGlyph } from './FolderGlyph';
 import { useMessages } from './i18n';
 import { archiveOrder, descendant, displayTitle, spaceDisplayName } from './sidebar-model';
 import { chromaScale, swatchColor } from './theme-model';
@@ -339,7 +340,8 @@ function LibrarySpaces({ snapshot, mutate, createSpace, editSpace, openProfiles 
         <summary data-library-node={node.id} draggable={!blocked && !node.closing}
           onDragStart={event => nodeDragStart(event, node)} onDragEnd={nodeDragEnd}>
           <ChevronRight size={13} strokeWidth={2} className="library-folder-chevron" aria-hidden="true" />
-          <Folder size={16} strokeWidth={1.7} aria-hidden="true" /><span>{displayTitle(node)}</span></summary>
+          {hasFolderGlyph(node.folderIcon) ? <FolderGlyph id={node.folderIcon} size={16} /> :
+            <Folder size={16} strokeWidth={1.7} aria-hidden="true" />}<span>{displayTitle(node)}</span></summary>
         {renderRows(rows.get(node.id) ?? [], space)}</details> :
         <div className="library-space-tab" data-library-tab={node.id} data-library-node={node.id}>
           <button type="button" className="library-row" draggable={!blocked && !node.closing}

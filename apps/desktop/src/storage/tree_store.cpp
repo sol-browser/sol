@@ -118,6 +118,7 @@ bool Valid(const TreeSnapshot& tree) {
   for (const auto& n : tree.nodes) {
     if (n.id.size() != 36 || !SafeText(n.title, 240) || !SafeText(n.page_title, 240, true) || n.position < 0 || n.last_active_at < 0 || n.closed_at < 0 ||
         (!n.folder && !SafeUrl(n.url)) || (n.folder && !n.url.empty()) ||
+        !ValidFolderIcon(n.icon) || (!n.folder && !n.icon.empty()) ||
         (n.folder && (!n.pinned || n.favorite || n.archived)) ||
         (!n.parent.empty() && (!n.pinned || n.favorite || n.archived)) ||
         (n.favorite && (!n.pinned || n.folder || n.archived)) ||
@@ -257,7 +258,8 @@ std::vector<std::string> FolderNodeIds(const TreeSnapshot& tree, const std::stri
 
 bool ValidNodeFields(const TreeNode& n) {
   return n.id.size() == 36 && SafeText(n.title, 240) && SafeText(n.page_title, 240, true) && n.position >= 0 &&
-         (n.folder ? n.url.empty() : SafeUrl(n.url)) && ValidBrowsingProfileId(n.profile);
+         (n.folder ? n.url.empty() : SafeUrl(n.url)) && ValidBrowsingProfileId(n.profile) &&
+         ValidFolderIcon(n.icon) && (n.folder || n.icon.empty());
 }
 bool ValidSpaceFields(const Space& s) {
   return s.id.size() == 36 && ValidSpaceName(s.name) && ValidIcon(s.icon) && ValidSpaceTheme(s) && ValidBrowsingProfileId(s.profile);
@@ -336,7 +338,7 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
     return Error(500, "Cannot inspect workspace schema");
   const int schema = sqlite3_column_int(version.value, 0), application = sqlite3_column_int(app.value, 0);
   version.Finish(); app.Finish();
-  if (schema > 16 ||(application != 0 && application != kApplicationId)) return Error(500, "Unsupported workspace schema");
+  if (schema > 17 ||(application != 0 && application != kApplicationId)) return Error(500, "Unsupported workspace schema");
   if (schema == 0) {
     Statement tables(db_, "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'");
     if (!tables.value || sqlite3_step(tables.value) != SQLITE_ROW || sqlite3_column_int(tables.value, 0) != 0)
@@ -474,6 +476,9 @@ TreeResult TreeStore::Open(const std::filesystem::path& path) {
       "DROP TABLE splits; DROP TABLE archived_splits;"
       "PRAGMA user_version=16; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"Split View layout migration failed"); }
 #undef RED_SPLIT_V15_LAYOUT
+  // v17: a folder's glyph (TreeNode::icon). Older builds reject schema 17.
+  if (schema < 17 && !Exec("BEGIN IMMEDIATE; ALTER TABLE nodes ADD COLUMN icon TEXT NOT NULL DEFAULT '' CHECK(length(icon)<=32);"
+      "PRAGMA user_version=17; COMMIT;")) { Exec("ROLLBACK"); return Error(500,"Folder icon migration failed"); }
   if (!Exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")) return Error(500, "Cannot configure workspace journal");
   Statement check(db_, "PRAGMA quick_check(1)");
   if (!check.value || sqlite3_step(check.value) != SQLITE_ROW || Text(check.value, 0) != "ok")
@@ -504,7 +509,7 @@ TreeResult TreeStore::Load() {
     space.profile = Text(spaces.value,10);
     result.snapshot.spaces.push_back(std::move(space));
   }
-  Statement nodes(db_, "SELECT id,coalesce(parent_id,''),kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id,x_badge_hidden,closed_at FROM nodes ORDER BY coalesce(parent_id,''),position");
+  Statement nodes(db_, "SELECT id,coalesce(parent_id,''),kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id,x_badge_hidden,closed_at,icon FROM nodes ORDER BY coalesce(parent_id,''),position");
   if (!nodes.value) return Error(500, "Workspace nodes unavailable");
   int code;
   while ((code = sqlite3_step(nodes.value)) == SQLITE_ROW) {
@@ -520,6 +525,7 @@ TreeResult TreeStore::Load() {
     node.last_active_at = sqlite3_column_int64(nodes.value,14);
     node.x_badge_hidden = sqlite3_column_int(nodes.value, 16) != 0;
     node.closed_at = sqlite3_column_int64(nodes.value, 17);
+    node.icon = Text(nodes.value, 18);
     result.snapshot.nodes.push_back(std::move(node));
   }
   if (code != SQLITE_DONE) return Error(500,"Invalid workspace tree");
@@ -815,6 +821,11 @@ TreeResult TreeStore::Apply(const TreeCommand& command, const TreeSnapshot* wind
         if (window && ((node->favorite && node->profile != BrowsingProfileId(tree)) ||
             (!node->favorite && node_space != tree.active_space))) return rollback(404, "Pin is outside this sidebar");
         node->x_badge_hidden = command.value; break;
+      case TreeAction::SetFolderIcon:
+        if (!node->folder || node->archived) return rollback(400, "Only folders have icons");
+        if (!ValidFolderIcon(command.icon)) return rollback(400, "Invalid folder icon");
+        if (window && node_space != tree.active_space) return rollback(404, "Folder is outside this sidebar");
+        node->icon = command.icon; break;
       case TreeAction::Pin: {
         const bool was_pinned = node->pinned;
         if (node->archived || (node->folder && !command.value)) return rollback(400, "Folders belong to Pinned");
@@ -1026,8 +1037,8 @@ TreeResult TreeStore::Save(TreeResult result, const TreeSnapshot& before) {
       }
     }
   }
-  Statement write(db_, "INSERT INTO nodes(id,parent_id,kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id,x_badge_hidden,closed_at) VALUES(?,NULLIF(?,''),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
-      "ON CONFLICT(id) DO UPDATE SET parent_id=excluded.parent_id,title=excluded.title,url=excluded.url,position=excluded.position,pinned=excluded.pinned,expanded=excluded.expanded,favorite=excluded.favorite,archived=excluded.archived,page_title=excluded.page_title,custom_title=excluded.custom_title,archived_at=excluded.archived_at,space_id=excluded.space_id,last_active_at=excluded.last_active_at,profile_id=excluded.profile_id,x_badge_hidden=excluded.x_badge_hidden,closed_at=excluded.closed_at");
+  Statement write(db_, "INSERT INTO nodes(id,parent_id,kind,title,url,position,pinned,expanded,favorite,archived,page_title,custom_title,archived_at,space_id,last_active_at,profile_id,x_badge_hidden,closed_at,icon) VALUES(?,NULLIF(?,''),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+      "ON CONFLICT(id) DO UPDATE SET parent_id=excluded.parent_id,title=excluded.title,url=excluded.url,position=excluded.position,pinned=excluded.pinned,expanded=excluded.expanded,favorite=excluded.favorite,archived=excluded.archived,page_title=excluded.page_title,custom_title=excluded.custom_title,archived_at=excluded.archived_at,space_id=excluded.space_id,last_active_at=excluded.last_active_at,profile_id=excluded.profile_id,x_badge_hidden=excluded.x_badge_hidden,closed_at=excluded.closed_at,icon=excluded.icon");
   Statement erase(db_, "DELETE FROM nodes WHERE id=?");
   if (!write.value || !erase.value) return rollback(500, "Cannot prepare workspace update");
   for (const auto& old : before.nodes) {
@@ -1045,6 +1056,7 @@ TreeResult TreeStore::Save(TreeResult result, const TreeSnapshot& before) {
     sqlite3_bind_int64(write.value,15,n.last_active_at);
     sqlite3_bind_int(write.value, 17, n.x_badge_hidden);
     sqlite3_bind_int64(write.value, 18, n.closed_at);
+    write.Text(19, n.icon);
     if (sqlite3_step(write.value) != SQLITE_DONE) return rollback(500, "Workspace write failed");
     sqlite3_reset(write.value);
   }

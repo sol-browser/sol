@@ -18,18 +18,21 @@ import { IntegrationCard } from './IntegrationCard';
 import { SelectionTranslationPanel, TranslationPanel } from './TranslationPanel';
 import { focusOnMount } from './focus-on-mount';
 import { ProtectedMediaOffer, parseProtectedMediaOffer, type ProtectedMediaOfferPayload } from './ProtectedMediaOffer';
+import { FolderIconPicker, type FolderIconOpening } from './FolderIconPicker';
+import { validFolderIcon } from '../../../packages/browser-contracts/src';
 
 // The Archive/Downloads popover document (sol://ui/panel.html), hosted by its
 // own owned window. It only speaks the panel IPC; native code validates all.
 type PinnedPage = { title: string; url: string };
 type ProfileMove = { title: string; spaceName: string };
 type SpaceDelete = { name: string; position: number; tabs: number };
-type Payload = { request: number; kind: 'archive' | 'downloads' | 'site' | 'history' | 'theme' | 'space' | 'newSpace' | 'spaceTheme' | 'integration' | 'editPinned' | 'moveToProfile' | 'deleteSpace' | 'installExtension' | 'protectedMedia' | 'translation' | 'selectionTranslation'; open: boolean; extensionInstall?: ExtensionInstall; protectedMedia?: ProtectedMediaOfferPayload; blocker?: SiteBlocker; extensionsAvailable?: boolean; snapshot: Snapshot; archive?: TreeNode[]; site?: SiteInfo; extensions?: SiteExtension[]; siteDetails?: number; integration?: Card; pinnedPage?: PinnedPage; profileMove?: ProfileMove; spaceDelete?: SpaceDelete; translationLanguages?: string[]; selectionTranslation?: SelectionTranslation };
+type FolderDelete = { title: string; tabs: number; folders: number };
+type Payload = { request: number; kind: 'archive' | 'downloads' | 'site' | 'history' | 'theme' | 'space' | 'newSpace' | 'spaceTheme' | 'integration' | 'editPinned' | 'moveToProfile' | 'deleteSpace' | 'installExtension' | 'protectedMedia' | 'translation' | 'selectionTranslation' | 'folderIcon' | 'deleteFolder'; open: boolean; folderIcon?: FolderIconOpening; folderDelete?: FolderDelete; extensionInstall?: ExtensionInstall; protectedMedia?: ProtectedMediaOfferPayload; blocker?: SiteBlocker; extensionsAvailable?: boolean; snapshot: Snapshot; archive?: TreeNode[]; site?: SiteInfo; extensions?: SiteExtension[]; siteDetails?: number; integration?: Card; pinnedPage?: PinnedPage; profileMove?: ProfileMove; spaceDelete?: SpaceDelete; translationLanguages?: string[]; selectionTranslation?: SelectionTranslation };
 function parsePayload(raw: string, previous?:Payload): Payload {
   const value: unknown = JSON.parse(raw);
   if (typeof value !== 'object' || value === null) throw new Error('Invalid panel payload');
   const v = value as Record<string, unknown>;
-  if (!Number.isSafeInteger(v.request) || (v.kind !== 'archive' && v.kind !== 'downloads' && v.kind !== 'site' && v.kind !== 'history' && v.kind !== 'theme' && v.kind !== 'space' && v.kind !== 'newSpace' && v.kind !== 'spaceTheme' && v.kind !== 'integration' && v.kind !== 'editPinned' && v.kind !== 'moveToProfile' && v.kind !== 'deleteSpace' && v.kind !== 'installExtension' && v.kind !== 'protectedMedia' && v.kind !== 'translation' && v.kind !== 'selectionTranslation') || typeof v.open !== 'boolean')
+  if (!Number.isSafeInteger(v.request) || (v.kind !== 'archive' && v.kind !== 'downloads' && v.kind !== 'site' && v.kind !== 'history' && v.kind !== 'theme' && v.kind !== 'space' && v.kind !== 'newSpace' && v.kind !== 'spaceTheme' && v.kind !== 'integration' && v.kind !== 'editPinned' && v.kind !== 'moveToProfile' && v.kind !== 'deleteSpace' && v.kind !== 'installExtension' && v.kind !== 'protectedMedia' && v.kind !== 'translation' && v.kind !== 'selectionTranslation' && v.kind !== 'folderIcon' && v.kind !== 'deleteFolder') || typeof v.open !== 'boolean')
     throw new Error('Invalid panel payload');
   const snapshot = parseSnapshotUpdate(JSON.stringify(v.snapshot),previous?.snapshot);
   const pinned = v.pinnedPage as Partial<PinnedPage> | null | undefined;
@@ -41,6 +44,12 @@ function parsePayload(raw: string, previous?:Payload): Payload {
   const deleting = v.spaceDelete as Partial<SpaceDelete> | null | undefined;
   if (v.kind === 'deleteSpace' && v.open && (typeof deleting?.name !== 'string' || !Number.isSafeInteger(deleting?.position) || !Number.isSafeInteger(deleting?.tabs)))
     throw new Error('Invalid delete confirmation');
+  const folder = v.folderIcon as Partial<FolderIconOpening> | null | undefined;
+  if (v.kind === 'folderIcon' && v.open && (typeof folder?.id !== 'string' || folder.id.length !== 36 || !validFolderIcon(folder.icon)))
+    throw new Error('Invalid folder icon opening');
+  const removing = v.folderDelete as Partial<FolderDelete> | null | undefined;
+  if (v.kind === 'deleteFolder' && v.open && (typeof removing?.title !== 'string' || !Number.isSafeInteger(removing?.tabs) || !Number.isSafeInteger(removing?.folders)))
+    throw new Error('Invalid folder delete confirmation');
   const install = v.kind === 'installExtension' && v.open ? parseExtensionInstall(v.extensionInstall) : undefined;
   const protectedMedia = v.kind === 'protectedMedia' && v.open ? parseProtectedMediaOffer(v.protectedMedia) : undefined;
   return { request: v.request as number, kind: v.kind, open: v.open, snapshot, extensionInstall: install, protectedMedia,
@@ -48,6 +57,8 @@ function parsePayload(raw: string, previous?:Payload): Payload {
     archive: v.kind === 'archive' ? v.archive !== undefined ? parseArchive(v.archive) : previous?.archive : undefined,
     translationLanguages: Array.isArray(v.translationLanguages) ? v.translationLanguages.filter(validTranslationLanguage) : undefined,
     selectionTranslation: v.kind === 'selectionTranslation' && v.open ? parseSelectionTranslation(v.selectionTranslation) : undefined,
+    folderIcon: v.kind === 'folderIcon' && v.open && typeof folder?.id === 'string' && typeof folder.icon === 'string' ? { id: folder.id, icon: folder.icon } : undefined,
+    folderDelete: v.kind === 'deleteFolder' && typeof removing?.title === 'string' ? { title: removing.title, tabs: removing.tabs as number, folders: removing.folders as number } : undefined,
     spaceDelete: v.kind === 'deleteSpace' && typeof deleting?.name === 'string' ? { name: deleting.name, position: deleting.position as number, tabs: deleting.tabs as number } : undefined,
     profileMove: typeof move?.title === 'string' && typeof move.spaceName === 'string' ? { title: move.title, spaceName: move.spaceName } : undefined,
     pinnedPage: typeof pinned?.title === 'string' && typeof pinned.url === 'string' ? { title: pinned.title, url: pinned.url } : undefined,
@@ -141,6 +152,38 @@ function SpaceDeleteConfirm({ space, opening }: { space: SpaceDelete; opening: n
         setDeleting(true); setError('');
         void call({ method: 'space.deleteConfirm', request: opening }).catch(error => { report(error); setDeleting(false); });
       }}>{t('sidebar.space.delete')}</button>
+    </footer>
+  </section>;
+}
+
+// Deleting a folder with contents (sidebar): its tabs go to the Archive. Native deletes exactly
+// the counts shown; if the folder changed meanwhile it sends the new ones to confirm again.
+function FolderDeleteConfirm({ folder, opening }: { folder: FolderDelete; opening: number }) {
+  const t = useMessages();
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState('');
+  return <section className="pin-editor move-confirm" role="alertdialog" aria-modal="true" aria-labelledby="delete-folder-heading" aria-describedby="delete-folder-note"
+    onKeyDown={event => {
+      if (event.key === 'Escape') { event.preventDefault(); if (!deleting) void call({ method: 'panel.close' }).catch(() => {}); }
+      else if (event.key === 'Tab') {
+        const controls = event.currentTarget.querySelectorAll<HTMLElement>('button:enabled');
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey ? event.target === first : event.target === last) { event.preventDefault(); (event.shiftKey ? last : first)?.focus(); }
+      }
+    }}>
+    <h2 id="delete-folder-heading">{t('sidebar.folder.deletePrompt', { name: folder.title })}</h2>
+    <p id="delete-folder-note">{t(folder.folders ? 'sidebar.folder.archiveNested' : 'sidebar.folder.archiveTabs', { count: folder.tabs })}</p>
+    {error && <p className="popover-error" role="alert">{error}</p>}
+    <footer>
+      <button type="button" ref={focusOnMount} data-action="cancel-folder-delete" disabled={deleting} onClick={() => void call({ method: 'panel.close' }).catch(() => {})}>{t('common.cancel')}</button>
+      <button type="submit" className="danger" data-action="confirm-folder-delete" disabled={deleting} onClick={() => {
+        setDeleting(true); setError('');
+        void call({ method: 'folder.deleteConfirm', request: opening }).catch(e => {
+          const message = e instanceof Error ? e.message : String(e);
+          setError(message.startsWith('409') ? t('sidebar.folder.changed') : message.replace(/^\d+: /u, ''));
+          setDeleting(false);
+        });
+      }}>{deleting ? t('sidebar.folder.removing') : t('sidebar.folder.delete')}</button>
     </footer>
   </section>;
 }
@@ -290,6 +333,10 @@ export function Panel() {
   return <div className="panel-root" ref={root} data-kind={payload?.kind} data-pointer={pointer} onMouseMove={() => { if (!pointer) setPointer(true); }}>
     {payload?.kind === 'editPinned' ? payload.open && payload.pinnedPage &&
       <PinnedPageEditor key={payload.request} page={payload.pinnedPage} opening={payload.request} /> :
+    payload?.kind === 'folderIcon' ? payload.open && payload.folderIcon &&
+      <FolderIconPicker key={payload.request} folder={payload.folderIcon} opening={payload.request} command={call} /> :
+    payload?.kind === 'deleteFolder' ? payload.open && payload.folderDelete &&
+      <FolderDeleteConfirm key={payload.request} folder={payload.folderDelete} opening={payload.request} /> :
     payload?.kind === 'deleteSpace' ? payload.open && payload.spaceDelete &&
       <SpaceDeleteConfirm key={payload.request} space={payload.spaceDelete} opening={payload.request} /> :
     payload?.kind === 'moveToProfile' ? payload.open && payload.profileMove &&

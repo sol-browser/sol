@@ -110,10 +110,11 @@ inline std::vector<SidebarMenuItem> SidebarMenuItems(const std::vector<MenuNode>
     if (!clean.empty() && clean.back().label.empty()) clean.pop_back();
     return clean;
   }
+  // Folders: no expand/collapse (a click does it) and no move up/down (dragging does it), per the user, 2026-11-24.
   if (!n.folder) add(n.live ? label(InterfaceMessage::SidebarSwitchTab) : label(InterfaceMessage::SidebarOpenTab), "activate");
-  else add(n.expanded ? label(InterfaceMessage::SidebarCollapse) : label(InterfaceMessage::SidebarExpand), "expand");
   if (!n.folder) add(n.pinned ? label(InterfaceMessage::SidebarUnpinTab) : label(InterfaceMessage::SidebarPinTab), n.pinned ? "today" : "pinned");
   add(label(InterfaceMessage::SidebarRename), "rename");
+  if (n.folder) add(label(InterfaceMessage::SidebarFolderIcon), "folderIcon");
   if (!n.folder && n.custom_title) add(label(InterfaceMessage::SidebarWebsiteTitleLower), "automaticTitle");
   if (n.folder) add(label(InterfaceMessage::SidebarNestedFolder), "newFolder");
   if (n.pinned && !n.folder) add(label(InterfaceMessage::SidebarResetAddress), "reset");
@@ -165,14 +166,6 @@ inline std::vector<SidebarMenuItem> SidebarMenuItems(const std::vector<MenuNode>
     if (!others.empty()) destinations.push_back({label(InterfaceMessage::SidebarSpace), "", "", true, std::move(others)});
   }
   if (!destinations.empty()) items.push_back({label(InterfaceMessage::SidebarMoveTo), "", "", true, std::move(destinations), false, true});
-  std::vector<const MenuNode*> siblings;
-  for (const auto& other : nodes)
-    if (other.parent == n.parent && other.pinned == n.pinned && other.favorite == n.favorite && !other.archived &&
-        (!n.parent.empty() || n.favorite || other.space == n.space)) siblings.push_back(&other);
-  std::sort(siblings.begin(), siblings.end(), [](const auto* a, const auto* b) { return a->position < b->position; });
-  const auto at = std::find(siblings.begin(), siblings.end(), &n);
-  if (at != siblings.begin()) add(label(InterfaceMessage::SidebarMoveUp), "up");
-  if (at != siblings.end() && at + 1 != siblings.end()) add(label(InterfaceMessage::SidebarMoveDown), "down");
   if (n.folder) {
     const bool empty = std::none_of(nodes.begin(), nodes.end(), [&](const auto& child) { return child.parent == id; });
     separator(); items.push_back({empty ? label(InterfaceMessage::SidebarDeleteFolder) : label(InterfaceMessage::SidebarDeleteFolderMore), "removeFolder", "", true, {}});

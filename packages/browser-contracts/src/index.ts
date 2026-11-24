@@ -16,6 +16,8 @@ export type TreeNode = { id: string; parentId: string; kind: 'folder' | 'tab'; t
   /** A protected tab's service (integrations/protected_media_host.cpp kServices). */
   mediaService?: ProtectedMediaService; mediaPlaying?: boolean;
   xBadgeHidden?: boolean;
+  /** A folder's glyph id (folder-icon-model.ts); absent for a plain folder and for pages. */
+  folderIcon?: string;
   /** Split View membership: the group's row (anchor), its 2-4 pages in on-screen reading order, its name. */
   splitAnchor?: string; splitPanes?: string[]; splitTitle?: string; splitHidden?: boolean;
   /** Space of a top-level Pinned/Today/archived entry; empty for Favorites and nested entries. */
@@ -44,6 +46,10 @@ function validSpaceName(value: unknown): value is string {
 /** Complete ZWJ/skin-tone emoji, bounded in code points and UTF-8 bytes. */
 export function validSpaceIcon(value:unknown):value is string {
   return typeof value==='string'&&Array.from(value).length<=16&&new TextEncoder().encode(value).length<=128&&!/[\u0000-\u0020\u007f\ud800-\udfff]/u.test(value);
+}
+/** A folder glyph id as native stores it (tree_store.h ValidFolderIcon); "" clears it. */
+export function validFolderIcon(value: unknown): value is string {
+  return typeof value === 'string' && (value === '' || (value.length <= 32 && /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(value)));
 }
 export type DockBounds = { x: number; y: number; width: number; height: number };
 export type MediaInfo = { id: string; title: string; artist: string; playing: boolean; video: boolean; muted: boolean; time: number; duration: number;
@@ -330,6 +336,7 @@ export type TreeMutation =
   | { method: 'tree.createFolder'; parentId: string; title: string }
   | { method: 'tree.createTab'; parentId: string; title: string; url: string }
   | { method: 'tree.rename'; id: string; title: string }
+  | { method: 'tree.setFolderIcon'; id: string; icon: string }
   | { method: 'tree.move'; id: string; parentId: string; position: number }
   | { method: 'tree.place'; id: string; parentId: string; position: number; section: 'pinned' | 'today' | 'favorites' }
   | { method: 'tree.pin' | 'tree.expand'; id: string; value: boolean }
@@ -371,6 +378,10 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'space.createDraft'; title: string; icon: string; themed: boolean; library: boolean; profileId?: string }
   /** Library: the window's modal confirms before a Space is deleted. */
   | { method: 'space.confirmDelete'; id: string }
+  /** The folder glyph picker popover, hanging from the folder's icon (sidebar DIP). */
+  | { method: 'folder.chooseIcon'; id: string; x: number; y: number; width: number; height: number }
+  /** Deleting a folder with contents: the window's modal asks first. */
+  | { method: 'folder.confirmDelete'; id: string }
   | { method: 'workspace.setSidebarWidth'; width: number; save: boolean }
   | { method: 'workspace.beginSidebarResize' }
   | { method: 'devtools.control'; id: number; action: 'right' | 'bottom' | 'left' | 'window' | 'close' | 'device' | 'focus' }
@@ -399,11 +410,13 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'navigation.load'; url: string }
   | { method: 'probe.commandInput'; url: string }
   | { method: 'probe.commandCancel' }
+  /** Probes only: native clicks the open popover's button with this label, or matching this selector. */
+  | { method: 'probe.panelClick'; text: string } | { method: 'probe.panelClick'; selector: string }
   | { method: 'probe.contextMenuSelect'; action?: 'rename' | 'removeFolder' | 'editTheme' }
   | (TreeMutation & { expectedRevision: number });
 
 const object = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
-export const sidebarMenuActions = ['cancel', 'activate', 'expand', 'rename', 'automaticTitle', 'newFolder', 'newTab', 'showArchive', 'restore', 'reset', 'favorites', 'pinned', 'today', 'folder', 'up', 'down', 'close', 'archive', 'removeFolder', 'duplicate', 'detach', 'mute', 'unmute', 'space', 'newSpace', 'split', 'unsplit', 'swapSplit', 'renamePane',
+export const sidebarMenuActions = ['cancel', 'activate', 'expand', 'rename', 'folderIcon', 'automaticTitle', 'newFolder', 'newTab', 'showArchive', 'restore', 'reset', 'favorites', 'pinned', 'today', 'folder', 'up', 'down', 'close', 'archive', 'removeFolder', 'duplicate', 'detach', 'mute', 'unmute', 'space', 'newSpace', 'split', 'unsplit', 'swapSplit', 'renamePane',
   'copyLink', 'setHome', 'editPinned', 'archiveOthers', 'archiveBelow', 'newSpaceWith', 'editTheme', 'setProfile', 'newProfile', 'exportSpace', 'deleteSpace', 'showXBadge', 'hideXBadge', 'enableIntegration', 'disableIntegration'] as const;
 export type SidebarMenuChoice = { action: typeof sidebarMenuActions[number]; targetId: string };
 export function parseSidebarMenuChoice(raw: string): SidebarMenuChoice {
@@ -604,6 +617,7 @@ export function parseSnapshot(raw: string): Snapshot {
       if (object(n) && n.archivedAt !== undefined && !(typeof n.archivedAt === 'number' && Number.isSafeInteger(n.archivedAt) && n.archivedAt >= 0)) throw new Error('Invalid archive time');
       if (object(n) && n.pageTitle !== undefined && (typeof n.pageTitle !== 'string' || n.pageTitle.length > 240)) throw new Error('Invalid page title');
       if (object(n) && n.customTitle !== undefined && typeof n.customTitle !== 'boolean') throw new Error('Invalid custom title');
+      if (object(n) && n.folderIcon !== undefined && (n.kind !== 'folder' || !validFolderIcon(n.folderIcon) || n.folderIcon === '')) throw new Error('Invalid folder icon');
       if (object(n) && n.space !== undefined && (typeof n.space !== 'string' || (n.space !== '' && n.space.length !== 36))) throw new Error('Invalid node space');
       // Only our own cached-icon address; never a remote or script-bearing URL.
       if (object(n) && n.favicon !== undefined && !isFaviconUrl(n.favicon)) throw new Error('Invalid favicon');

@@ -48,6 +48,11 @@ def main():
     try:
         first,rows=run(url,['--probe-organization'],profile=profile)
         if not any(row['event']=='organization_checks_pass' for row in rows): raise RuntimeError('Folder interaction checks missing')
+        # The window's modal showed 3 tabs (a hidden split member counts) and, after a tab was
+        # added behind it, refused the stale Delete and showed 4.
+        prompts=[(row['details']['tabs'],row['details']['folders']) for row in rows if row['event']=='folder_delete_prompt']
+        if len(prompts)<4 or prompts[0]!=(3,1) or (4,1) not in prompts or any(f!=1 for _,f in prompts):
+            raise RuntimeError(f'Folder delete modal counts: {prompts}')
         separation=[row['details'] for row in rows if row['event']=='organization_split_separated']
         if separation!=[{'single_visible_page':True,'full_bounds':True}]:
             raise RuntimeError(f'Separate left stale native pane geometry: {separation}')

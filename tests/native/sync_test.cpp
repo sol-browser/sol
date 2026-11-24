@@ -486,6 +486,25 @@ void TestTree() {
   Check(filtered.ok && !FindIn(filtered.tree, 13) && filtered.tree.spaces.size() == 2, "invalid records ignored");
   Check(!ApplyTreeValues(tree, Values{}).ok, "no spaces: nothing applied");
 
+  // A folder's glyph travels with it. A plain folder's record has no "icon" key, exactly as older builds wrote it.
+  auto iconic = tree;
+  for (auto& n : iconic.nodes) if (n.id == Id(11)) n.icon = "rocket";
+  auto iconic_values = TreeValues(iconic);
+  Check(iconic_values.at("node/" + Id(11)).find("\"icon\":\"rocket\"") != std::string::npos &&
+        values.at("node/" + Id(11)).find("\"icon\"") == std::string::npos, "only a folder with a glyph writes one");
+  auto received = ApplyTreeValues(tree, iconic_values);
+  Check(received.ok && FindIn(received.tree, 11) && FindIn(received.tree, 11)->icon == "rocket", "a synced glyph arrives");
+  auto cleared = ApplyTreeValues(iconic, values);
+  Check(cleared.ok && FindIn(cleared.tree, 11) && FindIn(cleared.tree, 11)->icon.empty(), "a glyph removed elsewhere is removed here");
+  auto tab_icon = values;
+  auto& tracker = tab_icon["node/" + Id(13)];
+  tracker.insert(tracker.size() - 1, ",\"icon\":\"star\"");
+  auto bad_name = iconic_values;
+  auto& docs = bad_name["node/" + Id(11)];
+  docs.replace(docs.find("rocket"), 6, "Rocket");
+  Check(ApplyTreeValues(tree, tab_icon).ok && !FindIn(ApplyTreeValues(tree, tab_icon).tree, 13), "a page record with a glyph is ignored");
+  Check(ApplyTreeValues(tree, bad_name).ok && !FindIn(ApplyTreeValues(tree, bad_name).tree, 11), "a malformed glyph name is ignored");
+
   // A new profile arrives with its Space.
   auto profiled = values;
   const std::string profile = "11111111-2222-4333-8444-555555555555";

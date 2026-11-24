@@ -36,6 +36,7 @@
 #include "include/wrapper/cef_stream_resource_handler.h"
 #include "trust_policy.h"
 #include "app/state.h"
+#include "navigation/page_zoom.h"
 #include "app/session.h"
 #include "integrations/protected_media_host.h"
 #include "integrations/protected_media_installer.h"
@@ -362,19 +363,77 @@ class UiResources final : public CefSchemeHandlerFactory {
 };
 
 class Client;
-// Zooms |page| (Ctrl+wheel, Ctrl+=/-/0, the address bar's zoom badge) and shows
-// the level as a toast over that page; the top bar's badge follows.
-void ZoomPage(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page, cef_zoom_command_t command) {
+red::PageZoomWatch& PageZoomWatch() { static red::PageZoomWatch watch; return watch; }
+// The first window's state: its session lists every window (the Ctrl+wheel hook).
+std::weak_ptr<State>& PageZoomWindows() { static std::weak_ptr<State> state; return state; }
+// Shows |page|'s zoom level as a toast over that page (in a split, the pane that
+// zoomed) and refreshes the top bar, whose address shows the badge.
+void ShowPageZoom(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page, const char* source) {
+  if (!page->IsValid()) return;
+  const double level = page->GetHost()->GetZoomLevel();
+  const int percent = red::PageZoomPercent(level);
+  PageZoomWatch().Shown(page->GetIdentifier(), level);
+  // Just the level ("110%").
+  if (state->embedded) state->embedded->Notify("zoom", std::to_wstring(percent) + L"%", {}, L"", 2500, page->GetIdentifier());
+  if (state->workspace) state->workspace->Refresh();
+  auto d = CefDictionaryValue::Create(); d->SetInt("percent", percent); d->SetString("source", source);
+  if (state->workspace) if (const auto snapshot = state->workspace->Snapshot())
+    d->SetInt("badge", snapshot->GetType("zoom") == VTYPE_INT ? snapshot->GetInt("zoom") : 0);
+  state->Record("page_zoom", d);
+}
+// Zooms |page| (Chrome's zoom keys, the address bar's zoom badge) and shows the level.
+void ZoomPage(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page, cef_zoom_command_t command, const char* source) {
   page->GetHost()->Zoom(command);
-  CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page) {
-    const auto state = weak.lock();
-    if (!state || !state->embedded || !page->IsValid()) return;
-    const int percent = static_cast<int>(std::lround(100 * std::pow(1.2, page->GetHost()->GetZoomLevel())));
-    // Just the level ("110%"), over the page that zoomed (in a split, the pane under the pointer).
-    state->embedded->Notify("zoom", std::to_wstring(percent) + L"%", {}, L"", 2500, page->GetIdentifier());
-    if (state->workspace) state->workspace->Refresh();
-    auto d = CefDictionaryValue::Create(); d->SetInt("percent", percent); state->Record("page_zoom", d);
-  }, std::weak_ptr<State>(state), page));
+  CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page, const char* source) {
+    if (const auto state = weak.lock()) ShowPageZoom(state, page, source);
+  }, std::weak_ptr<State>(state), page, source));
+}
+// Ctrl+wheel over |page|: Chrome zooms it itself, unless the page uses the
+// wheel (maps, editors); engine 158 no longer asks Sol first (OnChromeCommand,
+// cef-patches.md #18). Show the level once it changed: a quick check, and a
+// later one for a busy page.
+void WatchPageZoom(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page) {
+  PageZoomWatch().Begin(page->GetIdentifier(), page->GetHost()->GetZoomLevel());
+  for (const int delay : {120, 600})
+    CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, CefRefPtr<CefBrowser> page, bool last) {
+      const int id = page->GetIdentifier();
+      const auto state = weak.lock();
+      if (state && page->IsValid() && PageZoomWatch().Changed(id, page->GetHost()->GetZoomLevel())) ShowPageZoom(state, page, "wheel");
+      if (last) PageZoomWatch().End(id);
+    }, std::weak_ptr<State>(state), page, delay == 600), delay);
+}
+// Website pages a Ctrl+wheel at |hwnd| / |point| can zoom. Sol's own UI never
+// zooms (its pages cancel Ctrl+wheel); website popups keep Chrome's behaviour.
+std::vector<std::pair<std::shared_ptr<State>, CefRefPtr<CefBrowser>>> ZoomablePagesAt(HWND hwnd, POINT point) {
+  std::vector<std::pair<std::shared_ptr<State>, CefRefPtr<CefBrowser>>> pages;
+  const HWND under = WindowFromPoint(point);
+  const auto main = PageZoomWindows().lock();
+  const auto windows = main && main->session ? main->session->Windows() : main ? std::vector{main} : std::vector<std::shared_ptr<State>>{};
+  for (const auto& state : windows) {
+    if (!state->workspace) continue;
+    for (const auto& [id, browser] : state->browsers) {
+      if (id == state->shell_id || state->internal_pages.contains(id) || state->popup_browsers.contains(id) || !browser->IsValid()) continue;
+      const HWND host = browser->GetHost()->GetWindowHandle();
+      const auto inside = [host](HWND target) { return target && (target == host || IsChild(host, target)); };
+      if (host && (inside(hwnd) || inside(under))) pages.emplace_back(state, browser);
+    }
+  }
+  return pages;
+}
+LRESULT CALLBACK WatchCtrlWheel(int code, WPARAM removed, LPARAM data) {
+  if (code == HC_ACTION && removed == PM_REMOVE) {
+    const auto* message = reinterpret_cast<const MSG*>(data);
+    if (message->message == WM_MOUSEWHEEL && (GET_KEYSTATE_WPARAM(message->wParam) & MK_CONTROL))
+      for (const auto& [state, page] : ZoomablePagesAt(message->hwnd, POINT{static_cast<short>(LOWORD(message->lParam)), static_cast<short>(HIWORD(message->lParam))}))
+        WatchPageZoom(state, page);
+  }
+  return CallNextHookEx(nullptr, code, removed, data);
+}
+// On the UI thread, which pumps the pages' windows (CefRunMessageLoop).
+void InstallPageZoomWatch(const std::shared_ptr<State>& state) {
+  static HHOOK hook = nullptr;
+  PageZoomWindows() = state;
+  if (!hook) hook = SetWindowsHookExW(WH_GETMESSAGE, WatchCtrlWheel, nullptr, GetCurrentThreadId());
 }
 // Website tabs' clients by browser ID (UI thread), for live tab transfer.
 std::map<int, Client*>& PageClients() { static std::map<int, Client*> clients; return clients; }
@@ -653,10 +712,24 @@ class Client final : public CefClient, public CefLifeSpanHandler,
   // The page had the key and left it alone (no preventDefault): Sol's shortcut runs now. A chord that
   // was moved to another key (Suppressed) is swallowed here, after the page, so Chrome's own
   // command on it (Ctrl+D: bookmark) does not run either.
-  bool OnKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& event, CefEventHandle) override {
+  bool OnKeyEvent(CefRefPtr<CefBrowser> browser, const CefKeyEvent& event, CefEventHandle) override {
     if (const auto action = SolShortcut(event); action && !red::ShortcutReserved(ShortcutKind(event, *action)))
       return red::ExecuteShortcut(state_, *action);
-    return false;
+    return ZoomKey(browser, event);
+  }
+  // Chrome's zoom keys (Ctrl+=/-/0), after the page left them alone as in Chrome.
+  // Engine 158 no longer routes Chrome's zoom command through OnChromeCommand
+  // (cef-patches.md #18), so Sol zooms here, before Chrome's own accelerator, and
+  // shows the level. Sol's own UI never zooms: it shares the sol://ui origin and
+  // Chrome keeps zoom per origin, so zooming History scaled the whole browser.
+  bool ZoomKey(CefRefPtr<CefBrowser> browser, const CefKeyEvent& event) {
+    if (popup_ || !state_->workspace || event.type != KEYEVENT_RAWKEYDOWN || (event.modifiers & EVENTFLAG_COMMAND_DOWN)) return false;
+    const auto key = red::PageZoomKeyFor(event.windows_key_code, (event.modifiers & EVENTFLAG_CONTROL_DOWN) != 0,
+        (event.modifiers & EVENTFLAG_SHIFT_DOWN) != 0, (event.modifiers & EVENTFLAG_ALT_DOWN) != 0);
+    if (!key) return false;
+    if (!shell_ && !internal_page_)
+      ZoomPage(state_, browser, *key == red::PageZoomKey::In ? CEF_ZOOM_COMMAND_IN : *key == red::PageZoomKey::Out ? CEF_ZOOM_COMMAND_OUT : CEF_ZOOM_COMMAND_RESET, "key");
+    return true;
   }
   std::optional<red::Shortcut> SolShortcut(const CefKeyEvent& event) const {
     if (popup_ || !state_->workspace || event.type != KEYEVENT_RAWKEYDOWN || (event.modifiers & EVENTFLAG_COMMAND_DOWN)) return std::nullopt;
@@ -718,7 +791,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       // origin and profile with the sidebar and top bar, and Chrome keeps zoom
       // per origin, so zooming them scaled the whole browser.
       if (!shell_ && !internal_page_)
-        ZoomPage(state_, browser, command == zoom_in ? CEF_ZOOM_COMMAND_IN : command == zoom_out ? CEF_ZOOM_COMMAND_OUT : CEF_ZOOM_COMMAND_RESET);
+        ZoomPage(state_, browser, command == zoom_in ? CEF_ZOOM_COMMAND_IN : command == zoom_out ? CEF_ZOOM_COMMAND_OUT : CEF_ZOOM_COMMAND_RESET, "command");
       return true;  // Handled either way: Chrome's own zoom must not run.
     }
     if (auto action = red::ChromeShortcut(command)) return red::ExecuteShortcut(state_, *action);
@@ -1185,8 +1258,12 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       callback->Success(CefWriteJSON(result, JSON_WRITER_DEFAULT)); return true;
     }
     if (method == "probe.panelClick" && state_->probe && (state_->organization_probe || state_->downloads_probe) &&
-        state_->panel_popup && !persistent && dict->GetSize() == 2 && dict->GetType("text") == VTYPE_STRING && dict->GetString("text").length() <= 200) {
-      state_->panel_popup->ProbeClick(dict->GetString("text"));
+        state_->panel_popup && !persistent && dict->GetSize() == 2 &&
+        ((dict->GetType("text") == VTYPE_STRING && dict->GetString("text").length() <= 200) ||
+         (dict->GetType("selector") == VTYPE_STRING && dict->GetString("selector").length() <= 200))) {
+      // A selector does not depend on the interface language.
+      if (dict->HasKey("selector")) state_->panel_popup->ProbeClickSelector(dict->GetString("selector"));
+      else state_->panel_popup->ProbeClick(dict->GetString("text"));
       auto result = CefValue::Create(); result->SetDictionary(state_->workspace->Snapshot());
       callback->Success(CefWriteJSON(result, JSON_WRITER_DEFAULT)); return true;
     }
@@ -1292,7 +1369,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       const auto page = state_->content;
       auto reply = [&] { auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot()); callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); };
       if (!state_->workspace || persistent || !page || state_->internal_pages.contains(page->GetIdentifier())) { callback->Failure(409, "No page"); return true; }
-      if (method == "navigation.resetZoom" && dict->GetSize() == 1) { ZoomPage(state_, page, CEF_ZOOM_COMMAND_RESET); reply(); return true; }
+      if (method == "navigation.resetZoom" && dict->GetSize() == 1) { ZoomPage(state_, page, CEF_ZOOM_COMMAND_RESET, "badge"); reply(); return true; }
       if (method == "navigation.openEntry" && dict->GetSize() == 2 && dict->GetType("offset") == VTYPE_INT &&
           (dict->GetInt("offset") == -1 || dict->GetInt("offset") == 1)) {
         red::OpenHistoryEntryInNewTab(state_, page, dict->GetInt("offset")); reply(); return true;
@@ -1665,6 +1742,18 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       auto data = CefDictionaryValue::Create(); data->SetString("url", url.ToString().substr(0, 200));
       data->SetBool("can_go_back", browser->CanGoBack()); state_->Record("address_change", data);
     }
+  }
+  // Sol's layout owns the geometry of its tabs and UI: window.resizeTo/moveTo and, with the
+  // engine's ChromeBrowserView::SetBounds patch, an extension's windows.update (Bitwarden's
+  // pop-out) ask here first. A website popup in its own window keeps Chrome's handling.
+  // docs/cef-patches.md, "Extensions move Sol's page windows".
+  bool OnContentsBoundsChange(CefRefPtr<CefBrowser> browser, const CefRect& bounds) override {
+    if (popup_ || popup_host_) return false;
+    if (state_->probe) {
+      auto data = CefDictionaryValue::Create(); data->SetInt("width", bounds.width); data->SetInt("height", bounds.height);
+      data->SetBool("shell", shell_); state_->Record("contents_bounds_kept", data);
+    }
+    return true;
   }
   void OnTitleChange(CefRefPtr<CefBrowser> browser, const CefString& title) override {
     // A website popup's own window shows its page title (taskbar previews, Alt+Tab).
@@ -3544,6 +3633,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
         for (const auto& window : state->session->Windows()) if (window->workspace) window->workspace->Refresh();
     }, weak));
   });
+  InstallPageZoomWatch(state);
   CefRunMessageLoop();
   state->window = nullptr;
   state->shell_extension_watch = nullptr;

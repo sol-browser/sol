@@ -120,7 +120,7 @@ export function archiveOrder(nodes: TreeNode[]) {
 // A tree command rejected only because the tree revision moved on (e.g. a page
 // saved its new address) may be retried once when it names its node by id and
 // carries no computed position. Moves and creations are never retried.
-const retryableMethods = new Set(['tree.rename', 'tree.pin', 'tree.expand', 'tree.activate', 'tree.close', 'tree.archive',
+const retryableMethods = new Set(['tree.rename', 'tree.setFolderIcon', 'tree.pin', 'tree.expand', 'tree.activate', 'tree.close', 'tree.archive',
   'tree.restore', 'tree.reset', 'tree.removeFolder', 'tree.usePageTitle', 'tree.moveToSpace', 'space.edit', 'space.switch']);
 export const retryable = (command: TreeMutation) => retryableMethods.has(command.method) &&
   !(command.method === 'tree.removeFolder' && command.confirmation) &&

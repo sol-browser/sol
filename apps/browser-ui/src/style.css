@@ -212,9 +212,16 @@ html:has(.devtools-window-header), html:has(.devtools-window-header) body { back
 .tree-row[data-kind="folder"][data-drop-inside="true"] { background:color-mix(in oklch,var(--accent) 15%,transparent); }
 .tree-row[data-kind="folder"][data-drop-inside="true"] .folder-icon { color:var(--accent); opacity:1; }
 .node-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.folder-icon { display: block; flex: 0 0 24px; width: 24px; height: 24px; overflow: visible; color: inherit; opacity: .82; }
+.folder-icon { display: block; flex: 0 0 24px; width: 24px; height: 24px; overflow: visible; color: inherit; }
 .folder-icon path { transition: d 280ms cubic-bezier(.22, 1, .36, 1); }
-.folder-back { opacity: .85; }
+/* docs/folder-icons.md: the back in the Space's colour, the outline and glyph in the text colour. */
+.folder-back-fill { fill: var(--accent); }
+.folder-face, .folder-glyph { opacity: .82; }
+.folder-back { opacity: .7; }
+.folder-glyph { transform-box: fill-box; transform-origin: 50% 50%; transition: transform 280ms cubic-bezier(.22, 1, .36, 1); }
+/* The open face's centre line runs from (11.06, 21.5) to (14.95, 6.5): the glyph leans with it. */
+.folder-icon[data-expanded="true"] .folder-glyph { transform: translateX(1px) skewX(-14.5deg); }
+@media (prefers-reduced-motion: reduce) { .folder-icon path, .folder-glyph { transition: none; } }
 .site-mark { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; }
 .site-mark.favicon { padding: 1px; background: transparent; box-shadow: none; object-fit: contain; }
 .site-mark.fallback-site-icon { width: 16px; height: 16px; color: inherit; background: transparent; box-shadow: none; border-radius: 0; }
@@ -256,15 +263,6 @@ html:has(.devtools-window-header), html:has(.devtools-window-header) body { back
 .row-action:hover { background: oklch(calc(0.7525 + var(--theme-dark, 0) * -0.2762) calc(0.0523 * var(--theme-chroma, 1)) calc(var(--theme-hue, 307) + 3.2) / 0.200); }
 .tree-row:hover .row-action, .tree-row:focus-within .row-action { opacity: 1; }
 .tree-children { margin-left: 20px; }
-.folder-remove-confirm { margin: 6px 2px 9px; padding: 12px; border-radius: 10px; font-size: 12px;
-  background: color-mix(in oklch, var(--accent) 12%, transparent); border: 1px solid color-mix(in oklch, var(--muted) 28%, transparent); }
-.folder-remove-confirm strong { display: block; overflow-wrap: anywhere; font-size: 13px; }
-.folder-remove-confirm p { margin: 7px 0; line-height: 1.5; }
-.folder-remove-confirm [role="alert"] { color: var(--danger, #c43c45); }
-.folder-remove-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
-.folder-remove-actions .popover-text-button { margin: 0; height: 28px; color: inherit; }
-.folder-remove-actions .popover-text-button:hover { background: color-mix(in oklch, var(--accent) 15%, transparent); }
-.folder-remove-actions .danger { color: light-dark(#a52335, #ff9aab); }
 .active-peek { opacity: .95; }
 .favorites { margin: 0 4px; }
 .favorites > .tree { position: relative; display: grid; grid-template-columns: repeat(var(--favorite-columns, 4), minmax(0, 1fr)); gap: 7px; }
@@ -369,11 +367,6 @@ kbd { margin-left: auto; font-family: inherit; font-size: 10px; color: oklch(cal
   color:color-mix(in oklch,currentColor 50%,transparent); opacity: 0; pointer-events: none; transition: opacity 120ms ease, color 120ms ease; }
 .sidebar-heading:hover .space-edit, .sidebar-heading:focus-within .space-edit { opacity: 1; pointer-events: auto; }
 .space-edit:hover:enabled, .space-edit:focus-visible { color:var(--sidebar-text,inherit); background:none; }
-.space-delete-confirm { margin:8px; padding:12px; border-radius:10px; background:#17131ce0; color:#eae4ef; font-size:12px; }
-.space-delete-confirm p { margin:0 0 12px; line-height:1.5; overflow-wrap:anywhere; }
-.space-delete-confirm>div { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
-.space-delete-confirm button { border:0; background:none; color:inherit; padding:4px; font:inherit; max-width:100%; overflow-wrap:anywhere; }
-.space-delete-confirm button:last-child { color:#ff9ba9; }
 @media (hover: none) { .space-edit { opacity: 1; pointer-events: auto; } }
 .space-mark { flex: 0 0 auto; }
 .space-mark[data-emoji="true"] { background: none; box-shadow: none; border-radius: 0; font-size: 15px; color: inherit; }

@@ -17,6 +17,23 @@ One short line that sums up the release. Optional; the website shows it as the h
 New things first, smaller fixes under "### Fixes". Describe the result for the user, not the code.
 -->
 
+## 0.12.0 — 2026-11-25
+
+Folders with icons and clearer confirmations.
+
+- **Folder icons:** folders take on their Space's color. Right-click a folder
+  and choose Change icon… to give it an icon; search finds one by name.
+- **Clearer confirmations:** deleting a Space or a folder now asks in a dialog
+  over the window instead of inside the sidebar. The folder menu is shorter:
+  drag folders to reorder them.
+
+### Fixes
+
+- Zooming a page with Ctrl+wheel or Ctrl+plus and minus shows the zoom level
+  again, and the address bar shows it too.
+- Bitwarden's Pop out and other extensions that resize their window no longer
+  leave a narrow page over the sidebar.
+
 ## 0.11.0 — 2026-11-23
 
 Netflix, Spotify and other streaming services in Sol tabs.

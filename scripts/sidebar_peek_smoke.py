@@ -227,7 +227,8 @@ def main():
             db.execute("UPDATE spaces SET theme_palette=?, theme_noise=0 WHERE id=(SELECT active_space FROM state)",
                        ('2,3,380,66,0,0,100,30,850,27,120,850,62,240,850,37,90',))
         flag = f'--probe-sidebar-peek={host}' if host else '--probe-sidebar-peek'
-        directory, rows = run(url, [flag], allow_failure=True, profile=profile)
+        # ~40 s of checks plus the folder picker's; 45 s left too little room.
+        directory, rows = run(url, [flag], allow_failure=True, profile=profile, timeout=60)
         with sqlite3.connect(database) as db:
             saved_pin = db.execute("SELECT title,url FROM nodes WHERE id='11111111-1111-4111-8111-000000000008'").fetchone()
     finally:
@@ -240,7 +241,8 @@ def main():
     x_floating = next((d for d in documents if d.get('xBadge') == 'floating' and 'startsHidden' in d), {})
     whatsapp_floating = next((d for d in documents if 'whatsAppFloating' in d), {})
     whatsapp_docked = next((d for d in documents if 'whatsAppDocked' in d), {})
-    cards = [r['details'] for r in rows if r['event'] == 'popup_presented' and r['details'].get('kind') == 'integration']
+    folder_icons = {d['folderIconHost']: d for d in documents if 'folderIconHost' in d}
+    cards =[r['details'] for r in rows if r['event'] == 'popup_presented' and r['details'].get('kind') == 'integration']
     favorites = [c for c in cards if c.get('favorite') is True]
     pinned = [c for c in cards if c.get('favorite') is False]
     editors = {r['details']['floating']: r['details'] for r in rows if r['event'] == 'pin_editor_window'}
@@ -288,7 +290,11 @@ def main():
         'floating_restart_routes_to_native_update_handler': any(d.get('restartRouted') is True and d.get('invalidUpdate')==400 for d in documents),
         'both_hosts_use_shared_restart_dispatch': {r['details']['surface'] for r in rows if r['event']=='shared_sidebar_action' and r['details']['method']=='browser.restartToUpdate'} == {'docked','floating'},
         'both_hosts_route_integration_cards': {r['details']['surface'] for r in rows if r['event']=='shared_sidebar_action' and r['details']['method']=='integration.preview'} == {'docked','floating'},
-        'both_hosts_route_x_badge': {r['details']['surface'] for r in rows if r['event']=='shared_sidebar_action' and r['details']['method']=='tab.setXBadgeHidden'} == {'docked','floating'},
+        # docs/folder-icons.md: each host saves, draws on a coloured back, refuses a bad name, clears.
+        'both_hosts_set_folder_icon': set(folder_icons) == {'docked', 'floating'} and all(
+            all(d.get(k) is True for k in ('pickerOpened', 'saved', 'drawn', 'coloured', 'badRefused', 'cleared', 'removed')) and 'error' not in d
+            for d in folder_icons.values()),
+        'both_hosts_route_x_badge':{r['details']['surface'] for r in rows if r['event']=='shared_sidebar_action' and r['details']['method']=='tab.setXBadgeHidden'} == {'docked','floating'},
         'both_hosts_apply_global_integration_setting': {r['details']['surface'] for r in rows if r['event']=='shared_sidebar_action' and r['details']['method']=='tab.setIntegration'} == {'docked','floating'} and
             x_docked.get('globalDisabled') is True and x_floating.get('globallyOff') is True and x_floating.get('restoredGlobal') is True,
         'paused_integration_preferences_are_ignored': x_docked.get('legacyPreferencesLoaded') is True and x_docked.get('pausedCommandsRejected') is True,

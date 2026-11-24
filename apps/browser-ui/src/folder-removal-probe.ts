@@ -122,7 +122,10 @@ export async function folderRemovalProbe(base: string) {
   await mutate({ method: 'tree.activate', id: second }); await loaded(second);
   await mutate({ method: 'split.create', id: first, otherId: second, vertical: false });
   await request({ method: 'split.focus', id: second });
-  (await dom('.split-pane[data-focused="true"] [aria-label="Separate tabs"]')).click();
+  // Split View 0.7 dropped the pane's "Separate tabs" button: separate as the sidebar menu does.
+  const anchor = (await request({ method: 'browser.getSnapshot' })).nodes!.find(n => n.id === second)?.splitAnchor;
+  if (!anchor) throw new Error('Split anchor missing');
+  await mutate({ method: 'split.remove', id: anchor });
   await waitFor(s => !s.splitView && s.activeId === second &&
     [first, second].every(id => s.nodes!.some(n => n.id === id && n.live && !n.splitAnchor)));
   console.info('RED_ORG_SPLIT_SEPARATED');
@@ -133,9 +136,17 @@ export async function folderRemovalProbe(base: string) {
   await waitFor(s => s.nodes!.some(n => n.id === pin && n.pinned && !n.live));
   const x = await dom(`[data-node-id="${pin}"] .close-page`);
   x.focus(); await sleep(180);
-  if (x.title !== 'Remove from Pinned' || getComputedStyle(x).opacity !== '1') throw new Error('Closed pin X is missing on focus');
+  // Its tooltip is Sol's own (data-tip), not the browser's title.
+  if (!['Remove from Pinned', 'Відкріпити'].includes(x.dataset.tip ?? '') || getComputedStyle(x).opacity !== '1')
+    throw new Error(`Closed pin X is missing on focus (tip ${x.dataset.tip}, opacity ${getComputedStyle(x).opacity})`);
   x.click();
   await waitArchived(pin);
+  // The confirmation is the window's modal (PanelPopup "deleteFolder"): native records the
+  // counts it shows (folder_delete_prompt) and clicks its buttons by label (probe.panelClick).
+  const panel = async (button: 'Cancel' | 'Delete folder') => {
+    await request({ method: 'probe.panelClick', selector: button === 'Cancel' ? '[data-action="cancel-folder-delete"]' : '[data-action="confirm-folder-delete"]' });
+    await sleep(250);
+  };
   async function prompt() {
     const row = await dom<HTMLElement>(`[data-node-id="${root}"] > .tree-row`);
     row.querySelector<HTMLButtonElement>('.node-name')!.focus();
@@ -146,38 +157,33 @@ export async function folderRemovalProbe(base: string) {
       catch (error) { if (!String(error).includes('409:')) throw error; await sleep(30); }
     }
     if (!selected) throw new Error('Delete folder menu action unavailable');
-    return dom<HTMLElement>(`[data-folder-removal="${root}"]`);
+    await sleep(250);
   }
-  let dialog = await prompt();
-  if (!dialog.textContent?.includes('3 tabs')) throw new Error('Confirmation did not count hidden split member');
+  await prompt();
   const before = await request({ method: 'browser.getSnapshot' });
-  (await dom('[data-action="cancel-folder-removal"]')).click();
-  await sleep(60);
+  await panel('Cancel');
   if ((await request({ method: 'browser.getSnapshot' })).treeRevision !== before.treeRevision) throw new Error('Cancel changed the tree');
   await prompt();
   const approved = before.treeRevision!;
   const added = await tab(nested, 'added');
-  const review = await dom('[data-action="confirm-folder-removal"]');
-  if (review.textContent !== 'Review') throw new Error('Stale confirmation did not require review');
   let rejected = false;
   try { await mutate({ method: 'tree.removeFolder', id: root, confirmation: { revision: approved, tabs: 3 } }); }
   catch (error) { rejected = String(error).includes('409:'); }
   if (!rejected) throw new Error('Native accepted stale folder confirmation');
-  review.click(); await sleep(60);
-  dialog = await dom<HTMLElement>(`[data-folder-removal="${root}"]`);
-  if (!dialog.textContent?.includes('4 tabs')) throw new Error('Review did not refresh the tab count');
-  (await dom('[data-action="cancel-folder-removal"]')).click();
+  // The modal's stale Delete is refused and shows the new count (4) instead.
+  await panel('Delete folder');
+  if (!(await request({ method: 'browser.getSnapshot' })).nodes!.some(n => n.id === root)) throw new Error('A stale modal deleted the folder');
+  await panel('Cancel');
   await mutate({ method: 'tree.activate', id: protectedTab }); await loaded(protectedTab);
   console.info('RED_ORG_ARM_UNLOAD');
   await waitFor(s => s.organizationArmed === true);
-  await prompt(); (await dom('[data-action="confirm-folder-removal"]')).click();
+  await prompt(); await panel('Delete folder');
   let current = await waitFor(s => s.organizationUnloadDecisions === 1 && !s.nodes!.some(n => n.closing));
   for (const id of [root,nested,protectedTab,first,second,added])
     if (!current.nodes!.some(n => n.id === id && !n.archived)) throw new Error('Beforeunload cancellation lost folder contents');
   await sleep(100);
-  let confirm = await dom('[data-action="confirm-folder-removal"]');
-  if (confirm.textContent === 'Review') { confirm.click(); await sleep(60); confirm = await dom('[data-action="confirm-folder-removal"]'); }
-  confirm.click();
+  // The modal stays open after the vetoed unload; confirming again goes ahead.
+  await panel('Delete folder');
   current = await waitFor(s => s.organizationUnloadDecisions === 2 && !s.nodes!.some(n => n.id === root || n.id === nested));
   const archive = await archivedTabs();
   for (const id of [protectedTab,first,second,added])

@@ -1134,6 +1134,18 @@
   "sidebar.folder.delete": {
     "defaultMessage": "Видалити папку"
   },
+  "sidebar.folderIcon.title": {
+    "defaultMessage": "Іконка папки"
+  },
+  "sidebar.folderIcon.search": {
+    "defaultMessage": "Пошук іконок"
+  },
+  "sidebar.folderIcon.empty": {
+    "defaultMessage": "Нічого не знайдено"
+  },
+  "sidebar.folderIcon.none": {
+    "defaultMessage": "Без іконки"
+  },
   "sidebar.split.out": {
     "defaultMessage": "Вийняти з розділеного перегляду"
   },
@@ -1687,6 +1699,9 @@
   },
   "native.sidebar.NestedFolder": {
     "defaultMessage": "Нова вкладена папка"
+  },
+  "native.sidebar.FolderIcon": {
+    "defaultMessage": "Змінити іконку…"
   },
   "native.sidebar.ResetAddress": {
     "defaultMessage": "Повернутися до збереженої адреси"

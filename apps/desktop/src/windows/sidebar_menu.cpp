@@ -29,7 +29,7 @@ std::string IconFor(const std::string& action) {
     {"restore", "undo"}, {"pinned", "pin"}, {"today", "pinOff"}, {"favorites", "star"}, {"split", "columns"}, {"swapSplit", "swap"},
     {"unsplit", "columns"}, {"archive", "archive"}, {"archiveOthers", "archive"}, {"archiveBelow", "archive"}, {"copyLink", "link"},
     {"up", "arrowUp"}, {"down", "arrowDown"}, {"expand", "folder"}, {"removeFolder", "trash"}, {"setHome", "home"}, {"reset", "undo"},
-    {"automaticTitle", "text"}, {"editPinned", "pencil"}, {"newSpaceWith", "spaces"}, {"editTheme", "palette"},
+    {"automaticTitle", "text"}, {"folderIcon", "emoji"}, {"editPinned", "pencil"}, {"newSpaceWith", "spaces"}, {"editTheme", "palette"},
     {"showXBadge", "bell"}, {"hideXBadge", "bell"}, {"enableIntegration", "settings"}, {"disableIntegration", "settings"}};
   const auto found = icons.find(action);
   return found == icons.end() ? "" : found->second;

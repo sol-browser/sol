@@ -19,6 +19,7 @@
 #include "windows/boosts.h"
 #include "navigation/shortcut_settings.h"
 #include "navigation/shortcuts.h"
+#include "navigation/page_zoom.h"
 #include "windows/tab_drag_preview.h"
 #include "windows/devtools_dock.h"
 #include "windows/motion.h"
@@ -478,8 +479,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   if (content && !crashed && !protected_page) {
     if (auto offer = DescribePageTranslationOffer(state, content)) result->SetDictionary("translationOffer", offer);
     else if (KeepTranslationGlobeWhileChecking(state, content)) result->SetBool("translationPending", true);
-    const int zoom = static_cast<int>(std::lround(100 * std::pow(1.2, content->GetHost()->GetZoomLevel())));
-    if (zoom != 100 && zoom > 0 && zoom <= 1000) result->SetInt("zoom", zoom);
+    if (const auto zoom = PageZoomBadge(content->GetHost()->GetZoomLevel())) result->SetInt("zoom", *zoom);
   }
   auto nodes = CefListValue::Create();
   std::map<std::string,const SplitGroup*> split_members;
@@ -502,6 +502,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
     row->SetBool("pinned", node.pinned); row->SetBool("expanded", node.expanded);
     row->SetBool("favorite", node.favorite); row->SetBool("archived", node.archived); row->SetDouble("archivedAt", static_cast<double>(node.archived_at));
     if (node.x_badge_hidden) row->SetBool("xBadgeHidden", true);
+    if (node.folder && !node.icon.empty()) row->SetString("folderIcon", node.icon);
     // A page loaded by a sidebar hover looks unloaded until it is opened (PreloadSaved).
     const auto live = preloading_.contains(node.id) ? sessions_.end() : sessions_.find(node.id);
     const bool failed = live != sessions_.end() && crashed_.contains(live->second->GetIdentifier());
@@ -2667,6 +2668,10 @@ void WorkspaceController::Handle(CefRefPtr<CefDictionaryValue> request, Reply do
     if (method == "tree.rename") {
       command.action = TreeAction::Rename; fields = 4;
       if (!text("title", 240, command.title)) { reject(); return; }
+    } else if (method == "tree.setFolderIcon") {
+      // "" removes the glyph; the store checks the entry is a folder in this sidebar.
+      command.action = TreeAction::SetFolderIcon; fields = 4;
+      if (!text("icon", 32, command.icon) || !ValidFolderIcon(command.icon)) { reject(); return; }
     } else if (method == "tree.move" || method == "tree.place") {
       command.action = method == "tree.move" ? TreeAction::Move : TreeAction::Place; fields = method == "tree.move" ? 5 : 6;
       if (!text("parentId", 36, command.parent) || request->GetType("position") != VTYPE_INT) { reject(); return; }

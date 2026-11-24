@@ -17,6 +17,13 @@ body:has(.panel-root), :root[data-ui="menu"] body { background: linear-gradient(
 
 /* Shared popover chrome. */
 .panel-root { padding: 8px; color: var(--pop-ink); }
+/* Folder glyph picker (FolderIconPicker): the Space emoji picker, as the whole popover. */
+.panel-root[data-kind="folderIcon"] { padding: 0; }
+.folder-icon-panel { --orbit-surface: transparent; --orbit-well: var(--pop-well); --orbit-ink: var(--pop-ink); --orbit-muted: var(--pop-muted); --orbit-line: var(--pop-line); }
+.folder-icon-panel .space-emoji-picker { position: static; width: auto; max-width: none; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.folder-icon-panel .emoji-grid button { display: grid; place-items: center; color: var(--pop-ink); }
+.folder-icon-panel .emoji-grid button[aria-pressed="true"] { color: var(--pop-accent); }
+.folder-icon-panel .emoji-letter:disabled { opacity: .45; }
 .translation-popover h2 { line-height: 1.35; overflow-wrap: anywhere; }
 .translation-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 2px 2px; }
 .translation-actions .popover-action-button { min-height: 38px; height: auto; margin: 0; padding: 5px 8px; }
