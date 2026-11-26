@@ -110,6 +110,13 @@ test('a ready update is a bounded version string', () => {
   for (const bad of [1, '', 'v0.1.1', '0.1', '0.1.1 <b>', '1.0.0-' + 'x'.repeat(40)])
     assert.throws(() => parseSnapshot(JSON.stringify({ ...fixture(), updateReady: bad })));
 });
+test('a Library glide carries the page edge, duration and curve the page card plays', () => {
+  const glide = { id: 7, from: 264, to: 464, duration: 420, easing: [0.4, 0, 0.2, 1] };
+  assert.deepEqual(parseSnapshot(JSON.stringify({ ...fixture(), libraryGlide: glide })).libraryGlide, glide);
+  for (const bad of [{ ...glide, id: 1.5 }, { ...glide, from: '264' }, { ...glide, duration: 5000 }, { ...glide, easing: [0.4, 0, 0.2] },
+    { ...glide, easing: [1.4, 0, 0.2, 1] }, { ...glide, easing: [0.4, 0, 0.2, 'x'] }, { ...glide, to: undefined }])
+    assert.throws(() => parseSnapshot(JSON.stringify({ ...fixture(), libraryGlide: bad })));
+});
 test('accepts native tree with collapsed parent and live active descendant', () => assert.equal(parseSnapshot(JSON.stringify(fixture())).activeId, tab));
 test('Peek has a transient identity, bounded geometry and explicit lifecycle flags', () => {
   const peek = { id:tab, url:'https://example.com/preview', title:'Preview',
@@ -315,4 +322,11 @@ test('the shared archive accepts only archived tabs in the node format', () => {
 test('a snapshot no longer needs archived tabs: the active tree validates without them', () => {
   const snapshot = fixture();
   assert.equal(parseSnapshot(JSON.stringify(snapshot)).nodes.some(n => n.archived), false);
+});
+
+test('native unread counts are bounded non-negative integers', () => {
+  for (const field of ['xUnread', 'whatsappUnread', 'redditUnread']) {
+    assert.equal(parseSnapshot(JSON.stringify({ ...fixture(), [field]: 2 }))[field], 2, field);
+    for (const bad of [-1, 1.5, '2', 1000000]) assert.throws(() => parseSnapshot(JSON.stringify({ ...fixture(), [field]: bad })), `${field} ${bad}`);
+  }
 });

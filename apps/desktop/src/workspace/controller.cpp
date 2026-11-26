@@ -33,11 +33,13 @@
 #include <tuple>
 #include <cwctype>
 #include "include/base/cef_callback.h"
+#include "include/base/cef_trace_event.h"
 #include "include/cef_image.h"
 #include "include/cef_navigation_entry.h"
 #include "include/cef_parser.h"
 #include "include/cef_path_util.h"
 #include "include/wrapper/cef_closure_task.h"
+#include "windows/display_pacer.h"
 #include "windows/embedded_content.h"
 #include "windows/page_corners.h"
 #include "windows/window_corners.h"
@@ -52,6 +54,7 @@
 #include "integrations/integration_previews.h"
 #include "integrations/providers.h"
 #include "integrations/x_unread.h"
+#include "integrations/reddit_unread.h"
 #include "integrations/whatsapp_unread.h"
 #include "history/favicon_cache.h"
 #include "history/history_service.h"
@@ -219,6 +222,7 @@ void WorkspaceController::Stop() {
   stopped_ = true;
   if (integration_previews_) integration_previews_->Stop();
   if (x_unread_) x_unread_->Stop();
+  if (reddit_unread_) reddit_unread_->Stop();
   if (whatsapp_unread_) whatsapp_unread_->Stop();
   CancelFolderRemoval();
   observer_ = {};
@@ -261,6 +265,7 @@ WorkspaceController::Reply WorkspaceController::Ordered(Reply done) {
   };
 }
 void WorkspaceController::FlushPublish() {
+  TRACE_EVENT0("cef.client", "Workspace.FlushPublish");
   publish_pending_ = false;
   // The Spaces board fits its columns: a new or deleted Space resizes it (gliding).
   if (const auto state = state_.lock(); state && !state->standalone_window &&
@@ -348,6 +353,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::ThemeSnapshot() const {
   return result;
 }
 CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
+  TRACE_EVENT0("cef.client", "Workspace.Snapshot");
   auto state = state_.lock();
   // Counts every full snapshot and its build time (not the JSON writing).
   struct Timer {
@@ -398,6 +404,17 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   result->SetBool("sidebarVisible", !state || state->sidebar_visible);
   result->SetBool("libraryOpen", state && state->library_open);
   if (state) result->SetString("librarySection", state->library_section);
+  if (rail_pending_ || rail_running_) {
+    // The page edge's glide for the shell's page card (page x in DIP, client area).
+    auto glide = CefDictionaryValue::Create();
+    auto easing = CefListValue::Create();
+    glide->SetInt("id", rail_generation_);
+    glide->SetInt("from", rail_from_ + kContentInset); glide->SetInt("to", rail_to_ + kContentInset);
+    glide->SetInt("duration", kLibraryGlideMs);
+    for (size_t i = 0; i < 4; ++i) easing->SetDouble(i, kLibraryGlideEasing[i]);
+    glide->SetList("easing", easing);
+    result->SetDictionary("libraryGlide", glide);
+  }
   result->SetBool("sidebarResizing", state && state->sidebar_peek && state->sidebar_peek->is_resizing());
   result->SetInt("sidebarWidth", state && state->window ? SidebarWidth(state->sidebar_width,
       state->window->GetClientAreaBoundsInScreen().width) : kSidebarWidth);
@@ -465,6 +482,7 @@ CefRefPtr<CefDictionaryValue> WorkspaceController::Snapshot() const {
   if (auto peek=DescribeLinkPeek()) result->SetDictionary("linkPeek",peek);
   if (auto media=DescribeMedia()) result->SetList("media",media);
   if (x_unread_) if (const auto count = x_unread_->count()) result->SetInt("xUnread", *count);
+  if (reddit_unread_) if (const auto count = reddit_unread_->count()) result->SetInt("redditUnread", *count);
   if (whatsapp_unread_) if (const auto count = whatsapp_unread_->count()) result->SetInt("whatsappUnread", *count);
   result->SetBool("canGoBack", protected_page ? player && player->back : content && content->CanGoBack());
   result->SetBool("canGoForward", protected_page ? player && player->forward : content && content->CanGoForward());
@@ -735,9 +753,12 @@ void WorkspaceController::Dispatch(TreeCommand command, Reply done, bool interna
   if (LittleWindowRejects(command)) { if (done) done(409, "Little Sol holds one page", nullptr); return; }
   if (command.action == TreeAction::SwitchSpace || command.action == TreeAction::DeleteSpace) {
     // A space opens on a page that is already loaded, or on the empty tab: after a cold start
-    // nothing is loaded from the saved sidebar until you select it.
+    // nothing is loaded from the saved sidebar until you select it. A page loaded only by a
+    // sidebar hover is not one: the user never opened it (user report 2026-11-26: point at a
+    // pinned tab, switch spaces and back, and that tab was selected).
     command.live_nodes.emplace();
-    for (const auto& [id, browser] : sessions_) if (!closing_.contains(id)) command.live_nodes->push_back(id);
+    for (const auto& [id, browser] : sessions_)
+      if (!closing_.contains(id) && !preloading_.contains(id)) command.live_nodes->push_back(id);
   }
   const bool leaving=command.action==TreeAction::Activate || command.action==TreeAction::SwitchSpace || command.action==TreeAction::CreateSpace ||
     command.action==TreeAction::Restore || command.action==TreeAction::DeleteSpace || (command.action==TreeAction::CreateTab && command.value);
@@ -907,6 +928,27 @@ void WorkspaceController::UpdateIntegrationPreviews() {
       }, weak));
     });
   if (x_unread_) x_unread_->Update(profile, x_wanted);
+  // Reddit's inbox count (integrations/reddit_unread.h): wanted while this profile has a pinned
+  // Reddit inbox pin. Reddit tabs are never loaded for it.
+  bool reddit_wanted = false;
+  if (profile && BrowserIntegrationEnabled(state, "reddit"))
+    for (const auto& node : tree_.nodes)
+      if (node.pinned && !node.archived && !node.folder && BrowsingProfileId(tree_, node.id) == profile->id &&
+          RedditInboxPin(node.url)) { reddit_wanted = true; break; }
+  if (!reddit_unread_ && reddit_wanted)
+    reddit_unread_ = std::make_shared<RedditUnread>(state, [weak = weak_from_this()] {
+      CefPostTask(TID_UI, base::BindOnce([](std::weak_ptr<WorkspaceController> w) {
+        if (const auto self = w.lock(); self && !self->stopped_) self->Publish();
+      }, weak));
+    }, [weak = weak_from_this()] {
+      // A Reddit page is the active tab of this window.
+      const auto self = weak.lock();
+      if (!self) return false;
+      const auto browser = self->LiveBrowser(self->ActiveNode());
+      const auto address = browser ? IntegrationUrl(browser->GetMainFrame()->GetURL().ToString()) : std::nullopt;
+      return address && RedditNotificationHost(address->host);
+    });
+  if (reddit_unread_) { reddit_unread_->Update(profile, reddit_wanted); reddit_unread_->FocusChanged(); }
   // WhatsApp (integrations/whatsapp_unread.h): checked in the background only while none of this
   // profile's WhatsApp tabs is loaded; a loaded one shows its own title.
   bool whatsapp_wanted = false, whatsapp_loaded = false;
@@ -1172,6 +1214,16 @@ void WorkspaceController::PreloadSaved(const std::string& id) {
   const auto node = std::find_if(tree_.nodes.begin(), tree_.nodes.end(), [&](const auto& n) { return n.id == id; });
   if (node == tree_.nodes.end() || node->folder || node->archived || !(node->pinned || node->favorite) || !HasWebScheme(node->url)) return;
   if (RoutesProtectedMedia(node->url)) return;
+  // Only while this window (or its floating sidebar, which it owns) is in front.
+  // A loading page can ask for its window (window.focus()); Chrome answers with
+  // SetForegroundWindow on the page (HWNDMessageHandler::Activate). From the
+  // background Windows refuses that, flashes Sol's taskbar button and the shell
+  // repaints as it is activated and deactivated (user report 2026-11-25). In
+  // front, the request finds this window already active.
+  if (!state->window || GetAncestor(GetForegroundWindow(), GA_ROOTOWNER) != state->window->GetWindowHandle()) {
+    if (state->probe) { auto data = CefDictionaryValue::Create(); data->SetString("id", id); state->Record("tab_preload_background_skipped", data); }
+    return;
+  }
   preloading_.insert(id);
   EnsurePage(id);
   if (!creating_.contains(id) && !sessions_.contains(id)) { preloading_.erase(id); return; }
@@ -1316,6 +1368,7 @@ void WorkspaceController::OnProtectedMediaChanged(int browser_id) {
   }, true);
 }
 bool WorkspaceController::CreateLive(const std::string& url, const std::string& id) {
+  TRACE_EVENT0("cef.client", "Workspace.CreateLive");
   const auto state = state_.lock(); if (!state || !state->embedded) return false;
   if (RoutesProtectedMedia(url) && ProfileForNode(id)) {
     link_initiators_.erase(id);
@@ -1519,6 +1572,7 @@ void WorkspaceController::CancelClose(int browser_id) {
   }
 }
 void WorkspaceController::FinishClose(const std::string& id, bool archive, Reply done, const std::string& last_url) {
+  TRACE_EVENT0("cef.client", "Workspace.FinishClose");
   TreeCommand command{archive ? TreeAction::Archive : TreeAction::Unload}; command.id = id;
   if (PageUrlAllowed(last_url)) command.url = last_url;
   // The next page is never one hidden in a collapsed folder: unloading the
@@ -2250,13 +2304,13 @@ void WorkspaceController::SetSidebarVisible(bool visible, bool live, bool animat
   if (live && state->devtools_dock) state->devtools_dock->SetLive(true);
   const int from = state->embedded->Bounds().x - kContentInset;
   // Any other layout settles a running Library glide at once.
-  ++rail_generation_;
+  ++rail_generation_; rail_pending_ = rail_running_ = false;
   // Only a lone page glides: split panes, Link Peek, docked DevTools and
   // fullscreen keep their own layouts and move at once.
   if (animate && !live && from >= 0 && from != width && NativeMotionEnabled() && !state->embedded->HasSplit() &&
       !state->embedded->HasLinkPeek() && !state->embedded->IsFullscreen() &&
       !(state->devtools_dock && state->devtools_dock->Describe()))
-    AnimateRail(from, width);
+    BeginRail(from, width);
   else LayoutSidebar(width, true);
   if (live && state->devtools_dock) state->devtools_dock->SetLive(false);
   QueryPerformanceCounter(&t2);
@@ -2309,28 +2363,86 @@ void WorkspaceController::LayoutSidebar(double width, bool settled) {
 // The Library glide only moves the page: Library keeps the page at its
 // sidebar-layout size (WorkspaceContentArea), so open, close and section
 // changes never resize it, and the window edge cuts off what does not fit.
-// The shell eases the Library's own width on the same curve (library.css), so
-// the two edges travel together.
-namespace { constexpr double kRailMotionMs = 420; }
-void WorkspaceController::AnimateRail(int from, int to) {
+//
+// The shell's page card (the rounded card with the page's shadow) must travel
+// with the page edge. Timed apart they did not (user report 2026-11-26,
+// measured by library_smoke.py): the page started when the command arrived,
+// the card's CSS `left` transition only once the snapshot reached the shell
+// (12-27 ms later), and the shell then presented no frame for 46-300 ms at a
+// time (the Library's blurred entrance), so the card froze while the page moved
+// on, up to 193 px apart. Now the snapshot carries the glide (libraryGlide:
+// from, to, kLibraryGlideMs, the easing), the shell plays it as a compositor
+// transform that keeps moving while its main thread is busy and reports when it
+// started, and the page starts on that clock, one step per display frame.
+void WorkspaceController::BeginRail(int from, int to) {
   LARGE_INTEGER now; QueryPerformanceCounter(&now);
-  rail_from_ = from; rail_to_ = to; rail_started_ = now.QuadPart; rail_frames_ = 0;
-  StepRail(rail_generation_);
+  rail_from_ = from; rail_to_ = to; rail_requested_ = now.QuadPart; rail_frames_ = 0;
+  rail_pending_ = true; rail_running_ = false;
+  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, int generation) {
+    if (const auto state = weak.lock(); state && state->workspace) state->workspace->StartRail(generation, -1);
+  }, state_, rail_generation_), kLibraryGlideHandshakeMs);
 }
-void WorkspaceController::StepRail(int generation) {
+void WorkspaceController::StartLibraryGlide(int id, double elapsed_ms) {
+  StartRail(id, std::clamp(elapsed_ms, 0.0, static_cast<double>(kLibraryGlideMs)));
+}
+bool WorkspaceController::StartRail(int generation, double elapsed_ms) {
   const auto state = state_.lock();
-  if (generation != rail_generation_ || shutting_down_ || !state || !state->window || !state->embedded) return;
+  const bool acknowledged = elapsed_ms >= 0;
+  // A card that starts after the page gave up waiting still sets the clock
+  // (a step back of a few ms, near the curve's gentle start).
+  const bool late = acknowledged && rail_running_ && !rail_acknowledged_;
+  if (generation != rail_generation_ || !(rail_pending_ || late) || shutting_down_ || !state) return false;
   LARGE_INTEGER now, frequency; QueryPerformanceCounter(&now); QueryPerformanceFrequency(&frequency);
-  const double t = std::clamp(static_cast<double>(now.QuadPart - rail_started_) * 1000.0 / frequency.QuadPart / kRailMotionMs, 0.0, 1.0);
+  const double waited = static_cast<double>(now.QuadPart - rail_requested_) * 1000.0 / frequency.QuadPart;
+  // A move reaches the screen with the next composed frame, while the card's
+  // compositor frame is timed for when it is shown: run one display frame
+  // ahead, or the page trails the card by a frame (~8 px mid-glide, probe).
+  double lead = 0;
+  DWM_TIMING_INFO timing{}; timing.cbSize = sizeof(timing);
+  if (SUCCEEDED(DwmGetCompositionTimingInfo(nullptr, &timing)) && timing.qpcRefreshPeriod)
+    lead = std::clamp(timing.qpcRefreshPeriod * 1000.0 / frequency.QuadPart, 0.0, 20.0);
+  // Unacknowledged: the page glides alone, from its start (a card that has
+  // not drawn yet cannot have moved).
+  const double elapsed = (acknowledged ? elapsed_ms : 0) + lead;
+  rail_started_ = now.QuadPart - static_cast<long long>(elapsed * frequency.QuadPart / 1000.0);
+  rail_acknowledged_ = acknowledged;
+  if (late) {
+    if (state->probe) {
+      auto data = CefDictionaryValue::Create(); data->SetInt("id", generation); data->SetDouble("waited_ms", waited);
+      state->Record("library_rail_late_card", data);
+    }
+    return true;  // The running pacer continues on the new clock.
+  }
+  rail_pending_ = false; rail_running_ = true;
+  if (state->probe) {
+    auto data = CefDictionaryValue::Create();
+    data->SetInt("id", generation); data->SetBool("acknowledged", acknowledged);
+    data->SetDouble("elapsed_ms", elapsed - lead); data->SetDouble("lead_ms", lead); data->SetDouble("waited_ms", waited);
+    state->Record("library_rail_start", data);
+  }
+  // Paced by the display, like the card's compositor animation: a timer step
+  // (~15.6 ms) left the page up to 45 px behind the card on a fast display.
+  if (StepRail(generation))
+    StartDisplayPacer([weak = state_, generation] {
+      const auto state = weak.lock();
+      return state && state->workspace && state->workspace->StepRail(generation);
+    });
+  return true;
+}
+bool WorkspaceController::StepRail(int generation) {
+  const auto state = state_.lock();
+  if (generation != rail_generation_ || !rail_running_ || shutting_down_ || !state || !state->window || !state->embedded) return false;
+  LARGE_INTEGER now, frequency; QueryPerformanceCounter(&now); QueryPerformanceFrequency(&frequency);
+  const double t = std::clamp(static_cast<double>(now.QuadPart - rail_started_) * 1000.0 / frequency.QuadPart / kLibraryGlideMs, 0.0, 1.0);
   if (t >= 1 || state->embedded->HasSplit() || state->embedded->HasLinkPeek() || state->embedded->IsFullscreen()) {
-    ++rail_generation_;
+    ++rail_generation_; rail_running_ = false;
     LayoutSidebar(rail_to_, true);
     if (state->probe) {
       auto data = CefDictionaryValue::Create();
       data->SetInt("from", rail_from_); data->SetInt("to", rail_to_); data->SetInt("frames", rail_frames_);
       state->Record("library_rail_animation", data);
     }
-    return;
+    return false;
   }
   if (state->probe && state->content) {
     // Probe evidence of what the screen shows, not only what was asked: the
@@ -2339,7 +2451,7 @@ void WorkspaceController::StepRail(int generation) {
     RECT page{}; POINT origin{0, 0};
     GetWindowRect(state->content->GetHost()->GetWindowHandle(), &page); ClientToScreen(state->window->GetWindowHandle(), &origin);
     RECT client{}; GetClientRect(state->window->GetWindowHandle(), &client);
-    int visible = -1;
+    int visible = -1, card = -1;
     // One row of the composited screen, copied in a single blit (per-pixel reads take ~1 ms each).
     if (HDC screen = GetDC(nullptr)) {
       const int width = client.right, y = origin.y + client.bottom / 2;
@@ -2352,8 +2464,11 @@ void WorkspaceController::StepRail(int generation) {
         BitBlt(memory, 0, 0, width, 1, screen, origin.x, y, SRCCOPY);
         GdiFlush();
         const auto* pixels = static_cast<const unsigned char*>(bits);  // BGRA
+        // The probe paints the shell's page card #00d46a: its left edge shows
+        // wherever the card is behind (left of) the native page.
         for (int x = 0; x < width; ++x) {
           const unsigned char b = pixels[x * 4], g = pixels[x * 4 + 1], r = pixels[x * 4 + 2];
+          if (card < 0 && r < 90 && g > 150 && b < 150) card = x;
           if (r > 200 && g < 60 && b > 70 && b < 130) { visible = x; break; }
         }
         SelectObject(memory, old); DeleteObject(row);
@@ -2362,22 +2477,22 @@ void WorkspaceController::StepRail(int generation) {
     }
     auto frame = CefDictionaryValue::Create();
     frame->SetDouble("t", t); frame->SetInt("asked", state->embedded->Bounds().x);
-    frame->SetInt("window", page.left - origin.x); frame->SetInt("screen", visible);
+    frame->SetInt("from", rail_from_); frame->SetInt("to", rail_to_);
+    frame->SetInt("window", page.left - origin.x); frame->SetInt("screen", visible); frame->SetInt("card", card);
     frame->SetDouble("scale", state->window->GetDisplay()->GetDeviceScaleFactor());
     state->Record("library_rail_frame", frame);
   }
-  // cubic-bezier(.4, 0, .2, 1), as in library.css: a gentle start. Ease-out
-  // quart moved ~70% of the way in the first third and read as a jump (probe).
-  const double eased = CubicBezier(.4, 0, .2, 1, t);
+  // A gentle start (kLibraryGlideEasing). Ease-out quart moved ~70% of the way
+  // in the first third and read as a jump (probe).
+  const auto& curve = kLibraryGlideEasing;
+  const double eased = CubicBezier(curve[0], curve[1], curve[2], curve[3], t);
   const double rail = rail_from_ + (rail_to_ - rail_from_) * eased;
   const auto client = state->window->GetClientAreaBoundsInScreen();
   const int x = static_cast<int>(std::lround(rail)) + kContentInset;
   const int width = std::max(1, client.width - WorkspaceRailWidth(client.width, state->sidebar_visible, state->sidebar_width, {}) - 2 * kContentInset);
   state->embedded->Resize(CefRect(x, kToolbarHeight, width, std::max(1, client.height - kToolbarHeight - kContentInset)));
   ++rail_frames_;
-  CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, int generation) {
-    if (const auto state = weak.lock(); state && state->workspace) state->workspace->StepRail(generation);
-  }, state_, generation), 8);
+  return true;
 }
 void WorkspaceController::RecordSidebarLayout(std::weak_ptr<State> weak, int attempts) {
   CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak, int attempts) {

@@ -5,6 +5,7 @@ export const integrationSettingsCatalog = [
   { id: 'figma', name: 'Figma', detail: 'Recent pages and new designs' },
   { id: 'whatsapp', name: 'WhatsApp', detail: 'Unread badge and startup loading' },
   { id: 'twitter', name: 'X', detail: 'Unread badge and startup loading' },
+  { id: 'reddit', name: 'Reddit', detail: 'Unread notifications and chats badge' },
   { id: 'spotify', name: 'Spotify', detail: 'Sidebar mini-player' },
   { id: 'youtube', name: 'YouTube', detail: 'Video button and automatic picture-in-picture' },
   { id: 'googleMeet', name: 'Google Meet', detail: 'Video button and automatic picture-in-picture' },

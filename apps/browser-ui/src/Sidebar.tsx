@@ -19,7 +19,7 @@ import { SpaceTransition } from './SpaceTransition';
 import { SpaceHeader } from './SpaceHeader';
 import { SidebarTooltip } from './SidebarTooltip';
 import { useAudioIndicator } from './useAudioIndicator';
-import { pinnedIntegration, integrationUnread, xCountUnread, whatsAppCountUnread } from './integrations';
+import { pinnedIntegration, integrationUnread, xCountUnread, whatsAppCountUnread, redditCountUnread } from './integrations';
 import { integrationEnabled, isIntegrationId, type IntegrationSettings } from '../../../packages/browser-contracts/src/integration-settings';
 
 export type SidebarProps = { nodes: TreeNode[]; treeRevision: number; activeId: string; busy: boolean; openNewTab: () => void; hidden: boolean; activeSurface?: boolean; standalone?: boolean;
@@ -30,6 +30,8 @@ export type SidebarProps = { nodes: TreeNode[]; treeRevision: number; activeId: 
   xUnread?: number;
   /** WhatsApp's unread count from the last hidden check; absent when unknown. */
   whatsappUnread?: number;
+  /** Reddit's unread bell notifications plus chats; absent when unknown. */
+  redditUnread?: number;
   /** Arc-style spaces: the switcher, header and which entries show. */
   spaces: SpaceInfo[]; activeSpace: string;
   /** Sidebar players (newest first) for tabs that played sound and are not on screen. */
@@ -63,18 +65,19 @@ export type TabCommand = { method: 'split.focus'; id: string }
   | { method: 'space.confirmDelete' | 'folder.confirmDelete'; id: string } | { method: 'folder.chooseIcon'; id: string; x: number; y: number; width: number; height: number }
   | { method: 'tab.confirmMoveToSpace'; id: string; space: string }
   | Extract<Command, { method: 'media.control' | 'tab.setXBadgeHidden' | 'tab.setIntegration' | 'split.add' }>;
-function UnreadBadge({ node, settings, xUnread, whatsappUnread }: { node: TreeNode; settings?: IntegrationSettings; xUnread?: number; whatsappUnread?: number }) {
+function UnreadBadge({ node, settings, xUnread, whatsappUnread, redditUnread }: { node: TreeNode; settings?: IntegrationSettings; xUnread?: number; whatsappUnread?: number; redditUnread?: number }) {
   const t = useMessages();
   if (!node.pinned || node.closing) return null;
-  // X: the native counter decides, loaded or not. WhatsApp: an unloaded pin shows the last hidden
-  // check. Otherwise the loaded site's title does.
+  // X and Reddit: the native counters decide, loaded or not. WhatsApp: an unloaded pin shows the
+  // last hidden check. Otherwise the loaded site's title does.
   const x = xCountUnread(node.url, xUnread, node.xBadgeHidden);
-  const counted = x !== null ? x : whatsAppCountUnread(node.url, whatsappUnread, node.live);
+  const reddit = x !== null ? x : redditCountUnread(node.url, redditUnread);
+  const counted = reddit !== null ? reddit : whatsAppCountUnread(node.url, whatsappUnread, node.live);
   if (counted === null && !node.live) return null;
   const unread = counted !== null ? counted : integrationUnread(node.currentUrl || node.url, node.pageTitle || '', node.url, node.xBadgeHidden);
   if (!unread || !integrationEnabled(settings, unread === 'x' ? 'twitter' : unread)) return null;
   return <span className="integration-unread" data-favorite={node.favorite} data-provider={unread} role="img"
-    aria-label={unread === 'x' ? t('sidebar.badge.x') : t('sidebar.badge.messages')} />;
+    aria-label={unread === 'x' ? t('sidebar.badge.x') : unread === 'reddit' ? t('sidebar.badge.reddit') : t('sidebar.badge.messages')} />;
 }
 type RowApi = {
   perform: (command: TreeMutation) => Promise<boolean>; tabCommand: (command: TabCommand) => void;
@@ -106,7 +109,7 @@ type RowProps = {
   /** Split members with a sound indicator, as "id,id" (a string keeps the row's props comparable). */
   membersAudio?: string;
   tint?: string;
-  integrations?: IntegrationSettings; xUnread?: number; whatsappUnread?: number;
+  integrations?: IntegrationSettings; xUnread?: number; whatsappUnread?: number; redditUnread?: number;
   /** A folder's child list, drop preview and collapsed active row. */
   nested?: React.ReactNode };
 /** One sidebar row (tab, split, folder or Favorite tile). Memoized: with snapshots
@@ -114,7 +117,7 @@ type RowProps = {
  *  renders one row, not the whole list (docs/performance-audit.md). Every value
  *  it shows is a prop; every action goes through |api|. */
 const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMembers, namedMember, leaving, selected, busy, hidden, activeSurface, dragging, dragSource, dropInside,
-  anyRenaming, renaming, draft, nodeAudio, membersAudio, tint, integrations, xUnread, whatsappUnread, nested }: RowProps) {
+  anyRenaming, renaming, draft, nodeAudio, membersAudio, tint, integrations, xUnread, whatsappUnread, redditUnread, nested }: RowProps) {
   const t = useMessages();
   ++renderCounts.rows;
   const folder = node.kind === 'folder';
@@ -241,7 +244,7 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
               <SiteMark node={member} /><span className="split-row-label">{displayTitle(member)}</span>
               {(member.mediaCamera || member.mediaMicrophone) && <span className="tab-media" role="img" aria-label={member.mediaCamera ? t('sidebar.camera') : t('sidebar.microphone')}><Icon name={member.mediaCamera ? 'camera' : 'mic'} /></span>}
             </button>}
-            {!member.favorite && <UnreadBadge node={member} settings={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} />}
+            {!member.favorite && <UnreadBadge node={member} settings={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} redditUnread={redditUnread} />}
             {member.live && (member.muted || member.audible || (membersAudio ?? '').split(',').includes(member.id)) && <button className="row-action tab-audio" data-muted={member.muted === true}
               aria-label={t(member.muted ? 'sidebar.tab.unmute' : 'sidebar.tab.mute', { name: displayTitle(member) })} data-tip={member.muted ? t('sidebar.tab.unmuteHint') : t('sidebar.tab.muteHint')}
               onClick={() => api.current.tabCommand({ method:'tab.mute',id:member.id,muted:!member.muted })}><Icon name={member.muted ? 'muted' : 'speaker'} /></button>}
@@ -266,7 +269,7 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
       </>}
       {/* After the close button: the row ends with the preview's icon; on a tile it sits in the top-right corner. */}
       {!folder && !group && node.peek && <PeekMark node={node} />}
-      {(!group || node.favorite) && <UnreadBadge node={node} settings={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} />}
+      {(!group || node.favorite) && <UnreadBadge node={node} settings={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} redditUnread={redditUnread} />}
       {node.favorite && (node.mediaCamera || node.mediaMicrophone || showAudio) &&
         <span className="favorite-status">
           {(node.mediaCamera || node.mediaMicrophone) && <span role="img" aria-label={[node.mediaCamera && t('sidebar.camera'), node.mediaMicrophone && t('sidebar.microphone')].filter(Boolean).join(', ')}>
@@ -285,7 +288,7 @@ const SidebarRow = memo(function SidebarRow({ api, node, peek, members: groupMem
   return keys.length === Object.keys(previous).length && keys.every(key => key === 'node'
     ? sameRowNode(previous[key], next[key]) : Object.is(previous[key], next[key]));
 });
-export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, activeSurface = true, action, openArchive, openLibrary, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, spaceTheme, profiles, activeProfile, request, media, previewIntegration, integrations, xUnread, whatsappUnread, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate, splitLeaving }: Props) {
+export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab, hidden, activeSurface = true, action, openArchive, openLibrary, tabCommand, openDroppedFiles, spaces, activeSpace, editSpace, spaceTheme, profiles, activeProfile, request, media, previewIntegration, integrations, xUnread, whatsappUnread, redditUnread, standalone = false, newTabShortcut = 'Ctrl + T', updateReady, restartToUpdate, splitLeaving }: Props) {
   const t = useMessages();
   const intl = useIntl();
   ++renderCounts.sidebar;
@@ -673,7 +676,7 @@ export function Sidebar({ nodes: tree, treeRevision, activeId, busy, openNewTab,
       anyRenaming={!!renaming} renaming={editing ? renaming : undefined} draft={editing ? draft : undefined}
       nodeAudio={audioIndicators.has(node.id)} membersAudio={members ? members.filter(member => audioIndicators.has(member.id)).map(member => member.id).join(',') : undefined}
       tint={node.favorite ? faviconColor(node.favicon, retint) : undefined}
-      integrations={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} nested={nested} />;
+      integrations={integrations} xUnread={xUnread} whatsappUnread={whatsappUnread} redditUnread={redditUnread} nested={nested} />;
   }
   const newTab = <button className="new-tab" data-motion-key="new-tab" data-action="new-tab" disabled={busy} onClick={openNewTab}><Icon name="plus" /><span>{message(intl, 'sidebar.tab.new')}</span><kbd>{newTabShortcut}</kbd></button>;
   function dropSlot(section: Section) {

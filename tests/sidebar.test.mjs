@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { placement, descendant, ordered, displayTitle, sidebarWidth, favoriteColumns, favoriteColumnLimit, archiveOrder, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, sidebarLayoutKey, sameRowNode, preloadable, preloadHoverMs } from '../apps/browser-ui/src/sidebar-model.ts';
+import { placement, descendant, ordered, displayTitle, sidebarWidth, favoriteColumns, favoriteColumnLimit, archiveOrder, pinnedAway, sidebarTitle, tabCloseIcon, tabCloseMethod, folderRemovalSummary, sidebarLayoutKey, sidebarMoveIntersectsViewport, sameRowNode, preloadable, preloadHoverMs } from '../apps/browser-ui/src/sidebar-model.ts';
 import { sidebarPresentation } from '../apps/browser-ui/src/sidebar-presentation.ts';
 
 const n = (id, parentId, position, kind = 'tab', pinned = false) => ({ id, parentId, position, kind, pinned, archived: false, favorite: false });
@@ -236,6 +236,16 @@ test('the layout key changes only when rows can move', () => {
     assert.notEqual(sidebarLayoutKey(changed), key);
   // A tab's own "expanded" flag is not layout.
   assert.equal(sidebarLayoutKey([{ ...base[0], expanded: false }, ...base.slice(1)]), key);
+});
+
+test('a row path can intersect the sidebar viewport between its endpoints', () => {
+  const moving = (before, after) => sidebarMoveIntersectsViewport({ y: before, height: 25 }, { y: after, height: 25 }, 100, 300);
+  assert.equal(moving(30, 75), false);
+  assert.equal(moving(300, 340), false);
+  assert.equal(moving(55, 85), true);
+  assert.equal(moving(285, 310), true);
+  assert.equal(moving(30, 310), true);
+  assert.equal(moving(310, 30), true);
 });
 
 test('a row is the same when only fields it does not show changed', () => {

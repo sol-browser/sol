@@ -200,12 +200,36 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
           await new Promise(resolve=>setTimeout(resolve,350));
         };
         try {
+          // A loud page card: the native frame probe finds its edge on the screen
+          // next to the page's (library_rail_frame), until the previews. CSSOM,
+          // since the shell's CSP refuses an inline <style>.
+          get('.web-slot').style.setProperty('background','#00d46a','important');
           await wait(()=>get('[data-action=library]'));
           const before=await snapshot();
           await q({method:'library.getRoutes'}).then(()=>{throw Error('Closed Library exposed routing');},error=>{if(!error.message.startsWith('409'))throw error;});
+          // The shell's side of a glide, in ms after the command: when the page card's
+          // animation started and where the card is on each main-thread frame (gaps are
+          // the Library's render holding this thread) (library_shell_glide).
+          const trace=(label,command)=>new Promise(resolve=>{
+            const slot=get('.web-slot'), t0=performance.now(), samples=[], events={}, busy=[];
+            const observer=new PerformanceObserver(list=>{for(const e of list.getEntries())busy.push({at:Math.round(e.startTime-t0),ms:Math.round(e.duration),
+              block:Math.round(e.blockingDuration??0),render:Math.round(e.renderStart?e.renderStart-t0:-1),style:Math.round(e.styleAndLayoutStart?e.styleAndLayoutStart-t0:-1),
+              scripts:(e.scripts??[]).map(x=>[x.invoker,Math.round(x.duration),x.sourceFunctionName].join('|')).slice(0,6)});});
+            observer.observe({type:'long-animation-frame',buffered:false});
+            const step=now=>{
+              const started=slot.getAnimations().find(a=>typeof a.startTime==='number');
+              if(started&&events.start===undefined)events.start=Math.round(started.startTime-t0);
+              samples.push([Math.round(now-t0),Math.round(slot.getBoundingClientRect().left)]);
+              if(now-t0<640)requestAnimationFrame(step);else{observer.disconnect();console.info('RED_LIBRARY_GLIDE:'+JSON.stringify({label,events,busy,samples}));resolve();}};
+            requestAnimationFrame(step); command();
+          });
           const open=async ()=>(await wait(()=>get('[data-action=library]'))).click();
           const close=()=>get('[data-action=close-library]').click();
-          await open(); await wait(()=>get('.library'));
+          await trace('open',()=>get('[data-action=library]').click()); await wait(()=>get('.library'));
+          await trace('close',close); await wait(()=>!get('.library'));
+          // Mid-glide, this thread is held for 120 ms: the card (a compositor
+          // animation) must keep pace with the page regardless.
+          await trace('reopen',()=>{get('[data-action=library]').click();setTimeout(()=>{const end=performance.now()+120;while(performance.now()<end);},90);}); await wait(()=>get('.library'));
           const expanded=await snapshot();
           if(!expanded.libraryOpen||expanded.contentBounds.x<=before.contentBounds.x||expanded.activeId!==before.activeId)throw Error('Open geometry');
           console.info('RED_LIBRARY_RESIZE');
@@ -237,9 +261,8 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
           const narrow=await snapshot();
           get('[data-library-section=spaces]').click(); await wait(()=>get('.library-spaces'));
           // The shell's page card (an empty tab draws only this) glides with the native page.
-          const glide=getComputedStyle(get('.web-slot'));
-          if(!matchMedia('(prefers-reduced-motion: reduce)').matches&&(!glide.transitionProperty.includes('left')||
-              get('main').dataset.libraryMotion!=='true'))throw Error('Page card does not glide');
+          if(!matchMedia('(prefers-reduced-motion: reduce)').matches&&!get('.web-slot').getAnimations().some(a=>a.playState==='running'))
+            throw Error('Page card does not glide');
           const wide=await snapshot();
           if(wide.librarySection!=='spaces'||wide.contentBounds.x<=narrow.contentBounds.x||
               wide.activeId!==narrow.activeId||wide.contentBounds.width<320)throw Error('Spaces board geometry');
@@ -316,6 +339,7 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
           await drag(nodeRow(sourceFolder),nodeRow(nested),.5);
           if((await snapshot()).treeRevision!==after.treeRevision)throw Error('A cyclic folder drop changed the tree');
           await mutation({method:'space.switch',id:work.id});
+          get('.web-slot').style.removeProperty('background');
           await preview('spaces');
           const url=new URL('?archive=library-keyword', before.url).href;
           const archived=await mutation({method:'tree.createTab',parentId:'',title:'Library Archive Fixture',url});

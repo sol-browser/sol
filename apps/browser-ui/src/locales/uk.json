@@ -1047,6 +1047,9 @@
   "sidebar.badge.messages": {
     "defaultMessage": "Непрочитані повідомлення"
   },
+  "sidebar.badge.reddit": {
+    "defaultMessage": "Непрочитані сповіщення Reddit"
+  },
   "sidebar.tab.back": {
     "defaultMessage": "Повернути «{name}» до закріпленої адреси"
   },
@@ -3065,6 +3068,9 @@
   },
   "settings.integration.twitter": {
     "defaultMessage": "Позначка непрочитаних і перевірка під час запуску"
+  },
+  "settings.integration.reddit": {
+    "defaultMessage": "Позначка непрочитаних сповіщень і чатів"
   },
   "settings.integration.spotify": {
     "defaultMessage": "Мініпрогравач на бічній панелі"

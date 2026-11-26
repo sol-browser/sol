@@ -4,6 +4,7 @@
 #include "windows/embedded_content.h"
 #include "windows/focus.h"
 #include "windows/motion.h"
+#include "workspace/link_redirect.h"
 #include "include/cef_parser.h"
 #include "include/views/cef_display.h"
 #include "include/base/cef_callback.h"
@@ -21,6 +22,15 @@ std::string Site(const std::string& url) {
   std::transform(host.begin(),host.end(),host.begin(),[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   if (host.starts_with("www.")) host.erase(0,4);
   return host+":"+CefString(&parts.port).ToString();
+}
+// A link leaves the source's site when its own host differs, or when it is the
+// source site's out-link redirector (youtube.com/redirect?q=...) for another site.
+bool LeavesSite(const std::string& source,const std::string& url) {
+  const auto from=Site(source);
+  if (from!=Site(url)) return true;
+  const auto target=LinkRedirectTarget(url);
+  const auto to=target.empty() ? std::string() : Site(target);
+  return !to.empty() && to!=from;
 }
 }
 bool WorkspaceController::IsPeekPage(const std::string& id) const {
@@ -97,7 +107,7 @@ bool WorkspaceController::RouteLinkPeek(CefRefPtr<CefBrowser> source,const std::
     (expanded_split_pane_.empty() || expanded_split_pane_==binding->second);
   if (tree_.active_id!=binding->second && !visible_split) return false;
   const auto node=std::find_if(tree_.nodes.begin(),tree_.nodes.end(),[&](const auto& n) { return n.id==binding->second; });
-  if (node==tree_.nodes.end() || (!force && (!node->pinned || Site(source->GetMainFrame()->GetURL())==Site(url)))) return false;
+  if (node==tree_.nodes.end() || (!force && (!node->pinned || !LeavesSite(source->GetMainFrame()->GetURL().ToString(),url)))) return false;
   GUID guid{}; wchar_t name[40]{};
   if (FAILED(CoCreateGuid(&guid)) || !StringFromGUID2(guid,name,40)) return false;
   link_peek_id_=CefString(std::wstring(name+1,36)).ToString();

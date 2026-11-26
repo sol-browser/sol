@@ -62,7 +62,9 @@ class PageZoomWatch {
   // The last check of one Begin.
   void End(int id) {
     const auto watch = pages_.find(id);
-    if (watch != pages_.end() && --watch->second.pending <= 0) pages_.erase(watch);
+    if (watch == pages_.end()) return;
+    --watch->second.pending;
+    if (watch->second.pending <= 0) pages_.erase(watch);
   }
   // Sol showed |level| itself (keys, the badge, the old command route): a
   // pending wheel check must not show it again.

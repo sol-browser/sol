@@ -39,6 +39,20 @@ def main():
     # The composited screen shows the page moving, not only the window being asked to move.
     shown = [row['details']['screen'] for row in rows if row['event'] == 'library_rail_frame' and row['details']['screen'] >= 0]
     assert len(set(shown)) >= 6, (directory, shown)
+    # The page card and the page edge glide as one (user report 2026-11-26: the
+    # card froze while the page moved on, up to 193 px apart). The probe paints
+    # the card green; its edge shows on the screen only where it trails the page.
+    starts = [row['details'] for row in rows if row['event'] == 'library_rail_start']
+    late = {row['details']['id'] for row in rows if row['event'] == 'library_rail_late_card'}
+    assert len(starts) >= 3 and all(s['acknowledged'] or s['id'] in late for s in starts), (directory, starts)
+    gaps = [row['details']['screen'] - row['details']['card'] for row in rows if row['event'] == 'library_rail_frame'
+            and row['details']['card'] >= 0 and row['details']['screen'] >= 0]
+    scale = max([row['details']['scale'] for row in rows if row['event'] == 'library_rail_frame'] or [1])
+    assert len(gaps) >= 20 and sorted(gaps)[len(gaps) // 2] <= 6 * scale and max(gaps) <= 40 * scale, (directory, gaps)
+    traces = {trace['label']: trace for trace in (json.loads(row['details']['trace']) for row in rows
+                                                  if row['event'] == 'library_shell_glide')}
+    # The reopen glide held the shell's main thread (the card must not freeze with it).
+    assert any(frame['ms'] >= 100 for frame in traces['reopen']['busy']), (directory, traces.get('reopen'))
     if events['library_layout']['foreground']:
         assert events['library_layout']['page_keyboard'], (directory, events['library_layout'])
     with sqlite3.connect(directory / 'profile/BrowserData/settings.sqlite3') as db:
@@ -47,7 +61,8 @@ def main():
     for section in ('spaces', 'archive', 'routes', 'editor'):
         image = directory / f'library-{section}.png'
         assert image.is_file() and image.stat().st_size > 1000, image
-    report = {'passed': True, 'layout': events['library_layout'], 'glides': glides, 'directory': str(directory)}
+    report = {'passed': True, 'layout': events['library_layout'], 'glides': glides, 'directory': str(directory),
+              'card_gap': {'frames': len(gaps), 'median': sorted(gaps)[len(gaps) // 2], 'max': max(gaps)}, 'starts': starts}
     (directory / 'library.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(report, indent=2))
 

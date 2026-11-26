@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { integrationCatalog, recentIntegration, googleIntegration, hoverIntegration, pinnedIntegration, integrationJoinUrl, parseIntegrationCard, integrationUnread, xHomePin, xCountUnread, whatsAppHomePin, whatsAppCountUnread } from '../apps/browser-ui/src/integrations.ts';
+import { integrationCatalog, recentIntegration, googleIntegration, hoverIntegration, pinnedIntegration, integrationJoinUrl, parseIntegrationCard, integrationUnread, redditInboxPin, redditCountUnread, xHomePin, xCountUnread, whatsAppHomePin, whatsAppCountUnread } from '../apps/browser-ui/src/integrations.ts';
 import { parseSettingsSnapshot } from '../packages/browser-contracts/src/index.ts';
 import { integrationEnabled, integrationSettingsCatalog, unlistedIntegrations, validIntegrationSettings } from '../packages/browser-contracts/src/integration-settings.ts';
-test('catalog covers all 17 services with four recent-page providers', () => {
-  assert.equal(integrationCatalog.length, 17);
-  assert.equal(new Set(integrationCatalog.map(p => p.id)).size, 17);
+test("catalog covers Arc's 17 services plus Reddit, with four recent-page providers", () => {
+  assert.equal(integrationCatalog.length, 18);
+  assert.equal(new Set(integrationCatalog.map(p => p.id)).size, 18);
   assert.equal(integrationCatalog.filter(p => p.kind === 'recent').length, 4);
 });
 test('recent providers require HTTPS, authentic hosts and their normal port', () => {
@@ -27,10 +27,10 @@ test('paused cards are not requested or accepted for existing pins', () => {
 test('Spotify and YouTube stay readable but are not offered in Settings', () => {
   assert.deepEqual([...unlistedIntegrations].sort(), ['spotify', 'youtube']);
   assert.equal(validIntegrationSettings({youtube:false, spotify:true}), true);
-  assert.equal(integrationSettingsCatalog.filter(p => !unlistedIntegrations.includes(p.id)).length, 9);
+  assert.equal(integrationSettingsCatalog.filter(p => !unlistedIntegrations.includes(p.id)).length, 10);
 });
 test('available providers can be switched off and on', () => {
-  assert.equal(integrationSettingsCatalog.length, 11);
+  assert.equal(integrationSettingsCatalog.length, 12);
   assert.equal(integrationEnabled(undefined, 'gmail'), true);
   assert.equal(integrationEnabled(undefined, 'linear'), false);
   assert.equal(validIntegrationSettings({github:true}), false);
@@ -144,4 +144,26 @@ test('an unloaded WhatsApp home pin shows the hidden check; a loaded one its tit
   assert.equal(whatsAppCountUnread('https://web.whatsapp.com/', 3, true), null);       // loaded: the title decides
   assert.equal(whatsAppCountUnread('https://web.whatsapp.com/', undefined, false), null);
   assert.equal(whatsAppCountUnread('https://web.whatsapp.com/send', 3, false), null);
+});
+
+test("Reddit's unread count decides the dot on Reddit front-page and inbox pins, loaded or not", () => {
+  assert.equal(integrationCatalog.find(p => p.id === 'reddit')?.kind, 'badge');
+  assert.equal(validIntegrationSettings({reddit:false}), true);
+  assert.equal(integrationEnabled({reddit:false}, 'reddit'), false);
+  assert.equal(integrationEnabled(undefined, 'reddit'), true);
+  for (const url of ['https://www.reddit.com/', 'https://www.reddit.com', 'https://reddit.com/', 'https://old.reddit.com/', 'https://sh.reddit.com/',
+      'https://www.reddit.com/notifications', 'https://www.reddit.com/notifications/', 'https://www.reddit.com/message/inbox/',
+      'https://old.reddit.com/message/unread', 'https://www.reddit.com/message/messages', 'https://www.reddit.com/chat', 'https://chat.reddit.com/', 'https://chat.reddit.com/room/abc'])
+    assert.equal(redditInboxPin(url), true, url);
+  for (const url of ['https://www.reddit.com/r/rust/', 'https://www.reddit.com/r/movies/comments/abc123/x/', 'https://www.reddit.com/user/someone/',
+      'https://www.reddit.com/?feed=home', 'https://www.reddit.com/#top', 'https://www.reddit.com.evil.test/', 'https://user@www.reddit.com/',
+      'https://www.reddit.com:444/', 'http://www.reddit.com/', 'https://redd.it/abc', 'https://notreddit.com/'])
+    assert.equal(redditInboxPin(url), false, url);
+  assert.equal(redditCountUnread('https://www.reddit.com/', 2), 'reddit');
+  assert.equal(redditCountUnread('https://www.reddit.com/', 0), undefined);
+  assert.equal(redditCountUnread('https://www.reddit.com/', undefined), null);   // unknown (signed out, error): no dot
+  assert.equal(redditCountUnread('https://www.reddit.com/r/rust/', 2), null);    // ordinary Reddit pin
+  // Reddit's titles carry no count, so a title never sets a Reddit dot.
+  assert.equal(integrationUnread('https://www.reddit.com/', '(3) Reddit', 'https://www.reddit.com/'), undefined);
+  assert.equal(pinnedIntegration('https://www.reddit.com/'), undefined);  // a badge only: no hover card
 });

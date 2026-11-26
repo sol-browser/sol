@@ -14,7 +14,7 @@ struct IntegrationSetting { std::string_view id, name; bool available = true, li
 inline constexpr IntegrationSetting kIntegrationSettings[] = {
     {"gmail","Gmail"}, {"outlookMail","Outlook Mail"}, {"googleCalendar","Google Calendar"}, {"figma","Figma"},
     {"notion","Notion",false}, {"linear","Linear",false}, {"confluence","Confluence",false},
-    {"whatsapp","WhatsApp"}, {"twitter","X"}, {"spotify","Spotify",true,false}, {"youtube","YouTube",true,false},
+    {"whatsapp","WhatsApp"}, {"twitter","X"}, {"reddit","Reddit"}, {"spotify","Spotify",true,false}, {"youtube","YouTube",true,false},
     {"googleMeet","Google Meet"}, {"googleDocs","Google Docs"}, {"word","Word"}};
 using IntegrationSettings = std::map<std::string, bool, std::less<>>;
 // The stored catalog includes paused providers so old preferences can be read.
@@ -290,6 +290,24 @@ inline bool XNotificationSite(std::string_view url) {
   const auto address = IntegrationUrl(url);
   return address && XNotificationHost(address->host);
 }
+// Reddit's web hosts.
+inline bool RedditNotificationHost(std::string_view host) {
+  return host == "reddit.com" || host == "www.reddit.com" || host == "new.reddit.com" || host == "sh.reddit.com" ||
+         host == "old.reddit.com" || host == "chat.reddit.com";
+}
+// A pinned Reddit front page, notifications, inbox or chat: the pins that show Reddit's unread
+// count (integrations/reddit_unread.h; the renderer's redditInboxPin). Subreddits, posts and links
+// are ordinary pins.
+inline bool RedditInboxPin(std::string_view url) {
+  if (url.find_first_of("?#") != url.npos) return false;
+  const auto address = IntegrationUrl(url);
+  if (!address || !RedditNotificationHost(address->host)) return false;
+  std::string_view path = address->path;
+  if (path.size() > 1 && path.ends_with('/')) path.remove_suffix(1);
+  if (address->host == "chat.reddit.com") return true;
+  return path == "/" || path == "/notifications" || path == "/chat" || path == "/message/inbox" || path == "/message/unread" ||
+         path == "/message/messages";
+}
 enum class StartupBadgeSite { WhatsApp, X };
 inline std::string_view StartupBadgeId(StartupBadgeSite site) { return site == StartupBadgeSite::X ? "twitter" : "whatsapp"; }
 inline std::optional<StartupBadgeSite> StartupBadgeFor(std::string_view url, bool x_badge_hidden) {
@@ -310,6 +328,7 @@ inline std::string IntegrationForUrl(std::string_view url) {
   const auto& host = a->host;
   if (XNotificationHost(host)) return "twitter";
   if (host == "web.whatsapp.com") return "whatsapp";
+  if (RedditNotificationHost(host)) return "reddit";
   if (host == "open.spotify.com") return "spotify";
   if (host == "youtube.com" || host == "www.youtube.com" || host == "m.youtube.com" || host == "music.youtube.com" || host == "youtu.be") return "youtube";
   if (host == "meet.google.com") return "googleMeet";

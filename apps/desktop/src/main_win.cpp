@@ -95,6 +95,7 @@
 #include "experiments/history_probe.h"
 #include "experiments/tab_actions_probe.h"
 #include "experiments/audible_probe.h"
+#include "experiments/web_audio_probe.h"
 #include "experiments/protocols_probe.h"
 #include "experiments/close_motion_probe.h"
 #include "experiments/sidebar_peek_probe.h"
@@ -388,10 +389,10 @@ void ZoomPage(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page, c
     if (const auto state = weak.lock()) ShowPageZoom(state, page, source);
   }, std::weak_ptr<State>(state), page, source));
 }
-// Ctrl+wheel over |page|: Chrome zooms it itself, unless the page uses the
-// wheel (maps, editors); engine 158 no longer asks Sol first (OnChromeCommand,
-// cef-patches.md #18). Show the level once it changed: a quick check, and a
-// later one for a busy page.
+// Ctrl+wheel over |page|: Chrome zooms it (through Sol's OnChromeCommand while
+// UseActionsForBrowserCommands is off, cef-patches.md #18), unless the page uses
+// the wheel (maps, editors). Fallback: show the level once it changed, a quick
+// check and a later one for a busy page.
 void WatchPageZoom(const std::shared_ptr<State>& state, CefRefPtr<CefBrowser> page) {
   PageZoomWatch().Begin(page->GetIdentifier(), page->GetHost()->GetZoomLevel());
   for (const int delay : {120, 600})
@@ -718,9 +719,9 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     return ZoomKey(browser, event);
   }
   // Chrome's zoom keys (Ctrl+=/-/0), after the page left them alone as in Chrome.
-  // Engine 158 no longer routes Chrome's zoom command through OnChromeCommand
-  // (cef-patches.md #18), so Sol zooms here, before Chrome's own accelerator, and
-  // shows the level. Sol's own UI never zooms: it shares the sol://ui origin and
+  // Sol zooms here, before Chrome's own accelerator, and shows the level (added
+  // while engine 158 skipped OnChromeCommand, cef-patches.md #18; kept so keys
+  // never depend on Chrome's command path). Sol's own UI never zooms: it shares the sol://ui origin and
   // Chrome keeps zoom per origin, so zooming History scaled the whole browser.
   bool ZoomKey(CefRefPtr<CefBrowser> browser, const CefKeyEvent& event) {
     if (popup_ || !state_->workspace || event.type != KEYEVENT_RAWKEYDOWN || (event.modifiers & EVENTFLAG_COMMAND_DOWN)) return false;
@@ -1149,6 +1150,15 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     // A passive tooltip check must not raise the native page stack.
     if (method == "workspace.sidebarHovered")
       return red::HandleSidebarAction(state_, browser, method, dict, persistent, callback);
+    // The page card started its half of a Library glide (passive as well): the
+    // page edge starts on the card's clock (WorkspaceController::BeginRail).
+    if (method == "library.glideStarted") {
+      if (!state_->workspace || persistent || dict->GetSize() != 3 || dict->GetType("id") != VTYPE_INT ||
+          dict->GetType("elapsed") != VTYPE_INT) { callback->Failure(400, "Invalid Library glide"); return true; }
+      state_->workspace->StartLibraryGlide(dict->GetInt("id"), dict->GetInt("elapsed"));
+      auto value = CefValue::Create(); value->SetDictionary(state_->workspace->Snapshot());
+      callback->Success(CefWriteJSON(value, JSON_WRITER_DEFAULT)); return true;
+    }
     RestoreContentStack(state_);
     if (red::HandleUiFocus(state_, browser, method, dict->GetSize(), persistent, callback)) return true;
     if (method == "workspace.sidebarResizeHovered") {
@@ -1875,6 +1885,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
         red::OnHistoryProbeLoad(state_, browser, url);
         red::OnTabActionsProbeLoad(state_, url);
         red::OnAudibleProbeLoad(state_, browser, url);
+        red::OnWebAudioProbeLoad(state_, browser, url);
         red::OnPipProbeLoad(state_, browser, url);
         red::OnSplitProbeLoad(state_, url);
         red::OnCaptureMuteProbeLoad(state_, browser, url);
@@ -1947,6 +1958,10 @@ class Client final : public CefClient, public CefLifeSpanHandler,
       }
       if (!shell_ && state_->content && browser->IsSame(state_->content) && message.ToString().starts_with("RED_LIBRARY_FORM:"))
         state_->Record(message == "RED_LIBRARY_FORM:true" ? "library_form_preserved" : "library_form_lost");
+      if (shell_ && message.ToString().starts_with("RED_LIBRARY_GLIDE:")) {
+        auto data = CefDictionaryValue::Create(); data->SetString("trace", message.ToString().substr(18, 8000));
+        state_->Record("library_shell_glide", data);
+      }
       if (shell_ && message.ToString().starts_with("RED_LIBRARY_RESULT:")) {
         auto data = CefDictionaryValue::Create(); data->SetString("result", message.ToString().substr(19, 400));
         state_->Record("library_result", data);
@@ -1993,6 +2008,7 @@ class Client final : public CefClient, public CefLifeSpanHandler,
     if (!shell_ && !popup_) red::ObserveSiteProbe(state_, browser, message.ToString());
     red::ObserveHistoryProbe(state_, message.ToString());
     red::ObserveAudibleProbe(state_, message.ToString());
+    if (!shell_) red::ObserveWebAudioProbe(state_, message.ToString());
     if (!shell_) red::ObservePipProbe(state_, message.ToString());
     red::ObserveDownloadsPageProbe(state_, message.ToString());
     if (shell_) red::ObserveCloseMotionProbe(state_, message.ToString());
@@ -2318,7 +2334,7 @@ class WindowDelegate final : public CefWindowDelegate {
       state_->Record("window_shown");
       // The Spotify controller owns shutdown and may wait for a full track.
       const bool proxy_auth_probe = state_->probe && CefCommandLine::GetGlobalCommandLine()->HasSwitch("probe-proxy-auth");
-      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold" && state_->spotify_probe_slot.empty()) CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->sidebar_perf_probe ? 150000 : state_->sidebar_peek_probe || proxy_auth_probe ? 37000 : state_->split_probe ? 105000 : state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->split_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->little_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe || state_->link_headers_discard ? 30000 : 15000);
+      if (state_->probe && !state_->input_probe && state_->lifecycle_mode != "hold" && state_->spotify_probe_slot.empty()) CefPostDelayedTask(TID_UI, base::BindOnce(&WindowDelegate::FinishProbe, CefRefPtr<WindowDelegate>(this)), state_->sidebar_perf_probe ? 150000 : state_->sidebar_peek_probe || proxy_auth_probe ? 37000 : state_->split_probe ? 105000 : state_->google_integrations_probe || state_->organization_probe || state_->browsing_probe || state_->lifecycle_probe || state_->downloads_probe || state_->fullscreen_probe || state_->site_probe || !state_->history_probe.empty() || state_->tab_actions_probe || state_->audible_probe || state_->web_audio_probe || state_->downloads_page_probe || state_->extension_popup_probe || !state_->protocols_probe.empty() || state_->close_motion_probe || state_->sidebar_perf_probe || state_->pip_probe || state_->split_probe || state_->capture_mute_probe || state_->theme_probe || state_->spaces_probe || !state_->ua_brand_probe.empty() || state_->boost_probe || state_->menu_probe || state_->private_probe || state_->little_probe || state_->pin_probe || !state_->import_probe.empty() || state_->link_headers_tabmenu || state_->link_headers_inspect || state_->link_headers_transfer || state_->link_headers_cycles || state_->passwords_probe || state_->link_headers_discard ? 30000 : 15000);
       if (state_->input_probe) red::ObserveNativeInput(state_);
       if (!state_->import_probe.empty()) CefPostDelayedTask(TID_UI, base::BindOnce([](std::weak_ptr<State> weak) {
         if (auto s = weak.lock()) red::RunImportProbe(s);
@@ -2410,6 +2426,7 @@ class WindowDelegate final : public CefWindowDelegate {
         (state_->history_probe.empty() || state_->history_checks) &&
         (!state_->tab_actions_probe || state_->tab_actions_checks) &&
         (!state_->audible_probe || state_->audible_checks) &&
+        (!state_->web_audio_probe || state_->web_audio_checks) &&
         (!state_->downloads_page_probe || state_->downloads_page_checks) &&
         (!state_->extension_popup_probe || state_->extension_popup_done) &&
         (state_->protocols_probe.empty() || state_->protocols_done) &&
@@ -2492,6 +2509,10 @@ class WindowDelegate final : public CefWindowDelegate {
     int layouts = 0;
     if (changed) {
       if (state_->workspace_mode) red::ApplyWindowCorners(window);
+      // Chromium sets its maximize region after this notification; take it off
+      // again once that message is handled (window_corners.h).
+      if (state_->workspace_mode && state_->translucent)
+        CefPostTask(TID_UI, base::BindOnce([](CefRefPtr<CefWindow> w) { if (w->IsValid()) red::ApplyWindowCorners(w); }, window));
       if (state_->workspace_mode && state_->embedded) {
         // SetSidebarVisible already performs the content layout and publishes
         // the new client size. Do not also call ResizeWorkspace here.
@@ -3115,6 +3136,14 @@ class App final : public CefApp, public CefBrowserProcessHandler, public CefRend
       // No "make Chromium your default PDF viewer" infobar: accepting it registers
       // Chromium, not Sol, in Windows Default Apps. Sol offers .pdf itself (default_browser.cpp).
       if (disabled.find("PdfInfoBar") == std::string::npos) disabled += ",PdfInfoBar";
+      // Chrome's own commands must reach Sol's OnChromeCommand (password manager →
+      // Sol's Passwords, DevTools, F1, Sol's trusted pages blocking page commands).
+      // Chromium 158 enables UseActionsForBrowserCommands: its CommandActionUpdater
+      // runs commands as ActionItems and skips BrowserCommandController::
+      // HandleCommandWithDisposition, the only place CEF asks the client
+      // (cef-patches.md #18, traced with cdb 2026-11-26). Off, the legacy
+      // CommandUpdaterImpl path calls ChromeBrowserDelegate::HandleCommand again.
+      if (disabled.find("UseActionsForBrowserCommands") == std::string::npos) disabled += ",UseActionsForBrowserCommands";
       command->AppendSwitchWithValue("disable-features", disabled);
     }
     // Probe only: fake camera/microphone so tests never open real devices.
@@ -3421,12 +3450,17 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   state->site_probe = command->HasSwitch("probe-site-settings");
   state->tab_actions_probe = command->HasSwitch("probe-tab-actions");
   state->audible_probe = command->HasSwitch("probe-audible");
+  state->web_audio_probe = command->HasSwitch("probe-web-audio");
+  state->web_audio_selector = command->GetSwitchValue("probe-web-audio").ToString();
+  // Embedded in a single-quoted script string.
+  if (state->web_audio_selector.find_first_of("'\\\r\n") != std::string::npos) return 11;
   state->downloads_page_probe = command->HasSwitch("probe-downloads-page");
   state->extension_popup_probe = command->HasSwitch("probe-extension-popup");
   state->protocols_probe = command->GetSwitchValue("probe-protocols").ToString();
   state->close_motion_probe = command->HasSwitch("probe-close-motion");
   state->sidebar_peek_probe = command->HasSwitch("probe-sidebar-peek");
   if (state->sidebar_peek_probe) state->x_unread_fixture = 4;  // The X counter's answer in that probe.
+  if (state->sidebar_peek_probe) state->reddit_unread_fixture = 2;  // Reddit's inbox count in that probe.
   state->google_integrations_probe = command->HasSwitch("probe-google-integrations");
   state->sidebar_perf_probe = command->HasSwitch("probe-sidebar-perf");
   state->pip_probe = command->HasSwitch("probe-pip");
@@ -3514,7 +3548,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance, LPWSTR, int, void* sandb
   if (state->lifecycle_probe && state->lifecycle_mode != "full" && state->lifecycle_mode != "restore" && state->lifecycle_mode != "hold" && state->lifecycle_mode != "manual") return 11;
   state->workspace_probe = command->HasSwitch("probe-workspace") || state->organization_probe || state->browsing_probe;
   // The installed Sol is always the workspace browser; Velopack starts it with no arguments.
-  state->workspace_mode = installed || command->HasSwitch("workspace") || state->workspace_probe || state->lifecycle_probe || state->downloads_probe || state->fullscreen_probe || !state->permissions_probe.empty() || state->site_probe || !state->history_probe.empty() || state->tab_actions_probe || state->audible_probe || state->downloads_page_probe || state->extension_popup_probe || !state->protocols_probe.empty() || state->close_motion_probe || state->sidebar_peek_probe || state->sidebar_perf_probe || state->pip_probe || state->split_probe || state->capture_mute_probe || state->theme_probe || state->spaces_probe || !state->ua_brand_probe.empty() || state->boost_probe || state->menu_probe || state->private_probe || state->little_probe || state->pin_probe || state->link_headers_probe || !state->import_probe.empty();
+  state->workspace_mode = installed || command->HasSwitch("workspace") || state->workspace_probe || state->lifecycle_probe || state->downloads_probe || state->fullscreen_probe || !state->permissions_probe.empty() || state->site_probe || !state->history_probe.empty() || state->tab_actions_probe || state->audible_probe || state->web_audio_probe || state->downloads_page_probe || state->extension_popup_probe || !state->protocols_probe.empty() || state->close_motion_probe || state->sidebar_peek_probe || state->sidebar_perf_probe || state->pip_probe || state->split_probe || state->capture_mute_probe || state->theme_probe || state->spaces_probe || !state->ua_brand_probe.empty() || state->boost_probe || state->menu_probe || state->private_probe || state->little_probe || state->pin_probe || state->link_headers_probe || !state->import_probe.empty();
   state->probe_tabs = state->probe_tabs || state->native_tabs_reference || state->embedded_tabs_probe;
   auto url = command->HasSwitch("probe-url") ? command->GetSwitchValue("probe-url").ToString() : "https://example.com";
   state->initial_url = url;

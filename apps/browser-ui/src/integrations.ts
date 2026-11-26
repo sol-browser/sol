@@ -15,6 +15,7 @@ export const integrationCatalog = [
   { id: 'youtube', name: 'YouTube', kind: 'pip' },
   { id: 'spotify', name: 'Spotify', kind: 'player' },
   { id: 'whatsapp', name: 'WhatsApp', kind: 'badge' },
+  { id: 'reddit', name: 'Reddit', kind: 'badge' },
   { id: 'confluence', name: 'Confluence', kind: 'recent' },
   { id: 'linear', name: 'Linear', kind: 'recent' },
   { id: 'github', name: 'GitHub', kind: 'pr' },
@@ -86,6 +87,8 @@ export type IntegrationCard = { node: string; service: string; name: string; loa
     displayTime?: string; startMinute?: number; endMinute?: number; visitedAt?: number }[] };
 const isMinute = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < 1440;
 const xHosts = ['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com'];
+// Reddit's web hosts (native RedditNotificationHost).
+const redditHosts = ['reddit.com', 'www.reddit.com', 'new.reddit.com', 'sh.reddit.com', 'old.reddit.com', 'chat.reddit.com'];
 function badgeHost(url: string): string | undefined {
   try {
     if (/[\\\u0000-\u0020\u007f]/u.test(url)) return;
@@ -114,6 +117,25 @@ export function whatsAppHomePin(saved: string): boolean {
 export function whatsAppCountUnread(saved: string, whatsappUnread: number | undefined, live: boolean): 'whatsapp' | undefined | null {
   if (live || whatsappUnread === undefined || !whatsAppHomePin(saved)) return null;  // null: not decided here.
   return whatsappUnread > 0 ? 'whatsapp' : undefined;
+}
+/** A pinned Reddit front page, notifications, inbox or chat: the pins that show Reddit's unread count (native RedditInboxPin).
+ *  Subreddit, post and other Reddit pins are ordinary pins. */
+export function redditInboxPin(saved: string): boolean {
+  const host = badgeHost(saved);
+  if (!host || !redditHosts.includes(host)) return false;
+  try {
+    const u = new URL(saved);
+    if (u.search || u.hash || saved.includes('?') || saved.includes('#')) return false;
+    if (host === 'chat.reddit.com') return true;
+    const path = u.pathname.length > 1 ? u.pathname.replace(/\/$/u, '') : u.pathname;
+    return ['/', '/notifications', '/chat', '/message/inbox', '/message/unread', '/message/messages'].includes(path);
+  } catch { return false; }
+}
+/** Reddit's titles carry no count: the native unread count (bell + chats, loaded or not) decides
+ *  the dot on an inbox pin. */
+export function redditCountUnread(saved: string, redditUnread: number | undefined): 'reddit' | undefined | null {
+  if (redditUnread === undefined || !redditInboxPin(saved)) return null;  // null: not decided here.
+  return redditUnread > 0 ? 'reddit' : undefined;
 }
 /** Use the unread marker published by the loaded site's title. */
 export function integrationUnread(url: string, title: string, saved: string, xBadgeHidden = false): 'whatsapp' | 'x' | undefined {

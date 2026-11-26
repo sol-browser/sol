@@ -706,13 +706,16 @@ void EmbeddedContent::ReleaseAnimationsWhenShown(int id) { held_animations_.inse
 void EmbeddedContent::ReleaseShownAnimations(int id) {
   const auto found = browsers_.find(id);
   if (!held_animations_.erase(id) || found == browsers_.end()) return;
+  const auto held = HeldPageAnimations(id);
   PausePageAnimations(found->second, false);
   if (const auto state = state_.lock(); state && state->probe) {
-    auto data = CefDictionaryValue::Create(); data->SetInt("browser_id", id); state->Record("preload_animations_released", data);
+    auto data = CefDictionaryValue::Create(); data->SetInt("browser_id", id); data->SetInt("held", static_cast<int>(held));
+    state->Record("preload_animations_released", data);
   }
 }
 void EmbeddedContent::OnClosed(int id) {
   held_animations_.erase(id);
+  ForgetPageAnimations(id);
   if (id == link_status_browser_) HideLinkStatus();
   if (IsLinkPeek(id)) {
     link_peek_return_delay_=corners_.BeginLinkPeekReturn();

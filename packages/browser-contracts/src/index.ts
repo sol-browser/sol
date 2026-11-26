@@ -58,6 +58,7 @@ export type MediaInfo = { id: string; title: string; artist: string; playing: bo
   previous?: boolean; next?: boolean;
   shuffle?: boolean; repeat?: 'off' | 'all' | 'one';
   /** The session's artwork as a PNG data URL. */ artwork?: string };
+export type LibraryGlide = { id: number; from: number; to: number; duration: number; easing: [number, number, number, number] };
 export type LinkPeekInfo = { id: string; url: string; title: string; bounds: DockBounds; area: DockBounds;
   loading: boolean; closing: boolean; crashed: boolean; canGoBack: boolean; canGoForward: boolean;
   composed?: boolean; opening?: boolean; returning?: boolean; canSplit?: boolean; depthReady?: boolean };
@@ -88,6 +89,8 @@ export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boo
   xUnread?: number;
   /** WhatsApp's unread count from the last hidden check; absent when unknown. */
   whatsappUnread?: number;
+  /** Reddit's unread bell notifications plus chats (integrations/reddit_unread.h), without a loaded Reddit tab; absent when unknown. */
+  redditUnread?: number;
   searchEngine?: SearchEngine; searchSuggestions?: boolean; siteSearches?: SiteSearch[]; siteSearchActivation?: SiteSearchActivation; shortcutLabels?: Record<string, string>;
   splitView?: SplitViewInfo;
   linkPeek?: LinkPeekInfo;
@@ -95,6 +98,10 @@ export type Snapshot = { revision: number; canGoBack: boolean; canGoForward: boo
   media?: MediaInfo[];
   protectedMedia?: boolean;
   sidebarVisible?: boolean; sidebarWidth?: number; sidebarResizing?: boolean; libraryOpen?: boolean; librarySection?: LibrarySection;
+  /** The page edge's Library glide, while it waits for or plays it: page x (DIP) from and to,
+   *  duration in ms and the CSS cubic-bezier. The page card plays the same glide and reports
+   *  its start with library.glideStarted. */
+  libraryGlide?: LibraryGlide;
   contentBounds?: { x: number; y: number; width: number; height: number };
   /** Floating sidebar origin at rest and full workspace dimensions, in DIP. */
   sidebarBackground?: { x: number; y: number; width: number; height: number };
@@ -373,6 +380,8 @@ export type Command = { method: 'browser.getSnapshot' | 'navigation.back' | 'nav
   | { method: 'workspace.setSidebarVisible'; visible: boolean }
   | { method: 'library.setOpen'; open: boolean }
   | { method: 'library.setSection'; section: LibrarySection }
+  /** The page card started Library glide |id| |elapsed| ms ago; the native page edge follows its clock. */
+  | { method: 'library.glideStarted'; id: number; elapsed: number }
   /** The sidebar's Create Space form; its theme is previewed by the spaceTheme editor. */
   | { method: 'space.startCreate' } | { method: 'space.cancelDraft'; themed: boolean; library: boolean }
   | { method: 'space.createDraft'; title: string; icon: string; themed: boolean; library: boolean; profileId?: string }
@@ -496,7 +505,7 @@ export function parseSnapshot(raw: string): Snapshot {
     || typeof s.probeMode !== 'boolean') throw new Error('Invalid native snapshot');
   if (s.workspaceEnabled === true) {
     if (s.integrations !== undefined && !validIntegrationSettings(s.integrations)) throw new Error('Invalid integrations');
-    for (const field of ['xUnread', 'whatsappUnread'])
+    for (const field of ['xUnread', 'whatsappUnread', 'redditUnread'])
       if (s[field] !== undefined && (!integer(s[field]) || (s[field] as number) < 0 || (s[field] as number) > 999999)) throw new Error('Invalid unread count');
     if (s.searchEngine !== undefined && !['google','duckduckgo','bing','brave'].includes(String(s.searchEngine))) throw new Error('Invalid search engine');
     if (s.searchSuggestions !== undefined && typeof s.searchSuggestions !== 'boolean') throw new Error('Invalid suggestion preference');
@@ -506,6 +515,12 @@ export function parseSnapshot(raw: string): Snapshot {
     if (s.browserFullscreen !== undefined && typeof s.browserFullscreen!=='boolean') throw new Error('Invalid fullscreen state');
     if (s.protectedMedia !== undefined && typeof s.protectedMedia !== 'boolean') throw new Error('Invalid Protected Media state');
     if (s.zoom !== undefined && (!integer(s.zoom) || (s.zoom as number) < 1 || (s.zoom as number) > 1000)) throw new Error('Invalid zoom');
+    if (s.libraryGlide !== undefined) {
+      const g = s.libraryGlide;
+      if (!object(g) || !integer(g.id) || !integer(g.from) || !integer(g.to) || !integer(g.duration) || (g.duration as number) > 2000 ||
+          !Array.isArray(g.easing) || g.easing.length !== 4 || !g.easing.every(v => typeof v === 'number' && Number.isFinite(v)) ||
+          [0, 2].some(i => (g.easing as number[])[i] < 0 || (g.easing as number[])[i] > 1)) throw new Error('Invalid Library glide');
+    }
     if (s.linkPeek !== undefined) {
       const p = s.linkPeek;
       if (!object(p) || typeof p.id !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(p.id) ||

@@ -26,9 +26,10 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: var(--sidebar-width);
-  /* Native code glides the page edge on the same curve and duration
-     (WorkspaceController::StepRail). */
-  transition: width 420ms cubic-bezier(.4, 0, .2, 1);
+  /* Eases only during a Library glide, with the page edge's duration and
+     curve (the snapshot's libraryGlide); other layout changes move at once,
+     like the page. */
+  transition: width var(--library-glide-duration, 0ms) var(--library-glide-easing, linear);
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);
   color: var(--lib-ink);
@@ -54,9 +55,9 @@
 }
 .workspace:has(.library) .topbar { position: relative; z-index: 4; }
 /* The shell's page card matches the native page: kept at its sidebar-layout
-   width and shifted (cut off by the window edge), gliding with it. */
+   width and shifted (cut off by the window edge). main.tsx glides it with the
+   page edge (a transform animation from the snapshot's libraryGlide). */
 .workspace[data-library="true"] .web-slot { right: auto; width: var(--page-width); }
-.workspace[data-library-motion="true"] .web-slot { transition: left 420ms cubic-bezier(.4, 0, .2, 1); }
 .library :focus-visible { outline: 2px solid var(--lib-accent); outline-offset: 1px; }
 .library button { color: inherit; }
 .library button:disabled { cursor: default; }
@@ -670,16 +671,16 @@
   100% { transform: none; }
 }
 @keyframes library-open {
-  from { opacity: 0; transform: translateX(-28px); filter: blur(3px); }
-  to { opacity: 1; transform: none; filter: none; }
+  from { opacity: 0; transform: translateX(-28px); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes library-from-below {
-  from { opacity: 0; transform: translateY(22px) scale(.985); filter: blur(2px); }
-  to { opacity: 1; transform: none; filter: none; }
+  from { opacity: 0; transform: translateY(22px) scale(.985); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes library-from-above {
-  from { opacity: 0; transform: translateY(-22px) scale(.985); filter: blur(2px); }
-  to { opacity: 1; transform: none; filter: none; }
+  from { opacity: 0; transform: translateY(-22px) scale(.985); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes library-row-in {
   from { opacity: 0; transform: translateY(10px); }
@@ -690,7 +691,7 @@
   .library-route-editor, .library-content .library-list > li, .library-content .library-space, .library-popover, .library-tooltip,
   .library-content .library-new-space-slot { animation: none !important; }
   .library-content, .library-content[data-direction] { animation: library-fade 1ms backwards; }
-  .workspace[data-library-motion] .web-slot, .library, .library-space, .library-sections button, .library-section-indicator, .library-new-space { transition: none; }
+  .library, .library-space, .library-sections button, .library-section-indicator, .library-new-space { transition: none; }
 }
 @keyframes library-fade { from { opacity: 0; } to { opacity: 1; } }
 @container (width < 355px) {

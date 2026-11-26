@@ -15,6 +15,7 @@ export function WorkspaceSidebar({ snapshot, surface, command, mutate, panel }: 
     integrations: snapshot.integrations,
     xUnread: snapshot.xUnread,
     whatsappUnread: snapshot.whatsappUnread,
+    redditUnread: snapshot.redditUnread,
     openNewTab: () => command({ method: 'browser.shortcut', action: 'newTab' }),
     previewIntegration: (id: string, anchor: HTMLElement) => {
       if (snapshot.privateWindow) return;

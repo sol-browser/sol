@@ -207,6 +207,9 @@ def main():
                 ('X duplicate fixture', 'https://x.com/'),
                 ('X deep-link fixture', 'https://x.com/notifications'),
                 ('Pinned editor fixture', url.removesuffix('/a') + '/pinned-editor'),
+                # Keep these after position 8 (the pinned-editor row read back below).
+                ('Reddit fixture', 'https://www.reddit.com/'),
+                ('Reddit subreddit fixture', 'https://www.reddit.com/r/movies/'),
             ]):
                 node = f'11111111-1111-4111-8111-{position:012d}'
                 favorite = title in ('X disabled fixture', 'X fixture')
@@ -241,6 +244,7 @@ def main():
     x_floating = next((d for d in documents if d.get('xBadge') == 'floating' and 'startsHidden' in d), {})
     whatsapp_floating = next((d for d in documents if 'whatsAppFloating' in d), {})
     whatsapp_docked = next((d for d in documents if 'whatsAppDocked' in d), {})
+    reddit = {d['redditBadge']: d for d in documents if 'redditBadge' in d}
     folder_icons = {d['folderIconHost']: d for d in documents if 'folderIconHost' in d}
     cards =[r['details'] for r in rows if r['event'] == 'popup_presented' and r['details'].get('kind') == 'integration']
     favorites = [c for c in cards if c.get('favorite') is True]
@@ -312,6 +316,13 @@ def main():
         'whatsapp_hidden_check_reads_count_and_closes': any(r['event']=='whatsapp_check' and r['details'].get('unread')==3 for r in rows) and
             sum(r['event']=='whatsapp_worker_closed' for r in rows) >= 1,
         'whatsapp_pin_is_not_held_in_memory': first('whatsapp_startup_pin').get('protected') is False,
+        # Reddit: its inbox count (integrations/reddit_unread.h) while the Reddit pins stay unloaded.
+        'reddit_badge_from_inbox_count_in_both_hosts': set(reddit) == {'docked', 'floating'} and all(
+            all(d.get(k) is True for k in ('visible', 'unloaded', 'subredditIgnored', 'off', 'on')) and
+            d.get('label') == '\u041d\u0435\u043f\u0440\u043e\u0447\u0438\u0442\u0430\u043d\u0456 \u0441\u043f\u043e\u0432\u0456\u0449\u0435\u043d\u043d\u044f Reddit'
+            and 'error' not in d for d in reddit.values()),
+        'reddit_badge_clears_when_count_is_zero': reddit.get('docked', {}).get('cleared') is True,
+        'reddit_pins_stay_cold': not any(r['event'] == 'address_change' and 'reddit.com' in r['details']['url'] for r in rows),
         'integration_card_shows_without_focus_theft': first('integration_docked').get('open') is True and first('integration_docked').get('kept_focus') is True,
         'integration_card_in_floating_host': first('integration_floating').get('open') is True,
         'integration_cef_widget_and_document_visible': first('integration_docked').get('views_visible') is True and first('integration_document').get('visible') is True,

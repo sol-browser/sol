@@ -14,6 +14,7 @@
 namespace red {
 class IntegrationPreviews;
 class XUnread;
+class RedditUnread;
 class WhatsAppUnread;
 class WorkspaceController : public std::enable_shared_from_this<WorkspaceController> {
  public:
@@ -53,6 +54,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   std::optional<std::string> SavedPreview(const std::string& id) const;
   std::shared_ptr<IntegrationPreviews> integration_previews() const { return integration_previews_; }
   std::shared_ptr<XUnread> x_unread() const { return x_unread_; }
+  std::shared_ptr<RedditUnread> reddit_unread() const { return reddit_unread_; }
   std::shared_ptr<WhatsAppUnread> whatsapp_unread() const { return whatsapp_unread_; }
   const std::string& ActiveNode() const { return tree_.active_id; }
   bool RoutesProtectedMedia(const std::string& url) const;
@@ -176,6 +178,9 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void SetSidebarVisible(bool visible, bool live = false, bool animate = false);
   bool SetLibraryOpen(bool open);
   bool SetLibrarySection(const std::string& section);
+  // The shell's page card started glide |id| |elapsed_ms| ago: the page edge
+  // starts on the same clock. Stale ids are ignored.
+  void StartLibraryGlide(int id, double elapsed_ms);
   void SetSidebarWidth(int width, bool save, Reply done);
   // Live preview while dragging (save=false), persisted on release. Also
   // re-resolves the System mode against Windows' current app mode.
@@ -230,6 +235,7 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void UpdateIntegrationPreviews();
   std::shared_ptr<IntegrationPreviews> integration_previews_;
   std::shared_ptr<XUnread> x_unread_;  // X's unread count without a loaded X tab.
+  std::shared_ptr<RedditUnread> reddit_unread_;  // Reddit's inbox count without a loaded Reddit tab.
   std::shared_ptr<WhatsAppUnread> whatsapp_unread_;  // Periodic hidden WhatsApp checks.
   void ApplyStartup();
   bool HandleLinkPeek(CefRefPtr<CefDictionaryValue> request,Reply done);
@@ -268,11 +274,16 @@ class WorkspaceController : public std::enable_shared_from_this<WorkspaceControl
   void DrainExternalUrls();
   // Gives the page the space beside a docked sidebar of |width|.
   void LayoutSidebar(double width, bool settled);
-  // Moves the page edge from rail width |from| to |to| over kRailMotionMs.
-  void AnimateRail(int from, int to);
-  void StepRail(int generation);
+  // Prepares the page edge's glide from rail width |from| to |to| (kLibraryGlideMs);
+  // it starts when the shell's page card starts (StartLibraryGlide) or after
+  // kLibraryGlideHandshakeMs.
+  void BeginRail(int from, int to);
+  bool StartRail(int generation, double elapsed_ms);
+  // One display frame of the glide (StartDisplayPacer); false once it is over.
+  bool StepRail(int generation);
   int rail_generation_ = 0, rail_from_ = 0, rail_to_ = 0, rail_frames_ = 0;
-  long long rail_started_ = 0;
+  bool rail_pending_ = false, rail_running_ = false, rail_acknowledged_ = false;
+  long long rail_started_ = 0, rail_requested_ = 0;
   // Probe only: sidebar layout evidence once no page is being revealed.
   static void RecordSidebarLayout(std::weak_ptr<State> weak, int attempts);
   void Publish();

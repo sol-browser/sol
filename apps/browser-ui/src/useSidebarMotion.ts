@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { TreeNode } from './bridge';
 import { renderCounts } from './render-counters';
-import { sidebarLayoutKey } from './sidebar-model';
+import { sidebarLayoutKey, sidebarMoveIntersectsViewport } from './sidebar-model';
 
 type Box = { x: number; y: number; width: number; height: number };
 type Row = { element: HTMLElement; box: Box; favorite: boolean; active: boolean; structural: boolean;
@@ -188,9 +188,13 @@ export function useSidebarMotion(nodes: TreeNode[], hidden: boolean, dragging: b
         ], { duration: 300, easing: settle, delay: Math.min(arrivals++, 3) * 22, fill: 'backwards' }));
       } else {
         const dx = old.box.x - row.box.x, dy = old.box.y - row.box.y;
-        if (Math.abs(dx) > .5 || Math.abs(dy) > .5) {
+        const previousAnimation = rowAnimations.current.get(row.element);
+        // A row already moving can still be visible between its measured positions.
+        if ((Math.abs(dx) > .5 || Math.abs(dy) > .5) &&
+            (sidebarMoveIntersectsViewport(old.box, row.box, top, bottom) ||
+             previousAnimation?.pending || previousAnimation?.playState === 'running')) {
           const matrix = new DOMMatrixReadOnly(getComputedStyle(row.element).transform);
-          rowAnimations.current.get(row.element)?.cancel();
+          previousAnimation?.cancel();
           // React has already removed the branch. Keep following rows below
           // its exit pictures until every picture has started moving upward.
           const timing = closing.size && dy > .5

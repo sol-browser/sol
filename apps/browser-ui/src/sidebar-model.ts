@@ -160,6 +160,11 @@ export function crossProfileLiveMove(nodes: TreeNode[], spaces: { id: string; pr
 export function sidebarLayoutKey(nodes: TreeNode[]): string {
   return nodes.map(n => `${n.id}:${n.parentId}:${n.position}:${n.kind === 'folder' ? Number(n.expanded) : ''}:${Number(n.pinned)}${Number(n.favorite)}`).join('|');
 }
+/** A row can pass through the viewport even when both of its positions are outside it. */
+export function sidebarMoveIntersectsViewport(before: { y: number; height: number }, after: { y: number; height: number },
+    top: number, bottom: number): boolean {
+  return Math.min(before.y, after.y) < bottom && Math.max(before.y + before.height, after.y + after.height) > top;
+}
 // Node fields a sidebar row does not show: its slot among siblings (the list
 // orders rows), its Space (the list filters by it) and its archive time.
 const NOT_IN_ROW: ReadonlySet<string> = new Set(['position', 'space', 'archivedAt']);

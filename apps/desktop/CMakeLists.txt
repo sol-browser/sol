@@ -54,7 +54,7 @@ target_sources(${CEF_TARGET} PRIVATE src/experiments/integration_live_check.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/auto_archive.cpp src/workspace/auto_archive_controller.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/link_peek_layout.cpp src/windows/link_peek_scene.cpp src/windows/auto_pip.cpp src/windows/video_pip_button.cpp src/windows/link_peek_close.cpp src/windows/link_peek_readiness.cpp src/workspace/link_peek_controller.cpp src/workspace/little_window_controller.cpp src/windows/background_host.cpp src/workspace/media_controller.cpp src/workspace/tab_menu_actions.cpp src/integrations/protected_media_host.cpp src/integrations/protected_media_installer.cpp src/integrations/protected_media_layout.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/app/preferences.cpp src/app/updates.cpp src/app/windows_locale.cpp)
-target_sources(${CEF_TARGET} PRIVATE src/app/release_notes.cpp src/app/widevine.cpp src/app/memory_report.cpp src/integrations/x_unread.cpp src/integrations/whatsapp_unread.cpp)
+target_sources(${CEF_TARGET} PRIVATE src/app/release_notes.cpp src/app/widevine.cpp src/app/memory_report.cpp src/integrations/x_unread.cpp src/integrations/whatsapp_unread.cpp src/integrations/reddit_unread.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/tab_drag_preview.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/windows/sidebar_shadow.cpp)
 target_sources(${CEF_TARGET} PRIVATE src/experiments/extension_observation.cpp)
@@ -96,6 +96,8 @@ target_sources(${CEF_TARGET} PRIVATE src/experiments/browsing_probe.cpp
   src/experiments/history_probe.cpp
   src/experiments/tab_actions_probe.cpp
   src/experiments/audible_probe.cpp
+  src/experiments/web_audio_probe.cpp
+  src/windows/page_animations.cpp
   src/experiments/downloads_page_probe.cpp
   src/experiments/extension_popup_probe.cpp
   src/experiments/protocols_probe.cpp
@@ -277,6 +279,11 @@ add_executable(web_url_test "${CMAKE_SOURCE_DIR}/tests/native/web_url_test.cpp")
 target_include_directories(web_url_test PRIVATE src)
 target_compile_options(web_url_test PRIVATE /W4 /WX /EHsc)
 add_test(NAME web_url COMMAND web_url_test)
+
+add_executable(link_redirect_test "${CMAKE_SOURCE_DIR}/tests/native/link_redirect_test.cpp")
+target_include_directories(link_redirect_test PRIVATE src)
+target_compile_options(link_redirect_test PRIVATE /W4 /WX /EHsc)
+add_test(NAME link_redirect COMMAND link_redirect_test)
 
 add_executable(tray_input_test "${CMAKE_SOURCE_DIR}/tests/native/tray_input_test.cpp")
 target_include_directories(tray_input_test PRIVATE src)

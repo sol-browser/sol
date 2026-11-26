@@ -179,6 +179,10 @@ struct State {
   bool tab_actions_probe = false, tab_actions_checks = false;
   int tab_actions_phase = 0;
   bool audible_probe = false, audible_checks = false;
+  bool web_audio_probe = false, web_audio_checks = false, web_audio_silent = false;
+  int web_audio_phase = 0;
+  std::string web_audio_selector;  // Live mode: the spinner to press and drag.
+  CefRefPtr<CefBrowser> web_audio_page;
   bool downloads_page_probe = false, downloads_page_checks = false;
   bool extension_popup_probe = false, extension_popup_done = false;
   std::string protocols_probe, protocols_start;  // Local PDF file URL; fixture start page.
@@ -197,6 +201,7 @@ struct State {
   bool google_integrations_probe = false, google_integrations_checks = false;
   int google_integrations_phase = 0;
   bool sidebar_perf_probe = false, sidebar_perf_started = false, sidebar_perf_done = false;
+  bool sidebar_perf_tracing = false;
   int sidebar_perf_tabs = 80;
   // How often this window rebuilds and sends workspace snapshots (memory
   // report and --probe-sidebar-perf; docs/performance-audit.md). UI thread only.
@@ -268,6 +273,7 @@ struct State {
   // Browser IDs of internal page tabs (trusted UI profile, page-specific IPC only).
   std::set<int> internal_pages;
   int x_unread_fixture = -1;  // Sidebar probe only: the X unread count instead of asking x.com.
+  int reddit_unread_fixture = -1;  // Sidebar probe only: Reddit's inbox count instead of asking reddit.com.
   CefRefPtr<CefRequestContext> ui_context;
   int organization_browser = -1, organization_unload_decisions = 0;
   std::shared_ptr<WorkspaceController> workspace;

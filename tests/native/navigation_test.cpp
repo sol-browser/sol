@@ -7,6 +7,7 @@
 #include "app/memory_report.h"
 #include "integrations/gmail_feed.h"
 #include "integrations/whatsapp_title.h"
+#include "integrations/reddit_bell.h"
 #include <cstdio>
 int main() {
   int failures = 0;
@@ -121,6 +122,59 @@ int main() {
   check(red::XNotificationSite("https://x.com/home") && red::XNotificationSite("https://twitter.com/notifications") &&
         !red::XNotificationSite("https://x.com.evil.test/") && !red::XNotificationSite("https://user@x.com/") &&
         !red::XNotificationSite("https://x.com:444/"), "X badges require an authentic origin");
+  const red::IntegrationSettings reddit_off{{"reddit", false}};
+  check(red::FindIntegrationSetting("reddit") && red::FindIntegrationSetting("reddit")->listed &&
+        red::IntegrationEnabled({}, "reddit") && !red::IntegrationEnabled(reddit_off, "reddit"), "Reddit has a switch, on unless turned off");
+  for (const auto* url : {"https://www.reddit.com/", "https://reddit.com/r/rust/", "https://old.reddit.com/message/inbox", "https://sh.reddit.com/"})
+    check(red::IntegrationForUrl(url) == "reddit", "Reddit pins offer the Reddit switch");
+  for (const auto* url : {"https://www.reddit.com.evil.test/", "https://user@www.reddit.com/", "https://www.reddit.com:444/", "http://www.reddit.com/",
+                          "https://redd.it/abc", "https://notreddit.com/"})
+    check(red::IntegrationForUrl(url).empty(), "Reddit requires an authentic origin");
+  check(!red::StartupBadgeFor("https://www.reddit.com/", false), "Reddit pins are not warmed at startup");
+  for (const auto* url : {"https://www.reddit.com/", "https://www.reddit.com", "https://old.reddit.com/message/unread", "https://www.reddit.com/notifications/",
+                          "https://www.reddit.com/message/inbox", "https://www.reddit.com/message/messages/", "https://www.reddit.com/chat", "https://chat.reddit.com/"})
+    check(red::RedditInboxPin(url), "Reddit front page, inbox and chat pins show the unread count");
+  for (const auto* url : {"https://www.reddit.com/r/rust/", "https://www.reddit.com/r/movies/comments/abc/x/", "https://www.reddit.com/?feed=home",
+                          "https://www.reddit.com/#top", "https://www.reddit.com.evil.test/", "https://user@www.reddit.com/", "https://www.reddit.com:444/",
+                          "http://www.reddit.com/", "https://redd.it/abc"})
+    check(!red::RedditInboxPin(url), "Other Reddit pins and spoofed origins do not");
+  {
+    // The header item as captured on the user's account (2026-11-26), with one unread notification.
+    const auto item = [](const std::string& tracked, const std::string& badge) {
+      return R"(<div class="relative w-[40px] h-[40px]"><faceplate-tracker class="contents" source="nav" action="click" noun="inbox" data-faceplate-tracking-context=")" +
+          tracked + R"("><rpl-tooltip><a rpl class="shrink-0 button-medium" href="/notifications" id="notifications-inbox-button">)"
+          R"(<svg rpl fill="currentColor" height="20" icon-name="notifications" viewBox="0 0 20 20" width="20"><path d="m18.176 14.218-.925-1.929"></path></svg>)"
+          R"(<faceplate-screen-reader-content>Open inbox</faceplate-screen-reader-content></a></rpl-tooltip></faceplate-tracker>)"
+          R"(<div class="absolute top-0 end-0 pointer-events-none">)" + badge + "</div></div>";
+    };
+    const std::string tracked = "{&quot;inbox&quot;:{&quot;badgeCount&quot;:&quot;1&quot;}}";
+    const auto badge = [](const std::string& count) {
+      return R"(<dynamic-badge initial-count=")" + count + R"(" set-count-event="inbox_count_changed" appearance="ALERT" data-id="notification-count-element"></dynamic-badge>)";
+    };
+    check(red::RedditBellCount(item(tracked, badge("1"))) == 1, "Reddit bell: the badge's initial count");
+    check(red::RedditBellCount(item("{&quot;inbox&quot;:{&quot;badgeCount&quot;:&quot;0&quot;}}", badge("12"))) == 12, "Reddit bell: the badge decides over the tracker");
+    check(red::RedditBellCount(item(tracked, "")) == 1, "Reddit bell: the tracker's badgeCount without a badge");
+    check(red::RedditBellCount(item("{&quot;inbox&quot;:{}}", badge("0"))) == 0, "Reddit bell: zero");
+    check(red::RedditBellCount(item("{&quot;inbox&quot;:{}}", "")) == 0, "Reddit bell without a count is 0; icon digits ignored");
+    check(!red::RedditBellCount("<html><body>Log in to Reddit</body></html>") && !red::RedditBellCount(""), "No bell button: unknown");
+    // The chat header item as captured on the user's account with one unread chat (2026-11-26).
+    const auto chat = [](const std::string& badge) {
+      return R"(<faceplate-loader name="HeaderActionItemChat_x" loading="eager"></faceplate-loader><reddit-chat-header-button initial-view="closed">)"
+             R"(<button rpl class="button-medium" id="header-action-item-chat-button"><svg fill="currentColor" height="20" icon-name="chat" viewBox="0 0 20 20" width="20"></svg>)"
+             R"(<faceplate-screen-reader-content>Open chat</faceplate-screen-reader-content></button>)"
+             R"(<div class="absolute top-0 end-0 pointer-events-none">)" + badge + "</div></reddit-chat-header-button>";
+    };
+    check(red::RedditChatCount(chat(R"(<dynamic-badge id="header-action-item-chat-button-badge" initial-count="1" set-count-event="" appearance="ALERT"></dynamic-badge>)")) == 1,
+          "Reddit chats: the chat badge's initial count");
+    check(red::RedditChatCount(chat(R"(<dynamic-badge id="header-action-item-chat-button-badge" initial-count="0" set-count-event="" appearance="ALERT"></dynamic-badge>)")) == 0 &&
+          red::RedditChatCount(chat(R"(<dynamic-badge id="header-action-item-chat-button-badge" set-count-event="" appearance="ALERT"></dynamic-badge>)")) == 0 &&
+          red::RedditChatCount(chat("")) == 0, "Reddit chats: zero, or no count");
+    check(!red::RedditChatCount("<html><body>Log in to Reddit</body></html>") &&
+          !red::RedditChatCount(R"(<dynamic-badge id="header-action-item-chat-button-badge" initial-count="4"></dynamic-badge>)"),
+          "No chat button: unknown");
+    check(red::RedditBellCount(chat(R"(<dynamic-badge id="header-action-item-chat-button-badge" initial-count="1"></dynamic-badge>)")) == std::nullopt &&
+          red::RedditChatCount(item(tracked, badge("1"))) == std::nullopt, "The bell and chat readers do not read each other's item");
+  }
   using red::StartupBadgeSite;
   check(red::StartupBadgeFor("https://web.whatsapp.com/", false) == StartupBadgeSite::WhatsApp &&
         red::StartupBadgeFor("https://web.whatsapp.com", true) == StartupBadgeSite::WhatsApp,

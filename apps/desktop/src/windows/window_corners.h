@@ -11,6 +11,15 @@ inline bool ApplyWindowCorners(CefRefPtr<CefWindow> window) {
   RECT region{};
   if (GetWindowRgnBox(handle, &region) != ERROR && !SetWindowRgn(handle, nullptr, TRUE)) return false;
   const DWM_WINDOW_CORNER_PREFERENCE preference = window->IsMaximized() || window->IsFullscreen() ? DWMWCP_DONOTROUND : DWMWCP_ROUND;
+  // A translucent window (Mica/Acrylic): Chromium clips it to the work area with a
+  // region when maximized, and a region turns DWM's frame off, so DWM painted the
+  // backdrop over the whole maximized rect, 8 px into the next monitor (user report
+  // 2026-11-25). Without the region and with DWM's frame on, the resize border is
+  // invisible again, as in a Solid window.
+  if (GetPropW(handle, L"Chrome.WindowTranslucent")) {
+    const DWMNCRENDERINGPOLICY policy = DWMNCRP_ENABLED;
+    DwmSetWindowAttribute(handle, DWMWA_NCRENDERING_POLICY, &policy, sizeof(policy));
+  }
   return SUCCEEDED(DwmSetWindowAttribute(handle, DWMWA_WINDOW_CORNER_PREFERENCE, &preference, sizeof(preference)));
 }
 inline bool WindowCornersMatch(CefRefPtr<CefWindow> window) {

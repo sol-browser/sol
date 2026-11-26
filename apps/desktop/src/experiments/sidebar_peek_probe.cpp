@@ -22,6 +22,7 @@
 #include "windows/workspace_layout.h"
 #include "workspace/controller.h"
 #include "integrations/x_unread.h"
+#include "integrations/reddit_unread.h"
 #include "app/browsing_profiles.h"
 #include "history/history_service.h"
 #include "site/site_settings.h"
@@ -446,6 +447,42 @@ void CheckXBadge(CefRefPtr<CefBrowser> browser, bool floating) {
     } catch (error) { report({error:String(error?.message || error)}); }
   })()JS" + (floating ? "true)" : "false)");
   frame->ExecuteJavaScript(script, frame->GetURL(), 0);
+}
+// Reddit's dot comes from its inbox count (integrations/reddit_unread.h, fixture 2 in this probe)
+// while the Reddit pins stay unloaded. Each host checks the dot, a subreddit pin that must not show
+// it, and the provider switch through its own dispatcher; the docked one also sees it clear at 0.
+void CheckRedditBadge(CefRefPtr<CefBrowser> browser, bool floating) {
+  if (!browser) return;
+  const auto frame = browser->GetMainFrame();
+  frame->ExecuteJavaScript(std::string("(async(floating)=>{") + R"JS(
+    const q=request=>new Promise((resolve,reject)=>window.cefQuery({request:JSON.stringify(request),persistent:false,
+      onSuccess:raw=>resolve(JSON.parse(raw)),onFailure:(code,message)=>reject(message)}));
+    const report=data=>console.info('RED_PEEK:'+JSON.stringify({redditBadge:floating?'floating':'docked',...data}));
+    const wait=async predicate=>{
+      for(let i=0;i<50;i++) {
+        if(predicate())return true;
+        await new Promise(resolve=>setTimeout(resolve,60));
+      }
+      return false;
+    };
+    const dot=id=>document.querySelector(`[data-node-id="${id}"] [data-provider="reddit"]`);
+    try {
+      const first=await q({method:'browser.getSnapshot'});
+      const pin=first.nodes.find(n=>n.title==='Reddit fixture');
+      const other=first.nodes.find(n=>n.title==='Reddit subreddit fixture');
+      const visible=await wait(()=>!!dot(pin.id));
+      const label=dot(pin.id)?.getAttribute('aria-label');
+      const unloaded=!pin.live && !other.live && first.redditUnread===2;
+      const subredditIgnored=!!document.querySelector(`[data-node-id="${other.id}"]`) && !dot(other.id);
+      const off=(await q({method:'tab.setIntegration',id:pin.id,provider:'reddit',enabled:false})).integrations?.reddit===false &&
+        await wait(()=>!dot(pin.id));
+      const on=(await q({method:'tab.setIntegration',id:pin.id,provider:'reddit',enabled:true})).integrations?.reddit===true &&
+        await wait(()=>!!dot(pin.id));
+      const result={visible,label,unloaded,subredditIgnored,off,on};
+      if(!floating)result.cleared=await wait(()=>!dot(pin.id));
+      report(result);
+    } catch (error) { report({error:String(error)}); }
+  }))JS" + (floating ? "(true)" : "(false)"), frame->GetURL(), 0);
 }
 void CheckWhatsAppPin(const std::shared_ptr<State>& state) {
   const auto shell = state->browsers.find(state->shell_id);
@@ -1142,6 +1179,7 @@ static void Start(const std::shared_ptr<State>& state) {
     });
     Later(state,12500,[](const std::shared_ptr<State>& s){s->workspace->SetSidebarVisible(false);s->sidebar_peek->Show();});
     Later(state,13100,[](const std::shared_ptr<State>& s){CheckXBadge(s->sidebar_peek->browser(),true);});
+    Later(state,14200,[](const std::shared_ptr<State>& s){CheckRedditBadge(s->sidebar_peek->browser(),true);});
     Later(state,13900,[](const std::shared_ptr<State>& s){
       // X's counter reports nothing unread: the dot clears even though the X tab may be loaded
       // (activated earlier) with "(4)" still in its title.
@@ -1155,6 +1193,15 @@ static void Start(const std::shared_ptr<State>& state) {
     Later(state,16600,[](const std::shared_ptr<State>& s){ CheckPinEditor(s, true); });
     Later(state,18000,[](const std::shared_ptr<State>& s){s->sidebar_peek->Hide();s->workspace->SetSidebarVisible(true);});
     Later(state,18800,&CheckWhatsAppPin);
+    Later(state,20000,[](const std::shared_ptr<State>& s){
+      const auto shell=s->browsers.find(s->shell_id);
+      if(shell!=s->browsers.end())CheckRedditBadge(shell->second,false);
+    });
+    Later(state,20900,[](const std::shared_ptr<State>& s){
+      // Reddit reports nothing unread: the docked check sees the dot clear.
+      s->reddit_unread_fixture=0;
+      if(const auto counter=s->workspace->reddit_unread())counter->RefreshSoon();
+    });
     // Leave time for an interactive runner to foreground this owned test window.
     Later(state,21500,&IntegrationProbe);
     // The Library checks follow the integration and pinned-hint chain (CheckFigmaCreate).

@@ -53,8 +53,10 @@ async function measure(label: string, action: () => Promise<unknown>) {
   const tick = (t: number) => { gaps.push(t - last); last = t; if (running) requestAnimationFrame(tick); };
   requestAnimationFrame(tick);
   const started = performance.now();
+  performance.mark(`sol.sidebar.${label}.start`);
   const extra = await action();
   const ms = performance.now() - started;
+  performance.mark(`sol.sidebar.${label}.end`);
   await frame(); await frame(); running = false; await sleep(60);
   const after = (await snapshot()).perfCounters!;
   const sorted = [...gaps].sort((a, b) => b - a);
@@ -76,7 +78,7 @@ export async function perfProbe(base: string, count: number) {
   const size = async () => JSON.stringify(await snapshot()).length;
   const emptySize = await size();
 
-  // 1. Saved tabs (not loaded) in the active space.
+  // 1. Create tabs through the normal workspace command, which also loads them.
   results.push(await measure('create-tabs', async () => {
     for (let i = 0; i < count; ++i) await mutate({ method: 'tree.createTab', parentId: '', title: 'Tab ' + i, url: `${base}?t=${i}` });
     return { tabs: count, perTabMs: 0 };
@@ -105,7 +107,7 @@ export async function perfProbe(base: string, count: number) {
   }));
   await sleep(300);
 
-  // 4. Tab switching: each switch loads a saved tab (they become live).
+  // 4. Switch to the last 20 tabs, loading any that were restored as unloaded.
   const tabs = (state.nodes ?? []).filter(n => n.kind === 'tab').map(n => n.id);
   const switchTimes: number[] = [];
   results.push(await measure('tab-switch', async () => {
@@ -121,7 +123,7 @@ export async function perfProbe(base: string, count: number) {
   state = await snapshot();
   results.push({ label: 'live-tabs', live: state.nodes?.filter(n => n.live).length ?? 0, heapKB: heap() });
 
-  // 5. Idle with ~20 loaded tabs: nothing should publish.
+  // 5. Idle with the loaded tabs: nothing should publish.
   await sleep(1000);
   results.push(await measure('idle-5s', () => sleep(5000)));
 

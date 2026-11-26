@@ -31,6 +31,14 @@ inline int WorkspaceRailWidth(int width, bool sidebar_visible, int sidebar_width
     return std::clamp(width - 336, 0, library_section == "spaces" ? std::max(456, LibraryBoardWidth(library_spaces)) : 456);
   return sidebar_visible ? SidebarWidth(sidebar_width, width) : 0;
 }
+// Library open, close and section changes glide the native page edge and the
+// shell's page card as one: this duration and CSS cubic-bezier are the only
+// source of both (the snapshot's libraryGlide carries them to the shell).
+inline constexpr int kLibraryGlideMs = 420;
+inline constexpr double kLibraryGlideEasing[4] = {.4, 0, .2, 1};
+// The native page waits for the card to start (docs/library.md); a shell that
+// has not started its half by then no longer holds the page back.
+inline constexpr int kLibraryGlideHandshakeMs = 300;
 // With Library open the page keeps the size it has beside the sidebar and is
 // only shifted right, cut off by the window edge (as in Arc): opening Library,
 // changing its section and switching tabs from it never resize a page.

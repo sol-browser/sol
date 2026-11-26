@@ -17,6 +17,27 @@ One short line that sums up the release. Optional; the website shows it as the h
 New things first, smaller fixes under "### Fixes". Describe the result for the user, not the code.
 -->
 
+## 0.12.1 — 2026-11-26
+
+Reddit in the sidebar and a batch of fixes.
+
+- **Reddit:** a pinned or favorite Reddit tab shows a dot when you have new
+  notifications or unread chats, like WhatsApp and X. You can turn it off in
+  Settings.
+
+### Fixes
+
+- Opening and closing the Library no longer leaves the page and its card out
+  of step.
+- Links that pass through a redirect, such as links in a YouTube description,
+  open in Link Peek.
+- Switching Spaces no longer opens tabs that only loaded because you pointed
+  at them.
+- Pointing at an unloaded tab while another app is in front no longer flashes
+  Sol's taskbar button.
+- A maximized window with an Acrylic or Mica background no longer paints a
+  strip onto the next monitor.
+
 ## 0.12.0 — 2026-11-25
 
 Folders with icons and clearer confirmations.

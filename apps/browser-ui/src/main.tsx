@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RawIntlProvider, useIntl } from 'react-intl';
 import { createInterfaceIntl, useMessages, type Translate } from './i18n';
@@ -192,17 +192,34 @@ function Shell() {
   const translationTarget = offer ? new Intl.DisplayNames(locale, { type: 'language' }).of(offer.to.replace('_', '-')) ?? offer.to : '';
   const ready = workspace ? snapshot.ready && !snapshot.windowClosing : connected;
   const library = workspace && snapshot.libraryOpen === true;
-  // Library open, close and section changes glide the native page for 420 ms
-  // (WorkspaceController::StepRail); the shell's page card follows on the same
-  // curve, set in the same render as its new position (library.css).
-  const libraryLayout = library ? snapshot.librarySection ?? 'archive' : '';
-  const [libraryMotion, setLibraryMotion] = useState({ layout: libraryLayout, active: false });
-  if (libraryMotion.layout !== libraryLayout) setLibraryMotion({ layout: libraryLayout, active: true });
-  useEffect(() => {
-    if (!libraryMotion.active) return;
-    const timer = setTimeout(() => setLibraryMotion(current => ({ ...current, active: false })), 500);
-    return () => clearTimeout(timer);
-  }, [libraryMotion]);
+  // Library open, close and section changes glide the native page edge
+  // (WorkspaceController::BeginRail). The snapshot's libraryGlide is that glide;
+  // the page card plays it as a compositor transform (it keeps moving while the
+  // Library's first render holds this thread) and reports when it started, and
+  // the page edge starts on that clock. The card's left is already final here.
+  const glide = workspace ? snapshot.libraryGlide : undefined;
+  const webSlot = useRef<HTMLElement>(null);
+  const cardGlide = useRef<{ id: number; animation?: Animation }>(undefined);
+  const [settledGlide, setSettledGlide] = useState<number>();
+  const gliding = glide !== undefined && glide.id !== settledGlide;
+  useLayoutEffect(() => {
+    if (cardGlide.current && cardGlide.current.id === glide?.id) return;
+    cardGlide.current?.animation?.cancel();
+    cardGlide.current = undefined;
+    if (!glide) return;
+    const { id } = glide;
+    const started = (elapsed: number) => void request({ method: 'library.glideStarted', id, elapsed: Math.round(elapsed) }).catch(() => {});
+    const slot = webSlot.current;
+    if (!slot || glide.from === glide.to || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      cardGlide.current = { id }; setSettledGlide(id); started(glide.duration); return;
+    }
+    const animation = slot.animate([{ transform: `translateX(${glide.from - glide.to}px)` }, { transform: 'none' }],
+      { duration: glide.duration, easing: `cubic-bezier(${glide.easing.join(', ')})`, fill: 'backwards' });
+    cardGlide.current = { id, animation };
+    animation.ready.then(() => started(typeof animation.startTime === 'number' ? Math.max(0, performance.now() - animation.startTime) : 0),
+      () => {});
+    animation.finished.then(() => setSettledGlide(id), () => {});
+  }, [glide]);
   const globe = useRef<HTMLButtonElement>(null);
   const offerId = ready && offer?.automatic ? offer.id : undefined;
   useEffect(() => {
@@ -215,9 +232,10 @@ function Shell() {
   const status = error || snapshot?.error || (workspace ? snapshot.ready ? busy ? t('toolbar.saving') : snapshot.isLoading ? t('toolbar.loading') : t('toolbar.saved') : t('toolbar.workspaceLoading') : connected ? t('toolbar.connected') : t('toolbar.connecting'));
   return <main className={workspace ? 'workspace' : 'legacy'} style={{ '--sidebar-size': `${library ? Math.max(0, (snapshot.contentBounds?.x ?? 8) - 8) : snapshot?.sidebarWidth ?? 256}px`,
     '--page-width': `${snapshot?.contentBounds?.width ?? 0}px`,
+    ...(gliding ? { '--library-glide-duration': `${glide.duration}ms`, '--library-glide-easing': `cubic-bezier(${glide.easing.join(', ')})` } : {}),
     '--peek-center-x':`${snapshot?.linkPeek ? snapshot.linkPeek.area.x+snapshot.linkPeek.area.width/2 : 0}px`,
     '--peek-center-y':`${snapshot?.linkPeek ? snapshot.linkPeek.area.y+snapshot.linkPeek.area.height/2 : 0}px` } as CSSProperties}
-    data-peek={!!snapshot?.linkPeek?.depthReady} data-peek-returning={!!snapshot?.linkPeek?.returning} data-sidebar-visible={library || snapshot?.sidebarVisible !== false} data-library={library} data-library-motion={libraryMotion.active} data-window-maximized={snapshot?.windowMaximized === true} data-little-window={!!little} onKeyDown={event => {
+    data-peek={!!snapshot?.linkPeek?.depthReady} data-peek-returning={!!snapshot?.linkPeek?.returning} data-sidebar-visible={library || snapshot?.sidebarVisible !== false} data-library={library} data-window-maximized={snapshot?.windowMaximized === true} data-little-window={!!little} onKeyDown={event => {
     if (!workspace || event.metaKey || event.nativeEvent.isComposing) return;
     if (event.key === 'Escape' && library) { event.preventDefault(); void send({ method: 'library.setOpen', open: false }); return; }
     if (event.key==='Escape' && snapshot.linkPeek) { event.preventDefault(); void send({method:'linkPeek.control',id:snapshot.linkPeek.id,action:'close'}); return; }
@@ -352,7 +370,7 @@ function Shell() {
       {snapshot.splitView && <SplitView view={snapshot.splitView} nodes={snapshot.nodes ?? []} disabled={!ready || busy} command={send} action={action} />}
       {snapshot.devTools && <DevToolsDock key={`${snapshot.devTools.id}-${snapshot.devTools.side}`} dock={snapshot.devTools} deviceEnabled={!!snapshot.devicePreview?.enabled} apply={apply} onError={setError} />}
       {snapshot.devicePreview?.enabled && <DeviceToolbar key={snapshot.devicePreview.id} device={snapshot.devicePreview} apply={apply} onError={setError} />}
-      <section className="web-slot" aria-label={t('toolbar.websiteArea')} data-split={!!snapshot.splitView} style={snapshot.linkPeek?.composed ? {left:snapshot.linkPeek.area.x,top:snapshot.linkPeek.area.y,width:snapshot.linkPeek.area.width,height:snapshot.linkPeek.area.height,right:'auto',bottom:'auto'} : undefined}>{snapshot.activeCrashed && !snapshot.splitView ?
+      <section ref={webSlot} className="web-slot" aria-label={t('toolbar.websiteArea')} data-split={!!snapshot.splitView} style={snapshot.linkPeek?.composed ? {left:snapshot.linkPeek.area.x,top:snapshot.linkPeek.area.y,width:snapshot.linkPeek.area.width,height:snapshot.linkPeek.area.height,right:'auto',bottom:'auto'} : undefined}>{snapshot.activeCrashed && !snapshot.splitView ?
         <div className="empty-space page-failure" role="alert"><span className="empty-mark">r</span><h2>{t('toolbar.crash')}</h2><p>{t('toolbar.crashHint')}</p><button type="button" disabled={!ready} onClick={() => void send({ method: 'navigation.reload' })}>{t('toolbar.reloadPage')}</button></div> :
         !snapshot.activeId && <EmptyStart snapshot={snapshot} load={url => send({ method: 'navigation.load', url })} activate={id => action({ method: 'tree.activate', id })} />}</section>
       {snapshot.linkPeek && <LinkPeek peek={snapshot.linkPeek} command={send} />}

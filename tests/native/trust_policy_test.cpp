@@ -60,6 +60,7 @@ int main() {
   check(red::IsAllowedBrowserSwitch("probe-palette",true)&&!red::IsAllowedBrowserSwitch("probe-palette",false),"palette experiment requires probe mode");
   check(red::IsAllowedBrowserSwitch("probe-theme-preview",true)&&!red::IsAllowedBrowserSwitch("probe-theme-preview",false),"theme preview experiment requires probe mode");
   check(red::IsAllowedBrowserSwitch("probe-little-window",true)&&!red::IsAllowedBrowserSwitch("probe-little-window",false),"Little Sol experiment requires probe mode");
+  check(red::IsAllowedBrowserSwitch("probe-web-audio",true)&&!red::IsAllowedBrowserSwitch("probe-web-audio",false),"Web Audio experiment requires probe mode");
   check(red::IsAllowedBrowserSwitch("little-sol-url",false)&&!red::IsAllowedBrowserSwitch("little-sol-url",true),"sol-tray.exe's Little Sol address is for real runs only");
   check(!red::IsAllowedBrowserSwitch("probe-native-tabs", false), "native reference requires probe mode");
   check(!red::IsAllowedBrowserSwitch("probe-organization", false), "organization input automation requires probe mode");

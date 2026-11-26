@@ -1051,6 +1051,9 @@
   "sidebar.badge.messages": {
     "defaultMessage": "Unread messages"
   },
+  "sidebar.badge.reddit": {
+    "defaultMessage": "Unread Reddit notifications"
+  },
   "sidebar.tab.back": {
     "defaultMessage": "Back to pinned URL for {name}"
   },
@@ -3069,6 +3072,9 @@
   },
   "settings.integration.twitter": {
     "defaultMessage": "Unread badge and startup loading"
+  },
+  "settings.integration.reddit": {
+    "defaultMessage": "Unread notifications and chats badge"
   },
   "settings.integration.spotify": {
     "defaultMessage": "Sidebar mini-player"

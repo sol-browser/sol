@@ -323,6 +323,25 @@ void Preload(std::weak_ptr<State> weak, std::string other) {
       SetWindowPos(browser->GetHost()->GetWindowHandle(), HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
   });
   at(8000, [](std::weak_ptr<State> weak, std::string) { PreloadStep(weak, "preloaded"); });
+  // Plain preload mode: create a space (switches to it) and switch back. The space opens
+  // on a page that is already loaded; the preloaded pinned tab must not count as one
+  // (user report 2026-11-26: point at a pinned tab, switch spaces, and it was selected).
+  at(8100, [](std::weak_ptr<State> weak, std::string) {
+    auto s = weak.lock(); if (!s || !s->workspace || s->link_headers_preload_open) return;
+    const auto snapshot = s->workspace->Snapshot();
+    const auto home = snapshot->GetString("activeSpace").ToString();
+    auto request = CefDictionaryValue::Create(); request->SetString("method", "space.create");
+    request->SetString("title", "Else"); request->SetString("icon", "");
+    request->SetDouble("expectedRevision", snapshot->GetDouble("treeRevision"));
+    s->workspace->Handle(request, [weak, home](int code, const std::string&, CefRefPtr<CefDictionaryValue> after) {
+      auto s = weak.lock(); if (!s || !s->workspace || code || !after) return;
+      auto back = CefDictionaryValue::Create(); back->SetString("method", "space.switch"); back->SetString("id", home);
+      back->SetDouble("expectedRevision", after->GetDouble("treeRevision"));
+      s->workspace->Handle(back, [weak](int code, const std::string&, CefRefPtr<CefDictionaryValue>) {
+        if (!code) PreloadStep(weak, "space_back");
+      });
+    });
+  });
   // preload-open-fast: opened 300 ms after the preload, while the page still loads.
   const auto open = [](std::weak_ptr<State> weak, std::string) {
     auto s = weak.lock(); if (!s || !s->workspace) return;
