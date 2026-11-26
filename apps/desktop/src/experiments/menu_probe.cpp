@@ -289,7 +289,7 @@ void OnMenuProbeLoad(const std::shared_ptr<State>& state, const std::string& url
             board.dispatchEvent(new DragEvent('drop',at));
             await wait(()=>[...document.querySelectorAll('.library-space')].at(-1)===card());
           }
-          const transfer=new DataTransfer();
+)JS" R"JS(          const transfer=new DataTransfer();
           const source=await wait(()=>get(`[data-library-tab="${before.activeId}"] button`));
           source.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer}));
           card().dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));
